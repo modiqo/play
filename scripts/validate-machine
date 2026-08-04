@@ -1,0 +1,246 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "set"
+require "yaml"
+
+ROOT = File.expand_path("..", __dir__)
+
+def load_yaml(name)
+  YAML.safe_load(File.read(File.join(ROOT, "references", name)), aliases: false)
+rescue Psych::Exception => e
+  abort "#{name}: invalid YAML: #{e.message}"
+end
+
+def load_json(name)
+  JSON.parse(File.read(File.join(ROOT, "references", name)))
+rescue JSON::ParserError => e
+  abort "#{name}: invalid JSON: #{e.message}"
+end
+
+machine = load_yaml("machine.yaml")
+actions_doc = load_yaml("actions.yaml")
+prompts_doc = load_yaml("prompts.yaml")
+machine_schema = load_json("machine.schema.json")
+context_schema = load_json("context.schema.json")
+
+errors = []
+check = ->(condition, message) { errors << message unless condition }
+
+check.call(machine["schema"] == "play.machine/v1", "machine schema must be play.machine/v1")
+check.call(actions_doc["schema"] == "play.actions/v1", "action schema must be play.actions/v1")
+check.call(prompts_doc["schema"] == "play.prompts/v1", "prompt schema must be play.prompts/v1")
+check.call(machine_schema["$id"]&.end_with?("play.machine.v1.json"), "machine schema id is invalid")
+check.call(context_schema["$id"]&.end_with?("play.context.v1.json"), "context schema id is invalid")
+
+states = machine.fetch("states", {})
+initial = machine["initial"]
+terminals = Set.new(machine.fetch("terminal", []))
+actions = actions_doc.fetch("actions", {})
+prompts = prompts_doc.fetch("prompts", {})
+owners = Set.new(actions_doc.fetch("owners", []))
+effects = Set.new(actions_doc.fetch("effects", []))
+guards = Set.new(actions_doc.fetch("guards", []))
+mutations = Set.new(actions_doc.fetch("mutations", []))
+failure_event = actions_doc.dig("failure_event", "id")
+
+check.call(states.key?(initial), "initial state #{initial.inspect} is missing")
+check.call(!terminals.empty?, "at least one terminal state is required")
+terminals.each { |state| check.call(states.key?(state), "terminal state #{state.inspect} is missing") }
+
+allowed_state_keys = Set["owner", "checkpoint", "requires", "entry", "prompt", "on"]
+allowed_transition_keys = Set["guard", "target", "mutate"]
+edges = Hash.new { |hash, key| hash[key] = Set.new }
+predecessors = Hash.new { |hash, key| hash[key] = Set.new }
+
+states.each do |state_name, state|
+  unknown_keys = state.keys.to_set - allowed_state_keys
+  check.call(unknown_keys.empty?, "#{state_name}: unknown state keys #{unknown_keys.to_a.sort.join(', ')}")
+  check.call(owners.include?(state["owner"]), "#{state_name}: invalid owner #{state['owner'].inspect}")
+
+  if terminals.include?(state_name)
+    extra = state.keys.to_set - Set["owner"]
+    check.call(extra.empty?, "#{state_name}: terminal states may declare only owner")
+    next
+  end
+
+  entry = state["entry"]
+  prompt = state["prompt"]
+  check.call([!entry.nil?, !prompt.nil?].count(true) == 1,
+             "#{state_name}: declare exactly one entry action or prompt")
+  check.call(%w[before after both].include?(state["checkpoint"]),
+             "#{state_name}: checkpoint must be before, after, or both")
+
+  handled_events = state.fetch("on", {})
+  check.call(!handled_events.empty?, "#{state_name}: must declare handled events")
+
+  expected_events = nil
+  if entry
+    action_name = entry["action"]
+    action = actions[action_name]
+    check.call(!action.nil?, "#{state_name}: action #{action_name.inspect} is not declared")
+    if action
+      check.call(action["owner"] == state["owner"],
+                 "#{state_name}: owner differs from action #{action_name}")
+      check.call(effects.include?(action["effect"]),
+                 "#{state_name}: action #{action_name} has invalid effect")
+      if action["effect"] != "none"
+        check.call(state["checkpoint"] == "both",
+                   "#{state_name}: effectful action #{action_name} requires checkpoint both")
+      end
+      action_events = action.dig("events_by_state", state_name) || action["events"] || {}
+      expected_events = Set.new(action_events.keys << failure_event)
+    end
+  elsif prompt
+    prompt_spec = prompts[prompt]
+    check.call(!prompt_spec.nil?, "#{state_name}: prompt #{prompt.inspect} is not declared")
+    expected_events = Set.new(prompt_spec.fetch("events", {}).keys) if prompt_spec
+  end
+
+  if expected_events
+    actual_events = Set.new(handled_events.keys)
+    missing = expected_events - actual_events
+    extra = actual_events - expected_events
+    check.call(missing.empty?, "#{state_name}: missing events #{missing.to_a.sort.join(', ')}")
+    check.call(extra.empty?, "#{state_name}: undeclared events #{extra.to_a.sort.join(', ')}")
+  end
+
+  handled_events.each do |event, branches|
+    check.call(branches.is_a?(Array) && !branches.empty?, "#{state_name}.#{event}: needs a transition")
+    next unless branches.is_a?(Array) && !branches.empty?
+
+    unconditional = branches.each_index.select { |index| branches[index]["guard"].nil? }
+    guarded = branches.each_index.reject { |index| branches[index]["guard"].nil? }
+    if guarded.any?
+      check.call(unconditional == [branches.length - 1],
+                 "#{state_name}.#{event}: guarded branches require one final fallback")
+    else
+      check.call(branches.length == 1,
+                 "#{state_name}.#{event}: unguarded events require exactly one transition")
+    end
+
+    branches.each do |transition|
+      unknown = transition.keys.to_set - allowed_transition_keys
+      check.call(unknown.empty?, "#{state_name}.#{event}: unknown transition keys #{unknown.to_a.join(', ')}")
+      target = transition["target"]
+      check.call(states.key?(target), "#{state_name}.#{event}: target #{target.inspect} is missing")
+      check.call(mutations.include?(transition["mutate"]),
+                 "#{state_name}.#{event}: mutation #{transition['mutate'].inspect} is not declared")
+      guard = transition["guard"]
+      check.call(guards.include?(guard), "#{state_name}.#{event}: guard #{guard.inspect} is not declared") if guard
+      if states.key?(target)
+        edges[state_name] << target
+        predecessors[target] << state_name
+      end
+    end
+  end
+end
+
+actions.each do |name, action|
+  check.call(owners.include?(action["owner"]), "action #{name}: invalid owner")
+  check.call(effects.include?(action["effect"]), "action #{name}: invalid effect")
+  has_events = action.key?("events")
+  has_state_events = action.key?("events_by_state")
+  check.call([has_events, has_state_events].count(true) == 1,
+             "action #{name}: declare events or events_by_state")
+end
+
+context_roots = Set.new(context_schema.fetch("required", []))
+actions.each do |name, action|
+  action.fetch("input_required", []).each do |input|
+    root = input.split(".", 2).first
+    check.call(context_roots.include?(root),
+               "action #{name}: input root #{root.inspect} is absent from durable context")
+  end
+end
+
+reachable = Set[initial]
+queue = [initial]
+until queue.empty?
+  state = queue.shift
+  edges[state].each do |target|
+    next if reachable.include?(target)
+
+    reachable << target
+    queue << target
+  end
+end
+unreachable = states.keys.to_set - reachable
+check.call(unreachable.empty?, "unreachable states: #{unreachable.to_a.sort.join(', ')}")
+
+can_terminate = terminals.dup
+queue = terminals.to_a
+until queue.empty?
+  state = queue.shift
+  predecessors[state].each do |source|
+    next if can_terminate.include?(source)
+
+    can_terminate << source
+    queue << source
+  end
+end
+nonterminating = states.keys.to_set - can_terminate
+check.call(nonterminating.empty?, "states without a terminal path: #{nonterminating.to_a.sort.join(', ')}")
+
+dominators = states.keys.to_h { |state| [state, state == initial ? Set[initial] : states.keys.to_set] }
+loop do
+  changed = false
+  (states.keys - [initial]).each do |state|
+    incoming = predecessors[state].to_a
+    common = incoming.empty? ? Set.new : incoming.map { |source| dominators[source] }.reduce(&:intersection)
+    next_value = common | Set[state]
+    next if next_value == dominators[state]
+
+    dominators[state] = next_value
+    changed = true
+  end
+  break unless changed
+end
+
+dominance_rules = {
+  "search" => %w[use_inspect explore_prepare explore_route],
+  "crystallize" => %w[save_offer author_release private_publish public_publish index],
+  "save_offer" => %w[author_release private_publish public_publish index],
+  "author_release" => %w[private_publish public_publish index]
+}
+dominance_rules.each do |dominator, governed_states|
+  governed_states.each do |state|
+    check.call(dominators.fetch(state, Set.new).include?(dominator),
+               "#{dominator} must dominate #{state}")
+  end
+end
+
+def target_for(states, state, event, branch = 0)
+  states.dig(state, "on", event, branch, "target")
+end
+
+check.call(target_for(states, "use_preflight", "play_ready") == "use_run",
+           "an exact ready local Play must run directly")
+check.call(target_for(states, "use_preflight", "play_resolution_required") == "use_resolve",
+           "only a resolution requirement may enter use_resolve")
+check.call(target_for(states, "use_resolve", "play_resolved") == "use_run",
+           "resolved exact version must return to use_run")
+check.call(predecessors["index"] == Set["private_publish", "public_publish"],
+           "index may follow only successful private or public publication")
+check.call(edges["use_receipt"] == Set["receipt", "blocked"],
+           "Use receipt must terminate without publication or indexing")
+check.call(target_for(states, "save_offer", "save_skipped") == "completed",
+           "Skip must complete without publication or indexing")
+
+required_context = context_roots
+%w[mode resolution modality_policy judge_policy last_event].each do |field|
+  check.call(required_context.include?(field), "context schema must require #{field}")
+end
+modalities = context_schema.dig("$defs", "modalityPolicy", "properties", "allowed", "items", "enum")
+check.call(modalities == %w[call shell drive], "CALL, SHELL, and DRIVE must be the closed modality set")
+
+unless errors.empty?
+  warn errors.map { |error| "- #{error}" }.join("\n")
+  abort "machine validation failed with #{errors.length} error(s)"
+end
+
+transition_count = states.values.sum do |state|
+  state.fetch("on", {}).values.sum(&:length)
+end
+puts "validated #{states.length} states, #{transition_count} transitions, #{actions.length} actions, #{prompts.length} prompts"

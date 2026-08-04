@@ -1,0 +1,213 @@
+schema: play.conformance-paths/v1
+
+cases:
+  - name: non-outcome conversation exits the hook
+    steps:
+      - {state: qualify, event: conversation, target: exited}
+    terminal: exited
+
+  - name: exact ready local Play runs without resolution
+    steps:
+      - {state: qualify, event: outcome_request, target: search}
+      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
+      - state: classify
+        event: full_match
+        guards: {match_satisfies_constraints: true}
+        target: use_inspect
+      - {state: use_inspect, event: play_inspected, target: use_preflight}
+      - {state: use_preflight, event: play_ready, target: use_run}
+      - {state: use_run, event: run_ready, target: use_verify}
+      - {state: use_verify, event: outcome_verified, target: use_receipt}
+      - {state: use_receipt, event: receipt_ready, target: receipt}
+    terminal: receipt
+    excludes: [use_resolve, author_release, private_publish, public_publish, index]
+
+  - name: missing exact version resolves before use
+    steps:
+      - {state: qualify, event: outcome_request, target: search}
+      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
+      - state: classify
+        event: full_match
+        guards: {match_satisfies_constraints: true}
+        target: use_inspect
+      - {state: use_inspect, event: play_inspected, target: use_preflight}
+      - {state: use_preflight, event: play_resolution_required, target: use_resolve}
+      - state: use_resolve
+        event: play_resolved
+        guards: {exact_version_is_ready: true}
+        target: use_run
+      - {state: use_run, event: run_ready, target: use_verify}
+      - {state: use_verify, event: outcome_verified, target: use_receipt}
+      - {state: use_receipt, event: receipt_ready, target: receipt}
+    terminal: receipt
+    includes_once: [use_resolve]
+
+  - name: inadequate full match falls back to Explore offer
+    steps:
+      - {state: qualify, event: outcome_request, target: search}
+      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
+      - state: classify
+        event: full_match
+        guards: {match_satisfies_constraints: false}
+        target: explore_offer
+      - {state: explore_offer, event: ordinary_execution_selected, target: exited}
+    terminal: exited
+
+  - name: no match can step aside
+    steps:
+      - {state: qualify, event: outcome_request, target: search}
+      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
+      - {state: classify, event: no_match, target: explore_offer}
+      - {state: explore_offer, event: ordinary_execution_selected, target: exited}
+    terminal: exited
+
+  - name: verified exploration can skip saving
+    steps:
+      - {state: qualify, event: outcome_request, target: search}
+      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
+      - {state: classify, event: no_match, target: explore_offer}
+      - {state: explore_offer, event: explore_approved, target: explore_prepare}
+      - state: explore_prepare
+        event: exploration_ready
+        guards: {explore_is_approved: true}
+        target: explore_route
+      - state: explore_route
+        event: route_selected
+        guards: {route_within_policy: true}
+        target: explore_execute
+      - {state: explore_execute, event: outcome_ready, target: explore_verify}
+      - {state: explore_verify, event: outcome_verified, target: crystallize}
+      - state: crystallize
+        event: candidate_ready
+        guards: {outcome_is_verified: true}
+        target: save_offer
+      - {state: save_offer, event: save_skipped, target: completed}
+    terminal: completed
+    excludes: [author_release, private_org, private_publish, public_owner, public_publish, index]
+
+  - name: private save publishes to a private org and indexes
+    steps: &explore_to_save
+      - {state: qualify, event: outcome_request, target: search}
+      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
+      - {state: classify, event: no_match, target: explore_offer}
+      - {state: explore_offer, event: explore_approved, target: explore_prepare}
+      - state: explore_prepare
+        event: exploration_ready
+        guards: {explore_is_approved: true}
+        target: explore_route
+      - state: explore_route
+        event: route_selected
+        guards: {route_within_policy: true}
+        target: explore_execute
+      - {state: explore_execute, event: outcome_ready, target: explore_verify}
+      - {state: explore_verify, event: outcome_verified, target: crystallize}
+      - state: crystallize
+        event: candidate_ready
+        guards: {outcome_is_verified: true}
+        target: save_offer
+      - {state: save_offer, event: save_private, target: author_release}
+      - state: author_release
+        event: flow_released
+        guards: {save_choice_private: true, save_choice_public: false}
+        target: private_org
+      - state: private_org
+        event: private_org_ready
+        guards: {private_org_policy_satisfied: true}
+        target: private_publish
+      - state: private_publish
+        event: play_published
+        guards: {publication_is_private: true}
+        target: index
+      - state: index
+        event: play_indexed
+        guards: {exact_published_version_is_indexed: true}
+        target: completed
+    terminal: completed
+    includes_once: [author_release, private_org, private_publish, index]
+
+  - name: public save with known owner publishes and indexes
+    steps:
+      - {state: qualify, event: outcome_request, target: search}
+      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
+      - {state: classify, event: no_match, target: explore_offer}
+      - {state: explore_offer, event: explore_approved, target: explore_prepare}
+      - state: explore_prepare
+        event: exploration_ready
+        guards: {explore_is_approved: true}
+        target: explore_route
+      - state: explore_route
+        event: route_selected
+        guards: {route_within_policy: true}
+        target: explore_execute
+      - {state: explore_execute, event: outcome_ready, target: explore_verify}
+      - {state: explore_verify, event: outcome_verified, target: crystallize}
+      - state: crystallize
+        event: candidate_ready
+        guards: {outcome_is_verified: true}
+        target: save_offer
+      - {state: save_offer, event: save_public, target: author_release}
+      - state: author_release
+        event: flow_released
+        guards: {save_choice_private: false, save_choice_public: true}
+        target: public_owner
+      - {state: public_owner, event: public_owner_ready, target: public_publish}
+      - state: public_publish
+        event: play_published
+        guards: {publication_is_public: true}
+        target: index
+      - state: index
+        event: play_indexed
+        guards: {exact_published_version_is_indexed: true}
+        target: completed
+    terminal: completed
+    includes_once: [author_release, public_owner, public_publish, index]
+
+  - name: public save can require owner selection
+    steps:
+      - {state: public_owner, event: public_owner_choice_required, target: public_owner_offer}
+      - {state: public_owner_offer, event: public_owner_selected, target: public_publish}
+      - state: public_publish
+        event: play_published
+        guards: {publication_is_public: true}
+        target: index
+      - state: index
+        event: play_indexed
+        guards: {exact_published_version_is_indexed: true}
+        target: completed
+    terminal: completed
+
+  - name: declined modality widening blocks exploration
+    steps:
+      - state: explore_route
+        event: route_selected
+        guards: {route_within_policy: false}
+        target: modality_offer
+      - {state: modality_offer, event: modality_widening_declined, target: blocked}
+    terminal: blocked
+
+  - name: exhausted route retries only within budget
+    steps:
+      - state: explore_execute
+        event: route_exhausted
+        guards: {exploration_budget_remaining: true}
+        target: explore_route
+      - {state: explore_route, event: no_safe_route, target: blocked}
+    terminal: blocked
+
+  - name: resolution mismatch blocks instead of changing version
+    steps:
+      - state: use_resolve
+        event: play_resolved
+        guards: {exact_version_is_ready: false}
+        target: blocked
+    terminal: blocked
+
+  - name: drift can enter consented repair exploration
+    steps:
+      - {state: use_preflight, event: play_drifted, target: repair_offer}
+      - {state: repair_offer, event: repair_approved, target: explore_prepare}
+      - state: explore_prepare
+        event: exploration_ready
+        guards: {explore_is_approved: true}
+        target: explore_route
+    terminal: explore_route

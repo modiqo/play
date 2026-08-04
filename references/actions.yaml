@@ -1,0 +1,247 @@
+schema: play.actions/v1
+
+owners: [play, rote-specialist, flow-runtime]
+effects: [none, read, local-write, external-write, mixed]
+
+guards:
+  - search_is_complete
+  - match_satisfies_constraints
+  - exact_version_is_ready
+  - explore_is_approved
+  - route_within_policy
+  - exploration_budget_remaining
+  - outcome_is_verified
+  - save_choice_private
+  - save_choice_public
+  - private_org_policy_satisfied
+  - publication_is_private
+  - publication_is_public
+  - exact_published_version_is_indexed
+
+mutations:
+  - set_request_contract
+  - record_non_outcome_exit
+  - record_explicit_exit
+  - record_blocker
+  - record_search_results
+  - record_incomplete_search
+  - enter_use
+  - downgrade_inadequate_match
+  - record_partial_match
+  - record_uncertain_match
+  - record_no_match
+  - record_inspection
+  - record_failed_receipt
+  - record_preflight
+  - record_resolution_requirement
+  - record_resolution
+  - record_resolution_mismatch
+  - record_run_evidence
+  - record_verification
+  - attach_receipt
+  - approve_repair_explore
+  - record_ordinary_exit
+  - approve_explore
+  - record_exploration_context
+  - record_missing_consent
+  - record_route
+  - record_widening_request
+  - record_no_route
+  - widen_modality_policy
+  - record_constraint_blocker
+  - record_execution_evidence
+  - consume_attempt
+  - record_exhaustion
+  - record_verification_failure
+  - record_candidate
+  - record_unpublished_result
+  - choose_private
+  - choose_public
+  - record_save_skipped
+  - record_release
+  - record_missing_save_choice
+  - record_private_org
+  - record_private_org_violation
+  - record_publication
+  - record_visibility_mismatch
+  - record_public_owner
+  - record_public_owner_choices
+  - record_owner_blocker
+  - record_index
+  - record_index_mismatch
+
+actions:
+  qualify_request:
+    kind: evaluator
+    owner: play
+    effect: none
+    input_required: [request.original]
+    events:
+      outcome_request: [request.intent, request.requested_outcome, modality_policy]
+      conversation: [reason]
+      play_excluded: [reason]
+
+  search_authorized_plays:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [request.intent, modality_policy]
+    events:
+      search_ready: [search.complete, search.query, search.sources, search.result_refs]
+
+  classify_adequacy:
+    kind: evaluator
+    owner: play
+    effect: none
+    input_required: [request.requested_outcome, search.result_refs, modality_policy]
+    events:
+      full_match: [match.reference, match.covered, match.uncovered, confidence]
+      partial_match: [match.reference, match.covered, match.uncovered, confidence]
+      uncertain_match: [match.reference, match.covered, match.uncovered, confidence]
+      no_match: [match.covered, match.uncovered, confidence]
+
+  inspect_play:
+    kind: delegated
+    owner: rote-specialist
+    effect: read
+    input_required: [match.reference]
+    events:
+      play_inspected: [play.version, play.owner, play.modalities, play.effects]
+
+  preflight_play:
+    kind: deterministic
+    owner: flow-runtime
+    effect: read
+    input_required: [match.reference]
+    events:
+      play_ready: [resolution.local_state, readiness]
+      play_resolution_required: [resolution.local_state, resolution.source]
+      play_drifted: [reason, evidence_refs]
+
+  resolve_play_package:
+    kind: deterministic
+    owner: flow-runtime
+    effect: local-write
+    input_required: [match.reference, resolution.local_state, resolution.source]
+    events:
+      play_resolved: [play.version, resolution.local_state, resolution.pull_performed]
+
+  run_play:
+    kind: deterministic
+    owner: flow-runtime
+    effect: mixed
+    input_required: [match.reference, readiness]
+    events:
+      run_ready: [result_ref, response_refs, artifact_refs, effects]
+      play_drifted: [reason, evidence_refs]
+
+  verify_outcome:
+    kind: evaluator
+    owner: play
+    effect: none
+    input_required: [request.requested_outcome, evidence]
+    events_by_state:
+      use_verify:
+        outcome_verified: [postconditions, evidence_refs]
+        outcome_not_verified: [failed_postconditions, evidence_refs]
+        play_drifted: [reason, evidence_refs]
+      explore_verify:
+        outcome_verified: [postconditions, evidence_refs]
+        outcome_not_verified: [failed_postconditions, evidence_refs]
+
+  build_receipt:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [match.reference, evidence.verification]
+    events:
+      receipt_ready: [receipt_ref]
+
+  prepare_exploration:
+    kind: deterministic
+    owner: play
+    effect: local-write
+    input_required: [consent.explore, request.requested_outcome]
+    events:
+      exploration_ready: [execution.workspace, execution.budget, evidence.baseline]
+
+  select_modalities:
+    kind: evaluator
+    owner: play
+    effect: none
+    input_required: [request.requested_outcome, modality_policy, judge_policy]
+    events:
+      route_selected: [execution.owner, route.modalities, justification]
+      modality_widening_required: [requested_modalities, reason]
+      no_safe_route: [reason, checked_capabilities]
+
+  execute_route:
+    kind: delegated
+    owner: rote-specialist
+    effect: mixed
+    input_required: [execution.owner, consent.explore, route.modalities]
+    events:
+      outcome_ready: [result_ref, response_refs, artifact_refs, modalities_used, effects]
+      route_exhausted: [reason, evidence_refs]
+
+  prepare_candidate:
+    kind: delegated
+    owner: rote-specialist
+    effect: local-write
+    input_required: [evidence.verification]
+    events:
+      candidate_ready: [candidate.reference, candidate.reusable, candidate.contract]
+      not_reusable: [reason, evidence_refs]
+
+  author_release:
+    kind: delegated
+    owner: rote-specialist
+    effect: local-write
+    input_required: [candidate.reference, consent.save]
+    events:
+      flow_released: [candidate.released_flow, play.version, verification_refs]
+
+  ensure_private_org:
+    kind: delegated
+    owner: rote-specialist
+    effect: external-write
+    input_required: [consent.save]
+    events:
+      private_org_ready: [publication.private_org, owner, members]
+
+  publish_private:
+    kind: delegated
+    owner: rote-specialist
+    effect: external-write
+    input_required: [candidate.released_flow, publication.private_org, consent.save]
+    events:
+      play_published: [publication.canonical_reference, visibility, owner, play.version]
+
+  resolve_public_owner:
+    kind: delegated
+    owner: rote-specialist
+    effect: read
+    input_required: [consent.save]
+    events:
+      public_owner_ready: [publication.owner]
+      public_owner_choice_required: [owner_choices]
+
+  publish_public:
+    kind: delegated
+    owner: rote-specialist
+    effect: external-write
+    input_required: [candidate.released_flow, publication.owner, consent.save]
+    events:
+      play_published: [publication.canonical_reference, visibility, owner, play.version]
+
+  index_playcard:
+    kind: deterministic
+    owner: play
+    effect: local-write
+    input_required: [publication.canonical_reference, play.version]
+    events:
+      play_indexed: [publication.canonical_reference, play.version, index_ref]
+
+failure_event:
+  id: action_blocked
+  required: [reason, recoverable, owner, evidence_refs]

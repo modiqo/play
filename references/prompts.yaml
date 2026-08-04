@@ -1,0 +1,38 @@
+schema: play.prompts/v1
+
+prompts:
+  explore_or_exit:
+    message: >
+      I couldn't find a Play that adequately covers this. Would you like me to explore with rote
+      and preserve the successful path as a reusable Play, or continue normally?
+    events:
+      explore_approved: [prompt_version, selected_at]
+      ordinary_execution_selected: [prompt_version, selected_at]
+
+  repair_or_exit:
+    message: >
+      The selected Play could not produce a verified result. Would you like me to explore with rote
+      to repair it, or continue normally?
+    events:
+      repair_approved: [prompt_version, selected_at]
+      ordinary_execution_selected: [prompt_version, selected_at]
+
+  widen_modalities:
+    message: >
+      The allowed modalities cannot complete the outcome. May I widen the modality set as shown?
+    events:
+      modality_widening_approved: [prompt_version, selected_at, allowed]
+      modality_widening_declined: [prompt_version, selected_at]
+
+  private_public_or_skip:
+    message: Save this Play as Private, Public, or Skip?
+    events:
+      save_private: [prompt_version, selected_at]
+      save_public: [prompt_version, selected_at]
+      save_skipped: [prompt_version, selected_at]
+
+  select_public_owner:
+    message: Select the public personal or organization identity that should own this Play.
+    events:
+      public_owner_selected: [prompt_version, selected_at, publication.owner]
+      public_owner_declined: [prompt_version, selected_at]

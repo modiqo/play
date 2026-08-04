@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://play.modiqo.ai/schemas/play.context.v1.json",
+  "title": "Play durable context",
+  "type": "object",
+  "required": [
+    "schema",
+    "machine_version",
+    "run_id",
+    "task_key",
+    "state",
+    "transition_seq",
+    "mode",
+    "request",
+    "search",
+    "match",
+    "resolution",
+    "play",
+    "readiness",
+    "route",
+    "consent",
+    "modality_policy",
+    "judge_policy",
+    "effect_policy",
+    "execution",
+    "evidence",
+    "candidate",
+    "publication",
+    "receipt_ref",
+    "last_event"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "play.context/v1"},
+    "machine_version": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "task_key": {"type": "string", "minLength": 1},
+    "state": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "transition_seq": {"type": "integer", "minimum": 0},
+    "mode": {"type": ["string", "null"], "enum": ["use", "explore", "exited", null]},
+    "request": {"$ref": "#/$defs/request"},
+    "search": {"$ref": "#/$defs/search"},
+    "match": {"$ref": "#/$defs/match"},
+    "resolution": {"$ref": "#/$defs/resolution"},
+    "play": {"$ref": "#/$defs/play"},
+    "readiness": {"$ref": "#/$defs/readiness"},
+    "route": {"$ref": "#/$defs/route"},
+    "consent": {"$ref": "#/$defs/consent"},
+    "modality_policy": {"$ref": "#/$defs/modalityPolicy"},
+    "judge_policy": {"$ref": "#/$defs/judgePolicy"},
+    "effect_policy": {"$ref": "#/$defs/effectPolicy"},
+    "execution": {"$ref": "#/$defs/execution"},
+    "evidence": {"$ref": "#/$defs/evidence"},
+    "candidate": {"$ref": "#/$defs/candidate"},
+    "publication": {"$ref": "#/$defs/publication"},
+    "receipt_ref": {"$ref": "#/$defs/nullableString"},
+    "last_event": {"$ref": "#/$defs/lastEvent"}
+  },
+  "$defs": {
+    "nullableString": {"type": ["string", "null"]},
+    "stringArray": {"type": "array", "items": {"type": "string"}},
+    "request": {
+      "type": "object",
+      "required": ["original", "intent", "requested_outcome", "excluded"],
+      "additionalProperties": false,
+      "properties": {
+        "original": {"type": "string"},
+        "intent": {"$ref": "#/$defs/nullableString"},
+        "requested_outcome": {"$ref": "#/$defs/nullableString"},
+        "excluded": {"type": "boolean"}
+      }
+    },
+    "search": {
+      "type": "object",
+      "required": ["complete", "query", "sources", "result_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "complete": {"type": "boolean"},
+        "query": {"$ref": "#/$defs/nullableString"},
+        "sources": {"$ref": "#/$defs/stringArray"},
+        "result_refs": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "match": {
+      "type": "object",
+      "required": ["classification", "reference", "covered", "uncovered"],
+      "additionalProperties": false,
+      "properties": {
+        "classification": {"type": ["string", "null"], "enum": ["full", "partial", "uncertain", "none", null]},
+        "reference": {"$ref": "#/$defs/nullableString"},
+        "covered": {"$ref": "#/$defs/stringArray"},
+        "uncovered": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "resolution": {
+      "type": "object",
+      "required": ["local_state", "source", "pull_performed"],
+      "additionalProperties": false,
+      "properties": {
+        "local_state": {"enum": ["exact_ready", "missing", "stale", "corrupt", "unknown"]},
+        "source": {"$ref": "#/$defs/nullableString"},
+        "pull_performed": {"type": "boolean"}
+      }
+    },
+    "play": {
+      "type": "object",
+      "required": ["version", "owner", "modalities", "effects"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {"$ref": "#/$defs/nullableString"},
+        "owner": {"$ref": "#/$defs/nullableString"},
+        "modalities": {"$ref": "#/$defs/stringArray"},
+        "effects": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "required": ["status", "exact_version"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"enum": ["unknown", "ready", "resolution_required", "drifted"]},
+        "exact_version": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "route": {
+      "type": "object",
+      "required": ["modalities", "justification"],
+      "additionalProperties": false,
+      "properties": {
+        "modalities": {"type": "array", "uniqueItems": true, "items": {"enum": ["call", "shell", "drive"]}},
+        "justification": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "consent": {
+      "type": "object",
+      "required": ["explore", "save"],
+      "additionalProperties": false,
+      "properties": {
+        "explore": {"enum": ["approved", "declined", "not_asked"]},
+        "save": {"enum": ["private", "public", "skip", "not_asked"]}
+      }
+    },
+    "modalityPolicy": {
+      "type": "object",
+      "required": ["mode", "allowed", "forbidden", "widening_requires_approval"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"enum": ["auto", "manual"]},
+        "allowed": {"type": "array", "uniqueItems": true, "items": {"enum": ["call", "shell", "drive"]}},
+        "forbidden": {"type": "array", "uniqueItems": true, "items": {"enum": ["call", "shell", "drive"]}},
+        "widening_requires_approval": {"const": true}
+      }
+    },
+    "judgePolicy": {
+      "type": "object",
+      "required": ["allowed", "harness"],
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {"type": "boolean"},
+        "harness": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "effectPolicy": {
+      "type": "object",
+      "required": ["read_only", "approval_gates"],
+      "additionalProperties": false,
+      "properties": {
+        "read_only": {"type": "boolean"},
+        "approval_gates": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["owner", "workspace", "attempts", "budget", "pending_action", "idempotency_key"],
+      "additionalProperties": false,
+      "properties": {
+        "owner": {"$ref": "#/$defs/nullableString"},
+        "workspace": {"$ref": "#/$defs/nullableString"},
+        "attempts": {"type": "integer", "minimum": 0},
+        "budget": {"type": "integer", "minimum": 0},
+        "pending_action": {"$ref": "#/$defs/nullableString"},
+        "idempotency_key": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["baseline", "responses", "artifacts", "verification", "failed_receipt"],
+      "additionalProperties": false,
+      "properties": {
+        "baseline": {"$ref": "#/$defs/nullableString"},
+        "responses": {"$ref": "#/$defs/stringArray"},
+        "artifacts": {"$ref": "#/$defs/stringArray"},
+        "verification": {"$ref": "#/$defs/nullableString"},
+        "failed_receipt": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "required": ["reference", "reusable", "contract", "released_flow"],
+      "additionalProperties": false,
+      "properties": {
+        "reference": {"$ref": "#/$defs/nullableString"},
+        "reusable": {"type": ["boolean", "null"]},
+        "contract": {"$ref": "#/$defs/nullableString"},
+        "released_flow": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "publication": {
+      "type": "object",
+      "required": ["owner", "private_org", "canonical_reference", "visibility", "indexed", "index_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "owner": {"$ref": "#/$defs/nullableString"},
+        "private_org": {"$ref": "#/$defs/nullableString"},
+        "canonical_reference": {"$ref": "#/$defs/nullableString"},
+        "visibility": {"type": ["string", "null"], "enum": ["private", "public", null]},
+        "indexed": {"type": "boolean"},
+        "index_ref": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "lastEvent": {
+      "type": "object",
+      "required": ["id", "payload_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/nullableString"},
+        "payload_ref": {"$ref": "#/$defs/nullableString"}
+      }
+    }
+  }
+}
