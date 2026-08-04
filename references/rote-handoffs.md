@@ -19,6 +19,7 @@ inputs: <action inputs from context>
 expected_events: <closed event list for this action and state>
 required_payload: <fields required for each event>
 effect_policy: <read/write and approval gates>
+elicitation_contract: <prompt id, selection mode, choices, and harness fallback when a choice may be needed>
 evidence_contract: <references that must be returned>
 idempotency_key: <stable key for retryable effects>
 ```
@@ -35,8 +36,10 @@ missing evidence, or a response for another run/state/action.
 - Multi-step adapter work and durable evidence: `rote-workspace`.
 - Flow construction and release: `rote-flow-authoring`.
 - Candidate preservation and save gates: `rote-flow-crystallization`.
-- Flow execution: `rote-flow-run`.
+- First-class registry Play inspection and execution: invoke `rote play inspect` or `rote play run`
+  directly; never hand these operations to `rote-flow-run`.
 - Registry publication and sharing: `rote-registry`.
+- Registry inspection, organization summaries, and grouped Play inventories: `rote-registry`.
 - Private organization creation and invitations: `rote-org`.
 - Repeated failures: `rote-troubleshooting`.
 
@@ -46,5 +49,6 @@ modalities, grant consent, choose visibility, or select the next machine state.
 ## Avoid recursive orchestration
 
 The current top-level `rote` skill searches for flows before routing. Play already performs that
-search and consent gate. After Play search, invoke the selected post-search specialist or explicit
-continuation; do not restart the top-level rote entrypoint and repeat discovery.
+search and consent gate. Do not restart that skill router and repeat discovery. This does not
+forbid the purpose-built `rote play` CLI controller, which always takes precedence when it exposes
+the required capability.

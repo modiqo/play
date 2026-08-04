@@ -10,8 +10,37 @@ states:
     entry: {action: qualify_request}
     "on":
       outcome_request: [{target: search, mutate: set_request_contract}]
+      exact_play_request: [{target: use_run, mutate: enter_direct_use}]
+      play_search_request: [{target: search, mutate: set_search_request}]
+      play_management_request: [{target: management_list, mutate: set_management_request}]
+      play_management_choice_required: [{target: management_offer, mutate: record_management_choices}]
       conversation: [{target: exited, mutate: record_non_outcome_exit}]
       play_excluded: [{target: exited, mutate: record_explicit_exit}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  management_offer:
+    owner: play
+    checkpoint: after
+    prompt: select_management_views
+    "on":
+      management_views_selected: [{target: management_list, mutate: choose_management_views}]
+
+  management_list:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [management.views]
+    entry: {action: list_play_management}
+    "on":
+      management_inventory_ready: [{target: management_present, mutate: record_management_inventory}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  management_present:
+    owner: play
+    checkpoint: after
+    requires: [management.views]
+    entry: {action: present_play_management}
+    "on":
+      management_presented: [{target: completed, mutate: record_management_presentation}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   search:
@@ -21,8 +50,18 @@ states:
     entry: {action: search_authorized_plays}
     "on":
       search_ready:
+        - {guard: search_only_requested, target: search_present, mutate: record_search_results}
         - {guard: search_is_complete, target: classify, mutate: record_search_results}
         - {target: blocked, mutate: record_incomplete_search}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  search_present:
+    owner: play
+    checkpoint: after
+    requires: [search.complete, search.results]
+    entry: {action: present_search_results}
+    "on":
+      search_presented: [{target: completed, mutate: record_search_presentation}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   classify:
@@ -32,52 +71,22 @@ states:
     entry: {action: classify_adequacy}
     "on":
       full_match:
-        - {guard: match_satisfies_constraints, target: use_inspect, mutate: enter_use}
+        - {guard: match_satisfies_constraints, target: use_run, mutate: enter_use}
         - {target: explore_offer, mutate: downgrade_inadequate_match}
       partial_match: [{target: explore_offer, mutate: record_partial_match}]
       uncertain_match: [{target: explore_offer, mutate: record_uncertain_match}]
       no_match: [{target: explore_offer, mutate: record_no_match}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
-  use_inspect:
-    owner: rote-specialist
-    checkpoint: both
-    requires: [match.reference]
-    entry: {action: inspect_play}
-    "on":
-      play_inspected: [{target: use_preflight, mutate: record_inspection}]
-      action_blocked: [{target: repair_offer, mutate: record_failed_receipt}]
-
-  use_preflight:
-    owner: flow-runtime
-    checkpoint: both
-    entry: {action: preflight_play}
-    "on":
-      play_ready: [{target: use_run, mutate: record_preflight}]
-      play_resolution_required: [{target: use_resolve, mutate: record_resolution_requirement}]
-      play_drifted: [{target: repair_offer, mutate: record_failed_receipt}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  use_resolve:
-    owner: flow-runtime
-    checkpoint: both
-    requires: [match.reference, resolution.local_state]
-    entry: {action: resolve_play_package}
-    "on":
-      play_resolved:
-        - {guard: exact_version_is_ready, target: use_run, mutate: record_resolution}
-        - {target: blocked, mutate: record_resolution_mismatch}
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
   use_run:
     owner: flow-runtime
     checkpoint: both
     requires: [match.reference]
-    entry: {action: run_play}
+    entry: {action: run_registry_play}
     "on":
-      run_ready: [{target: use_verify, mutate: record_run_evidence}]
+      play_run_ready: [{target: use_verify, mutate: record_controller_run}]
       play_drifted: [{target: repair_offer, mutate: record_failed_receipt}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
+      action_blocked: [{target: repair_offer, mutate: record_failed_receipt}]
 
   use_verify:
     owner: play
@@ -254,8 +263,19 @@ states:
     entry: {action: index_playcard}
     "on":
       play_indexed:
-        - {guard: exact_published_version_is_indexed, target: completed, mutate: record_index}
+        - {guard: exact_published_version_is_indexed, target: saved_inspect, mutate: record_index}
         - {target: blocked, mutate: record_index_mismatch}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  saved_inspect:
+    owner: flow-runtime
+    checkpoint: both
+    requires: [publication.canonical_reference, publication.visibility, play.version]
+    entry: {action: inspect_saved_play}
+    "on":
+      saved_play_inspected:
+        - {guard: saved_inspection_matches_publication, target: completed, mutate: record_saved_inspection}
+        - {target: blocked, mutate: record_saved_inspection_mismatch}
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   receipt: {owner: play}

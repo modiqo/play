@@ -11,9 +11,8 @@ the verified result unpublished.
 
 ## Offer to save
 
-Ask exactly:
-
-> Save this Play as Private, Public, or Skip?
+Ask the structured `private_public_or_skip` question from `prompts.yaml`; do not replace its labels,
+descriptions, selection mode, or events with an improvised free-form prompt.
 
 Do not offer to save before verification and candidate preparation.
 
@@ -28,12 +27,18 @@ Do not offer to save before verification and candidate preparation.
 ## Publish and index
 
 Publish the exact released version with the chosen visibility. Then index the canonical Playcard
-locally. Record canonical reference, version, visibility, owner, and index reference. If visibility
-or version differs from the authorized choice, block instead of repairing it silently.
+locally and run `rote play inspect <org/name> --json` for the canonical reference. Record the
+canonical reference, version, visibility, owner, index reference, and inspect response reference.
+If the inspected owner, visibility, or version differs from the authorized publication, block
+instead of repairing it silently.
 
-The index is a discovery cache, not the source of truth. A future request starts at search. When an
-exact indexed local version is ready, run it directly; resolve or pull only when it is missing,
-stale, corrupt, or explicitly refreshed.
+On a matching readback, present a small success readout backed by the inspected JSON. Include the
+canonical reference, exact version, visibility, owner, and content hash when present. Then briefly
+congratulate the user. Do not congratulate before the readback succeeds.
+
+The index is a discovery cache, not the source of truth. A future outcome request starts at search;
+an explicit canonical reference goes directly to `rote play run`. In both cases the Play controller,
+not this skill, decides whether local state can be reused or must be converged.
 
 ## Social operations
 
@@ -41,3 +46,5 @@ Treat list, inspect, share, organization invitation, role change, and membership
 explicit Play management requests. Delegate registry and organization operations to their rote
 specialists while preserving normal confirmation, authorization, and receipt behavior. Never
 invite or share as an implied consequence of saving.
+
+Use [management.md](management.md) for organization summaries and grouped Play inventories.

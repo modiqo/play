@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""Render authorized organization and registry Play inventories without persistence."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+
+
+class InventoryError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class Organization:
+    slug: str
+    display_name: str
+
+
+def rote_json(*args: str):
+    environment = os.environ.copy()
+    environment.setdefault("rote_NO_HINTS", "1")
+    result = subprocess.run(
+        ["rote", *args],
+        text=True,
+        capture_output=True,
+        env=environment,
+    )
+    if result.returncode:
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown rote error"
+        raise InventoryError(f"rote {' '.join(args)} failed: {detail}")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise InventoryError(f"rote {' '.join(args)} returned malformed JSON") from error
+
+
+def load_organizations() -> list[Organization]:
+    payload = rote_json("registry", "org", "list", "--json")
+    if not isinstance(payload, list):
+        raise InventoryError("organization list is not a JSON array")
+    organizations = []
+    for item in payload:
+        if not isinstance(item, dict) or not isinstance(item.get("slug"), str):
+            raise InventoryError("organization list contains an invalid item")
+        display_name = item.get("display_name")
+        organizations.append(
+            Organization(
+                slug=item["slug"],
+                display_name=display_name if isinstance(display_name, str) else item["slug"],
+            )
+        )
+    return sorted(organizations, key=lambda org: (org.display_name.casefold(), org.slug.casefold()))
+
+
+def load_flows(authorized_slugs: set[str]) -> dict[str, list[dict]]:
+    payload = rote_json("registry", "flow", "list", "--mine", "--json")
+    if not isinstance(payload, list):
+        raise InventoryError("Play list is not a JSON array")
+    grouped = {slug: [] for slug in authorized_slugs}
+    for item in payload:
+        if not isinstance(item, list) or len(item) != 2:
+            raise InventoryError("Play list contains an unsupported item shape")
+        slug, flow = item
+        if slug not in authorized_slugs:
+            continue
+        if not isinstance(flow, dict) or not isinstance(flow.get("name"), str):
+            raise InventoryError(f"Play list for {slug} contains an invalid item")
+        visibility = flow.get("visibility")
+        if visibility not in {"private", "public"}:
+            raise InventoryError(f"Play {slug}/{flow['name']} has unknown visibility {visibility!r}")
+        grouped[slug].append(flow)
+    for flows in grouped.values():
+        flows.sort(key=lambda flow: flow["name"].casefold())
+    return grouped
+
+
+def member_count(slug: str) -> int:
+    payload = rote_json("registry", "org", "members", slug, "--json")
+    if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
+        raise InventoryError(f"member list for {slug} is not a JSON array of members")
+    return len(payload)
+
+
+def member_counts(organizations: list[Organization]) -> dict[str, int]:
+    if not organizations:
+        return {}
+    workers = min(8, len(organizations))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        counts = executor.map(member_count, [org.slug for org in organizations])
+    return dict(zip((org.slug for org in organizations), counts, strict=True))
+
+
+def escape_cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ")
+
+
+def organization_label(org: Organization) -> str:
+    if org.display_name == org.slug:
+        return org.slug
+    return f"{org.display_name} (`{org.slug}`)"
+
+
+def render_organizations(
+    organizations: list[Organization], flows: dict[str, list[dict]], members: dict[str, int]
+) -> str:
+    lines = [
+        "# Organizations",
+        "",
+        "| Organization | Members | Private | Public | Total |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for org in organizations:
+        private = sum(flow["visibility"] == "private" for flow in flows[org.slug])
+        public = sum(flow["visibility"] == "public" for flow in flows[org.slug])
+        lines.append(
+            f"| {escape_cell(organization_label(org))} | {members[org.slug]} | "
+            f"{private} | {public} | {private + public} |"
+        )
+    if not organizations:
+        lines.append("| — None | 0 | 0 | 0 | 0 |")
+    return "\n".join(lines)
+
+
+def render_plays(organizations: list[Organization], flows: dict[str, list[dict]]) -> str:
+    lines = ["# Plays by organization"]
+    if not organizations:
+        return "\n".join([*lines, "", "— None"])
+    for org in organizations:
+        org_flows = flows[org.slug]
+        lines.extend(["", f"## {organization_label(org)} — {len(org_flows)}"])
+        for visibility in ("private", "public"):
+            visible = [flow for flow in org_flows if flow["visibility"] == visibility]
+            lines.extend(["", f"### {visibility.title()} ({len(visible)})", ""])
+            if visible:
+                lines.extend(f"- `{flow['name']}`" for flow in visible)
+            else:
+                lines.append("— None")
+    return "\n".join(lines)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("view", choices=("orgs", "plays", "all"))
+    args = parser.parse_args()
+    try:
+        organizations = load_organizations()
+        flows = load_flows({org.slug for org in organizations})
+        sections = []
+        if args.view in {"orgs", "all"}:
+            sections.append(render_organizations(organizations, flows, member_counts(organizations)))
+        if args.view in {"plays", "all"}:
+            sections.append(render_plays(organizations, flows))
+    except InventoryError as error:
+        print(f"play-inventory: {error}", file=sys.stderr)
+        return 1
+    print("\n\n".join(sections))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

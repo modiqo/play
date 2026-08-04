@@ -1,7 +1,7 @@
 interface:
   display_name: "Play"
-  short_description: "Use or create reusable outcome Plays"
-  default_prompt: "Use $play to find an existing Play for this outcome or ask before exploring and saving a new one."
+  short_description: "Run, create, and manage reusable Plays"
+  default_prompt: "Use $play to run or create a reusable outcome, or list my organizations and Plays."
 
 policy:
   allow_implicit_invocation: true

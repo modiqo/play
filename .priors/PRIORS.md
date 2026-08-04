@@ -13,3 +13,8 @@
 | P-0007 | skill-creator | conclusion | open | scripts/play-profile | Uninstall restores the exact pre-install activation files and refuses to |
 | P-0008 | skill-creator | conclusion | open | scripts/play-profile | The activation profile installs Play into every discovered rote-bearing  |
 | P-0009 | skill-creator | conclusion | open | scripts/start-harness | A smoke test starts a fresh read-only harness and passes only when the r |
+| P-0010 | play-architecture-review | conclusion | open | references/machine.yaml | The machine cleanly separates existing-Play execution (use_run to use_ve |
+| P-0011 | play-architecture-review | conclusion | open | references/machine.yaml | Awareness is not a first-class phase because both management_present and |
+| P-0012 | play-architecture-review | conclusion | open | scripts/play-inventory | The inventory surface cannot produce new/revised digests or personal imp |
+| P-0013 | play-architecture-review | conclusion | open | scripts/play-search | The unified search score is query-relevance fusion over local and regist |
+| P-0014 | play-architecture-review | conclusion | open | references/actions.yaml | Explicit creator intent has no declared qualification event or action pa |

@@ -6,41 +6,38 @@ cases:
       - {state: qualify, event: conversation, target: exited}
     terminal: exited
 
-  - name: exact ready local Play runs without resolution
+  - name: explicit Play search presents merged results without running
     steps:
-      - {state: qualify, event: outcome_request, target: search}
-      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
-      - state: classify
-        event: full_match
-        guards: {match_satisfies_constraints: true}
-        target: use_inspect
-      - {state: use_inspect, event: play_inspected, target: use_preflight}
-      - {state: use_preflight, event: play_ready, target: use_run}
-      - {state: use_run, event: run_ready, target: use_verify}
-      - {state: use_verify, event: outcome_verified, target: use_receipt}
-      - {state: use_receipt, event: receipt_ready, target: receipt}
-    terminal: receipt
-    excludes: [use_resolve, author_release, private_publish, public_publish, index]
+      - {state: qualify, event: play_search_request, target: search}
+      - state: search
+        event: search_ready
+        guards: {search_only_requested: true, search_is_complete: true}
+        target: search_present
+      - {state: search_present, event: search_presented, target: completed}
+    terminal: completed
+    excludes: [classify, use_run, explore_offer]
 
-  - name: missing exact version resolves before use
+  - name: exact Play reference runs through the first-class controller
+    steps:
+      - {state: qualify, event: exact_play_request, target: use_run}
+      - {state: use_run, event: play_run_ready, target: use_verify}
+      - {state: use_verify, event: outcome_verified, target: use_receipt}
+      - {state: use_receipt, event: receipt_ready, target: receipt}
+    terminal: receipt
+    excludes: [search, classify, author_release, private_publish, public_publish, index]
+
+  - name: discovered adequate Play also runs through the first-class controller
     steps:
       - {state: qualify, event: outcome_request, target: search}
       - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
       - state: classify
         event: full_match
         guards: {match_satisfies_constraints: true}
-        target: use_inspect
-      - {state: use_inspect, event: play_inspected, target: use_preflight}
-      - {state: use_preflight, event: play_resolution_required, target: use_resolve}
-      - state: use_resolve
-        event: play_resolved
-        guards: {exact_version_is_ready: true}
         target: use_run
-      - {state: use_run, event: run_ready, target: use_verify}
+      - {state: use_run, event: play_run_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
     terminal: receipt
-    includes_once: [use_resolve]
 
   - name: inadequate full match falls back to Explore offer
     steps:
@@ -121,6 +118,10 @@ cases:
       - state: index
         event: play_indexed
         guards: {exact_published_version_is_indexed: true}
+        target: saved_inspect
+      - state: saved_inspect
+        event: saved_play_inspected
+        guards: {saved_inspection_matches_publication: true}
         target: completed
     terminal: completed
     includes_once: [author_release, private_org, private_publish, index]
@@ -158,6 +159,10 @@ cases:
       - state: index
         event: play_indexed
         guards: {exact_published_version_is_indexed: true}
+        target: saved_inspect
+      - state: saved_inspect
+        event: saved_play_inspected
+        guards: {saved_inspection_matches_publication: true}
         target: completed
     terminal: completed
     includes_once: [author_release, public_owner, public_publish, index]
@@ -173,8 +178,29 @@ cases:
       - state: index
         event: play_indexed
         guards: {exact_published_version_is_indexed: true}
+        target: saved_inspect
+      - state: saved_inspect
+        event: saved_play_inspected
+        guards: {saved_inspection_matches_publication: true}
         target: completed
     terminal: completed
+
+  - name: explicit organization summary bypasses Play search
+    steps:
+      - {state: qualify, event: play_management_request, target: management_list}
+      - {state: management_list, event: management_inventory_ready, target: management_present}
+      - {state: management_present, event: management_presented, target: completed}
+    terminal: completed
+    excludes: [search, explore_offer, author_release]
+
+  - name: ambiguous Play list uses structured view selection
+    steps:
+      - {state: qualify, event: play_management_choice_required, target: management_offer}
+      - {state: management_offer, event: management_views_selected, target: management_list}
+      - {state: management_list, event: management_inventory_ready, target: management_present}
+      - {state: management_present, event: management_presented, target: completed}
+    terminal: completed
+    excludes: [search, explore_offer]
 
   - name: declined modality widening blocks exploration
     steps:
@@ -194,17 +220,15 @@ cases:
       - {state: explore_route, event: no_safe_route, target: blocked}
     terminal: blocked
 
-  - name: resolution mismatch blocks instead of changing version
+  - name: controller drift enters the declared repair path
     steps:
-      - state: use_resolve
-        event: play_resolved
-        guards: {exact_version_is_ready: false}
-        target: blocked
-    terminal: blocked
+      - {state: use_run, event: play_drifted, target: repair_offer}
+      - {state: repair_offer, event: ordinary_execution_selected, target: exited}
+    terminal: exited
 
   - name: drift can enter consented repair exploration
     steps:
-      - {state: use_preflight, event: play_drifted, target: repair_offer}
+      - {state: use_run, event: play_drifted, target: repair_offer}
       - {state: repair_offer, event: repair_approved, target: explore_prepare}
       - state: explore_prepare
         event: exploration_ready

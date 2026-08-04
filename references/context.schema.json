@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://play.modiqo.ai/schemas/play.context.v1.json",
-  "title": "Play durable context",
+  "title": "Play logical controller context",
+  "$comment": "This schema defines logical controller state only. It does not define or authorize filesystem persistence. Implementations must keep context in harness-owned state unless an explicit Play storage backend and ownership policy are provided.",
   "type": "object",
   "required": [
     "schema",
@@ -25,6 +26,7 @@
     "execution",
     "evidence",
     "candidate",
+    "management",
     "publication",
     "receipt_ref",
     "last_event"
@@ -37,7 +39,7 @@
     "task_key": {"type": "string", "minLength": 1},
     "state": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
     "transition_seq": {"type": "integer", "minimum": 0},
-    "mode": {"type": ["string", "null"], "enum": ["use", "explore", "exited", null]},
+    "mode": {"type": ["string", "null"], "enum": ["use", "explore", "manage", "exited", null]},
     "request": {"$ref": "#/$defs/request"},
     "search": {"$ref": "#/$defs/search"},
     "match": {"$ref": "#/$defs/match"},
@@ -52,6 +54,7 @@
     "execution": {"$ref": "#/$defs/execution"},
     "evidence": {"$ref": "#/$defs/evidence"},
     "candidate": {"$ref": "#/$defs/candidate"},
+    "management": {"$ref": "#/$defs/management"},
     "publication": {"$ref": "#/$defs/publication"},
     "receipt_ref": {"$ref": "#/$defs/nullableString"},
     "last_event": {"$ref": "#/$defs/lastEvent"}
@@ -72,13 +75,35 @@
     },
     "search": {
       "type": "object",
-      "required": ["complete", "query", "sources", "result_refs"],
+      "required": ["complete", "query", "sources", "result_refs", "results"],
       "additionalProperties": false,
       "properties": {
         "complete": {"type": "boolean"},
         "query": {"$ref": "#/$defs/nullableString"},
         "sources": {"$ref": "#/$defs/stringArray"},
-        "result_refs": {"$ref": "#/$defs/stringArray"}
+        "result_refs": {"$ref": "#/$defs/stringArray"},
+        "results": {"type": "array", "items": {"$ref": "#/$defs/searchResult"}}
+      }
+    },
+    "searchResult": {
+      "type": "object",
+      "required": ["name", "description", "reference", "version", "status", "sources", "score", "uri", "run_command", "hint_kind"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "reference": {"$ref": "#/$defs/nullableString"},
+        "version": {"$ref": "#/$defs/nullableString"},
+        "status": {"$ref": "#/$defs/nullableString"},
+        "sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["local", "registry"]}
+        },
+        "score": {"type": "number", "minimum": 0},
+        "uri": {"type": "string", "minLength": 1},
+        "run_command": {"type": "string", "minLength": 1},
+        "hint_kind": {"enum": ["play", "local-flow-gap"]}
       }
     },
     "match": {
@@ -205,9 +230,24 @@
         "released_flow": {"$ref": "#/$defs/nullableString"}
       }
     },
+    "management": {
+      "type": "object",
+      "required": ["views", "org_summary_ref", "plays_by_org_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "views": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["org_summary", "plays_by_org"]}
+        },
+        "org_summary_ref": {"$ref": "#/$defs/nullableString"},
+        "plays_by_org_ref": {"$ref": "#/$defs/nullableString"}
+      }
+    },
     "publication": {
       "type": "object",
-      "required": ["owner", "private_org", "canonical_reference", "visibility", "indexed", "index_ref"],
+      "required": ["owner", "private_org", "canonical_reference", "visibility", "indexed", "index_ref", "inspect_ref"],
       "additionalProperties": false,
       "properties": {
         "owner": {"$ref": "#/$defs/nullableString"},
@@ -215,7 +255,8 @@
         "canonical_reference": {"$ref": "#/$defs/nullableString"},
         "visibility": {"type": ["string", "null"], "enum": ["private", "public", null]},
         "indexed": {"type": "boolean"},
-        "index_ref": {"$ref": "#/$defs/nullableString"}
+        "index_ref": {"$ref": "#/$defs/nullableString"},
+        "inspect_ref": {"$ref": "#/$defs/nullableString"}
       }
     },
     "lastEvent": {

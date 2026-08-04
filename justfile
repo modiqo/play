@@ -10,6 +10,12 @@ test: check
 install:
     scripts/play-profile install
 
+# Confirm source-linked installs are current and valid, then remind the user to restart.
+update:
+    scripts/play-profile install
+    scripts/play-profile verify
+    @echo "Play source is live through installed symlinks; restart running harnesses to reload it."
+
 # Show the exact roots and rote skills that install would change.
 plan:
     PLAY_PROFILE_VERBOSE=1 scripts/play-profile plan
@@ -30,6 +36,10 @@ verify-profile:
 # Start a fresh harness process so it reloads the installed skill profile.
 harness harness="codex":
     scripts/start-harness {{harness}}
+
+# Start Codex with compact responses and no reasoning-event rendering for this session.
+harness-quiet:
+    scripts/start-harness --quiet codex
 
 # Run a read-only prompt that must reach Play's no-match consent gate.
 smoke harness="codex":

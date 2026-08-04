@@ -146,6 +146,39 @@ actions.each do |name, action|
              "action #{name}: declare events or events_by_state")
 end
 
+prompts.each do |name, prompt|
+  question = prompt["question"]
+  check.call(question.is_a?(String) && question.strip.end_with?("?"),
+             "prompt #{name}: question must be a non-empty question ending in ?")
+  check.call(%w[single multiple].include?(prompt["selection"]),
+             "prompt #{name}: selection must be single or multiple")
+  choices = prompt.fetch("choices", [])
+  check.call(choices.is_a?(Array) && !choices.empty?,
+             "prompt #{name}: must declare at least one static choice")
+  declared_events = Set.new(prompt.fetch("events", {}).keys)
+  presented_events = Set.new
+  choices.each do |choice|
+    %w[id label description event].each do |field|
+      check.call(choice[field].is_a?(String) && !choice[field].empty?,
+                 "prompt #{name}: every choice needs #{field}")
+    end
+    presented_events << choice["event"] if choice["event"]
+  end
+  if source = prompt["choices_from"]
+    %w[context label_field description_field value_field event].each do |field|
+      check.call(source[field].is_a?(String) && !source[field].empty?,
+                 "prompt #{name}: choices_from needs #{field}")
+    end
+    presented_events << source["event"] if source["event"]
+  end
+  check.call(presented_events == declared_events,
+             "prompt #{name}: presented choices must cover exactly its declared events")
+  if prompt["selection"] == "multiple"
+    check.call(prompt["minimum_selected"].is_a?(Integer) && prompt["minimum_selected"] >= 1,
+               "prompt #{name}: multiple selection needs minimum_selected >= 1")
+  end
+end
+
 context_roots = Set.new(context_schema.fetch("required", []))
 actions.each do |name, action|
   action.fetch("input_required", []).each do |input|
@@ -199,10 +232,10 @@ loop do
 end
 
 dominance_rules = {
-  "search" => %w[use_inspect explore_prepare explore_route],
-  "crystallize" => %w[save_offer author_release private_publish public_publish index],
-  "save_offer" => %w[author_release private_publish public_publish index],
-  "author_release" => %w[private_publish public_publish index]
+  "crystallize" => %w[save_offer author_release private_publish public_publish index saved_inspect],
+  "save_offer" => %w[author_release private_publish public_publish index saved_inspect],
+  "author_release" => %w[private_publish public_publish index saved_inspect],
+  "index" => %w[saved_inspect]
 }
 dominance_rules.each do |dominator, governed_states|
   governed_states.each do |state|
@@ -215,14 +248,32 @@ def target_for(states, state, event, branch = 0)
   states.dig(state, "on", event, branch, "target")
 end
 
-check.call(target_for(states, "use_preflight", "play_ready") == "use_run",
-           "an exact ready local Play must run directly")
-check.call(target_for(states, "use_preflight", "play_resolution_required") == "use_resolve",
-           "only a resolution requirement may enter use_resolve")
-check.call(target_for(states, "use_resolve", "play_resolved") == "use_run",
-           "resolved exact version must return to use_run")
+check.call(target_for(states, "qualify", "exact_play_request") == "use_run",
+           "an exact Play request must enter the first-class controller directly")
+check.call(target_for(states, "qualify", "play_search_request") == "search",
+           "an explicit Play search must use the unified search action")
+check.call(target_for(states, "search", "search_ready") == "search_present",
+           "a search-only request must present results without running a Play")
+check.call(target_for(states, "classify", "full_match") == "use_run",
+           "an adequate discovered Play must enter the first-class controller")
+check.call(states.dig("use_run", "entry", "action") == "run_registry_play",
+           "Use mode must be owned by run_registry_play")
+check.call(actions.dig("run_registry_play", "command") ==
+           "rote play run <match.reference> <exact-user-parameters> --yes",
+           "Use mode must invoke rote play run")
+check.call(actions.dig("inspect_saved_play", "command") ==
+           "rote play inspect <publication.canonical_reference> --json",
+           "saved Play readback must invoke rote play inspect --json")
+check.call(actions.dig("search_authorized_plays", "command") ==
+           "scripts/play-search <request.intent> --json",
+           "Play discovery must invoke the unified local and registry search")
+%w[use_inspect use_preflight use_resolve].each do |state|
+  check.call(!states.key?(state), "#{state} must stay inside the rote play run controller")
+end
 check.call(predecessors["index"] == Set["private_publish", "public_publish"],
            "index may follow only successful private or public publication")
+check.call(predecessors["saved_inspect"] == Set["index"],
+           "saved inspection may follow only successful indexing")
 check.call(edges["use_receipt"] == Set["receipt", "blocked"],
            "Use receipt must terminate without publication or indexing")
 check.call(target_for(states, "save_offer", "save_skipped") == "completed",

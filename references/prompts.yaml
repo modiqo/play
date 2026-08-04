@@ -2,37 +2,73 @@ schema: play.prompts/v1
 
 prompts:
   explore_or_exit:
-    message: >
+    question: >
       I couldn't find a Play that adequately covers this. Would you like me to explore with rote
       and preserve the successful path as a reusable Play, or continue normally?
+    selection: single
+    choices:
+      - {id: explore, label: Explore with rote, description: Attempt the outcome and offer to preserve a verified reusable Play., event: explore_approved, recommended: true}
+      - {id: continue, label: Continue normally, description: Leave Play and handle this as an ordinary one-off task., event: ordinary_execution_selected}
     events:
       explore_approved: [prompt_version, selected_at]
       ordinary_execution_selected: [prompt_version, selected_at]
 
   repair_or_exit:
-    message: >
+    question: >
       The selected Play could not produce a verified result. Would you like me to explore with rote
       to repair it, or continue normally?
+    selection: single
+    choices:
+      - {id: repair, label: Explore a repair, description: Diagnose the drift and offer to preserve a verified repair., event: repair_approved, recommended: true}
+      - {id: continue, label: Continue normally, description: Leave Play and handle the remaining work as a one-off task., event: ordinary_execution_selected}
     events:
       repair_approved: [prompt_version, selected_at]
       ordinary_execution_selected: [prompt_version, selected_at]
 
   widen_modalities:
-    message: >
+    question: >
       The allowed modalities cannot complete the outcome. May I widen the modality set as shown?
+    selection: single
+    choices:
+      - {id: allow, label: Allow shown modalities, description: Add only the displayed modalities for this task., event: modality_widening_approved}
+      - {id: keep, label: Keep current limits, description: Preserve the current constraints and stop this Play as blocked., event: modality_widening_declined}
     events:
       modality_widening_approved: [prompt_version, selected_at, allowed]
       modality_widening_declined: [prompt_version, selected_at]
 
   private_public_or_skip:
-    message: Save this Play as Private, Public, or Skip?
+    question: How should I preserve this verified Play?
+    selection: single
+    choices:
+      - {id: private, label: Private, description: Publish it to an authorized private organization., event: save_private, recommended: true}
+      - {id: public, label: Public, description: Publish it under a selected public identity or organization., event: save_public}
+      - {id: skip, label: Skip, description: Keep the verified result but do not publish or index a Play., event: save_skipped}
     events:
       save_private: [prompt_version, selected_at]
       save_public: [prompt_version, selected_at]
       save_skipped: [prompt_version, selected_at]
 
   select_public_owner:
-    message: Select the public personal or organization identity that should own this Play.
+    question: Which public identity or organization should own this Play?
+    selection: single
+    choices_from:
+      context: owner_choices
+      label_field: display_name
+      description_field: ownership_description
+      value_field: publication.owner
+      event: public_owner_selected
+    choices:
+      - {id: cancel, label: Cancel publication, description: Stop without selecting a public owner., event: public_owner_declined}
     events:
       public_owner_selected: [prompt_version, selected_at, publication.owner]
       public_owner_declined: [prompt_version, selected_at]
+
+  select_management_views:
+    question: Which Play inventory views would you like to see?
+    selection: multiple
+    minimum_selected: 1
+    choices:
+      - {id: org_summary, label: Organization summary, description: Show each authorized organization with member and private/public Play counts., event: management_views_selected, recommended: true}
+      - {id: plays_by_org, label: Plays by organization, description: Group every authorized private and public Play by organization., event: management_views_selected}
+    events:
+      management_views_selected: [prompt_version, selected_at, management.views]

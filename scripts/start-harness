@@ -22,6 +22,14 @@ COMMANDS = {
     "claude": ["claude"],
     "kimi": ["kimi"],
 }
+CODEX_QUIET_CONFIG = [
+    "-c",
+    'model_verbosity="low"',
+    "-c",
+    'model_reasoning_summary="none"',
+    "-c",
+    "hide_agent_reasoning=true",
+]
 
 
 def verify_profile() -> None:
@@ -34,10 +42,14 @@ def installed_harnesses() -> list[str]:
     return [name for name, command in COMMANDS.items() if shutil.which(command[0])]
 
 
-def interactive(name: str) -> None:
-    command = COMMANDS[name]
+def interactive(name: str, quiet: bool = False) -> None:
+    command = list(COMMANDS[name])
     if not shutil.which(command[0]):
         raise SystemExit(f"{name} is not installed or not on PATH")
+    if quiet:
+        if name != "codex":
+            raise SystemExit("--quiet currently supports only the Codex harness")
+        command.extend(CODEX_QUIET_CONFIG)
     verify_profile()
     os.chdir(ROOT)
     os.execvp(command[0], command)
@@ -95,9 +107,17 @@ def main() -> None:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--smoke", action="store_true")
     mode.add_argument("--smoke-all", action="store_true")
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="start Codex with low verbosity and reasoning events hidden",
+    )
     parser.add_argument("harness", nargs="?", choices=tuple(COMMANDS), default="codex")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
     args = parser.parse_args()
+
+    if args.quiet and (args.smoke or args.smoke_all):
+        parser.error("--quiet is only available for interactive Codex sessions")
 
     if args.smoke_all:
         harnesses = installed_harnesses()
@@ -108,7 +128,7 @@ def main() -> None:
     elif args.smoke:
         smoke(args.harness, args.prompt)
     else:
-        interactive(args.harness)
+        interactive(args.harness, quiet=args.quiet)
 
 
 if __name__ == "__main__":

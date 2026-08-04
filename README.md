@@ -19,6 +19,15 @@ just install
 just verify-profile
 ```
 
+After editing the source skill, confirm that every source-linked installation is still valid:
+
+```bash
+just update
+```
+
+The links make source edits live immediately; a running harness must still be restarted to reload
+the revised skill.
+
 `install` discovers every installed harness skill root containing `rote` or `rote-*`, links this
 Play skill into each root, and makes the rote skills explicit-only. It snapshots the original rote
 activation files so the change is reversible. Restart running harnesses after enabling the profile.
@@ -40,6 +49,16 @@ just harness claude
 just harness kimi
 ```
 
+Start a compact Codex session without changing global Codex configuration:
+
+```bash
+just harness-quiet
+```
+
+This launch sets `model_verbosity="low"`, `model_reasoning_summary="none"`, and
+`hide_agent_reasoning=true` as per-session overrides. It reduces model narration and reasoning
+events; the Codex UI may still render tool calls that were actually made.
+
 Run a read-only smoke test that must reach Play's Explore-or-continue consent gate:
 
 ```bash
@@ -55,6 +74,44 @@ just smoke-all
 ```
 
 Smoke tests start new harness processes and may consume model credits.
+
+## Manage Plays
+
+The explicit `$play` surface supports organization and registry inventories:
+
+```text
+$play list orgs
+$play list plays
+$play list
+```
+
+Search local and authorized registry Plays together:
+
+```text
+$play search live status services AI models infrastructure latency
+```
+
+Search normalizes punctuation and repeated terms, runs both sources concurrently, deduplicates
+aliases and versions by canonical Play reference, and shows a URI plus the next `rote play run`
+command for every registry-addressable result.
+
+The organization view shows active member, private Play, public Play, and total counts. The Play
+view groups private and public Plays under each authorized organization. An ambiguous `$play list`
+request presents both views as structured choices supported by the active harness.
+
+`rote play` is the first-class command surface. For example, an exact registry Play request runs
+through its lifecycle-owning controller in one operation:
+
+```bash
+rote play run warsaw-rust/hn-top-comments --yes
+```
+
+Play uses `rote play inspect <reference> --json` for inspection. It uses `rote flow` or
+`rote registry flow` only where `rote play` has no equivalent capability; it never decomposes a
+failed `rote play` operation into a pull-plus-Flow-run fallback.
+
+After a new Play is published and indexed, Play reads the canonical registry entry back with JSON
+inspection, verifies its owner/version/visibility, and only then reports success.
 
 ## Disable
 
