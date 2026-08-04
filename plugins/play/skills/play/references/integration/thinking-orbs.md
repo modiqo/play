@@ -17,6 +17,12 @@ truthful terminal/chat fallback, for example `⟡ Wiring the right pieces togeth
 animation. Agents should use either the host-rendered event or the fallback line for a milestone,
 never both.
 
+The presence of this repository's React source is not a renderer capability. A host must expose a
+callable MCP Apps or equivalent custom-UI surface that consumes the payload. Codex CLI/terminal and
+Claude Code text transcripts cannot mount the component from `SKILL.md`; they must use the exact
+glyph fallback. Do not extract only `message` from the JSON mapping—the glyph is part of the visible
+fallback contract.
+
 The exhaustive mapping lives in `thinking-orbs.json` and uses all nine animations by trajectory:
 
 | Orb | Play trajectory |
@@ -46,4 +52,4 @@ claim that the React orb is visible unless the host actually mounted the rendere
 
 Skills cannot replace Codex, Claude Code, Cursor, or Kimi's native activity chrome. Hosts that do
 not expose a React extension point should ignore this optional adapter and continue using Play's
-milestone-only text updates.
+milestone-only glyph-and-message updates.

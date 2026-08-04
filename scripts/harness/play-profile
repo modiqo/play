@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import copy
 import hashlib
 import json
 import os
@@ -53,7 +54,7 @@ def iter_rote_skills(root: Path):
                 yield child
 
 
-def discover_roots() -> list[Path]:
+def discover_roots(*, include_plugin_caches: bool | None = None) -> list[Path]:
     configured = configured_roots()
     candidates: set[Path] = set(configured or [])
 
@@ -63,9 +64,20 @@ def discover_roots() -> list[Path]:
         candidates.update(home.glob(".*/agent/skills"))
         candidates.update(home.glob(".*/data/skills"))
         candidates.update((home / ".config").glob("*/skills"))
-        candidates.update((home / ".codex" / "plugins" / "cache").glob("*/*/*/skills"))
-        candidates.update((home / ".codex" / ".tmp" / "marketplaces").glob("*/plugins/*/skills"))
-        candidates.update((home / ".claude" / "plugins" / "cache").glob("*/*/*/skills"))
+        if include_plugin_caches is None:
+            include_plugin_caches = marketplace_source()
+        if include_plugin_caches:
+            candidates.update(
+                (home / ".codex" / "plugins" / "cache").glob("*/*/*/skills")
+            )
+            candidates.update(
+                (home / ".codex" / ".tmp" / "marketplaces").glob(
+                    "*/plugins/*/skills"
+                )
+            )
+            candidates.update(
+                (home / ".claude" / "plugins" / "cache").glob("*/*/*/skills")
+            )
 
         for variable, suffix in (
             ("CODEX_HOME", "skills"),
@@ -242,7 +254,10 @@ def verify_state(state: dict[str, object]) -> list[str]:
     if not play_is_implicit():
         problems.append("Play source is not configured for implicit invocation")
     try:
-        current_roots = {str(root) for root in discover_roots()}
+        current_roots = {
+            str(root)
+            for root in discover_roots(include_plugin_caches=expected_mode == "marketplace")
+        }
     except ProfileError:
         current_roots = set()
     recorded_roots = set(map(str, state["roots"]))
@@ -259,36 +274,157 @@ def verify_state(state: dict[str, object]) -> list[str]:
     return problems
 
 
-def install() -> None:
-    existing = load_state()
-    if existing:
-        problems = verify_state(existing)
-        if problems:
-            raise ProfileError(
-                "profile state exists but is inconsistent:\n  " + "\n  ".join(problems)
-            )
-        print(
-            f"Play-first profile already active across {len(existing['roots'])} "
-            "harness root(s)"
-        )
-        return
-    if not (SOURCE / "SKILL.md").is_file() or not play_is_implicit():
-        raise ProfileError("Play source is incomplete or not implicit")
-
-    roots = discover_roots()
-    mode = "marketplace" if marketplace_source() else "source-linked"
+def desired_profile(mode: str) -> tuple[list[Path], list[Path], dict[Path, Path]]:
+    roots = discover_roots(include_plugin_caches=mode == "marketplace")
     play_links = [] if mode == "marketplace" else [root / "play" for root in roots]
-    conflicts = [path for path in play_links if path.exists() or path.is_symlink()]
+    rote_skills: dict[Path, Path] = {}
+    for root in roots:
+        for visible_path in iter_rote_skills(root):
+            rote_skills.setdefault(visible_path.resolve(), visible_path)
+    return roots, play_links, rote_skills
+
+
+def activation_paths(skill: Path) -> tuple[Path, Path]:
+    return skill / "SKILL.md", skill / "agents" / "openai.yaml"
+
+
+def reconcile(state: dict[str, object]) -> None:
+    source = Path(str(state["source"])).resolve()
+    if source != SOURCE:
+        raise ProfileError(f"profile state belongs to another Play source: {source}")
+    mode = "marketplace" if marketplace_source() else "source-linked"
+    if state.get("mode", "source-linked") != mode:
+        raise ProfileError(f"activation mode changed; expected {mode}")
+    if not play_is_implicit():
+        raise ProfileError("Play source is not configured for implicit invocation")
+
+    roots, play_links, rote_skills = desired_profile(mode)
+    old_links = [Path(str(value)) for value in state["play_links"]]
+    old_link_set = set(old_links)
+    desired_link_set = set(play_links)
+    for link in old_links:
+        if link.is_symlink() and link.resolve() == source:
+            continue
+        if not link.exists() and not link.is_symlink():
+            continue
+        raise ProfileError(f"refusing to replace changed Play install: {link}")
+    conflicts = [
+        link
+        for link in desired_link_set - old_link_set
+        if link.exists() or link.is_symlink()
+    ]
     if conflicts:
         raise ProfileError(
             "refusing to replace existing Play installs:\n  "
             + "\n  ".join(map(str, conflicts))
         )
 
-    rote_skills: dict[Path, Path] = {}
-    for root in roots:
-        for visible_path in iter_rote_skills(root):
-            rote_skills.setdefault(visible_path.resolve(), visible_path)
+    backups = copy.deepcopy(state["backups"])
+    rollback_files: dict[Path, dict[str, object]] = {}
+    created_links: list[Path] = []
+    removed_links: list[Path] = []
+    rebased_skills: set[Path] = set()
+    previous_skills = {Path(str(value)) for value in state["rote_skills"]}
+    desired_skills = set(rote_skills)
+
+    try:
+        for skill in sorted(previous_skills - desired_skills, key=str):
+            for path in activation_paths(skill):
+                record = backups.pop(str(path), None)
+                if record is None or not path.is_file():
+                    continue
+                if record.get("managed_sha256") != digest(read_bytes(path)):
+                    continue
+                rollback_files.setdefault(path, snapshot(path))
+                restore(path, record)
+
+        for skill in sorted(desired_skills, key=str):
+            markdown, metadata = activation_paths(skill)
+            for path in (markdown, metadata):
+                record = backups.get(str(path))
+                managed = record.get("managed_sha256") if record else None
+                current_matches = (
+                    path.is_file() and managed is not None and managed == digest(read_bytes(path))
+                )
+                if current_matches:
+                    continue
+                rollback_files.setdefault(path, snapshot(path))
+                backups[str(path)] = snapshot(path)
+                if path == markdown:
+                    content = explicit_skill_markdown(read_bytes(path))
+                    mode_bits = path.stat().st_mode & 0o777
+                else:
+                    content = explicit_openai_yaml(read_bytes(path) if path.exists() else None)
+                    mode_bits = 0o644
+                atomic_write(path, content, mode_bits)
+                backups[str(path)]["managed_sha256"] = digest(read_bytes(path))
+                rebased_skills.add(skill)
+
+        for link in sorted(old_link_set - desired_link_set, key=str):
+            if link.is_symlink():
+                link.unlink()
+                removed_links.append(link)
+        for link in sorted(desired_link_set - old_link_set, key=str):
+            link.symlink_to(SOURCE, target_is_directory=True)
+            created_links.append(link)
+
+        profile_changed = bool(
+            rebased_skills
+            or old_link_set != desired_link_set
+            or previous_skills != desired_skills
+            or list(map(str, roots)) != list(map(str, state["roots"]))
+        )
+        if not profile_changed:
+            print(f"Play-first profile already active across {len(roots)} harness root(s)")
+            return
+
+        updated = {
+            **state,
+            "mode": mode,
+            "roots": [str(root) for root in roots],
+            "play_links": [str(link) for link in play_links],
+            "rote_skills": [str(skill) for skill in sorted(desired_skills, key=str)],
+            "backups": backups,
+        }
+        atomic_write(
+            state_path(),
+            (json.dumps(updated, indent=2, sort_keys=True) + "\n").encode(),
+            0o600,
+        )
+    except Exception:
+        for link in reversed(created_links):
+            if link.is_symlink():
+                link.unlink()
+        for link in removed_links:
+            if not link.exists() and not link.is_symlink():
+                link.symlink_to(SOURCE, target_is_directory=True)
+        for path, record in reversed(list(rollback_files.items())):
+            restore(path, record)
+        raise
+
+    print(
+        f"reconciled Play-first {mode} profile across {len(roots)} harness root(s); "
+        f"rebased {len(rebased_skills)} refreshed/new rote skill(s)"
+    )
+    print("restart the harness to reload the reconciled activation profile")
+
+
+def install() -> None:
+    existing = load_state()
+    if existing:
+        reconcile(existing)
+        return
+    if not (SOURCE / "SKILL.md").is_file() or not play_is_implicit():
+        raise ProfileError("Play source is incomplete or not implicit")
+
+    mode = "marketplace" if marketplace_source() else "source-linked"
+    roots, play_links, rote_skills = desired_profile(mode)
+    conflicts = [path for path in play_links if path.exists() or path.is_symlink()]
+    if conflicts:
+        raise ProfileError(
+            "refusing to replace existing Play installs:\n  "
+            + "\n  ".join(map(str, conflicts))
+        )
 
     backups: dict[str, dict[str, object]] = {}
     created_links: list[Path] = []
@@ -343,17 +479,14 @@ def install() -> None:
 
 
 def plan() -> None:
-    roots = discover_roots()
     mode = "marketplace" if marketplace_source() else "source-linked"
-    rote_skills = {
-        visible.resolve()
-        for root in roots
-        for visible in iter_rote_skills(root)
-    }
-    conflicts = [] if mode == "marketplace" else [
-        root / "play"
-        for root in roots
-        if (root / "play").exists() or (root / "play").is_symlink()
+    roots, play_links, rote_skills = desired_profile(mode)
+    state = load_state()
+    managed_links = {Path(str(value)) for value in state["play_links"]} if state else set()
+    conflicts = [
+        link
+        for link in play_links
+        if (link.exists() or link.is_symlink()) and link not in managed_links
     ]
     print(
         f"Play-first {mode} plan: {len(roots)} harness root(s), "
@@ -421,7 +554,7 @@ def report(require_active: bool) -> None:
     if state is None:
         if require_active:
             raise ProfileError("Play-first profile is not installed")
-        roots = discover_roots()
+        roots = discover_roots(include_plugin_caches=marketplace_source())
         print(
             f"Play-first profile: inactive ({len(roots)} rote harness root(s) detected)"
         )

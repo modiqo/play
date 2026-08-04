@@ -34,7 +34,7 @@ ui-check:
 test: check
     python3 -m unittest discover -s tests -p 'test_*.py'
 
-# Activate Play as the implicit entrypoint and make installed rote skills explicit-only.
+# Activate or safely converge Play-first metadata after harness/Rote skill updates.
 install:
     scripts/harness/play-profile install
 

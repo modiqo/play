@@ -105,6 +105,44 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertTrue((self.roots[0] / "play").is_symlink())
         self.assertTrue(self.state.exists())
 
+    def test_install_rebases_refreshed_rote_skill_and_remains_reversible(self) -> None:
+        self.run_profile("install")
+        skill = self.roots[0] / "rote"
+        markdown = skill / "SKILL.md"
+        metadata = skill / "agents" / "openai.yaml"
+        refreshed_markdown = b"---\nname: rote\ndescription: refreshed\n---\n\n# Refreshed\n"
+        refreshed_metadata = b'interface:\n  display_name: "Refreshed Rote"\n'
+        markdown.write_bytes(refreshed_markdown)
+        metadata.write_bytes(refreshed_metadata)
+
+        result = self.run_profile("install")
+
+        self.assertIn("reconciled", result.stdout)
+        self.assertIn("disable-model-invocation: true", markdown.read_text())
+        self.assertIn("allow_implicit_invocation: false", metadata.read_text())
+        self.run_profile("uninstall")
+        self.assertEqual(refreshed_markdown, markdown.read_bytes())
+        self.assertEqual(refreshed_metadata, metadata.read_bytes())
+
+    def test_install_converges_a_new_harness_root(self) -> None:
+        self.run_profile("install")
+        new_root = Path(self.temporary.name) / "new-harness" / "skills"
+        new_skill = new_root / "rote-new"
+        new_skill.mkdir(parents=True)
+        original = b"---\nname: rote-new\ndescription: new\n---\n"
+        (new_skill / "SKILL.md").write_bytes(original)
+        self.roots.append(new_root)
+
+        result = self.run_profile("install")
+
+        self.assertIn("reconciled", result.stdout)
+        self.assertTrue((new_root / "play").is_symlink())
+        self.assertIn(
+            "disable-model-invocation: true", (new_skill / "SKILL.md").read_text()
+        )
+        self.run_profile("uninstall")
+        self.assertEqual(original, (new_skill / "SKILL.md").read_bytes())
+
     def test_marketplace_install_does_not_create_duplicate_play_links(self) -> None:
         plugin = Path(self.temporary.name) / "plugin"
         self.source = plugin / "skills" / "play"

@@ -41,3 +41,5 @@
 | P-0035 | skill-creator | conclusion | open | references/integration/thinking-orbs.md | Thinking orbs are an optional host presentation adapter driven only by v |
 | P-0036 | skill-creator | conclusion | open | scripts/lib/play/presentation.py | Play presentation resolves a validated machine state into one play.prese |
 | P-0037 | skill-creator | conclusion | open | SKILL.md | The Play skill presents orb state and playful copy only at user-visible  |
+| P-0038 | rote-troubleshooting | conclusion | open | scripts/harness/play-profile | Re-running Play profile installation after a Rote or harness refresh mus |
+| P-0039 | rote-troubleshooting | conclusion | open | SKILL.md | In a text-only harness, every visible Play milestone must use the exact  |

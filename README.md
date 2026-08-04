@@ -116,6 +116,12 @@ the revised skill.
 Play skill into each root, and makes the rote skills explicit-only. It snapshots the original rote
 activation files so the change is reversible. Restart running harnesses after enabling the profile.
 
+It is also the convergence command after `rote harness setup`, a plugin refresh, or a newly added
+harness. If Rote replaced managed skill files, `just install` preserves those refreshed files as the
+new uninstall baseline and reapplies only Play's activation metadata. It adds new roots/skills and
+retires removed ones without restoring stale backups. A changed or conflicting Play link still
+fails closed.
+
 Inspect the active profile at any time:
 
 ```bash
@@ -302,9 +308,11 @@ scripts/bin/play-presentation use_run --json
 # play.presentation/v1 payload for a capable host renderer
 ```
 
-When a host exposes the React renderer, `PlayActivity` displays the animated orb and message. In a
-plain terminal or chat, the agent uses the static glyph and message without claiming it is animated.
-During the blocking `rote play run` command, Rote retains ownership of its own progress display.
+When a compatible MCP Apps/custom-UI host exposes a callable renderer, `PlayActivity` displays the
+animated orb and message. Installing the skills-only plugin does not create that renderer. Codex CLI
+and Claude Code text transcripts use the exact static glyph and message without claiming it is
+animated. During the blocking `rote play run` command, Rote retains ownership of its own progress
+display.
 
 This is an optional host adapter, not a claim that a skill can replace native Codex, Claude Code,
 Cursor, or Kimi activity chrome. Hosts without a custom React surface continue to receive Play's

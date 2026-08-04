@@ -83,15 +83,18 @@ prose when its declared return event is absent or invalid.
   remain mode selection, a search or run beginning, an approval gate, exploration beginning,
   crystallization/publication, a material blocker, and a terminal result—not every fast internal
   transition.
-- If the host explicitly exposes a `ThinkingOrb`, `PlayActivity`, or `play.presentation/v1`
-  renderer, supply the resolved state, orb, message, accessible label, and terminal flag to that
-  renderer. Do not print the raw payload to the user.
-- Otherwise show the mapping's `fallback` line as the milestone update. Resolve it with
-  `scripts/bin/play-presentation <state>` when needed. This static glyph plus playful message is the
-  truthful terminal/chat fallback; never describe it as an animated orb.
-- For a prompt state, place its playful listening message with the declared structured question
-  instead of sending a separate progress update. For terminal states, incorporate its message into
-  the actual outcome and do not add a second celebratory line.
+- A renderer is available only when the harness exposes a callable MCP Apps/custom-UI capability
+  that accepts `play.presentation/v1`. Merely bundling `PlayActivity.tsx`, running in Codex or
+  Claude terminal mode, or mentioning React is not renderer availability. Never claim an animated
+  orb is visible without that callable capability.
+- With a renderer, supply the resolved state, orb, message, accessible label, and terminal flag;
+  do not print raw JSON. Without one, use the exact stdout of
+  `scripts/bin/play-presentation <state>` as the first line of the milestone. It includes both the
+  static orb glyph and message. Do not query the mapping with `jq`, copy only its `message`, omit the
+  glyph, or call the fallback animated.
+- For a prompt state, prefix the declared structured question with its exact listening fallback
+  instead of sending a separate update. For a terminal state, make the exact terminal fallback the
+  first line of the actual outcome and do not add a second celebratory line.
 - Immediately before the single approved `rote play run`, present `use_run` once. Rote owns any
   progress it renders while that blocking command executes. Resume Play presentation only after the
   command returns and the machine enters its next milestone.
