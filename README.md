@@ -108,6 +108,21 @@ missing global or personal metrics are explicit rather than inferred. The emitte
 can be persisted by an authorized host for gap-free daily delivery; the command does not write host
 state itself.
 
+For recurring delivery, probe the installed harnesses and use the host-neutral two-phase contract:
+
+```bash
+scripts/bin/play-scheduler-probe
+scripts/bin/play-delivery prepare --target-key daily-self --channel harness --days 1
+scripts/bin/play-delivery release --envelope envelope.json --ack delivered-ack.json
+```
+
+The host scheduler owns recurrence, destination delivery, and storage. `prepare` emits an immutable
+envelope with a deterministic delivery ID; `release` emits the next checkpoint only for a matching
+successful acknowledgment and never persists it. Failed sends therefore leave the prior checkpoint
+unchanged. The locally installed Codex, Claude, and Kimi CLIs currently expose no recognized native
+recurring scheduler command, so Play reports that capability as unavailable instead of fabricating
+cron or background state.
+
 Search normalizes punctuation and repeated terms, runs both sources concurrently, deduplicates
 aliases and versions by canonical Play reference, and shows a URI plus the next `rote play run`
 command for every registry-addressable result.

@@ -62,7 +62,7 @@ prose when its declared return event is absent or invalid.
   its verified receipt. During Explore, keep result-dependent commands separate when correctness
   requires it, but do not narrate each command.
 - For non-interactive rote execution, suppress optional CLI chatter when safe with
-  `ROTE_FLOW_PROGRESS=0` and `rote_NO_HINTS=1`, and prefer summary or structured result modes.
+  `ROTE_FLOW_PROGRESS=0` and `ROTE_NO_HINTS=1`, and prefer summary or structured result modes.
   Never suppress primary payloads, errors, approval gates, effect disclosures, or receipts.
 - Tool-call rendering is owned by the host UI, not this skill. Do not claim the skill can hide tool
   calls. A single visible execution requires a host-level Play runtime/tool that owns the machine;
@@ -99,6 +99,8 @@ prose when its declared return event is absent or invalid.
   [references/awareness/management.md](references/awareness/management.md).
 - Before daily or weekly Play digests, new/revised Play awareness, public ranking, or personal
   impact summaries, read [references/awareness/digest.md](references/awareness/digest.md).
+- Before recurring digest setup, scheduler discovery, delivery retry, or checkpoint release, read
+  [references/integration/scheduling.md](references/integration/scheduling.md).
 - Before presenting any finite choice, read
   [references/integration/elicitation.md](references/integration/elicitation.md).
 - Before invoking a `rote-*` specialist, read

@@ -16,13 +16,13 @@ class CommandError(RuntimeError):
 ErrorT = TypeVar("ErrorT", bound=CommandError)
 
 
-def run_json(
+def run_text(
     command: Sequence[str],
     *,
     error_type: type[ErrorT] = CommandError,
     environment: dict[str, str] | None = None,
     timeout_seconds: float | None = None,
-) -> Any:
+) -> str:
     effective_environment = os.environ.copy()
     effective_environment.setdefault("ROTE_NO_HINTS", "1")
     if environment:
@@ -50,8 +50,25 @@ def run_json(
     if result.returncode:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown command error"
         raise error_type(f"{label} failed: {detail}")
+    return result.stdout
+
+
+def run_json(
+    command: Sequence[str],
+    *,
+    error_type: type[ErrorT] = CommandError,
+    environment: dict[str, str] | None = None,
+    timeout_seconds: float | None = None,
+) -> Any:
+    output = run_text(
+        command,
+        error_type=error_type,
+        environment=environment,
+        timeout_seconds=timeout_seconds,
+    )
+    label = " ".join(command[:4])
     try:
-        return json.loads(result.stdout)
+        return json.loads(output)
     except json.JSONDecodeError as error:
         raise error_type(f"{label} returned malformed JSON") from error
 

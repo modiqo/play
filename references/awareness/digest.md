@@ -50,5 +50,8 @@ Play enters creator discovery.
 The skill cannot invent a scheduler or persist a daily delivery cursor. `$play digest` emits a
 `play.digest-checkpoint/v1` `next_checkpoint`; an authorized host may persist that object and pass
 it back with `--checkpoint <path>`. `--since <timestamp>` is the stateless equivalent. The digest
-command reads checkpoint state but never advances a file itself. Automatic delivery still needs an
-authorized host hook or scheduler; `$play digest` remains the safe explicit entrypoint.
+command reads checkpoint state but never advances a file itself.
+
+For automatic delivery, read [../integration/scheduling.md](../integration/scheduling.md). Use an
+authorized host scheduler with the two-phase `play-delivery prepare/release` contract. Never
+advance a checkpoint until the host provides a matching delivered acknowledgment.

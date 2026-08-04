@@ -278,6 +278,61 @@ def render_markdown(digest: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def collect_digest(
+    *,
+    days: int = 1,
+    since: str | None = None,
+    checkpoint: Path | None = None,
+    public_limit: int = 5,
+    inspection_budget: int = 8,
+    update_inspection_budget: int = 4,
+    org_slugs: list[str] | None = None,
+    end: datetime | None = None,
+) -> dict[str, Any]:
+    """Collect a digest without coupling callers to the CLI or output renderer."""
+
+    if min(days, public_limit, inspection_budget, update_inspection_budget) < 1:
+        raise ValueError("digest limits and budgets must be at least 1")
+    start, resolved_end = resolve_window(
+        end=end or datetime.now(timezone.utc),
+        days=days,
+        since=since,
+        checkpoint=checkpoint,
+    )
+    selected_orgs = org_slugs or []
+    organizations = (
+        [Organization(slug, slug) for slug in sorted(set(selected_orgs))]
+        if selected_orgs
+        else load_organizations()
+    )
+    grouped = load_authorized_flows({org.slug for org in organizations})
+    candidate_new, candidate_revised = classify_updates(grouped, start, resolved_end)
+    update_batch = inspect_references(
+        [item["reference"] for item in [*candidate_new, *candidate_revised]],
+        limit=update_inspection_budget,
+    )
+    update_inspections = {flow["reference"]: flow for _, flow in update_batch.flows}
+    inspected: InspectionBatch = inspect_authorized_public_flows(
+        grouped,
+        limit=inspection_budget,
+    )
+    return build_digest(
+        organizations,
+        grouped,
+        inspected.flows,
+        start=start,
+        end=resolved_end,
+        public_limit=public_limit,
+        ranking_complete=not inspected.errors and inspected.omitted_count == 0,
+        ranking_errors=inspected.errors,
+        ranking_candidate_count=inspected.candidate_count,
+        ranking_omitted_count=inspected.omitted_count,
+        update_inspections=update_inspections,
+        update_inspection_errors=update_batch.errors,
+        update_omitted_count=update_batch.omitted_count,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=1)
@@ -312,44 +367,16 @@ def main() -> int:
     ):
         parser.error("digest limits and budgets must be at least 1")
     try:
-        start, end = resolve_window(
-            end=datetime.now(timezone.utc),
+        digest = collect_digest(
             days=args.days,
             since=args.since,
             checkpoint=args.checkpoint,
-        )
-        organizations = (
-            [Organization(slug, slug) for slug in sorted(set(args.org))]
-            if args.org
-            else load_organizations()
-        )
-        grouped = load_authorized_flows({org.slug for org in organizations})
-        candidate_new, candidate_revised = classify_updates(grouped, start, end)
-        update_batch = inspect_references(
-            [item["reference"] for item in [*candidate_new, *candidate_revised]],
-            limit=args.update_inspection_budget,
-        )
-        update_inspections = {flow["reference"]: flow for _, flow in update_batch.flows}
-        inspected: InspectionBatch = inspect_authorized_public_flows(
-            grouped,
-            limit=args.inspection_budget,
-        )
-        digest = build_digest(
-            organizations,
-            grouped,
-            inspected.flows,
-            start=start,
-            end=end,
             public_limit=args.public_limit,
-            ranking_complete=not inspected.errors and inspected.omitted_count == 0,
-            ranking_errors=inspected.errors,
-            ranking_candidate_count=inspected.candidate_count,
-            ranking_omitted_count=inspected.omitted_count,
-            update_inspections=update_inspections,
-            update_inspection_errors=update_batch.errors,
-            update_omitted_count=update_batch.omitted_count,
+            inspection_budget=args.inspection_budget,
+            update_inspection_budget=args.update_inspection_budget,
+            org_slugs=args.org,
         )
-    except (RegistryReadError, TimeWindowError) as error:
+    except (RegistryReadError, TimeWindowError, ValueError) as error:
         print(f"play-digest: {error}", file=sys.stderr)
         return 1
     print(json_text(digest) if args.as_json else render_markdown(digest))

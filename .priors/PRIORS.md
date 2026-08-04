@@ -4,7 +4,7 @@
 
 | id | area | type | status | where | what |
 |---|---|---|---|---|---|
-| P-0001 | skill-creator | conclusion | open | SKILL.md | Play execution follows references/machine.yaml as the normative lifecycl |
+| P-0001 | skill-creator | conclusion | stale | SKILL.md | Play execution follows references/machine.yaml as the normative lifecycl |
 | P-0002 | skill-creator | conclusion | open | references/modalities.md | CALL, SHELL, and DRIVE are the complete modality set; transformation rem |
 | P-0003 | skill-creator | conclusion | open | references/machine.yaml | An exact ready local Play transitions directly from preflight to run and |
 | P-0004 | skill-creator | conclusion | open | references/lifecycle.md | Private Play persistence means registry publication to a private organiz |
@@ -27,3 +27,5 @@
 | P-0021 | play-architecture-review | conclusion | open | scripts/lib/play/registry.py | Live digest data is collected with organization-scoped flow lists and ca |
 | P-0022 | play-architecture-review | conclusion | open | scripts/lib/play/timewindow.py | Daily digest continuity uses a portable checkpoint token that the comman |
 | P-0023 | play-architecture-review | conclusion | open | scripts/lib/play/commands.py | Play subprocess reads use the supported uppercase ROTE_NO_HINTS environm |
+| P-0024 | skill-creator | conclusion | open | scripts/lib/play/delivery.py | Play emits immutable digest delivery envelopes and releases a checkpoint |
+| P-0025 | skill-creator | conclusion | open | scripts/lib/play/scheduler.py | Play recognizes scheduler capability only from explicit recurring harnes |

@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""Thin entrypoint for host-neutral Play digest delivery."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+from play.delivery import main
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
