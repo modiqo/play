@@ -280,9 +280,9 @@ just ui-check
 ```
 
 ```tsx
-import { PlayThinkingOrb } from '@modiqo/play-thinking-orbs';
+import { PlayActivity } from '@modiqo/play-thinking-orbs';
 
-<PlayThinkingOrb playState="creator_search" size={64} theme="auto" />
+<PlayActivity playState="creator_search" />
 ```
 
 The mapping uses all nine animations for distinct trajectories: listening for declared prompts,
@@ -291,6 +291,20 @@ inspection/execution, weaving for multimodal exploration, shaping for crystalliz
 for release/publication, working for result assembly, and breathing for paused terminal states.
 Every one of the 42 machine states has exactly one accessible status label, and tests fail if the
 machine and mapping drift.
+
+The installed skill also teaches the agent to use the same presentation at meaningful milestones:
+
+```bash
+scripts/bin/play-presentation creator_search
+# ◌ Peeking through the Play shelves…
+
+scripts/bin/play-presentation use_run --json
+# play.presentation/v1 payload for a capable host renderer
+```
+
+When a host exposes the React renderer, `PlayActivity` displays the animated orb and message. In a
+plain terminal or chat, the agent uses the static glyph and message without claiming it is animated.
+During the blocking `rote play run` command, Rote retains ownership of its own progress display.
 
 This is an optional host adapter, not a claim that a skill can replace native Codex, Claude Code,
 Cursor, or Kimi activity chrome. Hosts without a custom React surface continue to receive Play's

@@ -38,6 +38,7 @@ class ThinkingOrbsTest(unittest.TestCase):
         used = {value["orb"] for value in self.mapping["states"].values()}
 
         self.assertEqual(ORB_STATES, used)
+        self.assertEqual(ORB_STATES, set(self.mapping["trajectories"]))
 
     def test_declared_prompts_listen_and_terminals_breathe_paused(self) -> None:
         for state, specification in self.machine["states"].items():
@@ -51,6 +52,11 @@ class ThinkingOrbsTest(unittest.TestCase):
     def test_every_presentation_has_an_accessible_status_label(self) -> None:
         for state, presentation in self.mapping["states"].items():
             self.assertTrue(presentation["label"].strip(), state)
+
+    def test_every_trajectory_has_fun_copy_and_text_orb_fallback(self) -> None:
+        for orb, trajectory in self.mapping["trajectories"].items():
+            self.assertTrue(trajectory["glyph"].strip(), orb)
+            self.assertTrue(trajectory["message"].strip(), orb)
 
 
 if __name__ == "__main__":

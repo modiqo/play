@@ -76,6 +76,28 @@ prose when its declared return event is absent or invalid.
   do not fake it by collapsing result-dependent or approval-gated actions into an unsafe shell
   chain.
 
+## Make milestones feel alive
+
+- For every user-visible milestone, resolve the current machine state through
+  [references/integration/thinking-orbs.json](references/integration/thinking-orbs.json). Milestones
+  remain mode selection, a search or run beginning, an approval gate, exploration beginning,
+  crystallization/publication, a material blocker, and a terminal result—not every fast internal
+  transition.
+- If the host explicitly exposes a `ThinkingOrb`, `PlayActivity`, or `play.presentation/v1`
+  renderer, supply the resolved state, orb, message, accessible label, and terminal flag to that
+  renderer. Do not print the raw payload to the user.
+- Otherwise show the mapping's `fallback` line as the milestone update. Resolve it with
+  `scripts/bin/play-presentation <state>` when needed. This static glyph plus playful message is the
+  truthful terminal/chat fallback; never describe it as an animated orb.
+- For a prompt state, place its playful listening message with the declared structured question
+  instead of sending a separate progress update. For terminal states, incorporate its message into
+  the actual outcome and do not add a second celebratory line.
+- Immediately before the single approved `rote play run`, present `use_run` once. Rote owns any
+  progress it renders while that blocking command executes. Resume Play presentation only after the
+  command returns and the machine enters its next milestone.
+- Keep messages warm and brief, but never let whimsy obscure approval scope, writes, blockers,
+  receipts, or the user's actual result. User-supplied tone and accessibility preferences win.
+
 ## Elicit choices through the harness
 
 - Present every finite user decision as one well-formed question with explicit choices. Do not ask

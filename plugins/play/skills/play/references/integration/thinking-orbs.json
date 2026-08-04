@@ -5,6 +5,17 @@
     "version": "0.2.0",
     "homepage": "https://orbs.jakubantalik.com/"
   },
+  "trajectories": {
+    "working": {"glyph": "⠿", "message": "Keeping the Play moving…"},
+    "searching": {"glyph": "◌", "message": "Peeking through the Play shelves…"},
+    "solving": {"glyph": "◉", "message": "Fitting the puzzle pieces together…"},
+    "listening": {"glyph": "◎", "message": "I’m all ears—your move."},
+    "connecting": {"glyph": "⟡", "message": "Wiring the right pieces together…"},
+    "weaving": {"glyph": "∞", "message": "Weaving tools into a smooth route…"},
+    "composing": {"glyph": "≋", "message": "Giving this Play its finishing touches…"},
+    "breathing": {"glyph": "○", "message": "All settled."},
+    "shaping": {"glyph": "◇", "message": "Turning a good result into a reusable Play…"}
+  },
   "states": {
     "qualify": {"orb": "solving", "label": "Understanding the request…"},
     "awareness_collect": {"orb": "searching", "label": "Checking what changed in Plays…"},
@@ -44,9 +55,9 @@
     "public_publish": {"orb": "composing", "label": "Publishing the public Play…"},
     "index": {"orb": "working", "label": "Indexing the published Play…"},
     "saved_inspect": {"orb": "connecting", "label": "Reading the saved Play back…"},
-    "receipt": {"orb": "breathing", "label": "Play completed with a verified receipt.", "terminal": true},
-    "completed": {"orb": "breathing", "label": "Play completed.", "terminal": true},
-    "exited": {"orb": "breathing", "label": "Play stepped aside.", "terminal": true},
-    "blocked": {"orb": "breathing", "label": "Play is blocked and waiting for a change.", "terminal": true}
+    "receipt": {"orb": "breathing", "label": "Play completed with a verified receipt.", "message": "That’s a wrap—the receipt checks out.", "terminal": true},
+    "completed": {"orb": "breathing", "label": "Play completed.", "message": "All settled—this Play has landed.", "terminal": true},
+    "exited": {"orb": "breathing", "label": "Play stepped aside.", "message": "Stepping aside—the regular route has it from here.", "terminal": true},
+    "blocked": {"orb": "breathing", "label": "Play is blocked and waiting for a change.", "message": "I’ve hit a knot—here’s what needs to change.", "terminal": true}
   }
 }

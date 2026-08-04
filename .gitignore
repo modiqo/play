@@ -2,6 +2,7 @@
 *.tmp
 *.log
 .skillspec/
+.playwright-mcp/
 __pycache__/
 *.pyc
 node_modules/
