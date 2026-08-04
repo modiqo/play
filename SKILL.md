@@ -14,6 +14,8 @@ description: >
 
 Treat `play` as the user-facing controller. Treat `rote-*` skills as internal execution owners.
 Follow the declarative machine instead of reconstructing its lifecycle from prose.
+Keep Play implicitly available at harness startup and invoke explicit-only rote specialists through
+declared handoffs.
 
 ## Start or resume
 

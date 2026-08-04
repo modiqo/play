@@ -1,0 +1,450 @@
+#!/usr/bin/env python3
+"""Install and restore the Play-first skill activation profile."""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+
+SCHEMA = "play.activation-profile/v1"
+SOURCE = Path(__file__).resolve().parent.parent
+
+
+class ProfileError(RuntimeError):
+    pass
+
+
+def state_path() -> Path:
+    override = os.environ.get("PLAY_PROFILE_STATE")
+    if override:
+        return Path(override).expanduser().resolve()
+    state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    return state_home / "play-skill" / "activation-profile.json"
+
+
+def configured_roots() -> list[Path] | None:
+    value = os.environ.get("PLAY_HARNESS_ROOTS")
+    if value is None:
+        return None
+    roots = [Path(item).expanduser().resolve() for item in value.split(os.pathsep) if item]
+    if not roots:
+        raise ProfileError("PLAY_HARNESS_ROOTS is set but empty")
+    return roots
+
+
+def iter_rote_skills(root: Path):
+    try:
+        children = root.iterdir()
+    except OSError:
+        return
+    for child in children:
+        if child.name == "rote" or child.name.startswith("rote-"):
+            if (child / "SKILL.md").is_file():
+                yield child
+
+
+def discover_roots() -> list[Path]:
+    configured = configured_roots()
+    candidates: set[Path] = set(configured or [])
+
+    if configured is None:
+        home = Path.home()
+        candidates.update(home.glob(".*/skills"))
+        candidates.update(home.glob(".*/agent/skills"))
+        candidates.update(home.glob(".*/data/skills"))
+        candidates.update((home / ".config").glob("*/skills"))
+
+        for variable, suffix in (
+            ("CODEX_HOME", "skills"),
+            ("CLAUDE_CONFIG_DIR", "skills"),
+            ("AUTOHAND_HOME", "skills"),
+            ("HERMES_HOME", "skills"),
+            ("VIBE_HOME", "skills"),
+        ):
+            if value := os.environ.get(variable):
+                candidates.add(Path(value).expanduser() / suffix)
+
+    roots = []
+    for root in sorted(candidates, key=lambda item: str(item)):
+        if root.is_dir() and any(iter_rote_skills(root)):
+            roots.append(root.resolve())
+    roots = list(dict.fromkeys(roots))
+    if not roots:
+        raise ProfileError(
+            "no harness skill roots containing rote skills were found; "
+            "run rote harness setup --yes or set PLAY_HARNESS_ROOTS"
+        )
+    return roots
+
+
+def read_bytes(path: Path) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        raise ProfileError(f"cannot read {path}: {error}") from error
+
+
+def digest(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def atomic_write(path: Path, content: bytes, mode: int = 0o644) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_bytes(content)
+        temporary.chmod(mode)
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def snapshot(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {"exists": False}
+    if not path.is_file() or path.is_symlink():
+        raise ProfileError(f"refusing to replace non-regular activation file: {path}")
+    return {
+        "exists": True,
+        "mode": stat.S_IMODE(path.stat().st_mode),
+        "content": base64.b64encode(read_bytes(path)).decode("ascii"),
+    }
+
+
+def restore(path: Path, record: dict[str, object]) -> None:
+    if record["exists"]:
+        content = base64.b64decode(str(record["content"]))
+        atomic_write(path, content, int(record["mode"]))
+        return
+    if path.exists():
+        if not path.is_file() or path.is_symlink():
+            raise ProfileError(f"refusing to remove unexpected activation path: {path}")
+        path.unlink()
+    parent = path.parent
+    if parent.name == "agents" and parent.is_dir() and not any(parent.iterdir()):
+        parent.rmdir()
+
+
+def explicit_skill_markdown(original: bytes) -> bytes:
+    text = original.decode("utf-8")
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].strip() != "---":
+        raise ProfileError("SKILL.md has no YAML frontmatter")
+    closing = next(
+        (index for index, line in enumerate(lines[1:], 1) if line.strip() == "---"),
+        None,
+    )
+    if closing is None:
+        raise ProfileError("SKILL.md has unterminated YAML frontmatter")
+    frontmatter = [
+        line
+        for line in lines[1:closing]
+        if not re.match(r"^disable-model-invocation\s*:", line)
+    ]
+    newline = "\r\n" if lines[0].endswith("\r\n") else "\n"
+    frontmatter.append(f"disable-model-invocation: true{newline}")
+    return "".join(
+        [lines[0], *frontmatter, lines[closing], *lines[closing + 1 :]]
+    ).encode()
+
+
+def explicit_openai_yaml(original: bytes | None) -> bytes:
+    if original is None:
+        return b"policy:\n  allow_implicit_invocation: false\n"
+
+    text = original.decode("utf-8")
+    pattern = re.compile(r"(?m)^(\s{2}allow_implicit_invocation:)\s*[^\n]*$")
+    if pattern.search(text):
+        return pattern.sub(r"\1 false", text).encode()
+
+    lines = text.splitlines(keepends=True)
+    policy = next(
+        (index for index, line in enumerate(lines) if line.rstrip("\r\n") == "policy:"),
+        None,
+    )
+    newline = "\r\n" if any(line.endswith("\r\n") for line in lines) else "\n"
+    if policy is not None:
+        lines.insert(policy + 1, f"  allow_implicit_invocation: false{newline}")
+        return "".join(lines).encode()
+    separator = "" if not text or text.endswith(("\n", "\r")) else newline
+    return (
+        f"{text}{separator}policy:{newline}"
+        f"  allow_implicit_invocation: false{newline}"
+    ).encode()
+
+
+def play_is_implicit() -> bool:
+    metadata = read_bytes(SOURCE / "agents" / "openai.yaml").decode("utf-8")
+    return bool(
+        re.search(r"(?m)^\s{2}allow_implicit_invocation:\s*true\s*$", metadata)
+    )
+
+
+def rote_is_explicit(skill: Path) -> bool:
+    markdown = read_bytes(skill / "SKILL.md").decode("utf-8")
+    metadata = skill / "agents" / "openai.yaml"
+    return (
+        bool(re.search(r"(?m)^disable-model-invocation:\s*true\s*$", markdown))
+        and metadata.is_file()
+        and bool(
+            re.search(
+                r"(?m)^\s{2}allow_implicit_invocation:\s*false\s*$",
+                read_bytes(metadata).decode("utf-8"),
+            )
+        )
+    )
+
+
+def load_state() -> dict[str, object] | None:
+    path = state_path()
+    if not path.exists():
+        return None
+    try:
+        state = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ProfileError(f"cannot read activation state {path}: {error}") from error
+    if state.get("schema") != SCHEMA:
+        raise ProfileError(f"unsupported activation state schema in {path}")
+    return state
+
+
+def verify_state(state: dict[str, object]) -> list[str]:
+    problems = []
+    source = Path(str(state["source"])).resolve()
+    if source != SOURCE:
+        problems.append(f"state belongs to another Play source: {source}")
+    if not play_is_implicit():
+        problems.append("Play source is not configured for implicit invocation")
+    try:
+        current_roots = {str(root) for root in discover_roots()}
+    except ProfileError:
+        current_roots = set()
+    recorded_roots = set(map(str, state["roots"]))
+    if current_roots != recorded_roots:
+        problems.append("installed harness roots changed; uninstall and install the profile again")
+    for value in state["play_links"]:
+        link = Path(str(value))
+        if not link.is_symlink() or link.resolve() != source:
+            problems.append(f"missing or changed Play link: {link}")
+    for value in state["rote_skills"]:
+        skill = Path(str(value))
+        if not rote_is_explicit(skill):
+            problems.append(f"rote skill is not explicit-only: {skill}")
+    return problems
+
+
+def install() -> None:
+    existing = load_state()
+    if existing:
+        problems = verify_state(existing)
+        if problems:
+            raise ProfileError(
+                "profile state exists but is inconsistent:\n  " + "\n  ".join(problems)
+            )
+        print(
+            f"Play-first profile already active across {len(existing['roots'])} "
+            "harness root(s)"
+        )
+        return
+    if not (SOURCE / "SKILL.md").is_file() or not play_is_implicit():
+        raise ProfileError("Play source is incomplete or not implicit")
+
+    roots = discover_roots()
+    play_links = [root / "play" for root in roots]
+    conflicts = [path for path in play_links if path.exists() or path.is_symlink()]
+    if conflicts:
+        raise ProfileError(
+            "refusing to replace existing Play installs:\n  "
+            + "\n  ".join(map(str, conflicts))
+        )
+
+    rote_skills: dict[Path, Path] = {}
+    for root in roots:
+        for visible_path in iter_rote_skills(root):
+            rote_skills.setdefault(visible_path.resolve(), visible_path)
+
+    backups: dict[str, dict[str, object]] = {}
+    created_links: list[Path] = []
+    try:
+        for skill in rote_skills:
+            markdown = skill / "SKILL.md"
+            metadata = skill / "agents" / "openai.yaml"
+            backups[str(markdown)] = snapshot(markdown)
+            backups[str(metadata)] = snapshot(metadata)
+            atomic_write(
+                markdown,
+                explicit_skill_markdown(read_bytes(markdown)),
+                markdown.stat().st_mode & 0o777,
+            )
+            original_metadata = read_bytes(metadata) if metadata.exists() else None
+            atomic_write(metadata, explicit_openai_yaml(original_metadata))
+
+        for value, record in backups.items():
+            record["managed_sha256"] = digest(read_bytes(Path(value)))
+
+        for link in play_links:
+            link.symlink_to(SOURCE, target_is_directory=True)
+            created_links.append(link)
+
+        state = {
+            "schema": SCHEMA,
+            "source": str(SOURCE),
+            "roots": [str(root) for root in roots],
+            "play_links": [str(link) for link in play_links],
+            "rote_skills": [str(skill) for skill in rote_skills],
+            "backups": backups,
+        }
+        atomic_write(
+            state_path(),
+            (json.dumps(state, indent=2, sort_keys=True) + "\n").encode(),
+            0o600,
+        )
+    except Exception:
+        for link in reversed(created_links):
+            if link.is_symlink():
+                link.unlink()
+        for value, record in reversed(list(backups.items())):
+            restore(Path(value), record)
+        raise
+
+    print(
+        f"activated Play-first profile across {len(roots)} harness root(s); "
+        f"made {len(rote_skills)} canonical rote skill(s) explicit-only"
+    )
+    print("restart the harness, or run just harness <name> / just smoke <name>")
+
+
+def plan() -> None:
+    roots = discover_roots()
+    rote_skills = {
+        visible.resolve()
+        for root in roots
+        for visible in iter_rote_skills(root)
+    }
+    conflicts = [
+        root / "play"
+        for root in roots
+        if (root / "play").exists() or (root / "play").is_symlink()
+    ]
+    print(
+        f"Play-first plan: {len(roots)} harness root(s), "
+        f"{len(rote_skills)} canonical rote skill(s), {len(conflicts)} Play conflict(s)"
+    )
+    if os.environ.get("PLAY_PROFILE_VERBOSE") == "1":
+        for root in roots:
+            print(f"  root {root}")
+        for skill in sorted(rote_skills, key=lambda item: str(item)):
+            print(f"  rote {skill}")
+        for conflict in conflicts:
+            print(f"  conflict {conflict}")
+    if conflicts:
+        raise ProfileError("install would replace existing Play paths")
+
+
+def uninstall() -> None:
+    state = load_state()
+    if state is None:
+        raise ProfileError("Play-first profile is not installed; no reversible state was found")
+    source = Path(str(state["source"])).resolve()
+    unsafe = []
+    for value in state["play_links"]:
+        link = Path(str(value))
+        if link.is_symlink() and link.resolve() == source:
+            continue
+        if not link.exists() and not link.is_symlink():
+            continue
+        unsafe.append(str(link))
+    if unsafe:
+        raise ProfileError(
+            "refusing to remove changed Play installs:\n  " + "\n  ".join(unsafe)
+        )
+    changed_activation_files = []
+    for value, record in state["backups"].items():
+        path = Path(value)
+        expected = record.get("managed_sha256")
+        if not path.is_file() or expected != digest(read_bytes(path)):
+            changed_activation_files.append(str(path))
+    if changed_activation_files:
+        raise ProfileError(
+            "refusing to overwrite activation files changed since install:\n  "
+            + "\n  ".join(changed_activation_files)
+        )
+
+    for value in state["play_links"]:
+        link = Path(str(value))
+        if link.is_symlink():
+            link.unlink()
+    for value, record in state["backups"].items():
+        restore(Path(value), record)
+    state_path().unlink()
+    parent = state_path().parent
+    if parent.is_dir() and not any(parent.iterdir()):
+        parent.rmdir()
+    print(
+        f"removed Play from {len(state['roots'])} harness root(s) and restored "
+        f"{len(state['rote_skills'])} canonical rote skill(s)"
+    )
+    print("restart each running harness to reload the restored profile")
+
+
+def report(require_active: bool) -> None:
+    state = load_state()
+    if state is None:
+        if require_active:
+            raise ProfileError("Play-first profile is not installed")
+        roots = discover_roots()
+        print(
+            f"Play-first profile: inactive ({len(roots)} rote harness root(s) detected)"
+        )
+        if os.environ.get("PLAY_PROFILE_VERBOSE") == "1":
+            for root in roots:
+                print(f"  root {root}")
+        return
+    problems = verify_state(state)
+    if problems:
+        raise ProfileError(
+            "Play-first profile verification failed:\n  " + "\n  ".join(problems)
+        )
+    print(
+        f"Play-first profile: active; play implicit in {len(state['roots'])} root(s), "
+        f"{len(state['rote_skills'])} canonical rote skill(s) explicit-only"
+    )
+    if os.environ.get("PLAY_PROFILE_VERBOSE") == "1":
+        for root in state["roots"]:
+            print(f"  root {root}")
+        for skill in state["rote_skills"]:
+            print(f"  rote {skill}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "command", choices=("install", "plan", "uninstall", "status", "verify")
+    )
+    args = parser.parse_args()
+    try:
+        if args.command == "install":
+            install()
+        elif args.command == "plan":
+            plan()
+        elif args.command == "uninstall":
+            uninstall()
+        else:
+            report(require_active=args.command == "verify")
+    except ProfileError as error:
+        print(f"play-profile: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
