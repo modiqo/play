@@ -111,11 +111,12 @@ actions:
   collect_awareness_digest:
     kind: deterministic
     owner: play
-    effect: read
+    effect: local-write
     input_required: [awareness.window_days]
-    command: scripts/bin/play-digest --days <awareness.window_days> --json
+    command: scripts/bin/play-digest --remember --days <awareness.window_days> --json
     events:
       awareness_ready: [awareness.complete, awareness.digest_ref, awareness.play_choices, evidence_refs]
+      awareness_unchanged: [awareness.complete, awareness.digest_ref, awareness.play_choices, evidence_refs]
 
   present_awareness_digest:
     kind: deterministic

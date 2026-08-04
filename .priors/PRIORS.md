@@ -4,12 +4,12 @@
 
 | id | area | type | status | where | what |
 |---|---|---|---|---|---|
-| P-0001 | skill-creator | conclusion | stale | SKILL.md | Play execution follows references/machine.yaml as the normative lifecycl |
+| P-0001 | skill-creator | conclusion | fixed | SKILL.md | Play execution follows references/machine.yaml as the normative lifecycl |
 | P-0002 | skill-creator | conclusion | open | references/modalities.md | CALL, SHELL, and DRIVE are the complete modality set; transformation rem |
 | P-0003 | skill-creator | conclusion | open | references/machine.yaml | An exact ready local Play transitions directly from preflight to run and |
 | P-0004 | skill-creator | conclusion | open | references/lifecycle.md | Private Play persistence means registry publication to a private organiz |
 | P-0005 | skill-creator | conclusion | open | references/judge.md | JUDGE is optional and permitted only for irreducible inference with Flow |
-| P-0006 | skill-creator | conclusion | open | SKILL.md | The installed runtime profile keeps Play implicit and makes rote and rot |
+| P-0006 | skill-creator | conclusion | stale | SKILL.md | The installed runtime profile keeps Play implicit and makes rote and rot |
 | P-0007 | skill-creator | conclusion | open | scripts/play-profile | Uninstall restores the exact pre-install activation files and refuses to |
 | P-0008 | skill-creator | conclusion | open | scripts/play-profile | The activation profile installs Play into every discovered rote-bearing  |
 | P-0009 | skill-creator | conclusion | open | scripts/start-harness | A smoke test starts a fresh read-only harness and passes only when the r |
@@ -28,4 +28,6 @@
 | P-0022 | play-architecture-review | conclusion | open | scripts/lib/play/timewindow.py | Daily digest continuity uses a portable checkpoint token that the comman |
 | P-0023 | play-architecture-review | conclusion | open | scripts/lib/play/commands.py | Play subprocess reads use the supported uppercase ROTE_NO_HINTS environm |
 | P-0024 | skill-creator | conclusion | open | scripts/lib/play/delivery.py | Play emits immutable digest delivery envelopes and releases a checkpoint |
-| P-0025 | skill-creator | conclusion | open | scripts/lib/play/scheduler.py | Play recognizes scheduler capability only from explicit recurring harnes |
+| P-0025 | skill-creator | conclusion | fixed | scripts/lib/play/scheduler.py | Play recognizes scheduler capability only from explicit recurring harnes |
+| P-0026 | skill-creator | conclusion | open | scripts/lib/play/digest_state.py | Explicit on-demand digest requests persist only an authorized-scope cont |
+| P-0027 | skill-creator | conclusion | open | scripts/lib/play/scheduler.py | Scheduler probing must recognize native tool surfaces as well as CLI sub |

@@ -50,6 +50,9 @@ prose when its declared return event is absent or invalid.
 - Persist context only when the user explicitly requests it or a Play specification names the exact
   backend and ownership policy. If required state cannot otherwise be retained or recovered, enter
   `blocked` and report that missing capability instead of improvising storage.
+- The on-demand digest store at `~/.rote/play/digest-state.json` is not controller context. It is a
+  declared awareness cache containing only scope, SHA, and UTC checkpoint; do not add controller
+  fields, digest cards, credentials, or registry payloads to it.
 
 ## Keep execution quiet
 
@@ -120,10 +123,12 @@ results.
 
 Keep Awareness, Use, and Explore distinct:
 
-- Awareness is read-only. Collect a complete digest, present new/revised authorized Plays and a
-  truthfully labeled, explicitly scoped public ranking, then use the declared elicitation to Run,
-  Search, Create, or finish. Never present organization-scoped lifetime downloads as a global or
-  trending ranking.
+- Awareness is externally read-only. On an explicit digest request, use the remembered digest
+  command: it may update only Play's local scope-keyed SHA and UTC checkpoint after presenting the
+  result. When its comparison status is `unchanged`, say only that nothing changed and finish.
+  Otherwise present new/revised authorized Plays and a truthfully labeled, explicitly scoped public
+  ranking, then use the declared elicitation to Run, Search, Create, or finish. Never present
+  organization-scoped lifetime downloads as a global or trending ranking.
 - A Play selected from Awareness carries an exact canonical reference and displayed parameters.
   Treat that structured selection as the approval for the corresponding `rote play run ... --yes`.
 - An explicit create-a-Play request enters creator discovery directly. Search existing Plays to

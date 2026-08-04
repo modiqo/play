@@ -248,6 +248,13 @@ cases:
     terminal: receipt
     excludes: [explore_offer, explore_prepare, crystallize]
 
+  - name: unchanged awareness closes without an action prompt
+    steps:
+      - {state: qualify, event: play_awareness_request, target: awareness_collect}
+      - {state: awareness_collect, event: awareness_unchanged, target: completed}
+    terminal: completed
+    excludes: [awareness_present, awareness_offer]
+
   - name: awareness can collect a need before normal search
     steps:
       - {state: awareness_offer, event: awareness_search_selected, target: awareness_need}

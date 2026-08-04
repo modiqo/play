@@ -1,15 +1,18 @@
 # Harness Scheduling and Delivery
 
-Use this guidance when a user asks for a recurring Play digest or when an authorized harness
-scheduler invokes Play. Scheduling, destination authorization, delivery, and durable checkpoint
-storage belong to the host. Play owns digest collection and the portable delivery contract.
+This is an optional integration, not the default digest path. Prefer the on-demand remembered
+digest in `references/awareness/digest.md`. Use this guidance only when a user explicitly asks for
+recurring delivery or when an authorized harness scheduler invokes Play. Scheduling, destination
+authorization, delivery, and durable checkpoint storage belong to the host. Play owns digest
+collection and the portable delivery contract.
 
 ## Discover capability
 
 Run `scripts/bin/play-scheduler-probe`. It performs read-only `--help` probes and reports
 `play.scheduler-capabilities/v1`.
 
-- `native` means the harness exposes a recurring scheduler command. Use that host capability.
+- `native` means the harness exposes a recurring scheduler surface, whether a command or native
+  tool set. Use that host capability within its reported limitations.
 - `unavailable` means the harness is installed but exposes no recognized recurring scheduler.
 - `not_installed` and `probe_failed` are blockers, not permission to install software or invent a
   cron, launchd, background process, database, or checkpoint file.
@@ -80,4 +83,3 @@ load checkpoint -> prepare -> deliver -> acknowledge -> release -> host persists
 - A missed run naturally catches up from the last successfully released checkpoint.
 - Do not claim exactly-once delivery. Hosts can provide it only if their destination honors the
   deterministic `delivery_id` as an idempotency key.
-

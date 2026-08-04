@@ -91,11 +91,12 @@ Search local and authorized registry Plays together:
 $play search live status services AI models infrastructure latency
 ```
 
-Show a read-only awareness digest:
+Show an externally read-only awareness digest:
 
 ```text
 $play digest
 $play digest for the last 7 days
+scripts/bin/play-digest --remember --days 1 --json
 scripts/bin/play-digest --since 2026-08-03T00:00:00Z --json
 scripts/bin/play-digest --checkpoint host-checkpoint.json --json
 scripts/bin/play-digest --org modiqo --days 7 --json
@@ -106,9 +107,16 @@ enriches public Plays in authorized organizations through canonical `play inspec
 exposes exact selections that can enter Use without a second redundant approval. Ranking scope and
 missing global or personal metrics are explicit rather than inferred. The emitted checkpoint token
 can be persisted by an authorized host for gap-free daily delivery; the command does not write host
-state itself.
+state unless `--remember` is explicit.
 
-For recurring delivery, probe the installed harnesses and use the host-neutral two-phase contract:
+On normal `$play digest` requests, Play uses remembered mode. It stores only a stable awareness SHA,
+UTC checkpoint, and authorized-scope contract in `~/.rote/play/digest-state.json`. If the current
+snapshot has the same SHA, the next response is simply “Nothing changed since your last Play
+digest.” The moving time window is excluded from the SHA, and no digest contents or credentials are
+stored.
+
+Recurring delivery is optional and must be explicitly requested. Its host-neutral two-phase
+contract remains available for an authorized scheduler:
 
 ```bash
 scripts/bin/play-scheduler-probe
@@ -119,9 +127,7 @@ scripts/bin/play-delivery release --envelope envelope.json --ack delivered-ack.j
 The host scheduler owns recurrence, destination delivery, and storage. `prepare` emits an immutable
 envelope with a deterministic delivery ID; `release` emits the next checkpoint only for a matching
 successful acknowledgment and never persists it. Failed sends therefore leave the prior checkpoint
-unchanged. The locally installed Codex, Claude, and Kimi CLIs currently expose no recognized native
-recurring scheduler command, so Play reports that capability as unavailable instead of fabricating
-cron or background state.
+unchanged. Play never installs or fabricates a scheduler as part of an on-demand digest request.
 
 Search normalizes punctuation and repeated terms, runs both sources concurrently, deduplicates
 aliases and versions by canonical Play reference, and shows a URI plus the next `rote play run`

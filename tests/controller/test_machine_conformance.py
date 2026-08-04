@@ -111,15 +111,23 @@ class MachineConformanceTest(unittest.TestCase):
             ACTIONS["search_authorized_plays"]["command"],
         )
 
-    def test_awareness_is_read_only_until_exact_selection(self) -> None:
+    def test_awareness_writes_only_local_memory_until_exact_selection(self) -> None:
         self.assertEqual(
             "awareness_collect",
             MACHINE["states"]["qualify"]["on"]["play_awareness_request"][0]["target"],
         )
-        self.assertEqual("read", ACTIONS["collect_awareness_digest"]["effect"])
+        self.assertEqual("local-write", ACTIONS["collect_awareness_digest"]["effect"])
+        self.assertEqual(
+            "scripts/bin/play-digest --remember --days <awareness.window_days> --json",
+            ACTIONS["collect_awareness_digest"]["command"],
+        )
         self.assertEqual(
             "use_run",
             MACHINE["states"]["awareness_offer"]["on"]["awareness_play_selected"][0]["target"],
+        )
+        self.assertEqual(
+            "completed",
+            MACHINE["states"]["awareness_collect"]["on"]["awareness_unchanged"][0]["target"],
         )
 
     def test_creator_intent_searches_before_explore_and_skips_generic_offer(self) -> None:

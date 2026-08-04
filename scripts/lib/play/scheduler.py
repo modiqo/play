@@ -16,6 +16,8 @@ SCHEMA = "play.scheduler-capabilities/v1"
 RECURRING_COMMANDS = frozenset({"schedule", "scheduler", "cron", "automation", "automations"})
 DEFAULT_HARNESSES = {"codex": "codex", "claude": "claude", "kimi": "kimi"}
 COMMAND_LINE = re.compile(r"^\s{2,}([a-z][a-z0-9-]*)\s{2,}\S")
+VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+CLAUDE_CRON_MINIMUM = (2, 1, 72)
 
 
 def extract_subcommands(help_text: str) -> list[str]:
@@ -50,6 +52,22 @@ def describe_harness(name: str, executable: str, help_text: str) -> dict[str, An
     }
 
 
+def describe_claude_cron(executable: str, version_text: str) -> dict[str, Any] | None:
+    """Recognize Claude's native session scheduler, which is a tool rather than a subcommand."""
+
+    match = VERSION.search(version_text)
+    if match is None or tuple(map(int, match.groups())) < CLAUDE_CRON_MINIMUM:
+        return None
+    return {
+        "harness": "claude",
+        "executable": executable,
+        "status": "native",
+        "commands": ["/loop", "CronCreate", "CronList", "CronDelete"],
+        "integration": "invoke Play from Claude's session-scoped scheduler",
+        "limitations": ["requires an open or resumed session", "recurring tasks expire after 7 days"],
+    }
+
+
 def probe_harnesses(
     harnesses: dict[str, str] | None = None,
     *,
@@ -71,6 +89,11 @@ def probe_harnesses(
             )
             continue
         try:
+            if name == "claude":
+                native_cron = describe_claude_cron(resolved, runner([resolved, "--version"]))
+                if native_cron is not None:
+                    results.append(native_cron)
+                    continue
             results.append(describe_harness(name, resolved, runner([resolved, "--help"])))
         except CommandError as error:
             results.append(
@@ -95,4 +118,3 @@ def main() -> int:
     parser.parse_args()
     print(json_text(probe_harnesses()))
     return 0
-

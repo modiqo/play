@@ -1,13 +1,33 @@
 # Play Awareness Digest
 
 Use this guidance for daily or weekly digests, new or revised Plays, top public Plays, and personal
-impact summaries. Awareness is read-only and precedes Use; do not merge it into execution.
+impact summaries. Awareness is externally read-only and precedes Use; remembered mode may update
+only its declared local SHA/checkpoint store. Do not merge it into execution.
 
 ## Collect
 
-Use `scripts/bin/play-digest --days <n> --json`. Require `play.digest/v1`, `complete: true`, an
+Use `scripts/bin/play-digest --remember --days <n> --json` for an explicit user request. Require
+`play.digest/v1`, `complete: true`, an
 explicit time window, authorized organization results, section-level capability status, and a
 declared public ranking metric and scope.
+
+Remembered mode stores only the authorized-scope contract, stable `awareness_sha`, and successful
+UTC checkpoint in `~/.rote/play/digest-state.json` with user-only file permissions. The scope key
+includes organization slugs, initial window length, and inspection limits. It stores no digest
+cards, credentials, or registry payloads. `--state <path>` overrides the location for an authorized
+host or isolated test.
+
+The awareness SHA represents the current organization publication and inspected public-ranking
+snapshot; it excludes the moving digest window. Compare it with the previous SHA:
+
+- `initial`: present the complete first digest.
+- `changed`: present the new/revised window and current public ranking.
+- `unchanged`: emit `awareness_unchanged`, say only “Nothing changed since your last Play digest.”,
+  and finish without the action selector.
+
+Advance memory only after stdout has been flushed successfully. A failed collection never changes
+the stored SHA or checkpoint. Different authorized organization sets or digest configurations use
+different memory streams.
 
 Registry subprocesses are bounded by `PLAY_COMMAND_TIMEOUT_SECONDS` (30 seconds by default). A
 required organization discovery timeout fails closed instead of freezing the harness. A host that
@@ -47,11 +67,12 @@ Use the `select_awareness_action` elicitation. Selecting Run authorizes only the
 reference and parameters. Selecting Describe a need enters normal Play search. Selecting Create a
 Play enters creator discovery.
 
-The skill cannot invent a scheduler or persist a daily delivery cursor. `$play digest` emits a
-`play.digest-checkpoint/v1` `next_checkpoint`; an authorized host may persist that object and pass
-it back with `--checkpoint <path>`. `--since <timestamp>` is the stateless equivalent. The digest
-command reads checkpoint state but never advances a file itself.
+The skill cannot invent a scheduler. Without `--remember`, `$play digest` emits a
+`play.digest-checkpoint/v1` `next_checkpoint` but does not write it; an authorized host may persist
+that object and pass it back with `--checkpoint <path>`. `--since <timestamp>` is the stateless
+equivalent. With `--remember`, only the declared on-demand state file advances after successful
+presentation.
 
-For automatic delivery, read [../integration/scheduling.md](../integration/scheduling.md). Use an
-authorized host scheduler with the two-phase `play-delivery prepare/release` contract. Never
-advance a checkpoint until the host provides a matching delivered acknowledgment.
+On-demand remembered digests are the default habit loop and require no scheduler. For an explicitly
+requested automatic delivery integration, read
+[../integration/scheduling.md](../integration/scheduling.md) and keep scheduler state host-owned.

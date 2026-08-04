@@ -27,6 +27,7 @@ states:
     entry: {action: collect_awareness_digest}
     "on":
       awareness_ready: [{target: awareness_present, mutate: record_awareness_digest}]
+      awareness_unchanged: [{target: completed, mutate: record_awareness_digest}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   awareness_present:

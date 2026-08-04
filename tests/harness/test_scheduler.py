@@ -8,7 +8,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.scheduler import describe_harness, extract_subcommands, probe_harnesses
+from play.scheduler import (
+    describe_claude_cron,
+    describe_harness,
+    extract_subcommands,
+    probe_harnesses,
+)
 
 
 class SchedulerTest(unittest.TestCase):
@@ -22,6 +27,12 @@ class SchedulerTest(unittest.TestCase):
         result = describe_harness("future", "future", help_text)
         self.assertEqual("native", result["status"])
         self.assertEqual(["schedule"], result["commands"])
+
+    def test_claude_native_cron_is_detected_from_supported_version(self) -> None:
+        result = describe_claude_cron("claude", "2.1.220 (Claude Code)")
+        self.assertEqual("native", result["status"])
+        self.assertIn("CronCreate", result["commands"])
+        self.assertIsNone(describe_claude_cron("claude", "2.1.71 (Claude Code)"))
 
     def test_probe_distinguishes_not_installed_from_installed_without_scheduler(self) -> None:
         paths = {"present": "/bin/present"}
@@ -39,4 +50,3 @@ class SchedulerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

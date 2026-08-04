@@ -1,4 +1,4 @@
-"""Read-only Play awareness digest aggregation and rendering."""
+"""Play awareness digest aggregation, comparison, and rendering."""
 
 from __future__ import annotations
 
@@ -8,6 +8,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .digest_state import (
+    DEFAULT_STATE_PATH,
+    DigestStateError,
+    compare_digest,
+    load_entry,
+    save_entry,
+    scope_contract,
+    scope_key,
+    stable_sha,
+)
 from .registry import (
     RegistryReadError,
     InspectionBatch,
@@ -22,6 +32,15 @@ from .timewindow import TimeWindowError, next_checkpoint, parse_timestamp, resol
 
 
 SCHEMA = "play.digest/v1"
+FINGERPRINT_FIELDS = (
+    "name",
+    "visibility",
+    "created_at",
+    "latest_version_created_at",
+    "deleted_at",
+    "status",
+    "version",
+)
 
 
 def _digest_item(slug: str, flow: dict[str, Any], timestamp: datetime, kind: str) -> dict[str, Any]:
@@ -131,6 +150,45 @@ def rank_public(
     return eligible[:limit], ranking
 
 
+def awareness_fingerprint(
+    organizations: list[Organization],
+    grouped: dict[str, list[dict]],
+    public_top: list[dict[str, Any]],
+    ranking: dict[str, Any],
+) -> str:
+    """Hash the current awareness snapshot without moving window timestamps."""
+
+    snapshot = {
+        "organizations": [org.slug for org in organizations],
+        "plays": [
+            {
+                "owner": slug,
+                **{field: flow.get(field) for field in FINGERPRINT_FIELDS},
+            }
+            for slug in sorted(grouped)
+            for flow in sorted(grouped[slug], key=lambda item: item["name"])
+        ],
+        "public_top": [
+            {
+                key: item.get(key)
+                for key in (
+                    "reference",
+                    "version",
+                    "download_count",
+                    "install_count",
+                    "parameters",
+                )
+            }
+            for item in public_top
+        ],
+        "ranking_coverage": {
+            key: ranking.get(key)
+            for key in ("complete", "candidate_count", "inspected_count", "omitted_count", "errors")
+        },
+    }
+    return stable_sha(snapshot)
+
+
 def build_digest(
     organizations,
     grouped: dict[str, list[dict]],
@@ -177,6 +235,7 @@ def build_digest(
     return {
         "schema": SCHEMA,
         "complete": True,
+        "awareness_sha": awareness_fingerprint(organizations, grouped, public_top, ranking),
         "window": {
             "start": start.astimezone(timezone.utc).isoformat(),
             "end": end.astimezone(timezone.utc).isoformat(),
@@ -236,6 +295,9 @@ def build_digest(
 
 
 def render_markdown(digest: dict[str, Any]) -> str:
+    memory = digest.get("memory")
+    if isinstance(memory, dict) and memory.get("status") == "unchanged":
+        return "Nothing changed since your last Play digest."
     window = digest["window"]
     lines = [
         "# Play digest",
@@ -287,6 +349,7 @@ def collect_digest(
     inspection_budget: int = 8,
     update_inspection_budget: int = 4,
     org_slugs: list[str] | None = None,
+    organizations: list[Organization] | None = None,
     end: datetime | None = None,
 ) -> dict[str, Any]:
     """Collect a digest without coupling callers to the CLI or output renderer."""
@@ -300,12 +363,18 @@ def collect_digest(
         checkpoint=checkpoint,
     )
     selected_orgs = org_slugs or []
-    organizations = (
-        [Organization(slug, slug) for slug in sorted(set(selected_orgs))]
-        if selected_orgs
-        else load_organizations()
+    if organizations is not None and selected_orgs:
+        raise ValueError("organizations and org_slugs are mutually exclusive")
+    resolved_organizations = (
+        organizations
+        if organizations is not None
+        else (
+            [Organization(slug, slug) for slug in sorted(set(selected_orgs))]
+            if selected_orgs
+            else load_organizations()
+        )
     )
-    grouped = load_authorized_flows({org.slug for org in organizations})
+    grouped = load_authorized_flows({org.slug for org in resolved_organizations})
     candidate_new, candidate_revised = classify_updates(grouped, start, resolved_end)
     update_batch = inspect_references(
         [item["reference"] for item in [*candidate_new, *candidate_revised]],
@@ -317,7 +386,7 @@ def collect_digest(
         limit=inspection_budget,
     )
     return build_digest(
-        organizations,
+        resolved_organizations,
         grouped,
         inspected.flows,
         start=start,
@@ -357,6 +426,16 @@ def main() -> int:
         default=[],
         help="authorized organization slug; repeat to bypass organization discovery",
     )
+    parser.add_argument(
+        "--remember",
+        action="store_true",
+        help="compare with and advance Play's local on-demand digest memory",
+    )
+    parser.add_argument(
+        "--state",
+        type=Path,
+        help="override the local digest memory path; implies --remember",
+    )
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
     if (
@@ -366,18 +445,59 @@ def main() -> int:
         or args.update_inspection_budget < 1
     ):
         parser.error("digest limits and budgets must be at least 1")
+    remember = args.remember or args.state is not None
+    if remember and (args.since is not None or args.checkpoint is not None):
+        parser.error("--remember/--state cannot be combined with --since or --checkpoint")
+    state_path = args.state or DEFAULT_STATE_PATH
+    remembered: tuple[str, dict[str, Any]] | None = None
     try:
+        organizations = None
+        since = args.since
+        if remember:
+            organizations = (
+                [Organization(slug, slug) for slug in sorted(set(args.org))]
+                if args.org
+                else load_organizations()
+            )
+            scope = scope_contract(
+                organizations,
+                window_days=args.days,
+                public_limit=args.public_limit,
+                inspection_budget=args.inspection_budget,
+                update_inspection_budget=args.update_inspection_budget,
+            )
+            key = scope_key(scope)
+            previous = load_entry(state_path, key)
+            if previous is not None and previous["scope"] != scope:
+                raise DigestStateError(f"digest state entry {key} has a scope mismatch")
+            if previous is not None:
+                since = previous["checkpoint"]["last_seen_at"]
+            remembered = (key, scope)
         digest = collect_digest(
             days=args.days,
-            since=args.since,
+            since=since,
             checkpoint=args.checkpoint,
             public_limit=args.public_limit,
             inspection_budget=args.inspection_budget,
             update_inspection_budget=args.update_inspection_budget,
-            org_slugs=args.org,
+            org_slugs=[] if organizations is not None else args.org,
+            organizations=organizations,
         )
-    except (RegistryReadError, TimeWindowError, ValueError) as error:
+        if remember:
+            digest["memory"] = {
+                "schema": "play.digest-memory-result/v1",
+                "scope_key": key,
+                "status": compare_digest(digest, previous),
+            }
+    except (DigestStateError, RegistryReadError, TimeWindowError, ValueError) as error:
         print(f"play-digest: {error}", file=sys.stderr)
         return 1
-    print(json_text(digest) if args.as_json else render_markdown(digest))
+    print(json_text(digest) if args.as_json else render_markdown(digest), flush=True)
+    if remembered is not None:
+        key, scope = remembered
+        try:
+            save_entry(state_path, key=key, scope=scope, digest=digest)
+        except DigestStateError as error:
+            print(f"play-digest: digest was shown but memory was not saved: {error}", file=sys.stderr)
+            return 1
     return 0

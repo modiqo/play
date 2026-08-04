@@ -143,6 +143,46 @@ class DigestTest(unittest.TestCase):
         self.assertEqual("unavailable", contract["global_status"])
         self.assertEqual(1, contract["omitted_count"])
 
+    def test_awareness_sha_is_stable_across_windows_but_changes_with_source_state(self) -> None:
+        grouped = {
+            "alpha": [
+                {
+                    "name": "one",
+                    "visibility": "private",
+                    "created_at": "2026-07-01T00:00:00+00:00",
+                    "latest_version_created_at": "2026-07-01T00:00:00+00:00",
+                }
+            ]
+        }
+        first = build_digest(
+            [Organization("alpha", "Alpha")],
+            grouped,
+            [],
+            start=self.start,
+            end=self.end,
+            public_limit=5,
+        )
+        later = build_digest(
+            [Organization("alpha", "Alpha")],
+            grouped,
+            [],
+            start=self.end,
+            end=datetime(2026, 8, 5, tzinfo=timezone.utc),
+            public_limit=5,
+        )
+        self.assertEqual(first["awareness_sha"], later["awareness_sha"])
+
+        changed = {"alpha": [{**grouped["alpha"][0], "visibility": "public"}]}
+        revised = build_digest(
+            [Organization("alpha", "Alpha")],
+            changed,
+            [],
+            start=self.end,
+            end=datetime(2026, 8, 5, tzinfo=timezone.utc),
+            public_limit=5,
+        )
+        self.assertNotEqual(first["awareness_sha"], revised["awareness_sha"])
+
 
 if __name__ == "__main__":
     unittest.main()
