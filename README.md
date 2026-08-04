@@ -96,12 +96,17 @@ Show a read-only awareness digest:
 ```text
 $play digest
 $play digest for the last 7 days
+scripts/bin/play-digest --since 2026-08-03T00:00:00Z --json
+scripts/bin/play-digest --checkpoint host-checkpoint.json --json
+scripts/bin/play-digest --org modiqo --days 7 --json
 ```
 
-The digest separates newly published and revised Plays in authorized organizations, truthfully
-labels public ranking metrics, and exposes exact Play selections that can enter Use without a
-second redundant approval. Personal metrics are shown only when the registry can attribute them;
-missing metrics are reported as unavailable rather than zero.
+The digest separates newly published Plays from revisions backed by released-version timestamps,
+enriches public Plays in authorized organizations through canonical `play inspect` data, and
+exposes exact selections that can enter Use without a second redundant approval. Ranking scope and
+missing global or personal metrics are explicit rather than inferred. The emitted checkpoint token
+can be persisted by an authorized host for gap-free daily delivery; the command does not write host
+state itself.
 
 Search normalizes punctuation and repeated terms, runs both sources concurrently, deduplicates
 aliases and versions by canonical Play reference, and shows a URI plus the next `rote play run`

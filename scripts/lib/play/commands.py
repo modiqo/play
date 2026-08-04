@@ -21,19 +21,32 @@ def run_json(
     *,
     error_type: type[ErrorT] = CommandError,
     environment: dict[str, str] | None = None,
+    timeout_seconds: float | None = None,
 ) -> Any:
     effective_environment = os.environ.copy()
-    effective_environment.setdefault("rote_NO_HINTS", "1")
+    effective_environment.setdefault("ROTE_NO_HINTS", "1")
     if environment:
         effective_environment.update(environment)
-    result = subprocess.run(
-        list(command),
-        text=True,
-        capture_output=True,
-        env=effective_environment,
-        check=False,
-    )
     label = " ".join(command[:4])
+    if timeout_seconds is None:
+        raw_timeout = effective_environment.get("PLAY_COMMAND_TIMEOUT_SECONDS", "30")
+        try:
+            timeout_seconds = float(raw_timeout)
+        except ValueError as error:
+            raise error_type("PLAY_COMMAND_TIMEOUT_SECONDS must be a number") from error
+    if timeout_seconds <= 0:
+        raise error_type("command timeout must be greater than zero")
+    try:
+        result = subprocess.run(
+            list(command),
+            text=True,
+            capture_output=True,
+            env=effective_environment,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise error_type(f"{label} timed out after {timeout_seconds:g}s") from error
     if result.returncode:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown command error"
         raise error_type(f"{label} failed: {detail}")
@@ -46,5 +59,10 @@ def run_json(
 def run_rote_json(
     *arguments: str,
     error_type: type[ErrorT] = CommandError,
+    timeout_seconds: float | None = None,
 ) -> Any:
-    return run_json(["rote", *arguments], error_type=error_type)
+    return run_json(
+        ["rote", *arguments],
+        error_type=error_type,
+        timeout_seconds=timeout_seconds,
+    )

@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.digest import build_digest, classify_updates, rank_public
+from play.digest import build_digest, classify_updates, rank_public, render_markdown
 from play.registry import Organization
 
 
@@ -66,7 +66,82 @@ class DigestTest(unittest.TestCase):
             public_limit=5,
         )
         self.assertEqual("unavailable", digest["personal_stats"]["status"])
-        self.assertFalse(digest["ranking"]["complete"])
+        self.assertTrue(digest["ranking"]["complete"])
+        self.assertEqual("unavailable", digest["ranking"]["global_status"])
+        self.assertEqual("play.digest-checkpoint/v1", digest["next_checkpoint"]["schema"])
+
+    def test_updated_at_alone_does_not_claim_a_released_revision(self) -> None:
+        grouped = {
+            "alpha": [
+                {
+                    "name": "metadata-only",
+                    "visibility": "public",
+                    "created_at": "2026-07-01T00:00:00+00:00",
+                    "updated_at": "2026-08-03T10:00:00+00:00",
+                }
+            ]
+        }
+        new, revised = classify_updates(grouped, self.start, self.end)
+        self.assertEqual([], new)
+        self.assertEqual([], revised)
+        digest = build_digest(
+            [Organization("alpha", "Alpha")],
+            grouped,
+            [],
+            start=self.start,
+            end=self.end,
+            public_limit=5,
+        )
+        self.assertFalse(digest["org_updates"]["revised_complete"])
+        self.assertIn("Revised in your organizations", render_markdown(digest))
+        self.assertIn("released-version timestamps", render_markdown(digest))
+
+    def test_inspected_update_is_version_pinned_and_actionable(self) -> None:
+        grouped = {
+            "alpha": [
+                {
+                    "name": "new-play",
+                    "visibility": "private",
+                    "created_at": "2026-08-03T04:00:00+00:00",
+                    "updated_at": "2026-08-03T04:00:00+00:00",
+                }
+            ]
+        }
+        digest = build_digest(
+            [Organization("alpha", "Alpha")],
+            grouped,
+            [],
+            start=self.start,
+            end=self.end,
+            public_limit=5,
+            update_inspections={
+                "alpha/new-play": {
+                    "reference": "alpha/new-play",
+                    "exact_reference": "alpha/new-play@1.1.0",
+                    "version": "1.1.0",
+                    "default_parameters": {"days": "7"},
+                }
+            },
+        )
+        item = digest["org_updates"]["new"][0]
+        self.assertTrue(item["actionable"])
+        self.assertEqual("alpha/new-play@1.1.0", item["reference"])
+        self.assertEqual({"days": "7"}, item["parameters"])
+
+    def test_ranking_reports_partial_inspection_without_inventing_global_coverage(self) -> None:
+        ranked, contract = rank_public(
+            [("alpha", {"name": "one", "visibility": "public", "download_count": 3})],
+            5,
+            source_complete=False,
+            source_errors=["beta/two: inspect timed out"],
+            candidate_count=2,
+            omitted_count=1,
+        )
+        self.assertEqual(["alpha/one"], [item["reference"] for item in ranked])
+        self.assertFalse(contract["complete"])
+        self.assertEqual("authorized_organizations", contract["scope"])
+        self.assertEqual("unavailable", contract["global_status"])
+        self.assertEqual(1, contract["omitted_count"])
 
 
 if __name__ == "__main__":

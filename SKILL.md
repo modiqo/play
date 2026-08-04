@@ -119,8 +119,9 @@ results.
 Keep Awareness, Use, and Explore distinct:
 
 - Awareness is read-only. Collect a complete digest, present new/revised authorized Plays and a
-  truthfully labeled public ranking, then use the declared elicitation to Run, Search, Create, or
-  finish.
+  truthfully labeled, explicitly scoped public ranking, then use the declared elicitation to Run,
+  Search, Create, or finish. Never present organization-scoped lifetime downloads as a global or
+  trending ranking.
 - A Play selected from Awareness carries an exact canonical reference and displayed parameters.
   Treat that structured selection as the approval for the corresponding `rote play run ... --yes`.
 - An explicit create-a-Play request enters creator discovery directly. Search existing Plays to

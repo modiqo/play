@@ -24,3 +24,6 @@
 | P-0018 | play-architecture-review | conclusion | open | scripts/lib/play/machine.py | Controller validation is a reusable Python library entrypoint, so comman |
 | P-0019 | play-architecture-review | conclusion | open | scripts/lib/play/elicitation.py | One elicitation contract preserves prompt IDs and return events while ma |
 | P-0020 | play-architecture-review | conclusion | open | scripts/lib/play/render.py | CLI JSON, exact parameter rendering, and Markdown section composition ar |
+| P-0021 | play-architecture-review | conclusion | open | scripts/lib/play/registry.py | Live digest data is collected with organization-scoped flow lists and ca |
+| P-0022 | play-architecture-review | conclusion | open | scripts/lib/play/timewindow.py | Daily digest continuity uses a portable checkpoint token that the comman |
+| P-0023 | play-architecture-review | conclusion | open | scripts/lib/play/commands.py | Play subprocess reads use the supported uppercase ROTE_NO_HINTS environm |
