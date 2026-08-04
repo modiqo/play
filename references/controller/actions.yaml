@@ -47,6 +47,8 @@ mutations:
   - record_blocker
   - record_search_results
   - record_search_presentation
+  - enter_search_use
+  - record_search_dismissal
   - record_incomplete_search
   - enter_use
   - downgrade_inadequate_match
@@ -55,6 +57,11 @@ mutations:
   - record_no_match
   - record_failed_receipt
   - enter_direct_use
+  - record_play_inspection
+  - record_unrunnable_inspection
+  - recover_unresolved_reference
+  - approve_inspected_run
+  - record_run_dismissal
   - record_controller_run
   - record_verification
   - attach_receipt
@@ -172,15 +179,19 @@ actions:
       - Use registry or Flow search only because rote play currently exposes no search command.
       - If rote play gains search support, prefer it and retire the lower-level gap route.
     events:
-      search_ready: [search.complete, search.query, search.sources, search.result_refs, search.results]
+      search_ready: [search.complete, search.query, search.sources, search.result_refs, search.results, search.play_choices]
 
   present_search_results:
     kind: deterministic
     owner: play
     effect: none
     input_required: [search.complete, search.query, search.sources, search.results]
+    command_policy:
+      - State whether each registry Play was found locally or is expected to need a pull/install.
+      - Use search.play_choices from the reusable search output; local-only Flow gaps remain informational.
+      - A selection identifies a Play for read-only inspection and never authorizes execution.
     events:
-      search_presented: [search.query, search.sources, search.result_refs, search.results]
+      search_presented: [search.query, search.sources, search.result_refs, search.results, search.play_choices]
 
   classify_adequacy:
     kind: evaluator
@@ -193,15 +204,33 @@ actions:
       uncertain_match: [match.reference, match.covered, match.uncovered, confidence]
       no_match: [match.covered, match.uncovered, confidence]
 
+  inspect_registry_play:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [match.reference, request.parameters]
+    command: scripts/bin/play-inspect <match.reference> --json
+    command_policy:
+      - Invoke first-class rote play inspect through the reusable wrapper; never pull, install, repair, authenticate, or run during this state.
+      - Present the exact version, purpose, parameters, declared operations, dependencies, credentials, local convergence, blockers, and declared write permissions.
+      - When generic adapter operations do not prove read/write semantics, label the effect unknown rather than claiming read-only execution.
+      - An explicit run request selects what to inspect; it is not approval to execute after disclosure.
+      - If and only if first-class inspection reports play-not-found, return play_reference_unresolved so the controller can search by the requested name; other inspection failures block.
+    events:
+      play_inspected: [inspection.complete, inspection.exact_reference, inspection.description, inspection.local_change, inspection.dependencies, inspection.operations, inspection.effects, inspection.disclosure_sha256]
+      play_not_runnable: [inspection.complete, inspection.exact_reference, inspection.description, inspection.blockers, inspection.dependencies, inspection.operations, inspection.effects, inspection.disclosure_sha256]
+      play_reference_unresolved: [reason]
+
   run_registry_play:
     kind: deterministic
     owner: flow-runtime
     effect: mixed
-    input_required: [match.reference, request.original, request.parameters, effect_policy]
-    command: rote play run <match.reference> <exact-user-parameters> --yes
+    input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, request.original, request.parameters, effect_policy]
+    command: rote play run <inspection.exact_reference> <approved-parameters> --yes
     command_policy:
-      - Use --yes only when the user explicitly requested this exact reference and parameters or the harness obtained that exact approval.
-      - Otherwise obtain structured approval first or allow the controller's Ready selector; never pipe input to it.
+      - Use --yes only after approve_play_run returns play_run_approved for this exact inspection digest, reference, and displayed parameters.
+      - A run command in the original request, an Awareness selection, or a search selection never substitutes for post-inspection approval.
+      - If the inspection changes or parameters change, discard approval and return to use_inspect.
       - Never replace this command with registry pull plus flow run, even when the Play is already local.
     events:
       play_run_ready: [play.version, resolution.local_state, resolution.pull_performed, result_ref, response_refs, artifact_refs, effects]

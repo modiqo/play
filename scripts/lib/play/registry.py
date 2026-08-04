@@ -13,6 +13,10 @@ class RegistryReadError(CommandError):
     pass
 
 
+class PlayNotFoundError(RegistryReadError):
+    pass
+
+
 @dataclass(frozen=True)
 class Organization:
     slug: str
@@ -104,10 +108,34 @@ def _default_parameters(parameters: object) -> dict[str, Any]:
     return defaults
 
 
-def inspect_play(reference: str) -> dict[str, Any]:
-    payload = run_rote_json("play", "inspect", reference, "--json", error_type=RegistryReadError)
+def load_play_inspection(reference: str) -> dict[str, Any]:
+    """Return the validated first-class ``rote play inspect`` payload."""
+    try:
+        payload = run_rote_json(
+            "play", "inspect", reference, "--json", error_type=RegistryReadError
+        )
+    except RegistryReadError as error:
+        if "play-not-found" in str(error):
+            raise PlayNotFoundError("play not found") from error
+        raise
+    if isinstance(payload, dict) and payload.get("ok") is False:
+        error = payload.get("error")
+        message = error.get("message") if isinstance(error, dict) else None
+        error_type = (
+            PlayNotFoundError
+            if isinstance(error, dict) and error.get("kind") == "play-not-found"
+            else RegistryReadError
+        )
+        raise error_type(message or f"Play inspect for {reference} failed")
     data = payload.get("data") if isinstance(payload, dict) and payload.get("ok") is True else None
     inspected = data.get("play_inspect") if isinstance(data, dict) else None
+    if not isinstance(inspected, dict):
+        raise RegistryReadError(f"Play inspect for {reference} has an unsupported shape")
+    return inspected
+
+
+def inspect_play(reference: str) -> dict[str, Any]:
+    inspected = load_play_inspection(reference)
     identity = inspected.get("identity") if isinstance(inspected, dict) else None
     archive = inspected.get("archive") if isinstance(inspected, dict) else None
     execution = inspected.get("execution") if isinstance(inspected, dict) else None

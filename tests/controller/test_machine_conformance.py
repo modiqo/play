@@ -55,7 +55,7 @@ class MachineConformanceTest(unittest.TestCase):
 
     def test_python_validator_accepts_bundle(self) -> None:
         summary = validate_bundle(ROOT)
-        self.assertGreaterEqual(summary.states, 31)
+        self.assertGreaterEqual(summary.states, 34)
         self.assertGreater(summary.transitions, summary.states)
 
     def test_unknown_event_is_rejected(self) -> None:
@@ -94,10 +94,14 @@ class MachineConformanceTest(unittest.TestCase):
 
     def test_first_class_play_commands_cannot_be_decomposed(self) -> None:
         self.assertEqual(
-            "use_run", MACHINE["states"]["qualify"]["on"]["exact_play_request"][0]["target"]
+            "use_inspect", MACHINE["states"]["qualify"]["on"]["exact_play_request"][0]["target"]
         )
         self.assertEqual(
-            "rote play run <match.reference> <exact-user-parameters> --yes",
+            "scripts/bin/play-inspect <match.reference> --json",
+            ACTIONS["inspect_registry_play"]["command"],
+        )
+        self.assertEqual(
+            "rote play run <inspection.exact_reference> <approved-parameters> --yes",
             ACTIONS["run_registry_play"]["command"],
         )
         self.assertIn(
@@ -111,7 +115,7 @@ class MachineConformanceTest(unittest.TestCase):
             ACTIONS["search_authorized_plays"]["command"],
         )
 
-    def test_awareness_writes_only_local_memory_until_exact_selection(self) -> None:
+    def test_awareness_writes_only_local_memory_until_inspected_approval(self) -> None:
         self.assertEqual(
             "awareness_collect",
             MACHINE["states"]["qualify"]["on"]["play_awareness_request"][0]["target"],
@@ -122,7 +126,7 @@ class MachineConformanceTest(unittest.TestCase):
             ACTIONS["collect_awareness_digest"]["command"],
         )
         self.assertEqual(
-            "use_run",
+            "use_inspect",
             MACHINE["states"]["awareness_offer"]["on"]["awareness_play_selected"][0]["target"],
         )
         self.assertEqual(
@@ -149,6 +153,32 @@ class MachineConformanceTest(unittest.TestCase):
             prompt = PROMPTS[name]
             self.assertEqual("text", prompt["selection"])
             self.assertIn(prompt["input"]["event"], prompt["events"])
+
+    def test_every_run_path_is_inspected_and_approved(self) -> None:
+        self.assertEqual(
+            "use_offer", MACHINE["states"]["use_inspect"]["on"]["play_inspected"][0]["target"]
+        )
+        self.assertEqual(
+            "use_run", MACHINE["states"]["use_offer"]["on"]["play_run_approved"][0]["target"]
+        )
+        incoming = {
+            state_name
+            for state_name, state in MACHINE["states"].items()
+            for branches in state.get("on", {}).values()
+            for branch in branches
+            if branch["target"] == "use_run"
+        }
+        self.assertEqual({"use_offer"}, incoming)
+
+    def test_search_selection_is_inspection_only(self) -> None:
+        self.assertEqual(
+            "search_offer",
+            MACHINE["states"]["search_present"]["on"]["search_presented"][0]["target"],
+        )
+        self.assertEqual(
+            "use_inspect",
+            MACHINE["states"]["search_offer"]["on"]["search_play_selected"][0]["target"],
+        )
 
 
 if __name__ == "__main__":

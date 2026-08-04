@@ -38,13 +38,38 @@ prompts:
     question: A related Play already exists. How should I proceed?
     selection: single
     choices:
-      - {id: use, label: Use existing, description: Run the adequate existing Play with the displayed parameters., event: creator_use_selected, recommended: true}
+      - {id: use, label: Inspect existing, description: Inspect the adequate Play, then review setup and effects before deciding whether to run it., event: creator_use_selected, recommended: true}
       - {id: adapt, label: Adapt existing, description: Use the related Play as evidence while exploring a tailored result., event: creator_adapt_selected}
       - {id: create, label: Create distinct, description: Explore a separate Play for this outcome., event: creator_create_selected}
     events:
       creator_use_selected: [prompt_version, selected_at, match.reference, request.parameters]
       creator_adapt_selected: [prompt_version, selected_at, match.reference]
       creator_create_selected: [prompt_version, selected_at]
+
+  choose_search_result:
+    question: Which matching Play should I inspect before asking whether to pull and run it?
+    selection: single
+    choices_from:
+      context: search.play_choices
+      label_field: label
+      description_field: description
+      value_field: match.reference
+      event: search_play_selected
+    choices:
+      - {id: done, label: Not now, description: Keep the search results without inspecting or running a Play., event: search_dismissed}
+    events:
+      search_play_selected: [prompt_version, selected_at, match.reference, request.parameters]
+      search_dismissed: [prompt_version, selected_at]
+
+  approve_play_run:
+    question: Run this inspected Play with the displayed parameters and disclosed setup and effects?
+    selection: single
+    choices:
+      - {id: run, label: Approve and run, description: "Let rote install or replace the exact Play and dependencies if needed, then execute it with the displayed parameters.", event: play_run_approved}
+      - {id: cancel, label: Not now, description: "Stop without installing, repairing, authenticating, or running anything.", event: play_run_declined}
+    events:
+      play_run_approved: [prompt_version, selected_at, inspection.exact_reference, inspection.disclosure_sha256, request.parameters]
+      play_run_declined: [prompt_version, selected_at]
 
   explore_or_exit:
     question: >

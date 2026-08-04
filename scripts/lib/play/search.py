@@ -174,28 +174,51 @@ def merge_results(
     output = []
     for hit in hits[:limit]:
         reference = hit["reference"]
-        if reference:
+        if reference and "registry" in hit["sources"]:
             exact_reference = f"{reference}@{hit['version']}" if hit["version"] else reference
             uri = f"https://play.modiqo.ai/{exact_reference}"
             run_command = shlex.join(["rote", "play", "run", exact_reference])
+            inspect_command = shlex.join(["rote", "play", "inspect", exact_reference, "--json"])
             hint_kind = "play"
+            local_availability = "found" if "local" in hit["sources"] else "not_found"
+            execution_resolution = (
+                "inspect_required" if local_availability == "found" else "pull_expected"
+            )
         else:
             path = sorted(hit["local_paths"])[0]
             uri = Path(path).expanduser().resolve(strict=False).as_uri()
             run_command = shlex.join(["rote", "flow", "run", path])
+            inspect_command = ""
             hint_kind = "local-flow-gap"
+            exact_reference = None
+            local_availability = "local_only"
+            execution_resolution = "publish_required"
         output.append(
             {
                 "name": hit["name"],
                 "description": hit["description"],
-                "reference": reference,
+                "reference": reference if "registry" in hit["sources"] else None,
+                "exact_reference": exact_reference,
                 "version": hit["version"],
                 "status": hit["status"],
                 "sources": sorted(hit["sources"]),
                 "score": round(hit["combined_score"], 8),
                 "uri": uri,
                 "run_command": run_command,
+                "inspect_command": inspect_command,
                 "hint_kind": hint_kind,
+                "local_availability": local_availability,
+                "execution_resolution": execution_resolution,
+                "selection_description": (
+                    f"{hit['description']} Available in an authorized organization; "
+                    "a local pull/install is expected and will require approval."
+                    if execution_resolution == "pull_expected"
+                    else (
+                        f"{hit['description']} Inspect dependencies and effects before approval."
+                        if execution_resolution == "inspect_required"
+                        else f"{hit['description']} Publish this local Flow to make it a runnable Play."
+                    )
+                ),
             }
         )
     return output
@@ -215,12 +238,42 @@ def render_markdown(original: str, normalized: str, results: list[dict]) -> str:
                 "",
                 f"{index}. **{result['name']}** · {source}{version} · score {result['score']:.8f}",
                 f"   URI: {result['uri']}",
-                f"   Next: `{result['run_command']}`",
+                (
+                    "   Local: not found; pull/install expected after approval."
+                    if result["execution_resolution"] == "pull_expected"
+                    else (
+                        "   Local: found; inspection will verify the exact installed version."
+                        if result["execution_resolution"] == "inspect_required"
+                        else "   Local-only Flow: no authorized registry Play was found."
+                    )
+                ),
             ]
         )
-        if result["hint_kind"] == "local-flow-gap":
-            lines.append("   Local-only Flow: publish it to obtain a first-class Play reference.")
+        if result["hint_kind"] == "play":
+            lines.append(f"   Next: inspect with `{result['inspect_command']}`")
+            lines.append("   Running still requires a separate approval after inspection.")
+        else:
+            lines.append("   Publish it to obtain a first-class Play reference.")
     return "\n".join(lines)
+
+
+def build_play_choices(results: list[dict]) -> list[dict]:
+    """Return harness-ready choices for registry Plays only."""
+    choices = []
+    for result in results:
+        exact_reference = result.get("exact_reference")
+        if not isinstance(exact_reference, str) or not exact_reference:
+            continue
+        owner = exact_reference.split("/", 1)[0]
+        choices.append(
+            {
+                "reference": exact_reference,
+                "label": f"{result['name']} — {owner}",
+                "description": result["selection_description"],
+                "parameters": {},
+            }
+        )
+    return choices
 
 
 def main() -> int:
@@ -253,6 +306,7 @@ def main() -> int:
         "sources": ["local", "authorized_registry"],
         "result_refs": [result["reference"] for result in results if result["reference"]],
         "results": results,
+        "play_choices": build_play_choices(results),
     }
     if args.as_json:
         print(json_text(payload))

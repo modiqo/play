@@ -23,5 +23,7 @@ Ask for one number for single-select or comma-separated numbers for multi-select
 declared event and payload.
 
 Skip redundant elicitation when the user's explicit request already supplies the exact declared
-event, reference, parameters, or creator intent. Never skip authentication, effect, modality
-widening, or publication visibility gates.
+event, reference, parameters, or creator intent, except for `approve_play_run`. A request containing
+“run” selects the candidate and parameters to inspect; it never supplies post-inspection approval.
+Always show the inspection disclosure before asking that question. Never skip authentication,
+effect, modality widening, execution, or publication visibility gates.

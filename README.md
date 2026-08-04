@@ -4,6 +4,35 @@ Play is the implicit pre-harness controller for reusable outcomes. It searches a
 indexes first, runs an adequate Play in Use mode, or asks before entering Explore mode. The
 existing `rote` and `rote-*` skills remain explicit-only specialists invoked through Play.
 
+## Start here
+
+You do not need to remember organization/name slugs or lower-level rote commands. Describe the
+outcome in ordinary language:
+
+```text
+$play find a Play that retrieves recent emails
+$play run the PostHog daily active users report
+$play create a reusable weekly customer report
+$play show my digest
+$play list my organizations and shared Plays
+Handle this normally without Play
+```
+
+Play keeps four decisions separate so each prompt is small and honest:
+
+| You intend to… | Play does… | You choose… |
+|---|---|---|
+| Find something reusable | Search local and authorized organization indexes | Inspect one result or stop |
+| Run a known or vaguely named Play | Resolve the name, inspect it read-only, and show setup/effects | Pull and run, or not now |
+| Solve a one-off task | Search first; if no adequate Play exists, offer Explore | Explore with rote, or continue normally |
+| Preserve successful exploration | Verify it before preparing a candidate | Private, Public, or Skip |
+| Keep up with the ecosystem | Compare the current digest with the remembered SHA | Run, search, create, or finish |
+
+Search selection is never execution approval. Before every run, Play shows what the exact version
+does, its parameters, adapters and credentials, what this machine must install or repair, declared
+operations and writes, and any unknown effect semantics. Only the next structured choice can
+authorize the exact inspected version and displayed parameters.
+
 ## Enable
 
 Preview every harness root and canonical rote skill that will change:
@@ -75,9 +104,22 @@ just smoke-all
 
 Smoke tests start new harness processes and may consume model credits.
 
-## Manage Plays
+## Everyday Play commands
 
-The explicit `$play` surface supports organization and registry inventories:
+Find by outcome across local and authorized remote indexes:
+
+```text
+$play find a Play that retrieves recent emails
+$play search live status for AI services
+$play run the PostHog DAU report
+```
+
+For a vague `run` request, Play searches and offers recognizable names. For an exact reference, it
+skips search but never skips inspection or approval. A registry-only result is labeled as available
+in an authorized organization and expected to need a local pull/install. The first-class run later
+performs that convergence after approval; Play does not manually assemble pull and Flow commands.
+
+List organization and registry inventories:
 
 ```text
 $play list orgs
@@ -85,11 +127,25 @@ $play list plays
 $play list
 ```
 
-Search local and authorized registry Plays together:
+Create, explore, save, and share without memorizing lifecycle commands:
 
 ```text
-$play search live status services AI models infrastructure latency
+$play create a reusable weekly customer report
+Explore this with rote and make it reusable if it works
+Handle this normally without Play
 ```
+
+Play always searches before creating. If an adequate Play exists it offers Inspect existing, Adapt
+existing, or Create distinct. Otherwise explicit create intent enters Explore directly. Successful
+exploration is verified before Play asks:
+
+- **Private** — release and publish to an authorized private organization;
+- **Public** — release and publish under a selected public owner;
+- **Skip** — keep the result without publishing or indexing a Play.
+
+After Private or Public publication, Play indexes and inspects the canonical version before calling
+the save successful. Organization membership, invitations, and sharing use the organization/list
+surface rather than hidden local state.
 
 Show an externally read-only awareness digest:
 
@@ -104,7 +160,7 @@ scripts/bin/play-digest --org modiqo --days 7 --json
 
 The digest separates newly published Plays from revisions backed by released-version timestamps,
 enriches public Plays in authorized organizations through canonical `play inspect` data, and
-exposes exact selections that can enter Use without a second redundant approval. Ranking scope and
+exposes exact selections that enter read-only inspection before execution approval. Ranking scope and
 missing global or personal metrics are explicit rather than inferred. The emitted checkpoint token
 can be persisted by an authorized host for gap-free daily delivery; the command does not write host
 state unless `--remember` is explicit.
@@ -130,23 +186,30 @@ successful acknowledgment and never persists it. Failed sends therefore leave th
 unchanged. Play never installs or fabricates a scheduler as part of an on-demand digest request.
 
 Search normalizes punctuation and repeated terms, runs both sources concurrently, deduplicates
-aliases and versions by canonical Play reference, and shows a URI plus the next `rote play run`
-command for every registry-addressable result.
+aliases and versions by canonical Play reference, and shows a URI, local availability, and the next
+read-only inspection command for every registry-addressable result.
 
 The organization view shows active member, private Play, public Play, and total counts. The Play
 view groups private and public Plays under each authorized organization. An ambiguous `$play list`
 request presents both views as structured choices supported by the active harness.
 
-`rote play` is the first-class command surface. For example, an exact registry Play request runs
-through its lifecycle-owning controller in one operation:
+For diagnostics or integrations, the same reusable building blocks are available directly:
 
 ```bash
-rote play run warsaw-rust/hn-top-comments --yes
+scripts/bin/play-search recent emails --json
+scripts/bin/play-inspect warsaw-rust/posthog-dau-report@0.0.3 --json
+scripts/bin/play-inventory --json
+scripts/bin/play-question approve_play_run --harness codex
+scripts/bin/play-question approve_play_run --harness claude
+scripts/bin/play-question approve_play_run --harness kimi
 ```
 
-Play uses `rote play inspect <reference> --json` for inspection. It uses `rote flow` or
-`rote registry flow` only where `rote play` has no equivalent capability; it never decomposes a
-failed `rote play` operation into a pull-plus-Flow-run fallback.
+The question command maps the same prompt and event contract to Codex `request_user_input`, Claude
+and Kimi `askquestion`, or a numbered Markdown fallback. `play-inspect` normalizes the complete
+`rote play inspect <reference> --json` result into a stable disclosure. After approval, the
+controller performs exactly one `rote play run <exact-reference> <approved-parameters> --yes`.
+It uses `rote flow` or `rote registry flow` only where `rote play` has no equivalent capability and
+never decomposes a failed Play operation into a pull-plus-Flow-run fallback.
 
 After a new Play is published and indexed, Play reads the canonical registry entry back with JSON
 inspection, verifies its owner/version/visibility, and only then reports success.

@@ -63,9 +63,10 @@ inspect succeeds.
 Show compact New, Revised, Public, and Your impact sections. Each actionable card must carry the
 canonical reference, owner, visibility, version when known, and displayed parameters.
 
-Use the `select_awareness_action` elicitation. Selecting Run authorizes only the exact displayed
-reference and parameters. Selecting Describe a need enters normal Play search. Selecting Create a
-Play enters creator discovery.
+Use the `select_awareness_action` elicitation. Selecting a card carries only its exact displayed
+reference and parameters into read-only inspection. After the dependencies, local convergence,
+operations, and effects are disclosed, `approve_play_run` is the sole execution gate. Selecting
+Describe a need enters normal Play search. Selecting Create a Play enters creator discovery.
 
 The skill cannot invent a scheduler. Without `--remember`, `$play digest` emits a
 `play.digest-checkpoint/v1` `next_checkpoint` but does not write it; an authorized host may persist

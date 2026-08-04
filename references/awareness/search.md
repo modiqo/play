@@ -39,7 +39,8 @@ For registry-addressable results, emit:
 
 - exact URI: `https://play.modiqo.ai/<owner>/<name>@<version>`;
 - sources: `local`, `registry`, or both;
-- next command: `rote play run <owner>/<name>@<version>`.
+- local availability and whether a pull/install is expected;
+- next command: `rote play inspect <owner>/<name>@<version> --json`.
 
 For a local-only Flow, emit its `file://` URI and label its `rote flow run` hint as a capability gap.
 Do not pretend a local path is accepted by `rote play run`.
@@ -47,6 +48,10 @@ Do not pretend a local path is accepted by `rote play run`.
 ## Present choices
 
 Show the normalized query and that both sources completed. For each result show name, sources,
-version, fused score, URI, and next command. When the user is choosing a match, use the harness's
-structured single-select elicitation; use the canonical reference as the choice value. A selection
-authorizes that exact reference and displayed parameters for `rote play run ... --yes`.
+version, fused score, URI, local availability, and next inspection command. If a Play is available
+only in an authorized organization, state that a local pull/install is expected before it can run.
+When the user is choosing a match, use the harness's structured single-select elicitation and the
+canonical exact reference as the choice value. A selection authorizes read-only inspection only.
+After inspection, disclose purpose, parameters, dependencies, credentials, local setup, declared
+operations, declared writes, and any unknown effect semantics. Only `approve_play_run` authorizes
+the exact inspected version and displayed parameters for `rote play run ... --yes`.

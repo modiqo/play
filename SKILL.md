@@ -115,9 +115,20 @@ Do not load unrelated references.
 
 Use the bundled `scripts/bin/play-search` command for discovery. It normalizes unsafe natural-language
 queries, searches local and authorized registry indexes concurrently, removes aliases and duplicate
-versions by canonical Play reference, and emits canonical URIs plus `rote play run` hints. Treat a
+versions by canonical Play reference, and emits canonical URIs, local-availability status, and
+`rote play inspect` hints. Treat a
 one-sided or malformed response as an incomplete search; never classify adequacy from partial
 results.
+
+For an explicit Find or Search request, present registry-addressable matches as structured choices.
+If a match exists only in an authorized organization, say that a local pull/install is expected
+before execution. Selecting a result authorizes read-only inspection only; it does not authorize a
+pull, installation, repair, authentication, or run.
+
+For a `run` request without a canonical reference, search by the recognizable name or outcome, then
+inspect the selected match. If an apparently exact reference returns first-class `play-not-found`,
+recover by searching its name once; do not treat authentication, malformed inspection data, or
+other failures as permission to fall back.
 
 ## Build the habit loop
 
@@ -129,8 +140,8 @@ Keep Awareness, Use, and Explore distinct:
   Otherwise present new/revised authorized Plays and a truthfully labeled, explicitly scoped public
   ranking, then use the declared elicitation to Run, Search, Create, or finish. Never present
   organization-scoped lifetime downloads as a global or trending ranking.
-- A Play selected from Awareness carries an exact canonical reference and displayed parameters.
-  Treat that structured selection as the approval for the corresponding `rote play run ... --yes`.
+- A Play selected from Awareness carries an exact canonical reference and displayed parameters into
+  read-only inspection. Treat the selection as choosing what to inspect, never as execution approval.
 - An explicit create-a-Play request enters creator discovery directly. Search existing Plays to
   avoid redundant creation; if a related Play exists, ask whether to Use, Adapt, or Create distinct.
 - Explicit creator intent is Explore consent. Do not repeat the generic Explore-or-exit question,
@@ -159,7 +170,7 @@ saved Flow when the outcome itself cannot be reproduced deterministically.
 For an adequate authorized match, enter Use:
 
 ```text
-rote play run → verify outcome → receipt → stop
+inspect → disclose → approve → rote play run → verify outcome → receipt → stop
 ```
 
 Treat `rote play` as the first-class command surface for every Play operation it supports. Use
@@ -176,13 +187,23 @@ and Flow validity, and runs the exact prepared Flow. Do not reproduce its intern
 `rote registry flow pull`, `rote flow run`, adapter setup, or manual preflight—even when the Play
 is already local.
 
-When the user explicitly requests an exact Play reference and parameters, run
-`rote play run <reference> [parameters] --yes`; that request is the exact approval represented by
-`--yes`. Otherwise obtain structured approval for the displayed reference and parameters before
-using `--yes`, or allow the controller's Ready selector. Never pipe input to automate that selector.
-Use `rote play inspect` before a run only for an explicit inspection request or when its read-only
-details are required to form an approval question. If `rote play run` fails, report its failure or
-enter the declared repair path without decomposing the command.
+Before every run, invoke `scripts/bin/play-inspect <reference> --json`. This reusable wrapper uses
+`rote play inspect <reference> --json` and performs no pull, installation, repair, authentication,
+or execution. Present, compactly:
+
+- the exact resolved version, visibility, description, and parameters;
+- whether the Play is present, absent, stale, or needs replacement locally;
+- required adapters, runtimes, packages, browser capabilities, credentials, and current host checks;
+- declared steps and service operations, declared write permissions, and sensitivity;
+- blockers and any effect uncertainty. Generic adapter `exec` steps do not prove read-only external
+  behavior, so say that their read/write semantics are unknown unless the manifest declares them.
+
+Then use the `approve_play_run` structured prompt. A user request containing “run”, an exact
+reference, displayed parameters, an Awareness choice, or a search choice identifies what to inspect;
+none is post-inspection approval. Use `--yes` only after the approval event binds the exact resolved
+reference, displayed parameters, and inspection SHA. If any of them change, inspect and ask again.
+Never pipe input to automate a selector. If `rote play run` fails, report its failure or enter the
+declared repair path without decomposing the command.
 
 For partial, uncertain, or absent matches, ask whether to Explore with rote or continue normally.
 Do not execute an exploration modality before approval. If the user continues normally, enter

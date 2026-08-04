@@ -3,6 +3,12 @@ check:
     scripts/bin/play-question choose_creator_path --harness codex --check
     scripts/bin/play-question choose_creator_path --harness claude --check
     scripts/bin/play-question choose_creator_path --harness kimi --check
+    scripts/bin/play-question approve_play_run --harness codex --check
+    scripts/bin/play-question approve_play_run --harness claude --check
+    scripts/bin/play-question approve_play_run --harness kimi --check
+    scripts/bin/play-question choose_search_result --harness codex --check
+    scripts/bin/play-question choose_search_result --harness claude --check
+    scripts/bin/play-question choose_search_result --harness kimi --check
     typos README.md SKILL.md agents references scripts tests justfile
 
 test: check

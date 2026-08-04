@@ -15,6 +15,7 @@
     "request",
     "search",
     "match",
+    "inspection",
     "resolution",
     "play",
     "readiness",
@@ -45,6 +46,7 @@
     "request": {"$ref": "#/$defs/request"},
     "search": {"$ref": "#/$defs/search"},
     "match": {"$ref": "#/$defs/match"},
+    "inspection": {"$ref": "#/$defs/inspection"},
     "resolution": {"$ref": "#/$defs/resolution"},
     "play": {"$ref": "#/$defs/play"},
     "readiness": {"$ref": "#/$defs/readiness"},
@@ -80,24 +82,26 @@
     },
     "search": {
       "type": "object",
-      "required": ["complete", "query", "sources", "result_refs", "results"],
+      "required": ["complete", "query", "sources", "result_refs", "results", "play_choices"],
       "additionalProperties": false,
       "properties": {
         "complete": {"type": "boolean"},
         "query": {"$ref": "#/$defs/nullableString"},
         "sources": {"$ref": "#/$defs/stringArray"},
         "result_refs": {"$ref": "#/$defs/stringArray"},
-        "results": {"type": "array", "items": {"$ref": "#/$defs/searchResult"}}
+        "results": {"type": "array", "items": {"$ref": "#/$defs/searchResult"}},
+        "play_choices": {"type": "array", "items": {"$ref": "#/$defs/searchChoice"}}
       }
     },
     "searchResult": {
       "type": "object",
-      "required": ["name", "description", "reference", "version", "status", "sources", "score", "uri", "run_command", "hint_kind"],
+      "required": ["name", "description", "reference", "exact_reference", "version", "status", "sources", "score", "uri", "run_command", "inspect_command", "hint_kind", "local_availability", "execution_resolution", "selection_description"],
       "additionalProperties": false,
       "properties": {
         "name": {"type": "string"},
         "description": {"type": "string"},
         "reference": {"$ref": "#/$defs/nullableString"},
+        "exact_reference": {"$ref": "#/$defs/nullableString"},
         "version": {"$ref": "#/$defs/nullableString"},
         "status": {"$ref": "#/$defs/nullableString"},
         "sources": {
@@ -108,7 +112,22 @@
         "score": {"type": "number", "minimum": 0},
         "uri": {"type": "string", "minLength": 1},
         "run_command": {"type": "string", "minLength": 1},
-        "hint_kind": {"enum": ["play", "local-flow-gap"]}
+        "inspect_command": {"type": "string"},
+        "hint_kind": {"enum": ["play", "local-flow-gap"]},
+        "local_availability": {"enum": ["found", "not_found", "local_only"]},
+        "execution_resolution": {"enum": ["inspect_required", "pull_expected", "publish_required"]},
+        "selection_description": {"type": "string", "minLength": 1}
+      }
+    },
+    "searchChoice": {
+      "type": "object",
+      "required": ["reference", "label", "description", "parameters"],
+      "additionalProperties": false,
+      "properties": {
+        "reference": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "parameters": {"type": "object"}
       }
     },
     "match": {
@@ -120,6 +139,22 @@
         "reference": {"$ref": "#/$defs/nullableString"},
         "covered": {"$ref": "#/$defs/stringArray"},
         "uncovered": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "inspection": {
+      "type": "object",
+      "required": ["complete", "exact_reference", "description", "local_change", "dependencies", "operations", "effects", "blockers", "disclosure_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "complete": {"type": "boolean"},
+        "exact_reference": {"$ref": "#/$defs/nullableString"},
+        "description": {"type": "string"},
+        "local_change": {"type": ["string", "null"], "enum": ["none", "install", "replace_or_repair", "unknown", null]},
+        "dependencies": {"type": "object"},
+        "operations": {"type": "array", "items": {"type": "object"}},
+        "effects": {"type": "object"},
+        "blockers": {"$ref": "#/$defs/stringArray"},
+        "disclosure_sha256": {"$ref": "#/$defs/nullableString"}
       }
     },
     "resolution": {

@@ -9,7 +9,14 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.registry import inspect_authorized_public_flows, inspect_play, load_authorized_flows
+from play.registry import (
+    RegistryReadError,
+    PlayNotFoundError,
+    inspect_authorized_public_flows,
+    inspect_play,
+    load_authorized_flows,
+    load_play_inspection,
+)
 
 
 class RegistryTest(unittest.TestCase):
@@ -61,6 +68,24 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual("alpha/report@1.2.0", flow["exact_reference"])
         self.assertEqual(8, flow["download_count"])
         self.assertEqual({"days": "7"}, flow["default_parameters"])
+
+    @patch("play.registry.run_rote_json")
+    def test_failed_play_inspection_surfaces_registry_error(self, run_json) -> None:
+        run_json.return_value = {
+            "schema": 1,
+            "ok": False,
+            "error": {"kind": "play-not-found", "message": "play not found"},
+        }
+        with self.assertRaisesRegex(PlayNotFoundError, "play not found"):
+            load_play_inspection("alpha/missing")
+
+    @patch("play.registry.run_rote_json")
+    def test_nonzero_play_not_found_is_typed_for_search_recovery(self, run_json) -> None:
+        run_json.side_effect = RegistryReadError(
+            'rote play inspect alpha/missing failed: {"kind":"play-not-found"}'
+        )
+        with self.assertRaisesRegex(PlayNotFoundError, "play not found"):
+            load_play_inspection("alpha/missing")
 
     @patch("play.registry.inspect_play")
     def test_public_inspection_is_bounded_to_authorized_public_candidates(self, inspect) -> None:

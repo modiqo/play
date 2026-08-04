@@ -65,6 +65,56 @@ class SearchTest(unittest.TestCase):
             "https://play.modiqo.ai/warsaw-rust/hello@0.1.0", results[0]["uri"]
         )
         self.assertEqual("rote play run warsaw-rust/hello@0.1.0", results[0]["run_command"])
+        self.assertEqual(
+            "rote play inspect warsaw-rust/hello@0.1.0 --json",
+            results[0]["inspect_command"],
+        )
+        self.assertEqual("found", results[0]["local_availability"])
+        self.assertEqual("inspect_required", results[0]["execution_resolution"])
+
+    def test_registry_only_result_discloses_expected_pull_before_selection(self):
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []},
+            [
+                {
+                    "owner_slug": "alpha",
+                    "skill_name": "mail",
+                    "skill_description": "Retrieve recent email",
+                    "version": "1.0.0",
+                    "rank": 1.0,
+                    "status": "approved",
+                }
+            ],
+            pathlib.Path("/tmp/example-flows"),
+            10,
+            "recent email",
+        )
+        self.assertEqual("not_found", results[0]["local_availability"])
+        self.assertEqual("pull_expected", results[0]["execution_resolution"])
+        self.assertIn("local pull/install is expected", results[0]["selection_description"])
+
+    def test_local_only_canonical_path_is_not_claimed_as_registry_runnable(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        results = PLAY_SEARCH.merge_results(
+            {
+                "flows": [
+                    {
+                        "name": "local-report",
+                        "path": str(flow_root / "alpha" / "local-report" / "main.ts"),
+                        "description": "Local report",
+                        "score": 1.0,
+                    }
+                ]
+            },
+            [],
+            flow_root,
+            10,
+            "local report",
+        )
+        self.assertIsNone(results[0]["reference"])
+        self.assertEqual("local-flow-gap", results[0]["hint_kind"])
+        self.assertEqual("publish_required", results[0]["execution_resolution"])
+        self.assertTrue(results[0]["uri"].startswith("file://"))
 
     def test_local_and_registry_searches_start_in_parallel(self):
         barrier = threading.Barrier(2)
@@ -78,6 +128,33 @@ class SearchTest(unittest.TestCase):
         self.assertEqual({"flows": []}, local)
         self.assertEqual([], registry)
 
+    def test_play_choices_are_exact_and_exclude_local_only_flows(self):
+        choices = PLAY_SEARCH.build_play_choices(
+            [
+                {
+                    "name": "mail",
+                    "exact_reference": "alpha/mail@1.0.0",
+                    "selection_description": "Inspect mail.",
+                },
+                {
+                    "name": "local",
+                    "exact_reference": None,
+                    "selection_description": "Publish local.",
+                },
+            ]
+        )
+        self.assertEqual(
+            [
+                {
+                    "reference": "alpha/mail@1.0.0",
+                    "label": "mail — alpha",
+                    "description": "Inspect mail.",
+                    "parameters": {},
+                }
+            ],
+            choices,
+        )
+
     def test_markdown_includes_uri_and_next_command(self):
         results = [
             {
@@ -87,12 +164,15 @@ class SearchTest(unittest.TestCase):
                 "score": 1.0,
                 "uri": "https://play.modiqo.ai/warsaw-rust/hello@0.1.0",
                 "run_command": "rote play run warsaw-rust/hello@0.1.0",
+                "inspect_command": "rote play inspect warsaw-rust/hello@0.1.0 --json",
                 "hint_kind": "play",
+                "execution_resolution": "inspect_required",
             }
         ]
         output = PLAY_SEARCH.render_markdown("hello?", "hello", results)
         self.assertIn("URI: https://play.modiqo.ai/warsaw-rust/hello@0.1.0", output)
-        self.assertIn("Next: `rote play run warsaw-rust/hello@0.1.0`", output)
+        self.assertIn("Next: inspect with `rote play inspect", output)
+        self.assertIn("requires a separate approval", output)
 
 
 if __name__ == "__main__":

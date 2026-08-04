@@ -6,25 +6,52 @@ cases:
       - {state: qualify, event: conversation, target: exited}
     terminal: exited
 
-  - name: explicit Play search presents merged results without running
+  - name: explicit Play search can keep merged results without running
     steps:
       - {state: qualify, event: play_search_request, target: search}
       - state: search
         event: search_ready
         guards: {search_only_requested: true, search_is_complete: true}
         target: search_present
-      - {state: search_present, event: search_presented, target: completed}
+      - {state: search_present, event: search_presented, target: search_offer}
+      - {state: search_offer, event: search_dismissed, target: completed}
+    terminal: completed
+    excludes: [classify, use_inspect, use_run, explore_offer]
+
+  - name: explicit Play search inspects an organization result before approval
+    steps:
+      - {state: qualify, event: play_search_request, target: search}
+      - state: search
+        event: search_ready
+        guards: {search_only_requested: true, search_is_complete: true}
+        target: search_present
+      - {state: search_present, event: search_presented, target: search_offer}
+      - {state: search_offer, event: search_play_selected, target: use_inspect}
+      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_offer, event: play_run_declined, target: completed}
     terminal: completed
     excludes: [classify, use_run, explore_offer]
 
-  - name: exact Play reference runs through the first-class controller
+  - name: exact Play reference is inspected and approved before first-class execution
     steps:
-      - {state: qualify, event: exact_play_request, target: use_run}
+      - {state: qualify, event: exact_play_request, target: use_inspect}
+      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_offer, event: play_run_approved, target: use_run}
       - {state: use_run, event: play_run_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
     terminal: receipt
     excludes: [search, classify, author_release, private_publish, public_publish, index]
+
+  - name: unresolved exact reference falls back to outcome search
+    steps:
+      - {state: qualify, event: exact_play_request, target: use_inspect}
+      - {state: use_inspect, event: play_reference_unresolved, target: search}
+      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
+      - {state: classify, event: no_match, target: explore_offer}
+      - {state: explore_offer, event: ordinary_execution_selected, target: exited}
+    terminal: exited
+    excludes: [use_run]
 
   - name: discovered adequate Play also runs through the first-class controller
     steps:
@@ -33,7 +60,9 @@ cases:
       - state: classify
         event: full_match
         guards: {match_satisfies_constraints: true}
-        target: use_run
+        target: use_inspect
+      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_offer, event: play_run_approved, target: use_run}
       - {state: use_run, event: play_run_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
@@ -236,12 +265,14 @@ cases:
         target: explore_route
     terminal: explore_route
 
-  - name: awareness selection enters exact Use without Explore
+  - name: awareness selection enters inspected Use without Explore
     steps:
       - {state: qualify, event: play_awareness_request, target: awareness_collect}
       - {state: awareness_collect, event: awareness_ready, target: awareness_present}
       - {state: awareness_present, event: awareness_presented, target: awareness_offer}
-      - {state: awareness_offer, event: awareness_play_selected, target: use_run}
+      - {state: awareness_offer, event: awareness_play_selected, target: use_inspect}
+      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_offer, event: play_run_approved, target: use_run}
       - {state: use_run, event: play_run_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
@@ -279,5 +310,6 @@ cases:
   - name: creator can choose an adequate existing Play
     steps:
       - {state: creator_classify, event: creator_match_ready, target: creator_offer}
-      - {state: creator_offer, event: creator_use_selected, target: use_run}
-    terminal: use_run
+      - {state: creator_offer, event: creator_use_selected, target: use_inspect}
+      - {state: use_inspect, event: play_inspected, target: use_offer}
+    terminal: use_offer
