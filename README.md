@@ -269,6 +269,34 @@ never decomposes a failed Play operation into a pull-plus-Flow-run fallback.
 After a new Play is published and indexed, Play reads the canonical registry entry back with JSON
 inspection, verifies its owner/version/visibility, and only then reports success.
 
+## Optional thinking-orbs UI
+
+React-capable hosts can use the adapter in `ui/thinking-orbs` to render
+[`thinking-orbs`](https://orbs.jakubantalik.com/) from the authoritative Play machine state:
+
+```bash
+just ui-install
+just ui-check
+```
+
+```tsx
+import { PlayThinkingOrb } from '@modiqo/play-thinking-orbs';
+
+<PlayThinkingOrb playState="creator_search" size={64} theme="auto" />
+```
+
+The mapping uses all nine animations for distinct trajectories: listening for declared prompts,
+searching for discovery, solving for classification and verification, connecting for existing-Play
+inspection/execution, weaving for multimodal exploration, shaping for crystallization, composing
+for release/publication, working for result assembly, and breathing for paused terminal states.
+Every one of the 42 machine states has exactly one accessible status label, and tests fail if the
+machine and mapping drift.
+
+This is an optional host adapter, not a claim that a skill can replace native Codex, Claude Code,
+Cursor, or Kimi activity chrome. Hosts without a custom React surface continue to receive Play's
+milestone-only text updates. The adapter depends on `thinking-orbs` 0.2.0 from Jakub Antalik under
+the MIT license; no upstream source is copied into this repository.
+
 ## Disable
 
 Remove Play from every managed harness root and restore the exact original rote activation files:
@@ -287,6 +315,7 @@ newer content silently.
 ```bash
 just package
 just package-check
+just ui-check
 just test
 ```
 

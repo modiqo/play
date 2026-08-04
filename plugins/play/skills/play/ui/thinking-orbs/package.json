@@ -1,0 +1,26 @@
+{
+  "name": "@modiqo/play-thinking-orbs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Thinking-orbs presentation adapter for Play machine states.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "thinking-orbs": "0.2.0"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "^5.3.0"
+  }
+}

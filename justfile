@@ -23,6 +23,14 @@ package-check:
 preflight harness="generic":
     scripts/bin/play-preflight --harness {{harness}}
 
+# Install the optional React host adapter and its pinned thinking-orbs dependency.
+ui-install:
+    npm --prefix ui/thinking-orbs ci
+
+# Type-check the optional thinking-orbs adapter.
+ui-check:
+    npm --prefix ui/thinking-orbs run typecheck
+
 test: check
     python3 -m unittest discover -s tests -p 'test_*.py'
 

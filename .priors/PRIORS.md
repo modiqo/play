@@ -37,3 +37,5 @@
 | P-0031 | plugin-creator | conclusion | open | scripts/lib/play/package.py | The marketplace payload is generated from the repository runtime and che |
 | P-0032 | plugin-creator | conclusion | open | scripts/lib/play/preflight.py | Play must fail closed until Rote is on PATH, authenticated, and exposes  |
 | P-0033 | plugin-creator | conclusion | open | scripts/harness/play-profile | Marketplace activation must not create a duplicate Play symlink; it shou |
+| P-0034 | skill-creator | conclusion | open | references/integration/thinking-orbs.json | Every Play machine state has exactly one accessible thinking-orbs presen |
+| P-0035 | skill-creator | conclusion | open | references/integration/thinking-orbs.md | Thinking orbs are an optional host presentation adapter driven only by v |

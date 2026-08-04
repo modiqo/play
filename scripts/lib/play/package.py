@@ -14,7 +14,14 @@ from typing import Iterable, Sequence
 ROOT = Path(__file__).resolve().parents[3]
 TARGET = ROOT / "plugins" / "play" / "skills" / "play"
 TOP_LEVEL_FILES = ("SKILL.md", "justfile")
-DIRECTORIES = ("agents", "references", "scripts/bin", "scripts/harness", "scripts/lib/play")
+DIRECTORIES = (
+    "agents",
+    "references",
+    "scripts/bin",
+    "scripts/harness",
+    "scripts/lib/play",
+    "ui/thinking-orbs",
+)
 EXCLUDED = {
     Path("scripts/bin/package-plugin"),
     Path("scripts/lib/play/package.py"),
@@ -35,7 +42,7 @@ def source_files() -> Iterable[tuple[Path, Path]]:
             if (
                 source.is_file()
                 and relative not in EXCLUDED
-                and "__pycache__" not in relative.parts
+                and not {"__pycache__", "node_modules", "dist"}.intersection(relative.parts)
                 and source.suffix != ".pyc"
             ):
                 yield source, relative

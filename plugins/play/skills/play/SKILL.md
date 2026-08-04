@@ -112,6 +112,9 @@ prose when its declared return event is absent or invalid.
   [references/integration/elicitation.md](references/integration/elicitation.md).
 - Before invoking a `rote-*` specialist, read
   [references/integration/rote-handoffs.md](references/integration/rote-handoffs.md).
+- Before supplying progress state to a React-capable host UI, read
+  [references/integration/thinking-orbs.md](references/integration/thinking-orbs.md) and use the
+  exhaustive machine-state mapping in its adjacent JSON file. Never infer visual state from prose.
 
 Do not load unrelated references.
 
