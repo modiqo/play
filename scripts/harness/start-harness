@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PROMPT = (
     "Prepare a summary of deployment failures for the completed calendar week 2026-07-27 through "
     "2026-08-02 from my authorized deployment systems. Treat the authorized Play-index search as "
@@ -33,7 +33,9 @@ CODEX_QUIET_CONFIG = [
 
 
 def verify_profile() -> None:
-    result = subprocess.run([str(ROOT / "scripts" / "play-profile"), "verify"], cwd=ROOT)
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "harness" / "play-profile"), "verify"], cwd=ROOT
+    )
     if result.returncode:
         raise SystemExit(result.returncode)
 

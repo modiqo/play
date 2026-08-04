@@ -1,7 +1,7 @@
 # Play Search
 
-Use the bundled `scripts/play-search <query> --json` for outcome discovery and
-`scripts/play-search <query>` for a user-facing search request. `rote play` currently exposes no
+Use the bundled `scripts/bin/play-search <query> --json` for outcome discovery and
+`scripts/bin/play-search <query>` for a user-facing search request. `rote play` currently exposes no
 search command, so the wrapper narrowly fills that capability gap.
 
 ## Normalize before searching

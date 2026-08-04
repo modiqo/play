@@ -3,10 +3,10 @@ name: play
 description: >
   Use before tools or rote specialist skills when a user asks for an outcome that may be fulfilled
   by a reusable procedure. Search local and authorized Play indexes, run an adequate Play, or ask
-  whether to explore with rote and preserve a new Play. Also use to search, list, inspect, run,
-  create, save, share, or invite people to Plays; summarize organizations and member/visibility
-  counts; or list private and public Plays by organization, including requests constrained to
-  adapters, shell, browser, or combinations.
+  whether to explore with rote and preserve a new Play. Also use for daily or weekly Play digests,
+  new and revised organization Plays, top public Plays, personal impact, explicit create-a-Play
+  intent, or requests to search, list, inspect, run, create, save, share, and invite people to
+  Plays, including work constrained to adapters, shell, browser, or combinations.
 ---
 
 # Play
@@ -20,14 +20,14 @@ declared handoffs.
 
 ## Start or resume
 
-1. Read [references/machine.yaml](references/machine.yaml) on every activation.
+1. Read [references/controller/machine.yaml](references/controller/machine.yaml) on every activation.
 2. Create a logical `play.context/v1` record in harness-owned thread/session state for a new task,
    or recover the existing logical record by task key or run ID.
 3. Validate the context's machine version, current state, transition sequence, and pending action.
 4. Execute exactly one declared prompt or entry action for the current state.
 5. Accept only an event declared by the current state and validated by
-   [references/actions.yaml](references/actions.yaml) or
-   [references/prompts.yaml](references/prompts.yaml).
+   [references/controller/actions.yaml](references/controller/actions.yaml) or
+   [references/controller/prompts.yaml](references/controller/prompts.yaml).
 6. Evaluate guards, apply the declared mutation, checkpoint, and then enter the target state.
 7. Repeat until `receipt`, `completed`, `exited`, or `blocked`.
 
@@ -82,31 +82,53 @@ prose when its declared return event is absent or invalid.
   payload regardless of presentation.
 - Apply this contract to Play-owned prompts and delegated specialist questions. Include the prompt
   specification in the handoff instead of allowing a specialist to improvise a different choice.
+- Use text elicitation for an open-ended outcome description. Keep its prompt id, input id, return
+  event, and payload invariant across harnesses; use a direct Markdown question only as fallback.
 
 ## Load branch guidance
 
 - Before `explore_route` or `explore_execute`, read
-  [references/modalities.md](references/modalities.md).
+  [references/explore/modalities.md](references/explore/modalities.md).
 - Before searching for Plays or presenting search results, read
-  [references/search.md](references/search.md).
+  [references/awareness/search.md](references/awareness/search.md).
 - Before `crystallize`, `save_offer`, authoring, publication, indexing, sharing, or invitation, read
-  [references/lifecycle.md](references/lifecycle.md).
+  [references/publish/lifecycle.md](references/publish/lifecycle.md).
 - Before preserving any irreducible inference step, read
-  [references/judge.md](references/judge.md).
+  [references/explore/judge.md](references/explore/judge.md).
 - Before organization summaries or Play listings, read
-  [references/management.md](references/management.md).
+  [references/awareness/management.md](references/awareness/management.md).
+- Before daily or weekly Play digests, new/revised Play awareness, public ranking, or personal
+  impact summaries, read [references/awareness/digest.md](references/awareness/digest.md).
+- Before presenting any finite choice, read
+  [references/integration/elicitation.md](references/integration/elicitation.md).
 - Before invoking a `rote-*` specialist, read
-  [references/rote-handoffs.md](references/rote-handoffs.md).
+  [references/integration/rote-handoffs.md](references/integration/rote-handoffs.md).
 
 Do not load unrelated references.
 
 ## Search both Play sources
 
-Use the bundled `scripts/play-search` command for discovery. It normalizes unsafe natural-language
+Use the bundled `scripts/bin/play-search` command for discovery. It normalizes unsafe natural-language
 queries, searches local and authorized registry indexes concurrently, removes aliases and duplicate
 versions by canonical Play reference, and emits canonical URIs plus `rote play run` hints. Treat a
 one-sided or malformed response as an incomplete search; never classify adequacy from partial
 results.
+
+## Build the habit loop
+
+Keep Awareness, Use, and Explore distinct:
+
+- Awareness is read-only. Collect a complete digest, present new/revised authorized Plays and a
+  truthfully labeled public ranking, then use the declared elicitation to Run, Search, Create, or
+  finish.
+- A Play selected from Awareness carries an exact canonical reference and displayed parameters.
+  Treat that structured selection as the approval for the corresponding `rote play run ... --yes`.
+- An explicit create-a-Play request enters creator discovery directly. Search existing Plays to
+  avoid redundant creation; if a related Play exists, ask whether to Use, Adapt, or Create distinct.
+- Explicit creator intent is Explore consent. Do not repeat the generic Explore-or-exit question,
+  but preserve authentication, effect, modality widening, and publication gates.
+- Recommend CALL for suitable adapters, SHELL for local work, and DRIVE for authenticated browser
+  work. Present the recommendation as a milestone; ask only when policy requires a decision.
 
 ## Interpret decisions
 
@@ -114,6 +136,7 @@ Use agent reasoning only for the typed evaluators declared in `actions.yaml`:
 
 - qualify the request;
 - classify Play adequacy;
+- classify creator reuse/adaptation options;
 - select an allowed modality route;
 - verify the requested outcome.
 
@@ -123,7 +146,7 @@ but it cannot replace fields, add an event, select a target state, or override a
 Controller reasoning is not JUDGE. JUDGE exists only as a declared nondeterministic node inside a
 saved Flow when the outcome itself cannot be reproduced deterministically.
 
-## Preserve the two modes
+## Preserve execution modes
 
 For an adequate authorized match, enter Use:
 
@@ -177,7 +200,7 @@ Do not execute an exploration modality before approval. If the user continues no
 
 For first-class `rote play` operations, invoke that controller directly. For unsupported operations
 that require a specialist, build the normalized packet in
-[references/rote-handoffs.md](references/rote-handoffs.md), select one existing owner, and require
+[references/integration/rote-handoffs.md](references/integration/rote-handoffs.md), select one existing owner, and require
 its declared return event. Specialists own gap commands and evidence capture; Play owns consent,
 policy, transitions, and user-facing closure.
 
@@ -198,5 +221,6 @@ At terminal state, present only the outcome relevant to that terminal:
 - `completed` for a saved Play: verified result, matching inspect readout, and a brief
   congratulations;
 - `completed` for management: the requested organization summary or grouped Play inventory;
+- `completed` for awareness: the requested digest and the user's declared dismissal or follow-up;
 - `exited`: confirmation that Play stepped aside for this task;
 - `blocked`: missing authority, capability, valid output, or recoverable state.

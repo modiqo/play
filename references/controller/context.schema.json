@@ -26,6 +26,8 @@
     "execution",
     "evidence",
     "candidate",
+    "awareness",
+    "creator",
     "management",
     "publication",
     "receipt_ref",
@@ -39,7 +41,7 @@
     "task_key": {"type": "string", "minLength": 1},
     "state": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
     "transition_seq": {"type": "integer", "minimum": 0},
-    "mode": {"type": ["string", "null"], "enum": ["use", "explore", "manage", "exited", null]},
+    "mode": {"type": ["string", "null"], "enum": ["awareness", "use", "explore", "create", "manage", "exited", null]},
     "request": {"$ref": "#/$defs/request"},
     "search": {"$ref": "#/$defs/search"},
     "match": {"$ref": "#/$defs/match"},
@@ -54,6 +56,8 @@
     "execution": {"$ref": "#/$defs/execution"},
     "evidence": {"$ref": "#/$defs/evidence"},
     "candidate": {"$ref": "#/$defs/candidate"},
+    "awareness": {"$ref": "#/$defs/awareness"},
+    "creator": {"$ref": "#/$defs/creator"},
     "management": {"$ref": "#/$defs/management"},
     "publication": {"$ref": "#/$defs/publication"},
     "receipt_ref": {"$ref": "#/$defs/nullableString"},
@@ -64,12 +68,13 @@
     "stringArray": {"type": "array", "items": {"type": "string"}},
     "request": {
       "type": "object",
-      "required": ["original", "intent", "requested_outcome", "excluded"],
+      "required": ["original", "intent", "requested_outcome", "parameters", "excluded"],
       "additionalProperties": false,
       "properties": {
         "original": {"type": "string"},
         "intent": {"$ref": "#/$defs/nullableString"},
         "requested_outcome": {"$ref": "#/$defs/nullableString"},
+        "parameters": {"type": "object"},
         "excluded": {"type": "boolean"}
       }
     },
@@ -228,6 +233,37 @@
         "reusable": {"type": ["boolean", "null"]},
         "contract": {"$ref": "#/$defs/nullableString"},
         "released_flow": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "awareness": {
+      "type": "object",
+      "required": ["window_days", "complete", "digest_ref", "play_choices"],
+      "additionalProperties": false,
+      "properties": {
+        "window_days": {"type": "integer", "minimum": 1, "maximum": 90},
+        "complete": {"type": "boolean"},
+        "digest_ref": {"$ref": "#/$defs/nullableString"},
+        "play_choices": {"type": "array", "items": {"$ref": "#/$defs/awarenessChoice"}}
+      }
+    },
+    "awarenessChoice": {
+      "type": "object",
+      "required": ["reference", "label", "description", "parameters"],
+      "additionalProperties": false,
+      "properties": {
+        "reference": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "parameters": {"type": "object"}
+      }
+    },
+    "creator": {
+      "type": "object",
+      "required": ["intent", "seed_reference"],
+      "additionalProperties": false,
+      "properties": {
+        "intent": {"type": ["string", "null"], "enum": ["self", "private-share", "public-share", "unspecified", null]},
+        "seed_reference": {"$ref": "#/$defs/nullableString"}
       }
     },
     "management": {

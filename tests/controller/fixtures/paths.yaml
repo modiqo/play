@@ -235,3 +235,42 @@ cases:
         guards: {explore_is_approved: true}
         target: explore_route
     terminal: explore_route
+
+  - name: awareness selection enters exact Use without Explore
+    steps:
+      - {state: qualify, event: play_awareness_request, target: awareness_collect}
+      - {state: awareness_collect, event: awareness_ready, target: awareness_present}
+      - {state: awareness_present, event: awareness_presented, target: awareness_offer}
+      - {state: awareness_offer, event: awareness_play_selected, target: use_run}
+      - {state: use_run, event: play_run_ready, target: use_verify}
+      - {state: use_verify, event: outcome_verified, target: use_receipt}
+      - {state: use_receipt, event: receipt_ready, target: receipt}
+    terminal: receipt
+    excludes: [explore_offer, explore_prepare, crystallize]
+
+  - name: awareness can collect a need before normal search
+    steps:
+      - {state: awareness_offer, event: awareness_search_selected, target: awareness_need}
+      - {state: awareness_need, event: awareness_need_described, target: search}
+    terminal: search
+
+  - name: explicit creator intent skips redundant Explore prompt
+    steps:
+      - {state: qualify, event: play_creation_request, target: creator_search}
+      - state: creator_search
+        event: creator_search_ready
+        guards: {search_is_complete: true}
+        target: creator_classify
+      - {state: creator_classify, event: creator_no_match, target: explore_prepare}
+      - state: explore_prepare
+        event: exploration_ready
+        guards: {explore_is_approved: true}
+        target: explore_route
+    terminal: explore_route
+    excludes: [explore_offer]
+
+  - name: creator can choose an adequate existing Play
+    steps:
+      - {state: creator_classify, event: creator_match_ready, target: creator_offer}
+      - {state: creator_offer, event: creator_use_selected, target: use_run}
+    terminal: use_run

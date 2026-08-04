@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""Validate the declarative Play controller bundle."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts" / "lib"))
+
+from play.machine import MachineValidationError, validate_bundle
+
+
+def main() -> int:
+    try:
+        summary = validate_bundle(ROOT)
+    except MachineValidationError as error:
+        for item in error.errors:
+            print(f"- {item}", file=sys.stderr)
+        print(str(error), file=sys.stderr)
+        return 1
+    print(summary.render())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

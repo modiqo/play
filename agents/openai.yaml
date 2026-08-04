@@ -1,7 +1,7 @@
 interface:
   display_name: "Play"
-  short_description: "Run, create, and manage reusable Plays"
-  default_prompt: "Use $play to run or create a reusable outcome, or list my organizations and Plays."
+  short_description: "Discover, run, create, and share reusable Plays"
+  default_prompt: "Use $play to show my digest, run an exact Play, or create and share a reusable outcome."
 
 policy:
   allow_implicit_invocation: true

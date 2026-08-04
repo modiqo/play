@@ -18,3 +18,9 @@
 | P-0012 | play-architecture-review | conclusion | open | scripts/play-inventory | The inventory surface cannot produce new/revised digests or personal imp |
 | P-0013 | play-architecture-review | conclusion | open | scripts/play-search | The unified search score is query-relevance fusion over local and regist |
 | P-0014 | play-architecture-review | conclusion | open | references/actions.yaml | Explicit creator intent has no declared qualification event or action pa |
+| P-0015 | play-architecture-review | conclusion | open | references/controller/machine.yaml | Awareness is a first-class read-only controller path whose exact Play se |
+| P-0016 | play-architecture-review | conclusion | open | references/controller/actions.yaml | Explicit create intent searches existing Plays before exploration and su |
+| P-0017 | play-architecture-review | conclusion | open | scripts/lib/play/digest.py | The awareness digest keeps organization updates separate from lifetime p |
+| P-0018 | play-architecture-review | conclusion | open | scripts/lib/play/machine.py | Controller validation is a reusable Python library entrypoint, so comman |
+| P-0019 | play-architecture-review | conclusion | open | scripts/lib/play/elicitation.py | One elicitation contract preserves prompt IDs and return events while ma |
+| P-0020 | play-architecture-review | conclusion | open | scripts/lib/play/render.py | CLI JSON, exact parameter rendering, and Markdown section composition ar |

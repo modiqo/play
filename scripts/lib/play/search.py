@@ -1,56 +1,24 @@
-#!/usr/bin/env python3
 """Search local and authorized registry Plays concurrently and deduplicate results."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import re
 import shlex
-import subprocess
 import sys
-import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+from .commands import CommandError, run_json
+from .normalize import NormalizationError, normalize_query, semantic_version_key
+from .render import json_text
 
 
 SCHEMA = "play.search/v1"
 
 
-class SearchError(RuntimeError):
+class SearchError(CommandError):
     pass
-
-
-def normalize_query(value: str) -> str:
-    decomposed = unicodedata.normalize("NFKD", value).casefold()
-    characters = []
-    for character in decomposed:
-        category = unicodedata.category(character)
-        if category.startswith(("L", "N")):
-            characters.append(character)
-        elif category.startswith("M"):
-            continue
-        else:
-            characters.append(" ")
-    unique_tokens = list(dict.fromkeys("".join(characters).split()))
-    normalized = " ".join(unique_tokens)
-    if not normalized:
-        raise SearchError("query has no searchable letters or numbers after normalization")
-    return normalized
-
-
-def run_json(command: list[str]):
-    environment = os.environ.copy()
-    environment.setdefault("rote_NO_HINTS", "1")
-    result = subprocess.run(command, text=True, capture_output=True, env=environment)
-    if result.returncode:
-        detail = result.stderr.strip() or result.stdout.strip() or "unknown rote error"
-        raise SearchError(f"{' '.join(command[:4])} failed: {detail}")
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as error:
-        raise SearchError(f"{' '.join(command[:4])} returned malformed JSON") from error
 
 
 def search_both(query: str, limit: int) -> tuple[dict, list]:
@@ -69,7 +37,10 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
         ],
     }
     with ThreadPoolExecutor(max_workers=2) as executor:
-        pending = {source: executor.submit(run_json, command) for source, command in commands.items()}
+        pending = {
+            source: executor.submit(run_json, command, error_type=SearchError)
+            for source, command in commands.items()
+        }
         results = {source: future.result() for source, future in pending.items()}
     return results["local"], results["registry"]
 
@@ -77,16 +48,9 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
 def fingerprint(name: str, description: str) -> str:
     try:
         normalized_description = normalize_query(description or name)
-    except SearchError:
+    except (SearchError, NormalizationError):
         normalized_description = ""
     return f"{normalize_query(name)}\0{normalized_description}"
-
-
-def semantic_version_key(value: str | None) -> tuple:
-    if not value:
-        return ()
-    parts = re.split(r"[.+-]", value)
-    return tuple((0, int(part)) if part.isdigit() else (1, part.casefold()) for part in parts)
 
 
 def local_reference(path_value: str, flow_root: Path) -> str | None:
@@ -278,7 +242,7 @@ def main() -> int:
             args.limit,
             normalized,
         )
-    except SearchError as error:
+    except (SearchError, NormalizationError) as error:
         print(f"play-search: {error}", file=sys.stderr)
         return 1
     payload = {
@@ -291,11 +255,7 @@ def main() -> int:
         "results": results,
     }
     if args.as_json:
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        print(json_text(payload))
     else:
         print(render_markdown(original, normalized, results))
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

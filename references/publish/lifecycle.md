@@ -47,4 +47,4 @@ explicit Play management requests. Delegate registry and organization operations
 specialists while preserving normal confirmation, authorization, and receipt behavior. Never
 invite or share as an implied consequence of saving.
 
-Use [management.md](management.md) for organization summaries and grouped Play inventories.
+Use [../awareness/management.md](../awareness/management.md) for organization summaries and grouped Play inventories.

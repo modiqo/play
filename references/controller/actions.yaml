@@ -22,6 +22,21 @@ guards:
 mutations:
   - set_request_contract
   - set_search_request
+  - set_awareness_request
+  - set_creator_request
+  - record_awareness_digest
+  - record_awareness_presentation
+  - enter_awareness_use
+  - record_awareness_search_choice
+  - record_awareness_create_choice
+  - record_awareness_dismissal
+  - set_awareness_search
+  - set_creator_need
+  - record_creator_search
+  - record_creator_match
+  - approve_creator_explore
+  - approve_adapt_explore
+  - enter_creator_use
   - record_non_outcome_exit
   - record_explicit_exit
   - set_management_request
@@ -84,12 +99,49 @@ actions:
     input_required: [request.original]
     events:
       outcome_request: [request.intent, request.requested_outcome, modality_policy]
-      exact_play_request: [request.intent, request.requested_outcome, match.reference, modality_policy]
+      exact_play_request: [request.intent, request.requested_outcome, request.parameters, match.reference, modality_policy]
       play_search_request: [request.intent]
+      play_awareness_request: [request.intent, awareness.window_days]
+      play_creation_request: [request.intent, request.requested_outcome, creator.intent, modality_policy]
       play_management_request: [request.intent, management.views]
       play_management_choice_required: [request.intent]
       conversation: [reason]
       play_excluded: [reason]
+
+  collect_awareness_digest:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [awareness.window_days]
+    command: scripts/bin/play-digest --days <awareness.window_days> --json
+    events:
+      awareness_ready: [awareness.complete, awareness.digest_ref, awareness.play_choices, evidence_refs]
+
+  present_awareness_digest:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [awareness.complete, awareness.digest_ref, awareness.play_choices]
+    events:
+      awareness_presented: [awareness.digest_ref, awareness.play_choices]
+
+  search_creator_plays:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [request.intent, request.requested_outcome, modality_policy]
+    command: scripts/bin/play-search <request.intent> --json
+    events:
+      creator_search_ready: [search.complete, search.query, search.sources, search.result_refs, search.results]
+
+  classify_creator_options:
+    kind: evaluator
+    owner: play
+    effect: none
+    input_required: [request.requested_outcome, search.result_refs, modality_policy]
+    events:
+      creator_match_ready: [match.reference, match.covered, match.uncovered, confidence]
+      creator_no_match: [match.covered, match.uncovered, confidence]
 
   list_play_management:
     kind: delegated
@@ -112,7 +164,7 @@ actions:
     owner: play
     effect: read
     input_required: [request.intent, modality_policy]
-    command: scripts/play-search <request.intent> --json
+    command: scripts/bin/play-search <request.intent> --json
     command_policy:
       - Normalize once, then search local and authorized registry indexes concurrently.
       - Deduplicate aliases and versions by canonical Play reference and return URI and run hints.
@@ -144,7 +196,7 @@ actions:
     kind: deterministic
     owner: flow-runtime
     effect: mixed
-    input_required: [match.reference, request.original, effect_policy]
+    input_required: [match.reference, request.original, request.parameters, effect_policy]
     command: rote play run <match.reference> <exact-user-parameters> --yes
     command_policy:
       - Use --yes only when the user explicitly requested this exact reference and parameters or the harness obtained that exact approval.

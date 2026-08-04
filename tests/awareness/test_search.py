@@ -1,5 +1,3 @@
-import importlib.machinery
-import importlib.util
 import pathlib
 import sys
 import threading
@@ -7,14 +5,10 @@ import unittest
 from unittest import mock
 
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-LOADER = importlib.machinery.SourceFileLoader(
-    "play_search", str(ROOT / "scripts" / "play-search")
-)
-SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
-PLAY_SEARCH = importlib.util.module_from_spec(SPEC)
-sys.modules[LOADER.name] = PLAY_SEARCH
-LOADER.exec_module(PLAY_SEARCH)
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts" / "lib"))
+
+from play import search as PLAY_SEARCH
 
 
 class SearchTest(unittest.TestCase):
@@ -75,7 +69,7 @@ class SearchTest(unittest.TestCase):
     def test_local_and_registry_searches_start_in_parallel(self):
         barrier = threading.Barrier(2)
 
-        def fake_run(command):
+        def fake_run(command, **_kwargs):
             barrier.wait(timeout=2)
             return {"flows": []} if command[1:3] == ["flow", "search"] else []
 

@@ -91,6 +91,18 @@ Search local and authorized registry Plays together:
 $play search live status services AI models infrastructure latency
 ```
 
+Show a read-only awareness digest:
+
+```text
+$play digest
+$play digest for the last 7 days
+```
+
+The digest separates newly published and revised Plays in authorized organizations, truthfully
+labels public ranking metrics, and exposes exact Play selections that can enter Use without a
+second redundant approval. Personal metrics are shown only when the registry can attribute them;
+missing metrics are reported as unavailable rather than zero.
+
 Search normalizes punctuation and repeated terms, runs both sources concurrently, deduplicates
 aliases and versions by canonical Play reference, and shows a URI plus the next `rote play run`
 command for every registry-addressable result.
@@ -134,6 +146,11 @@ just test
 
 The tests exercise the declarative Play machine and the complete activation lifecycle in temporary
 harness roots, including installation, verification, idempotency, rollback, and conflict handling.
+
+The foundation is Python-only. Commands under `scripts/bin/` and harness entrypoints under
+`scripts/harness/` are thin executables; reusable command, registry, search, inventory, digest,
+elicitation, and machine-validation logic lives in `scripts/lib/play/`. References and tests are
+grouped by controller, awareness, Explore, publication, integration, and harness use case.
 
 For isolated testing, override the discovered roots or reversible state location:
 

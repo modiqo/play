@@ -1,18 +1,12 @@
-import importlib.machinery
-import importlib.util
 import pathlib
 import sys
 import unittest
 
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-LOADER = importlib.machinery.SourceFileLoader(
-    "play_inventory", str(ROOT / "scripts" / "play-inventory")
-)
-SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
-PLAY_INVENTORY = importlib.util.module_from_spec(SPEC)
-sys.modules[LOADER.name] = PLAY_INVENTORY
-LOADER.exec_module(PLAY_INVENTORY)
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts" / "lib"))
+
+from play import inventory as PLAY_INVENTORY
 
 
 class InventoryTest(unittest.TestCase):

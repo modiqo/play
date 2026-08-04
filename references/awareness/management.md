@@ -16,7 +16,7 @@ not route them through Play search or Explore.
 ## Collect once and aggregate
 
 `rote play` currently exposes no organization or listing command, so this is an explicit capability
-gap. Prefer the bundled `scripts/play-inventory <orgs|plays|all>` command until a first-class
+gap. Prefer the bundled `scripts/bin/play-inventory <orgs|plays|all>` command until a first-class
 equivalent appears. It performs these registry reads and does not persist their responses:
 
 1. Run `rote registry org list --json` once.

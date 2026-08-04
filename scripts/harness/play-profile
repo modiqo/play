@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 SCHEMA = "play.activation-profile/v1"
-SOURCE = Path(__file__).resolve().parent.parent
+SOURCE = Path(__file__).resolve().parents[2]
 
 
 class ProfileError(RuntimeError):

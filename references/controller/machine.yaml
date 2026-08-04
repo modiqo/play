@@ -12,11 +12,85 @@ states:
       outcome_request: [{target: search, mutate: set_request_contract}]
       exact_play_request: [{target: use_run, mutate: enter_direct_use}]
       play_search_request: [{target: search, mutate: set_search_request}]
+      play_awareness_request: [{target: awareness_collect, mutate: set_awareness_request}]
+      play_creation_request: [{target: creator_search, mutate: set_creator_request}]
       play_management_request: [{target: management_list, mutate: set_management_request}]
       play_management_choice_required: [{target: management_offer, mutate: record_management_choices}]
       conversation: [{target: exited, mutate: record_non_outcome_exit}]
       play_excluded: [{target: exited, mutate: record_explicit_exit}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  awareness_collect:
+    owner: play
+    checkpoint: both
+    requires: [awareness.window_days]
+    entry: {action: collect_awareness_digest}
+    "on":
+      awareness_ready: [{target: awareness_present, mutate: record_awareness_digest}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  awareness_present:
+    owner: play
+    checkpoint: after
+    requires: [awareness.digest_ref]
+    entry: {action: present_awareness_digest}
+    "on":
+      awareness_presented: [{target: awareness_offer, mutate: record_awareness_presentation}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  awareness_offer:
+    owner: play
+    checkpoint: after
+    prompt: select_awareness_action
+    "on":
+      awareness_play_selected: [{target: use_run, mutate: enter_awareness_use}]
+      awareness_search_selected: [{target: awareness_need, mutate: record_awareness_search_choice}]
+      awareness_create_selected: [{target: creator_need, mutate: record_awareness_create_choice}]
+      awareness_dismissed: [{target: completed, mutate: record_awareness_dismissal}]
+
+  awareness_need:
+    owner: play
+    checkpoint: after
+    prompt: describe_awareness_need
+    "on":
+      awareness_need_described: [{target: search, mutate: set_awareness_search}]
+
+  creator_need:
+    owner: play
+    checkpoint: after
+    prompt: describe_creator_need
+    "on":
+      creator_need_described: [{target: creator_search, mutate: set_creator_need}]
+
+  creator_search:
+    owner: play
+    checkpoint: both
+    requires: [request.intent, request.requested_outcome, modality_policy]
+    entry: {action: search_creator_plays}
+    "on":
+      creator_search_ready:
+        - {guard: search_is_complete, target: creator_classify, mutate: record_creator_search}
+        - {target: blocked, mutate: record_incomplete_search}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  creator_classify:
+    owner: play
+    checkpoint: after
+    requires: [search.complete, search.result_refs]
+    entry: {action: classify_creator_options}
+    "on":
+      creator_match_ready: [{target: creator_offer, mutate: record_creator_match}]
+      creator_no_match: [{target: explore_prepare, mutate: approve_creator_explore}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  creator_offer:
+    owner: play
+    checkpoint: after
+    prompt: choose_creator_path
+    "on":
+      creator_use_selected: [{target: use_run, mutate: enter_creator_use}]
+      creator_adapt_selected: [{target: explore_prepare, mutate: approve_adapt_explore}]
+      creator_create_selected: [{target: explore_prepare, mutate: approve_creator_explore}]
 
   management_offer:
     owner: play
