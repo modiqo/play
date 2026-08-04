@@ -1,0 +1,19 @@
+{
+  "name": "play-skills",
+  "owner": {
+    "name": "Modiqo",
+    "email": "social@modiqo.ai"
+  },
+  "metadata": {
+    "description": "Discover, inspect, run, create, and share reusable Rote Plays."
+  },
+  "allowCrossMarketplaceDependenciesOn": ["rote-skills"],
+  "plugins": [
+    {
+      "name": "play",
+      "source": "./plugins/play",
+      "description": "Play-first discovery, safe execution, exploration, sharing, and awareness.",
+      "homepage": "https://getrote.dev"
+    }
+  ]
+}

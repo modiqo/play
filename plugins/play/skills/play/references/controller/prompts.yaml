@@ -1,0 +1,144 @@
+schema: play.prompts/v1
+
+prompts:
+  select_awareness_action:
+    question: What would you like to do with this Play digest?
+    selection: single
+    choices_from:
+      context: awareness.play_choices
+      label_field: label
+      description_field: description
+      value_field: match.reference
+      event: awareness_play_selected
+    choices:
+      - {id: search, label: Find another Play, description: Describe a need and search authorized Plays before exploring., event: awareness_search_selected}
+      - {id: create, label: Create a Play, description: Describe an outcome and enter the creator path., event: awareness_create_selected}
+      - {id: done, label: Done, description: Close the digest without running or creating anything., event: awareness_dismissed}
+    events:
+      awareness_play_selected: [prompt_version, selected_at, match.reference, request.original, request.parameters]
+      awareness_search_selected: [prompt_version, selected_at]
+      awareness_create_selected: [prompt_version, selected_at]
+      awareness_dismissed: [prompt_version, selected_at]
+
+  describe_awareness_need:
+    question: What outcome would you like a Play to handle?
+    selection: text
+    input: {id: requested_outcome, label: Desired outcome, event: awareness_need_described}
+    events:
+      awareness_need_described: [prompt_version, selected_at, request.intent, request.requested_outcome, modality_policy]
+
+  describe_creator_need:
+    question: What outcome should the new Play accomplish?
+    selection: text
+    input: {id: requested_outcome, label: Desired outcome, event: creator_need_described}
+    events:
+      creator_need_described: [prompt_version, selected_at, request.intent, request.requested_outcome, creator.intent, modality_policy]
+
+  choose_creator_path:
+    question: A related Play already exists. How should I proceed?
+    selection: single
+    choices:
+      - {id: use, label: Inspect existing, description: Inspect the adequate Play, then review setup and effects before deciding whether to run it., event: creator_use_selected, recommended: true}
+      - {id: adapt, label: Adapt existing, description: Use the related Play as evidence while exploring a tailored result., event: creator_adapt_selected}
+      - {id: create, label: Create distinct, description: Explore a separate Play for this outcome., event: creator_create_selected}
+    events:
+      creator_use_selected: [prompt_version, selected_at, match.reference, request.parameters]
+      creator_adapt_selected: [prompt_version, selected_at, match.reference]
+      creator_create_selected: [prompt_version, selected_at]
+
+  choose_search_result:
+    question: Which matching Play should I inspect before asking whether to pull and run it?
+    selection: single
+    choices_from:
+      context: search.play_choices
+      label_field: label
+      description_field: description
+      value_field: match.reference
+      event: search_play_selected
+    choices:
+      - {id: done, label: Not now, description: Keep the search results without inspecting or running a Play., event: search_dismissed}
+    events:
+      search_play_selected: [prompt_version, selected_at, match.reference, request.parameters]
+      search_dismissed: [prompt_version, selected_at]
+
+  approve_play_run:
+    question: Run this inspected Play with the displayed parameters and disclosed setup and effects?
+    selection: single
+    choices:
+      - {id: run, label: Approve and run, description: "Let rote install or replace the exact Play and dependencies if needed, then execute it with the displayed parameters.", event: play_run_approved}
+      - {id: cancel, label: Not now, description: "Stop without installing, repairing, authenticating, or running anything.", event: play_run_declined}
+    events:
+      play_run_approved: [prompt_version, selected_at, inspection.exact_reference, inspection.disclosure_sha256, request.parameters]
+      play_run_declined: [prompt_version, selected_at]
+
+  explore_or_exit:
+    question: >
+      I couldn't find a Play that adequately covers this. Would you like me to explore with rote
+      and preserve the successful path as a reusable Play, or continue normally?
+    selection: single
+    choices:
+      - {id: explore, label: Explore with rote, description: Attempt the outcome and offer to preserve a verified reusable Play., event: explore_approved, recommended: true}
+      - {id: continue, label: Continue normally, description: Leave Play and handle this as an ordinary one-off task., event: ordinary_execution_selected}
+    events:
+      explore_approved: [prompt_version, selected_at]
+      ordinary_execution_selected: [prompt_version, selected_at]
+
+  repair_or_exit:
+    question: >
+      The selected Play could not produce a verified result. Would you like me to explore with rote
+      to repair it, or continue normally?
+    selection: single
+    choices:
+      - {id: repair, label: Explore a repair, description: Diagnose the drift and offer to preserve a verified repair., event: repair_approved, recommended: true}
+      - {id: continue, label: Continue normally, description: Leave Play and handle the remaining work as a one-off task., event: ordinary_execution_selected}
+    events:
+      repair_approved: [prompt_version, selected_at]
+      ordinary_execution_selected: [prompt_version, selected_at]
+
+  widen_modalities:
+    question: >
+      The allowed modalities cannot complete the outcome. May I widen the modality set as shown?
+    selection: single
+    choices:
+      - {id: allow, label: Allow shown modalities, description: Add only the displayed modalities for this task., event: modality_widening_approved}
+      - {id: keep, label: Keep current limits, description: Preserve the current constraints and stop this Play as blocked., event: modality_widening_declined}
+    events:
+      modality_widening_approved: [prompt_version, selected_at, allowed]
+      modality_widening_declined: [prompt_version, selected_at]
+
+  private_public_or_skip:
+    question: How should I preserve this verified Play?
+    selection: single
+    choices:
+      - {id: private, label: Private, description: Publish it to an authorized private organization., event: save_private, recommended: true}
+      - {id: public, label: Public, description: Publish it under a selected public identity or organization., event: save_public}
+      - {id: skip, label: Skip, description: Keep the verified result but do not publish or index a Play., event: save_skipped}
+    events:
+      save_private: [prompt_version, selected_at]
+      save_public: [prompt_version, selected_at]
+      save_skipped: [prompt_version, selected_at]
+
+  select_public_owner:
+    question: Which public identity or organization should own this Play?
+    selection: single
+    choices_from:
+      context: owner_choices
+      label_field: display_name
+      description_field: ownership_description
+      value_field: publication.owner
+      event: public_owner_selected
+    choices:
+      - {id: cancel, label: Cancel publication, description: Stop without selecting a public owner., event: public_owner_declined}
+    events:
+      public_owner_selected: [prompt_version, selected_at, publication.owner]
+      public_owner_declined: [prompt_version, selected_at]
+
+  select_management_views:
+    question: Which Play inventory views would you like to see?
+    selection: multiple
+    minimum_selected: 1
+    choices:
+      - {id: org_summary, label: Organization summary, description: Show each authorized organization with member and private/public Play counts., event: management_views_selected, recommended: true}
+      - {id: plays_by_org, label: Plays by organization, description: Group every authorized private and public Play by organization., event: management_views_selected}
+    events:
+      management_views_selected: [prompt_version, selected_at, management.views]

@@ -1,0 +1,24 @@
+{
+  "name": "play",
+  "version": "0.1.0",
+  "description": "Discover, inspect, run, create, and share reusable Rote Plays.",
+  "author": {
+    "name": "Modiqo",
+    "email": "social@modiqo.ai"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Play",
+    "shortDescription": "Discover, run, create, and share reusable Plays",
+    "longDescription": "Search local and authorized Play indexes, inspect setup and effects before approval, run exact versions, explore unmet needs, and keep up through digests.",
+    "developerName": "Modiqo",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "defaultPrompt": [
+      "Find a Play for my task",
+      "Show my Play digest",
+      "Create a reusable Play"
+    ],
+    "websiteURL": "https://getrote.dev"
+  }
+}

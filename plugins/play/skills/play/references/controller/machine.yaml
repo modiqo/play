@@ -1,0 +1,387 @@
+schema: play.machine/v1
+machine: play
+initial: qualify
+terminal: [receipt, completed, exited, blocked]
+
+states:
+  qualify:
+    owner: play
+    checkpoint: after
+    entry: {action: qualify_request}
+    "on":
+      outcome_request: [{target: search, mutate: set_request_contract}]
+      exact_play_request: [{target: use_inspect, mutate: enter_direct_use}]
+      play_search_request: [{target: search, mutate: set_search_request}]
+      play_awareness_request: [{target: awareness_collect, mutate: set_awareness_request}]
+      play_creation_request: [{target: creator_search, mutate: set_creator_request}]
+      play_management_request: [{target: management_list, mutate: set_management_request}]
+      play_management_choice_required: [{target: management_offer, mutate: record_management_choices}]
+      conversation: [{target: exited, mutate: record_non_outcome_exit}]
+      play_excluded: [{target: exited, mutate: record_explicit_exit}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  awareness_collect:
+    owner: play
+    checkpoint: both
+    requires: [awareness.window_days]
+    entry: {action: collect_awareness_digest}
+    "on":
+      awareness_ready: [{target: awareness_present, mutate: record_awareness_digest}]
+      awareness_unchanged: [{target: completed, mutate: record_awareness_digest}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  awareness_present:
+    owner: play
+    checkpoint: after
+    requires: [awareness.digest_ref]
+    entry: {action: present_awareness_digest}
+    "on":
+      awareness_presented: [{target: awareness_offer, mutate: record_awareness_presentation}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  awareness_offer:
+    owner: play
+    checkpoint: after
+    prompt: select_awareness_action
+    "on":
+      awareness_play_selected: [{target: use_inspect, mutate: enter_awareness_use}]
+      awareness_search_selected: [{target: awareness_need, mutate: record_awareness_search_choice}]
+      awareness_create_selected: [{target: creator_need, mutate: record_awareness_create_choice}]
+      awareness_dismissed: [{target: completed, mutate: record_awareness_dismissal}]
+
+  awareness_need:
+    owner: play
+    checkpoint: after
+    prompt: describe_awareness_need
+    "on":
+      awareness_need_described: [{target: search, mutate: set_awareness_search}]
+
+  creator_need:
+    owner: play
+    checkpoint: after
+    prompt: describe_creator_need
+    "on":
+      creator_need_described: [{target: creator_search, mutate: set_creator_need}]
+
+  creator_search:
+    owner: play
+    checkpoint: both
+    requires: [request.intent, request.requested_outcome, modality_policy]
+    entry: {action: search_creator_plays}
+    "on":
+      creator_search_ready:
+        - {guard: search_is_complete, target: creator_classify, mutate: record_creator_search}
+        - {target: blocked, mutate: record_incomplete_search}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  creator_classify:
+    owner: play
+    checkpoint: after
+    requires: [search.complete, search.result_refs]
+    entry: {action: classify_creator_options}
+    "on":
+      creator_match_ready: [{target: creator_offer, mutate: record_creator_match}]
+      creator_no_match: [{target: explore_prepare, mutate: approve_creator_explore}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  creator_offer:
+    owner: play
+    checkpoint: after
+    prompt: choose_creator_path
+    "on":
+      creator_use_selected: [{target: use_inspect, mutate: enter_creator_use}]
+      creator_adapt_selected: [{target: explore_prepare, mutate: approve_adapt_explore}]
+      creator_create_selected: [{target: explore_prepare, mutate: approve_creator_explore}]
+
+  management_offer:
+    owner: play
+    checkpoint: after
+    prompt: select_management_views
+    "on":
+      management_views_selected: [{target: management_list, mutate: choose_management_views}]
+
+  management_list:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [management.views]
+    entry: {action: list_play_management}
+    "on":
+      management_inventory_ready: [{target: management_present, mutate: record_management_inventory}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  management_present:
+    owner: play
+    checkpoint: after
+    requires: [management.views]
+    entry: {action: present_play_management}
+    "on":
+      management_presented: [{target: completed, mutate: record_management_presentation}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  search:
+    owner: play
+    checkpoint: both
+    requires: [request.intent, modality_policy]
+    entry: {action: search_authorized_plays}
+    "on":
+      search_ready:
+        - {guard: search_only_requested, target: search_present, mutate: record_search_results}
+        - {guard: search_is_complete, target: classify, mutate: record_search_results}
+        - {target: blocked, mutate: record_incomplete_search}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  search_present:
+    owner: play
+    checkpoint: after
+    requires: [search.complete, search.results]
+    entry: {action: present_search_results}
+    "on":
+      search_presented: [{target: search_offer, mutate: record_search_presentation}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  search_offer:
+    owner: play
+    checkpoint: after
+    prompt: choose_search_result
+    "on":
+      search_play_selected: [{target: use_inspect, mutate: enter_search_use}]
+      search_dismissed: [{target: completed, mutate: record_search_dismissal}]
+
+  classify:
+    owner: play
+    checkpoint: after
+    requires: [search.complete, search.result_refs]
+    entry: {action: classify_adequacy}
+    "on":
+      full_match:
+        - {guard: match_satisfies_constraints, target: use_inspect, mutate: enter_use}
+        - {target: explore_offer, mutate: downgrade_inadequate_match}
+      partial_match: [{target: explore_offer, mutate: record_partial_match}]
+      uncertain_match: [{target: explore_offer, mutate: record_uncertain_match}]
+      no_match: [{target: explore_offer, mutate: record_no_match}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  use_inspect:
+    owner: play
+    checkpoint: both
+    requires: [match.reference]
+    entry: {action: inspect_registry_play}
+    "on":
+      play_inspected: [{target: use_offer, mutate: record_play_inspection}]
+      play_not_runnable: [{target: completed, mutate: record_unrunnable_inspection}]
+      play_reference_unresolved: [{target: search, mutate: recover_unresolved_reference}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  use_offer:
+    owner: play
+    checkpoint: after
+    requires: [inspection.complete, inspection.exact_reference, inspection.disclosure_sha256]
+    prompt: approve_play_run
+    "on":
+      play_run_approved: [{target: use_run, mutate: approve_inspected_run}]
+      play_run_declined: [{target: completed, mutate: record_run_dismissal}]
+
+  use_run:
+    owner: flow-runtime
+    checkpoint: both
+    requires: [match.reference, inspection.exact_reference, inspection.disclosure_sha256]
+    entry: {action: run_registry_play}
+    "on":
+      play_run_ready: [{target: use_verify, mutate: record_controller_run}]
+      play_drifted: [{target: repair_offer, mutate: record_failed_receipt}]
+      action_blocked: [{target: repair_offer, mutate: record_failed_receipt}]
+
+  use_verify:
+    owner: play
+    checkpoint: after
+    entry: {action: verify_outcome}
+    "on":
+      outcome_verified: [{target: use_receipt, mutate: record_verification}]
+      play_drifted: [{target: repair_offer, mutate: record_failed_receipt}]
+      outcome_not_verified: [{target: repair_offer, mutate: record_failed_receipt}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  use_receipt:
+    owner: play
+    checkpoint: after
+    entry: {action: build_receipt}
+    "on":
+      receipt_ready: [{target: receipt, mutate: attach_receipt}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  repair_offer:
+    owner: play
+    checkpoint: after
+    prompt: repair_or_exit
+    "on":
+      repair_approved: [{target: explore_prepare, mutate: approve_repair_explore}]
+      ordinary_execution_selected: [{target: exited, mutate: record_ordinary_exit}]
+
+  explore_offer:
+    owner: play
+    checkpoint: after
+    prompt: explore_or_exit
+    "on":
+      explore_approved: [{target: explore_prepare, mutate: approve_explore}]
+      ordinary_execution_selected: [{target: exited, mutate: record_ordinary_exit}]
+
+  explore_prepare:
+    owner: play
+    checkpoint: both
+    requires: [consent.explore]
+    entry: {action: prepare_exploration}
+    "on":
+      exploration_ready:
+        - {guard: explore_is_approved, target: explore_route, mutate: record_exploration_context}
+        - {target: blocked, mutate: record_missing_consent}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  explore_route:
+    owner: play
+    checkpoint: after
+    entry: {action: select_modalities}
+    "on":
+      route_selected:
+        - {guard: route_within_policy, target: explore_execute, mutate: record_route}
+        - {target: modality_offer, mutate: record_widening_request}
+      modality_widening_required: [{target: modality_offer, mutate: record_widening_request}]
+      no_safe_route: [{target: blocked, mutate: record_no_route}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  modality_offer:
+    owner: play
+    checkpoint: after
+    prompt: widen_modalities
+    "on":
+      modality_widening_approved: [{target: explore_route, mutate: widen_modality_policy}]
+      modality_widening_declined: [{target: blocked, mutate: record_constraint_blocker}]
+
+  explore_execute:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [execution.owner, consent.explore]
+    entry: {action: execute_route}
+    "on":
+      outcome_ready: [{target: explore_verify, mutate: record_execution_evidence}]
+      route_exhausted:
+        - {guard: exploration_budget_remaining, target: explore_route, mutate: consume_attempt}
+        - {target: blocked, mutate: record_exhaustion}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  explore_verify:
+    owner: play
+    checkpoint: after
+    entry: {action: verify_outcome}
+    "on":
+      outcome_verified: [{target: crystallize, mutate: record_verification}]
+      outcome_not_verified:
+        - {guard: exploration_budget_remaining, target: explore_route, mutate: consume_attempt}
+        - {target: blocked, mutate: record_verification_failure}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  crystallize:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [evidence.verification]
+    entry: {action: prepare_candidate}
+    "on":
+      candidate_ready:
+        - {guard: outcome_is_verified, target: save_offer, mutate: record_candidate}
+        - {target: blocked, mutate: record_verification_failure}
+      not_reusable: [{target: completed, mutate: record_unpublished_result}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  save_offer:
+    owner: play
+    checkpoint: after
+    prompt: private_public_or_skip
+    "on":
+      save_private: [{target: author_release, mutate: choose_private}]
+      save_public: [{target: author_release, mutate: choose_public}]
+      save_skipped: [{target: completed, mutate: record_save_skipped}]
+
+  author_release:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [candidate.reference, consent.save]
+    entry: {action: author_release}
+    "on":
+      flow_released:
+        - {guard: save_choice_private, target: private_org, mutate: record_release}
+        - {guard: save_choice_public, target: public_owner, mutate: record_release}
+        - {target: blocked, mutate: record_missing_save_choice}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  private_org:
+    owner: rote-specialist
+    checkpoint: both
+    entry: {action: ensure_private_org}
+    "on":
+      private_org_ready:
+        - {guard: private_org_policy_satisfied, target: private_publish, mutate: record_private_org}
+        - {target: blocked, mutate: record_private_org_violation}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  private_publish:
+    owner: rote-specialist
+    checkpoint: both
+    entry: {action: publish_private}
+    "on":
+      play_published:
+        - {guard: publication_is_private, target: index, mutate: record_publication}
+        - {target: blocked, mutate: record_visibility_mismatch}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  public_owner:
+    owner: rote-specialist
+    checkpoint: both
+    entry: {action: resolve_public_owner}
+    "on":
+      public_owner_ready: [{target: public_publish, mutate: record_public_owner}]
+      public_owner_choice_required: [{target: public_owner_offer, mutate: record_public_owner_choices}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  public_owner_offer:
+    owner: play
+    checkpoint: after
+    prompt: select_public_owner
+    "on":
+      public_owner_selected: [{target: public_publish, mutate: record_public_owner}]
+      public_owner_declined: [{target: blocked, mutate: record_owner_blocker}]
+
+  public_publish:
+    owner: rote-specialist
+    checkpoint: both
+    entry: {action: publish_public}
+    "on":
+      play_published:
+        - {guard: publication_is_public, target: index, mutate: record_publication}
+        - {target: blocked, mutate: record_visibility_mismatch}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  index:
+    owner: play
+    checkpoint: both
+    requires: [publication.canonical_reference]
+    entry: {action: index_playcard}
+    "on":
+      play_indexed:
+        - {guard: exact_published_version_is_indexed, target: saved_inspect, mutate: record_index}
+        - {target: blocked, mutate: record_index_mismatch}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  saved_inspect:
+    owner: flow-runtime
+    checkpoint: both
+    requires: [publication.canonical_reference, publication.visibility, play.version]
+    entry: {action: inspect_saved_play}
+    "on":
+      saved_play_inspected:
+        - {guard: saved_inspection_matches_publication, target: completed, mutate: record_saved_inspection}
+        - {target: blocked, mutate: record_saved_inspection_mismatch}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  receipt: {owner: play}
+  completed: {owner: play}
+  exited: {owner: play}
+  blocked: {owner: play}

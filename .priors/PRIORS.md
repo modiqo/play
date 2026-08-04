@@ -34,3 +34,6 @@
 | P-0028 | skill-creator | conclusion | open | references/controller/machine.yaml | Every path into Play execution is dominated by read-only inspection and  |
 | P-0029 | skill-creator | conclusion | open | scripts/lib/play/search.py | A local owner/name-shaped Flow is not registry-addressable unless the au |
 | P-0030 | skill-creator | conclusion | open | scripts/lib/play/inspection.py | When a Play declares generic adapter operations but no write permissions |
+| P-0031 | plugin-creator | conclusion | open | scripts/lib/play/package.py | The marketplace payload is generated from the repository runtime and che |
+| P-0032 | plugin-creator | conclusion | open | scripts/lib/play/preflight.py | Play must fail closed until Rote is on PATH, authenticated, and exposes  |
+| P-0033 | plugin-creator | conclusion | open | scripts/harness/play-profile | Marketplace activation must not create a duplicate Play symlink; it shou |

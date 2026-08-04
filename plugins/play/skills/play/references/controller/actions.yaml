@@ -1,0 +1,359 @@
+schema: play.actions/v1
+
+owners: [play, rote-specialist, flow-runtime]
+effects: [none, read, local-write, external-write, mixed]
+
+guards:
+  - search_is_complete
+  - search_only_requested
+  - match_satisfies_constraints
+  - explore_is_approved
+  - route_within_policy
+  - exploration_budget_remaining
+  - outcome_is_verified
+  - save_choice_private
+  - save_choice_public
+  - private_org_policy_satisfied
+  - publication_is_private
+  - publication_is_public
+  - exact_published_version_is_indexed
+  - saved_inspection_matches_publication
+
+mutations:
+  - set_request_contract
+  - set_search_request
+  - set_awareness_request
+  - set_creator_request
+  - record_awareness_digest
+  - record_awareness_presentation
+  - enter_awareness_use
+  - record_awareness_search_choice
+  - record_awareness_create_choice
+  - record_awareness_dismissal
+  - set_awareness_search
+  - set_creator_need
+  - record_creator_search
+  - record_creator_match
+  - approve_creator_explore
+  - approve_adapt_explore
+  - enter_creator_use
+  - record_non_outcome_exit
+  - record_explicit_exit
+  - set_management_request
+  - record_management_choices
+  - choose_management_views
+  - record_management_inventory
+  - record_management_presentation
+  - record_blocker
+  - record_search_results
+  - record_search_presentation
+  - enter_search_use
+  - record_search_dismissal
+  - record_incomplete_search
+  - enter_use
+  - downgrade_inadequate_match
+  - record_partial_match
+  - record_uncertain_match
+  - record_no_match
+  - record_failed_receipt
+  - enter_direct_use
+  - record_play_inspection
+  - record_unrunnable_inspection
+  - recover_unresolved_reference
+  - approve_inspected_run
+  - record_run_dismissal
+  - record_controller_run
+  - record_verification
+  - attach_receipt
+  - approve_repair_explore
+  - record_ordinary_exit
+  - approve_explore
+  - record_exploration_context
+  - record_missing_consent
+  - record_route
+  - record_widening_request
+  - record_no_route
+  - widen_modality_policy
+  - record_constraint_blocker
+  - record_execution_evidence
+  - consume_attempt
+  - record_exhaustion
+  - record_verification_failure
+  - record_candidate
+  - record_unpublished_result
+  - choose_private
+  - choose_public
+  - record_save_skipped
+  - record_release
+  - record_missing_save_choice
+  - record_private_org
+  - record_private_org_violation
+  - record_publication
+  - record_visibility_mismatch
+  - record_public_owner
+  - record_public_owner_choices
+  - record_owner_blocker
+  - record_index
+  - record_index_mismatch
+  - record_saved_inspection
+  - record_saved_inspection_mismatch
+
+actions:
+  qualify_request:
+    kind: evaluator
+    owner: play
+    effect: none
+    input_required: [request.original]
+    events:
+      outcome_request: [request.intent, request.requested_outcome, modality_policy]
+      exact_play_request: [request.intent, request.requested_outcome, request.parameters, match.reference, modality_policy]
+      play_search_request: [request.intent]
+      play_awareness_request: [request.intent, awareness.window_days]
+      play_creation_request: [request.intent, request.requested_outcome, creator.intent, modality_policy]
+      play_management_request: [request.intent, management.views]
+      play_management_choice_required: [request.intent]
+      conversation: [reason]
+      play_excluded: [reason]
+
+  collect_awareness_digest:
+    kind: deterministic
+    owner: play
+    effect: local-write
+    input_required: [awareness.window_days]
+    command: scripts/bin/play-digest --remember --days <awareness.window_days> --json
+    events:
+      awareness_ready: [awareness.complete, awareness.digest_ref, awareness.play_choices, evidence_refs]
+      awareness_unchanged: [awareness.complete, awareness.digest_ref, awareness.play_choices, evidence_refs]
+
+  present_awareness_digest:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [awareness.complete, awareness.digest_ref, awareness.play_choices]
+    events:
+      awareness_presented: [awareness.digest_ref, awareness.play_choices]
+
+  search_creator_plays:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [request.intent, request.requested_outcome, modality_policy]
+    command: scripts/bin/play-search <request.intent> --json
+    events:
+      creator_search_ready: [search.complete, search.query, search.sources, search.result_refs, search.results]
+
+  classify_creator_options:
+    kind: evaluator
+    owner: play
+    effect: none
+    input_required: [request.requested_outcome, search.result_refs, modality_policy]
+    events:
+      creator_match_ready: [match.reference, match.covered, match.uncovered, confidence]
+      creator_no_match: [match.covered, match.uncovered, confidence]
+
+  list_play_management:
+    kind: delegated
+    owner: rote-specialist
+    effect: read
+    input_required: [management.views]
+    events:
+      management_inventory_ready: [management.org_summary_ref, management.plays_by_org_ref, evidence_refs]
+
+  present_play_management:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [management.views, management.org_summary_ref, management.plays_by_org_ref]
+    events:
+      management_presented: [management.views, management.org_summary_ref, management.plays_by_org_ref]
+
+  search_authorized_plays:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [request.intent, modality_policy]
+    command: scripts/bin/play-search <request.intent> --json
+    command_policy:
+      - Normalize once, then search local and authorized registry indexes concurrently.
+      - Deduplicate aliases and versions by canonical Play reference and return URI and run hints.
+      - Use registry or Flow search only because rote play currently exposes no search command.
+      - If rote play gains search support, prefer it and retire the lower-level gap route.
+    events:
+      search_ready: [search.complete, search.query, search.sources, search.result_refs, search.results, search.play_choices]
+
+  present_search_results:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [search.complete, search.query, search.sources, search.results]
+    command_policy:
+      - State whether each registry Play was found locally or is expected to need a pull/install.
+      - Use search.play_choices from the reusable search output; local-only Flow gaps remain informational.
+      - A selection identifies a Play for read-only inspection and never authorizes execution.
+    events:
+      search_presented: [search.query, search.sources, search.result_refs, search.results, search.play_choices]
+
+  classify_adequacy:
+    kind: evaluator
+    owner: play
+    effect: none
+    input_required: [request.requested_outcome, search.result_refs, modality_policy]
+    events:
+      full_match: [match.reference, match.covered, match.uncovered, confidence]
+      partial_match: [match.reference, match.covered, match.uncovered, confidence]
+      uncertain_match: [match.reference, match.covered, match.uncovered, confidence]
+      no_match: [match.covered, match.uncovered, confidence]
+
+  inspect_registry_play:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [match.reference, request.parameters]
+    command: scripts/bin/play-inspect <match.reference> --json
+    command_policy:
+      - Invoke first-class rote play inspect through the reusable wrapper; never pull, install, repair, authenticate, or run during this state.
+      - Present the exact version, purpose, parameters, declared operations, dependencies, credentials, local convergence, blockers, and declared write permissions.
+      - When generic adapter operations do not prove read/write semantics, label the effect unknown rather than claiming read-only execution.
+      - An explicit run request selects what to inspect; it is not approval to execute after disclosure.
+      - If and only if first-class inspection reports play-not-found, return play_reference_unresolved so the controller can search by the requested name; other inspection failures block.
+    events:
+      play_inspected: [inspection.complete, inspection.exact_reference, inspection.description, inspection.local_change, inspection.dependencies, inspection.operations, inspection.effects, inspection.disclosure_sha256]
+      play_not_runnable: [inspection.complete, inspection.exact_reference, inspection.description, inspection.blockers, inspection.dependencies, inspection.operations, inspection.effects, inspection.disclosure_sha256]
+      play_reference_unresolved: [reason]
+
+  run_registry_play:
+    kind: deterministic
+    owner: flow-runtime
+    effect: mixed
+    input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, request.original, request.parameters, effect_policy]
+    command: rote play run <inspection.exact_reference> <approved-parameters> --yes
+    command_policy:
+      - Use --yes only after approve_play_run returns play_run_approved for this exact inspection digest, reference, and displayed parameters.
+      - A run command in the original request, an Awareness selection, or a search selection never substitutes for post-inspection approval.
+      - If the inspection changes or parameters change, discard approval and return to use_inspect.
+      - Never replace this command with registry pull plus flow run, even when the Play is already local.
+    events:
+      play_run_ready: [play.version, resolution.local_state, resolution.pull_performed, result_ref, response_refs, artifact_refs, effects]
+      play_drifted: [reason, evidence_refs]
+
+  verify_outcome:
+    kind: evaluator
+    owner: play
+    effect: none
+    input_required: [request.requested_outcome, evidence]
+    events_by_state:
+      use_verify:
+        outcome_verified: [postconditions, evidence_refs]
+        outcome_not_verified: [failed_postconditions, evidence_refs]
+        play_drifted: [reason, evidence_refs]
+      explore_verify:
+        outcome_verified: [postconditions, evidence_refs]
+        outcome_not_verified: [failed_postconditions, evidence_refs]
+
+  build_receipt:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [match.reference, evidence.verification]
+    events:
+      receipt_ready: [receipt_ref]
+
+  prepare_exploration:
+    kind: deterministic
+    owner: play
+    effect: local-write
+    input_required: [consent.explore, request.requested_outcome]
+    events:
+      exploration_ready: [execution.workspace, execution.budget, evidence.baseline]
+
+  select_modalities:
+    kind: evaluator
+    owner: play
+    effect: none
+    input_required: [request.requested_outcome, modality_policy, judge_policy]
+    events:
+      route_selected: [execution.owner, route.modalities, justification]
+      modality_widening_required: [requested_modalities, reason]
+      no_safe_route: [reason, checked_capabilities]
+
+  execute_route:
+    kind: delegated
+    owner: rote-specialist
+    effect: mixed
+    input_required: [execution.owner, consent.explore, route.modalities]
+    events:
+      outcome_ready: [result_ref, response_refs, artifact_refs, modalities_used, effects]
+      route_exhausted: [reason, evidence_refs]
+
+  prepare_candidate:
+    kind: delegated
+    owner: rote-specialist
+    effect: local-write
+    input_required: [evidence.verification]
+    events:
+      candidate_ready: [candidate.reference, candidate.reusable, candidate.contract]
+      not_reusable: [reason, evidence_refs]
+
+  author_release:
+    kind: delegated
+    owner: rote-specialist
+    effect: local-write
+    input_required: [candidate.reference, consent.save]
+    events:
+      flow_released: [candidate.released_flow, play.version, verification_refs]
+
+  ensure_private_org:
+    kind: delegated
+    owner: rote-specialist
+    effect: external-write
+    input_required: [consent.save]
+    events:
+      private_org_ready: [publication.private_org, owner, members]
+
+  publish_private:
+    kind: delegated
+    owner: rote-specialist
+    effect: external-write
+    input_required: [candidate.released_flow, publication.private_org, consent.save]
+    events:
+      play_published: [publication.canonical_reference, visibility, owner, play.version]
+
+  resolve_public_owner:
+    kind: delegated
+    owner: rote-specialist
+    effect: read
+    input_required: [consent.save]
+    events:
+      public_owner_ready: [publication.owner]
+      public_owner_choice_required: [owner_choices]
+
+  publish_public:
+    kind: delegated
+    owner: rote-specialist
+    effect: external-write
+    input_required: [candidate.released_flow, publication.owner, consent.save]
+    events:
+      play_published: [publication.canonical_reference, visibility, owner, play.version]
+
+  index_playcard:
+    kind: deterministic
+    owner: play
+    effect: local-write
+    input_required: [publication.canonical_reference, play.version]
+    events:
+      play_indexed: [publication.canonical_reference, play.version, index_ref]
+
+  inspect_saved_play:
+    kind: deterministic
+    owner: flow-runtime
+    effect: read
+    input_required: [publication.canonical_reference, publication.visibility, play.version]
+    command: rote play inspect <publication.canonical_reference> --json
+    command_policy:
+      - Never replace first-class Play inspection with registry flow info.
+    events:
+      saved_play_inspected: [publication.canonical_reference, publication.visibility, play.version, publication.inspect_ref]
+
+failure_event:
+  id: action_blocked
+  required: [reason, recoverable, owner, evidence_refs]

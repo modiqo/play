@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Start or smoke-test a fresh harness with the Play-first profile."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_PROMPT = (
+    "Prepare a summary of deployment failures for the completed calendar week 2026-07-27 through "
+    "2026-08-02 from my authorized deployment systems. Treat the authorized Play-index search as "
+    "having returned no adequate match."
+)
+COMMANDS = {
+    "codex": ["codex"],
+    "claude": ["claude"],
+    "kimi": ["kimi"],
+}
+CODEX_QUIET_CONFIG = [
+    "-c",
+    'model_verbosity="low"',
+    "-c",
+    'model_reasoning_summary="none"',
+    "-c",
+    "hide_agent_reasoning=true",
+]
+
+
+def verify_profile() -> None:
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "harness" / "play-profile"), "verify"], cwd=ROOT
+    )
+    if result.returncode:
+        raise SystemExit(result.returncode)
+
+
+def installed_harnesses() -> list[str]:
+    return [name for name, command in COMMANDS.items() if shutil.which(command[0])]
+
+
+def interactive(name: str, quiet: bool = False) -> None:
+    command = list(COMMANDS[name])
+    if not shutil.which(command[0]):
+        raise SystemExit(f"{name} is not installed or not on PATH")
+    if quiet:
+        if name != "codex":
+            raise SystemExit("--quiet currently supports only the Codex harness")
+        command.extend(CODEX_QUIET_CONFIG)
+    verify_profile()
+    os.chdir(ROOT)
+    os.execvp(command[0], command)
+
+
+def smoke(name: str, prompt: str) -> None:
+    if not shutil.which(COMMANDS[name][0]):
+        raise SystemExit(f"{name} is not installed or not on PATH")
+    verify_profile()
+    output_file = None
+    if name == "codex":
+        temporary = tempfile.NamedTemporaryFile()
+        output_file = Path(temporary.name)
+        command = [
+            "codex",
+            "-C",
+            str(ROOT),
+            "-s",
+            "read-only",
+            "-a",
+            "never",
+            "exec",
+            "--ephemeral",
+            "--color",
+            "never",
+            "--output-last-message",
+            str(output_file),
+            prompt,
+        ]
+    elif name == "claude":
+        command = ["claude", "-p", "--permission-mode", "plan", "--tools", "", prompt]
+    else:
+        command = ["kimi", "--plan", "--prompt", prompt]
+    result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
+    if output_file and output_file.exists() and output_file.stat().st_size:
+        output = output_file.read_text().strip()
+        temporary.close()
+    else:
+        output = result.stdout.strip()
+    print(output)
+    normalized = output.lower()
+    if (
+        result.returncode
+        or "explore with rote" not in normalized
+        or "continue normally" not in normalized
+    ):
+        if result.stderr:
+            print(result.stderr.strip())
+        raise SystemExit(f"{name} Play-first smoke test failed")
+    print(f"{name} Play-first smoke test passed")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--smoke", action="store_true")
+    mode.add_argument("--smoke-all", action="store_true")
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="start Codex with low verbosity and reasoning events hidden",
+    )
+    parser.add_argument("harness", nargs="?", choices=tuple(COMMANDS), default="codex")
+    parser.add_argument("--prompt", default=DEFAULT_PROMPT)
+    args = parser.parse_args()
+
+    if args.quiet and (args.smoke or args.smoke_all):
+        parser.error("--quiet is only available for interactive Codex sessions")
+
+    if args.smoke_all:
+        harnesses = installed_harnesses()
+        if not harnesses:
+            raise SystemExit("no supported harness command is installed")
+        for name in harnesses:
+            smoke(name, args.prompt)
+    elif args.smoke:
+        smoke(args.harness, args.prompt)
+    else:
+        interactive(args.harness, quiet=args.quiet)
+
+
+if __name__ == "__main__":
+    main()

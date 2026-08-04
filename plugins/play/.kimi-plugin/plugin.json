@@ -1,0 +1,13 @@
+{
+  "name": "play",
+  "version": "0.1.0",
+  "description": "Discover, inspect, run, create, and share reusable Rote Plays.",
+  "author": {
+    "name": "Modiqo",
+    "email": "social@modiqo.ai"
+  },
+  "homepage": "https://getrote.dev",
+  "skills": "./skills/",
+  "sessionStart": "Use Play as the user-facing controller for reusable outcomes. Keep rote specialist skills explicit-only.",
+  "skillInstructions": "skills/play/SKILL.md"
+}

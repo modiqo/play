@@ -1,0 +1,17 @@
+{
+  "name": "play",
+  "version": "0.1.0",
+  "description": "Discover, inspect, run, create, and share reusable Rote Plays.",
+  "author": {
+    "name": "Modiqo",
+    "email": "social@modiqo.ai"
+  },
+  "homepage": "https://getrote.dev",
+  "skills": "./skills/",
+  "dependencies": [
+    {
+      "name": "rote",
+      "marketplace": "rote-skills"
+    }
+  ]
+}

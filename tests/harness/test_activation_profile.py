@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
@@ -43,6 +44,8 @@ class ActivationProfileTest(unittest.TestCase):
         environment = os.environ.copy()
         environment["PLAY_HARNESS_ROOTS"] = os.pathsep.join(map(str, self.roots))
         environment["PLAY_PROFILE_STATE"] = str(self.state)
+        if hasattr(self, "source"):
+            environment["PLAY_PROFILE_SOURCE"] = str(self.source)
         result = subprocess.run(
             [str(SCRIPT), command],
             cwd=ROOT,
@@ -101,6 +104,28 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertIn("changed since install", result.stderr)
         self.assertTrue((self.roots[0] / "play").is_symlink())
         self.assertTrue(self.state.exists())
+
+    def test_marketplace_install_does_not_create_duplicate_play_links(self) -> None:
+        plugin = Path(self.temporary.name) / "plugin"
+        self.source = plugin / "skills" / "play"
+        (plugin / ".codex-plugin").mkdir(parents=True)
+        (plugin / ".codex-plugin" / "plugin.json").write_text("{}\n")
+        (self.source / "agents").mkdir(parents=True)
+        (self.source / "SKILL.md").write_bytes((ROOT / "SKILL.md").read_bytes())
+        (self.source / "agents" / "openai.yaml").write_bytes(
+            (ROOT / "agents" / "openai.yaml").read_bytes()
+        )
+
+        result = self.run_profile("install")
+
+        self.assertIn("marketplace", result.stdout)
+        for root in self.roots:
+            self.assertFalse((root / "play").exists())
+        state = json.loads(self.state.read_text())
+        self.assertEqual("marketplace", state["mode"])
+        self.assertEqual([], state["play_links"])
+        self.run_profile("verify")
+        self.run_profile("uninstall")
 
 
 if __name__ == "__main__":

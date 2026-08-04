@@ -1,0 +1,22 @@
+{
+  "name": "play-skills",
+  "interface": {
+    "displayName": "Play Skills",
+    "description": "Discover, inspect, run, create, and share reusable Rote Plays."
+  },
+  "plugins": [
+    {
+      "name": "play",
+      "source": {
+        "source": "local",
+        "path": "./plugins/play"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity",
+      "products": ["CODEX"]
+    }
+  ]
+}

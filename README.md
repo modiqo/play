@@ -33,7 +33,62 @@ does, its parameters, adapters and credentials, what this machine must install o
 operations and writes, and any unknown effect semantics. Only the next structured choice can
 authorize the exact inspected version and displayed parameters.
 
-## Enable
+## Install from a marketplace
+
+Play is packaged as one self-contained plugin under `plugins/play`. The package includes the skill,
+controller references, Python runtime, harness activation tools, and the `justfile` recipes that
+configure and verify the Play-first experience. `scripts/bin/package-plugin --check` prevents those
+installed files from drifting from this repository's source of truth.
+
+Rote is a prerequisite. Install and complete its guided setup first:
+
+```bash
+# Codex
+codex plugin marketplace add modiqo/rote-skills
+codex plugin add rote-onboard@rote-skills
+
+# Claude Code
+claude plugin marketplace add modiqo/rote-skills
+claude plugin install rote-onboard@rote-skills
+```
+
+Restart the harness and invoke `$rote-setup` in Codex or `/rote-setup` in Claude Code. Play checks
+that the `rote` executable is present, an identity is authenticated, and `rote play` is available;
+it stops with the applicable setup commands when any precondition is missing. It never installs or
+authenticates Rote without permission.
+
+This checkout is itself a valid local marketplace:
+
+```bash
+# Run from this repository root.
+codex plugin marketplace add .
+codex plugin add play@play-skills
+
+claude plugin marketplace add .
+claude plugin install play@play-skills
+```
+
+After this marketplace is published, `.` can be replaced with its GitHub `owner/repository`. The
+repository currently has no Git remote, so this README intentionally does not advertise a public
+Play marketplace address that does not yet exist. Claude's manifest declares the `rote` plugin as
+a dependency from the separately trusted `rote-skills` marketplace; every harness still uses the
+same runtime preflight because plugin metadata alone cannot prove CLI installation or login state.
+
+Restart the harness after plugin installation. On first use, Play runs the bundled preflight. To
+make Play the implicit entrypoint while keeping installed `rote` specialists explicit-only, preview
+and apply the bundled reversible activation profile from the installed skill directory:
+
+```bash
+just plan
+just install
+just verify-profile
+```
+
+In marketplace mode this profile does not create a second Play link. It only snapshots and updates
+the activation metadata of discovered `rote` skills. Uninstall restores those exact snapshots and
+fails closed if a managed file was subsequently changed.
+
+## Enable from a source checkout
 
 Preview every harness root and canonical rote skill that will change:
 
@@ -230,6 +285,8 @@ newer content silently.
 ## Development checks
 
 ```bash
+just package
+just package-check
 just test
 ```
 
