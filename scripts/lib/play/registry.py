@@ -173,6 +173,96 @@ def inspect_play(reference: str) -> dict[str, Any]:
     }
 
 
+def load_registry_flow_info(reference: str) -> dict[str, Any]:
+    """Return display metadata and archive totals from ``registry flow info``.
+
+    This read does not require Play execution authentication.  It is therefore
+    suitable for awareness surfaces, but it deliberately does not imply that a
+    Play is installed or runnable on the current machine.
+    """
+
+    owner, separator, requested_name = reference.partition("/")
+    if not separator or not owner or not requested_name:
+        raise RegistryReadError(f"invalid Play reference {reference!r}")
+    payload = run_rote_json(
+        "registry", "flow", "info", reference, "--json", error_type=RegistryReadError
+    )
+    skill = payload.get("skill") if isinstance(payload, dict) else None
+    version = payload.get("version") if isinstance(payload, dict) else None
+    if not isinstance(skill, dict) or not isinstance(version, dict):
+        raise RegistryReadError(f"Registry info for {reference} has an unsupported shape")
+    name = skill.get("name")
+    visibility = skill.get("visibility")
+    release = version.get("version")
+    downloads = version.get("download_count")
+    installs = version.get("install_count")
+    if name != requested_name:
+        raise RegistryReadError(f"Registry info for {reference} resolved {name!r} instead")
+    if visibility not in {"private", "public"}:
+        raise RegistryReadError(f"Registry info for {reference} has invalid visibility")
+    if not isinstance(release, str) or not release:
+        raise RegistryReadError(f"Registry info for {reference} lacks a released version")
+    if not isinstance(downloads, int) or downloads < 0:
+        raise RegistryReadError(f"Registry info for {reference} lacks a valid download count")
+    if not isinstance(installs, int) or installs < 0:
+        raise RegistryReadError(f"Registry info for {reference} lacks a valid install count")
+
+    metadata = version.get("metadata")
+    provenance = metadata.get("provenance") if isinstance(metadata, dict) else None
+    author = provenance.get("author") if isinstance(provenance, dict) else None
+    creator_name = author.strip() if isinstance(author, str) and author.strip() else None
+    return {
+        "reference": reference,
+        "exact_reference": f"{reference}@{release}",
+        "name": name,
+        "owner": owner,
+        "description": skill.get("description") or "",
+        "visibility": visibility,
+        "version": release,
+        "version_created_at": version.get("created_at"),
+        "status": version.get("status"),
+        "download_count": downloads,
+        "install_count": installs,
+        "creator_name": creator_name,
+        "creator_status": "available" if creator_name else "unavailable",
+        "creator_source": "version.metadata.provenance.author" if creator_name else None,
+        "default_parameters": {},
+    }
+
+
+def load_registry_flow_infos(
+    requested_references: list[str],
+    *,
+    limit: int = 100,
+    require_public: bool = False,
+) -> InspectionBatch:
+    """Load bounded registry display metadata for a set of canonical references."""
+
+    if limit < 1:
+        raise RegistryReadError("registry info limit must be at least 1")
+    references = list(dict.fromkeys(requested_references))
+    candidate_count = len(references)
+    selected = references[:limit]
+    omitted_count = candidate_count - len(selected)
+    if not selected:
+        return InspectionBatch([], [], candidate_count, omitted_count)
+
+    def load(reference: str) -> tuple[str, dict[str, Any] | None, str | None]:
+        try:
+            flow = load_registry_flow_info(reference)
+        except RegistryReadError as error:
+            return reference, None, str(error)
+        if require_public and flow["visibility"] != "public":
+            return reference, None, "registry info no longer reports public visibility"
+        return reference, flow, None
+
+    with ThreadPoolExecutor(max_workers=min(8, len(selected))) as executor:
+        loaded = list(executor.map(load, selected))
+    flows = [(flow["owner"], flow) for _, flow, error in loaded if flow is not None and error is None]
+    errors = [f"{reference}: {error}" for reference, _, error in loaded if error is not None]
+    return InspectionBatch(flows, errors, candidate_count, omitted_count)
+
+
 def inspect_references(
     requested_references: list[str],
     *,
@@ -227,6 +317,22 @@ def inspect_authorized_public_flows(
         limit=limit,
         require_public=True,
     )
+
+
+def load_authorized_public_flow_infos(
+    grouped: dict[str, list[dict]],
+    *,
+    limit: int = 100,
+) -> InspectionBatch:
+    """Load ranking metadata for authorized public Plays without execution checks."""
+
+    candidates = sorted(
+        f"{slug}/{flow['name']}"
+        for slug, flows in grouped.items()
+        for flow in flows
+        if flow["visibility"] == "public" and not flow.get("deleted_at")
+    )
+    return load_registry_flow_infos(candidates, limit=limit, require_public=True)
 
 
 def member_count(slug: str) -> int:

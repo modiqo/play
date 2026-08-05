@@ -35,6 +35,7 @@ def scope_contract(
     window_days: int,
     public_limit: int,
     inspection_budget: int,
+    update_metadata_budget: int,
     update_inspection_budget: int,
 ) -> dict[str, Any]:
     """Describe the authorization-sensitive inputs that make one memory stream."""
@@ -44,6 +45,7 @@ def scope_contract(
         "window_days": window_days,
         "public_limit": public_limit,
         "inspection_budget": inspection_budget,
+        "update_metadata_budget": update_metadata_budget,
         "update_inspection_budget": update_inspection_budget,
     }
 

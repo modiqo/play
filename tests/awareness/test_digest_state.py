@@ -27,6 +27,7 @@ class DigestStateTest(unittest.TestCase):
             window_days=1,
             public_limit=5,
             inspection_budget=8,
+            update_metadata_budget=100,
             update_inspection_budget=4,
         )
         self.key = scope_key(self.scope)
@@ -44,6 +45,7 @@ class DigestStateTest(unittest.TestCase):
             window_days=1,
             public_limit=5,
             inspection_budget=8,
+            update_metadata_budget=100,
             update_inspection_budget=4,
         )
         ordered_scope = scope_contract(
@@ -51,6 +53,7 @@ class DigestStateTest(unittest.TestCase):
             window_days=1,
             public_limit=5,
             inspection_budget=8,
+            update_metadata_budget=100,
             update_inspection_budget=4,
         )
         self.assertEqual(scope_key(ordered_scope), scope_key(reversed_scope))

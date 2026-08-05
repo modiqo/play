@@ -19,7 +19,7 @@
   "states": {
     "qualify": {"orb": "solving", "label": "Understanding the request…"},
     "awareness_collect": {"orb": "searching", "label": "Checking what changed in Plays…"},
-    "awareness_present": {"orb": "working", "label": "Preparing the Play digest…"},
+  "awareness_present": {"orb": "working", "label": "Opening your Play inbox…"},
     "awareness_offer": {"orb": "listening", "label": "Waiting for a digest choice…"},
     "awareness_need": {"orb": "listening", "label": "Listening for what to find…"},
     "creator_need": {"orb": "listening", "label": "Listening for the Play outcome…"},

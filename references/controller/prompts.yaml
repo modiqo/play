@@ -2,7 +2,7 @@ schema: play.prompts/v1
 
 prompts:
   select_awareness_action:
-    question: What would you like to do with this Play digest?
+    question: What would you like to do from What’s new?
     selection: single
     choices_from:
       context: awareness.play_choices

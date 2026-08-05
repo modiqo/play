@@ -14,8 +14,10 @@ from play.registry import (
     PlayNotFoundError,
     inspect_authorized_public_flows,
     inspect_play,
+    load_authorized_public_flow_infos,
     load_authorized_flows,
     load_play_inspection,
+    load_registry_flow_info,
 )
 
 
@@ -78,6 +80,29 @@ class RegistryTest(unittest.TestCase):
         }
         with self.assertRaisesRegex(PlayNotFoundError, "play not found"):
             load_play_inspection("alpha/missing")
+
+    @patch("play.registry.run_rote_json")
+    def test_registry_flow_info_exposes_creator_and_lifetime_totals(self, run_json) -> None:
+        run_json.return_value = {
+            "skill": {
+                "name": "report",
+                "description": "Weekly customer report",
+                "visibility": "public",
+            },
+            "version": {
+                "version": "1.2.0",
+                "status": "approved",
+                "created_at": "2026-08-03T00:00:00Z",
+                "download_count": 8,
+                "install_count": 3,
+                "metadata": {"provenance": {"author": "Alice Example"}},
+            },
+        }
+        flow = load_registry_flow_info("alpha/report")
+        self.assertEqual("alpha/report@1.2.0", flow["exact_reference"])
+        self.assertEqual("Alice Example", flow["creator_name"])
+        self.assertEqual(8, flow["download_count"])
+        self.assertNotIn("run_count", flow)
 
     @patch("play.registry.run_rote_json")
     def test_nonzero_play_not_found_is_typed_for_search_recovery(self, run_json) -> None:
@@ -155,6 +180,24 @@ class RegistryTest(unittest.TestCase):
         inspect.assert_called_once_with("alpha/newer")
         self.assertEqual(2, batch.candidate_count)
         self.assertEqual(1, batch.omitted_count)
+
+    @patch("play.registry.load_registry_flow_info")
+    def test_public_registry_info_is_scoped_to_authorized_public_candidates(self, load) -> None:
+        load.return_value = {
+            "reference": "alpha/public",
+            "owner": "alpha",
+            "visibility": "public",
+        }
+        batch = load_authorized_public_flow_infos(
+            {
+                "alpha": [
+                    {"name": "public", "visibility": "public"},
+                    {"name": "private", "visibility": "private"},
+                ]
+            }
+        )
+        load.assert_called_once_with("alpha/public")
+        self.assertEqual(1, batch.candidate_count)
 
 
 if __name__ == "__main__":

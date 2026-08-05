@@ -1,8 +1,9 @@
 # Play Awareness Digest
 
-Use this guidance for daily or weekly digests, new or revised Plays, top public Plays, and personal
-impact summaries. Awareness is externally read-only and precedes Use; remembered mode may update
-only its declared local SHA/checkpoint store. Do not merge it into execution.
+Use this guidance for “whats new” or “what's new”, daily or weekly Play inboxes, new or revised Plays, top public
+Plays, and personal impact summaries. Awareness is externally read-only and precedes Use;
+remembered mode may update only its declared local SHA/checkpoint store. Do not merge it into
+execution. Treat `$play digest` as a compact alias, not the primary natural-language framing.
 
 ## Collect
 
@@ -22,7 +23,7 @@ snapshot; it excludes the moving digest window. Compare it with the previous SHA
 
 - `initial`: present the complete first digest.
 - `changed`: present the new/revised window and current public ranking.
-- `unchanged`: emit `awareness_unchanged`, say only “Nothing changed since your last Play digest.”,
+- `unchanged`: emit `awareness_unchanged`, say only “Nothing new since your last Play check.”,
   and finish without the action selector.
 
 Advance memory only after stdout has been flushed successfully. A failed collection never changes
@@ -34,25 +35,31 @@ required organization discovery timeout fails closed instead of freezing the har
 already knows the authorized scope may repeat `--org <slug>` to bypass discovery; this is a scope
 assertion from the host, not permission to read an unauthorized organization.
 
-Public inspection is also bounded (`--inspection-budget 8` by default). Candidates are selected
-most-recently-updated first, then ranked by inspected lifetime downloads. When candidates are
-omitted or an inspection fails, label the result as an inspected sample and return candidate,
-inspected, and omitted counts; never call it exhaustive.
+Public registry metadata reads are bounded (`--inspection-budget 100` by default). Read authorized
+public candidates with `rote registry flow info`, rank the successfully read candidates by released
+version lifetime downloads, and show at most 10 by default. When candidates are omitted or a read
+fails, label the result as an inspected sample and return candidate, inspected, and omitted counts;
+never call it exhaustive.
 
-New and revised cards use a separate update inspection budget (four by default). Successful
-inspection pins the card to `owner/name@version` and displays exact defaults. A card omitted from
-or failed by inspection remains visible for awareness but is not an exact Use choice until a later
-inspect succeeds.
+New and revised cards use a separate registry metadata budget (100 by default) to retrieve released
+version, lifetime totals, and `version.metadata.provenance.author`. Treat that author as publication
+display metadata, not proof that it maps to the current signed-in identity. A second, separate update
+inspection budget (four by default) pins successful cards to `owner/name@version` and displays exact
+defaults. A card omitted from or failed by Play inspection remains visible for awareness but is not
+an exact Use choice until a later inspect succeeds.
 
 - New means first publication occurred inside the window.
 - Revised means a newer released version occurred inside the window. Require
   `latest_version_created_at`; `updated_at` alone may be a metadata edit and is not sufficient.
 - Do not treat a visibility-only metadata edit as a revision.
 - Include private Plays only from organizations authorized for the current identity.
-- Enrich authorized public candidates with `rote play inspect <reference> --json`; use its exact
-  owner, version, visibility, parameters, run eligibility, download count, and install count.
+- Enrich authorized public candidates with `rote registry flow info <reference> --json`; use its
+  released version, visibility, author provenance, download count, and install count. This awareness
+  read does not imply local installation or run eligibility; inspect a selected card before Use.
 - Describe public results as trending only when the metric is windowed usage. Lifetime totals must
   be labeled most downloaded and must name their coverage scope.
+- Registry flow list/info currently expose no run count. Report run metrics as unavailable and use
+  lifetime downloads for ranking until a canonical run metric exists.
 - The current registry has no canonical global public enumeration. Label the default ranking
   `authorized_organizations` and report global public ranking as unavailable. Never imply that a
   relevance search or community list is an exhaustive global ranking.
@@ -60,15 +67,19 @@ inspect succeeds.
 
 ## Present
 
-Show compact New, Revised, Public, and Your impact sections. Each actionable card must carry the
-canonical reference, owner, visibility, version when known, and displayed parameters.
+Present `# What’s new in Plays` as an inbox. Group New and Revised cards by organization; show title,
+publication author or “Creator unavailable”, a short description, visibility, timestamp, and
+canonical reference. Follow with the top 10 public Plays by the explicitly named metric and then
+Your impact. Each actionable card must carry the canonical reference, owner, visibility, version
+when known, and displayed parameters in structured output even when compact prose omits defaults.
 
 Use the `select_awareness_action` elicitation. Selecting a card carries only its exact displayed
 reference and parameters into read-only inspection. After the dependencies, local convergence,
 operations, and effects are disclosed, `approve_play_run` is the sole execution gate. Selecting
 Describe a need enters normal Play search. Selecting Create a Play enters creator discovery.
 
-The skill cannot invent a scheduler. Without `--remember`, `$play digest` emits a
+The skill cannot invent a scheduler. Without `--remember`, `$play whats new` (or `$play digest`)
+emits a
 `play.digest-checkpoint/v1` `next_checkpoint` but does not write it; an authorized host may persist
 that object and pass it back with `--checkpoint <path>`. `--since <timestamp>` is the stateless
 equivalent. With `--remember`, only the declared on-demand state file advances after successful

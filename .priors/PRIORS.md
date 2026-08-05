@@ -43,3 +43,5 @@
 | P-0037 | skill-creator | conclusion | open | SKILL.md | The Play skill presents orb state and playful copy only at user-visible  |
 | P-0038 | rote-troubleshooting | conclusion | open | scripts/harness/play-profile | Re-running Play profile installation after a Rote or harness refresh mus |
 | P-0039 | rote-troubleshooting | conclusion | open | SKILL.md | In a text-only harness, every visible Play milestone must use the exact  |
+| P-0040 | skill-creator | conclusion | open | SKILL.md | Play treats 'whats new' as its primary awareness inbox, groups new and r |
+| P-0041 | skill-creator | conclusion | open | scripts/lib/play/digest.py | Play awareness reads authorized registry flow info for publication autho |

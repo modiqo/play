@@ -13,7 +13,7 @@ outcome in ordinary language:
 $play find a Play that retrieves recent emails
 $play run the PostHog daily active users report
 $play create a reusable weekly customer report
-$play show my digest
+$play whats new
 $play list my organizations and shared Plays
 Handle this normally without Play
 ```
@@ -26,7 +26,7 @@ Play keeps four decisions separate so each prompt is small and honest:
 | Run a known or vaguely named Play | Resolve the name, inspect it read-only, and show setup/effects | Pull and run, or not now |
 | Solve a one-off task | Search first; if no adequate Play exists, offer Explore | Explore with rote, or continue normally |
 | Preserve successful exploration | Verify it before preparing a candidate | Private, Public, or Skip |
-| Keep up with the ecosystem | Compare the current digest with the remembered SHA | Run, search, create, or finish |
+| See what’s new | Pull an inbox grouped by organization and compare it with the remembered SHA | Run, search, create, or finish |
 
 Search selection is never execution approval. Before every run, Play shows what the exact version
 does, its parameters, adapters and credentials, what this machine must install or repair, declared
@@ -208,29 +208,34 @@ After Private or Public publication, Play indexes and inspects the canonical ver
 the save successful. Organization membership, invitations, and sharing use the organization/list
 surface rather than hidden local state.
 
-Show an externally read-only awareness digest:
+Open the externally read-only Play inbox:
 
 ```text
-$play digest
-$play digest for the last 7 days
+$play whats new
+$play whats new this week
+$play digest                       # compact command alias
 scripts/bin/play-digest --remember --days 1 --json
 scripts/bin/play-digest --since 2026-08-03T00:00:00Z --json
 scripts/bin/play-digest --checkpoint host-checkpoint.json --json
 scripts/bin/play-digest --org modiqo --days 7 --json
 ```
 
-The digest separates newly published Plays from revisions backed by released-version timestamps,
-enriches public Plays in authorized organizations through canonical `play inspect` data, and
-exposes exact selections that enter read-only inspection before execution approval. Ranking scope and
-missing global or personal metrics are explicit rather than inferred. The emitted checkpoint token
-can be persisted by an authorized host for gap-free daily delivery; the command does not write host
-state unless `--remember` is explicit.
+“What’s new” is intentionally framed like an inbox. It groups new and revised Plays by organization
+and shows each Play’s title, publication author when provenance supplies one, short description,
+visibility, timestamp, and canonical reference. It then shows the top 10 public Plays in authorized
+organizations ranked by lifetime downloads. Registry flow info does not currently expose run counts,
+so the UI labels downloads explicitly and never calls them runs or trending activity.
 
-On normal `$play digest` requests, Play uses remembered mode. It stores only a stable awareness SHA,
+Selecting a card enters read-only inspection before execution approval. Publication authors are
+display metadata; Play does not equate an author string with the current signed-in identity. Ranking
+scope and missing global, run, or personal metrics are explicit rather than inferred. The emitted
+checkpoint token can be persisted by an authorized host for gap-free daily delivery; the command
+does not write host state unless `--remember` is explicit.
+
+On normal `$play whats new` requests, Play uses remembered mode. It stores only a stable awareness SHA,
 UTC checkpoint, and authorized-scope contract in `~/.rote/play/digest-state.json`. If the current
-snapshot has the same SHA, the next response is simply “Nothing changed since your last Play
-digest.” The moving time window is excluded from the SHA, and no digest contents or credentials are
-stored.
+snapshot has the same SHA, the next response is simply “Nothing new since your last Play check.”
+The moving time window is excluded from the SHA, and no inbox contents or credentials are stored.
 
 Recurring delivery is optional and must be explicitly requested. Its host-neutral two-phase
 contract remains available for an authorized scheduler:

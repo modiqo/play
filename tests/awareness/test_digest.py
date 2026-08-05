@@ -93,7 +93,8 @@ class DigestTest(unittest.TestCase):
             public_limit=5,
         )
         self.assertFalse(digest["org_updates"]["revised_complete"])
-        self.assertIn("Revised in your organizations", render_markdown(digest))
+        self.assertIn("Revisions are unavailable", render_markdown(digest))
+        self.assertIn("No new publications were found", render_markdown(digest))
         self.assertIn("released-version timestamps", render_markdown(digest))
 
     def test_inspected_update_is_version_pinned_and_actionable(self) -> None:
@@ -127,6 +128,41 @@ class DigestTest(unittest.TestCase):
         self.assertTrue(item["actionable"])
         self.assertEqual("alpha/new-play@1.1.0", item["reference"])
         self.assertEqual({"days": "7"}, item["parameters"])
+
+    def test_whats_new_groups_cards_by_org_with_creator_and_description(self) -> None:
+        grouped = {
+            "alpha": [
+                {
+                    "name": "weekly-report",
+                    "description": "Original description",
+                    "visibility": "public",
+                    "created_at": "2026-08-03T04:00:00+00:00",
+                    "latest_version_created_at": "2026-08-03T04:00:00+00:00",
+                }
+            ]
+        }
+        digest = build_digest(
+            [Organization("alpha", "Alpha Team")],
+            grouped,
+            [],
+            start=self.start,
+            end=self.end,
+            public_limit=10,
+            update_metadata={
+                "alpha/weekly-report": {
+                    "description": "A concise weekly customer report.",
+                    "creator_name": "Alice Example",
+                    "creator_status": "available",
+                    "version": "1.0.0",
+                }
+            },
+        )
+        rendered = render_markdown(digest)
+        self.assertIn("# What’s new in Plays", rendered)
+        self.assertIn("### Alpha Team (`alpha`)", rendered)
+        self.assertIn("**weekly-report** · New · by Alice Example", rendered)
+        self.assertIn("A concise weekly customer report.", rendered)
+        self.assertEqual("unavailable", digest["capabilities"]["run_metrics"]["status"])
 
     def test_ranking_reports_partial_inspection_without_inventing_global_coverage(self) -> None:
         ranked, contract = rank_public(

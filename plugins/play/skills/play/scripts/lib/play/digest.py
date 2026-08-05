@@ -22,12 +22,13 @@ from .registry import (
     RegistryReadError,
     InspectionBatch,
     Organization,
-    inspect_authorized_public_flows,
     inspect_references,
+    load_authorized_public_flow_infos,
     load_authorized_flows,
+    load_registry_flow_infos,
     load_organizations,
 )
-from .render import compact_json, json_text
+from .render import json_text
 from .timewindow import TimeWindowError, next_checkpoint, parse_timestamp, resolve_window
 
 
@@ -50,6 +51,8 @@ def _digest_item(slug: str, flow: dict[str, Any], timestamp: datetime, kind: str
         "name": flow["name"],
         "owner": slug,
         "description": flow.get("description") or "",
+        "creator_name": None,
+        "creator_status": "unavailable",
         "visibility": flow["visibility"],
         "kind": kind,
         "timestamp": timestamp.isoformat(),
@@ -117,6 +120,8 @@ def rank_public(
                 "name": flow["name"],
                 "owner": slug,
                 "description": flow.get("description") or "",
+                "creator_name": flow.get("creator_name"),
+                "creator_status": flow.get("creator_status", "unavailable"),
                 "visibility": "public",
                 "version": flow.get("version"),
                 "download_count": downloads,
@@ -128,9 +133,9 @@ def rank_public(
     ranking = {
         "metric": "lifetime_downloads",
         "label": (
-            "Most downloaded public Plays in your organizations"
+            "Top public Plays by lifetime downloads in your organizations"
             if source_complete
-            else "Most downloaded inspected public Plays in your organizations"
+            else "Top inspected public Plays by lifetime downloads in your organizations"
         ),
         "scope": "authorized_organizations",
         "eligible_count": len(eligible),
@@ -144,9 +149,12 @@ def rank_public(
     if source_errors:
         ranking["errors"] = source_errors
     if not source_complete:
-        ranking["reason"] = "one or more public Plays could not be inspected"
+        ranking["reason"] = "one or more public Plays could not be read"
     elif not eligible:
-        ranking["reason"] = "no run-eligible public Plays were found in authorized organizations"
+        ranking["reason"] = (
+            "no released public Plays with lifetime download totals were found in authorized "
+            "organizations"
+        )
     return eligible[:limit], ranking
 
 
@@ -174,6 +182,8 @@ def awareness_fingerprint(
                 for key in (
                     "reference",
                     "version",
+                    "creator_name",
+                    "description",
                     "download_count",
                     "install_count",
                     "parameters",
@@ -202,16 +212,26 @@ def build_digest(
     ranking_candidate_count: int | None = None,
     ranking_omitted_count: int = 0,
     update_inspections: dict[str, dict[str, Any]] | None = None,
+    update_metadata: dict[str, dict[str, Any]] | None = None,
+    update_metadata_errors: list[str] | None = None,
+    update_metadata_omitted_count: int = 0,
     update_inspection_errors: list[str] | None = None,
     update_omitted_count: int = 0,
 ) -> dict[str, Any]:
     new, revised = classify_updates(grouped, start, end)
     inspected_updates = update_inspections or {}
+    metadata_updates = update_metadata or {}
     for item in [*new, *revised]:
         base_reference = item["reference"]
+        metadata = metadata_updates.get(base_reference)
         inspected = inspected_updates.get(base_reference)
         item["base_reference"] = base_reference
         item["actionable"] = inspected is not None
+        if metadata is not None:
+            item["description"] = metadata.get("description") or item["description"]
+            item["creator_name"] = metadata.get("creator_name")
+            item["creator_status"] = metadata.get("creator_status", "unavailable")
+            item["version"] = metadata.get("version")
         if inspected is not None:
             item["reference"] = inspected["exact_reference"]
             item["version"] = inspected.get("version")
@@ -241,7 +261,7 @@ def build_digest(
             "end": end.astimezone(timezone.utc).isoformat(),
             "timezone": "UTC",
         },
-        "sources": ["authorized_registry", "play_inspect"],
+        "sources": ["authorized_registry", "registry_flow_info", "play_inspect"],
         "organizations": [
             {"slug": org.slug, "display_name": org.display_name} for org in organizations
         ],
@@ -272,6 +292,15 @@ def build_digest(
                     "omitted_count": update_omitted_count,
                     "errors": update_inspection_errors or [],
                 },
+                "creator_metadata": {
+                    "status": (
+                        "available"
+                        if not update_metadata_errors and update_metadata_omitted_count == 0
+                        else "partial"
+                    ),
+                    "omitted_count": update_metadata_omitted_count,
+                    "errors": update_metadata_errors or [],
+                },
             },
             "public_ranking": {
                 "status": "available" if ranking["complete"] else "partial",
@@ -283,12 +312,25 @@ def build_digest(
             },
             "personal_attribution": {
                 "status": "unavailable",
-                "missing": ["creator identity on publications", "persistent verified receipts"],
+                "missing": [
+                    "verified mapping from publication author to current identity",
+                    "persistent verified receipts",
+                ],
+            },
+            "run_metrics": {
+                "status": "unavailable",
+                "reason": (
+                    "registry flow list/info expose lifetime download and install totals, "
+                    "but no run count"
+                ),
             },
         },
         "personal_stats": {
             "status": "unavailable",
-            "reason": "registry inventory does not yet expose attributable creator and verified-run metrics",
+            "reason": (
+                "registry metadata can display publication authors, but cannot map them to the "
+                "current identity or report verified run counts"
+            ),
         },
         "next_checkpoint": next_checkpoint(end),
     }
@@ -297,42 +339,63 @@ def build_digest(
 def render_markdown(digest: dict[str, Any]) -> str:
     memory = digest.get("memory")
     if isinstance(memory, dict) and memory.get("status") == "unchanged":
-        return "Nothing changed since your last Play digest."
+        return "Nothing new since your last Play check."
     window = digest["window"]
     lines = [
-        "# Play digest",
+        "# What’s new in Plays",
         "",
         f"Window: `{window['start']}` to `{window['end']}`",
     ]
-    for key, title in (("new", "New in your organizations"), ("revised", "Revised in your organizations")):
-        items = digest["org_updates"][key]
-        lines.extend(["", f"## {title} ({len(items)})", ""])
-        if key == "revised" and not digest["org_updates"]["revised_complete"]:
-            lines.append("— Unavailable: registry list lacks released-version timestamps")
-            continue
-        if items:
-            for item in items:
-                parameters = compact_json(item["parameters"])
-                lines.append(
-                    f"- `{item['reference']}` · {item['visibility']} · {item['timestamp']} "
-                    f"· parameters `{parameters}`"
-                    + ("" if item.get("actionable") else " · inspect required before Use")
-                )
-        else:
-            lines.append("— None")
+    new_items = digest["org_updates"]["new"]
+    revised_items = digest["org_updates"]["revised"]
+    lines.extend(["", f"## Inbox ({len(new_items) + len(revised_items)})", ""])
+    if not digest["org_updates"]["revised_complete"]:
+        lines.append("Revisions are unavailable: registry list lacks released-version timestamps.")
+        lines.append("")
+    display_names = {org["slug"]: org["display_name"] for org in digest["organizations"]}
+    all_updates = [*new_items, *revised_items]
+    if not all_updates:
+        lines.append(
+            "— Your Play inbox is clear"
+            if digest["org_updates"]["revised_complete"]
+            else "— No new publications were found"
+        )
+    for owner in sorted({item["owner"] for item in all_updates}, key=lambda value: display_names.get(value, value).casefold()):
+        owner_items = [item for item in all_updates if item["owner"] == owner]
+        lines.extend([f"### {display_names.get(owner, owner)} (`{owner}`)", ""])
+        for item in owner_items:
+            creator = item.get("creator_name") or "Creator unavailable"
+            description = " ".join((item.get("description") or "No description provided.").split())
+            if len(description) > 180:
+                description = description[:177].rstrip() + "…"
+            state = "New" if item["kind"] == "new" else "Revised"
+            lines.append(f"- **{item['name']}** · {state} · by {creator}")
+            lines.append(f"  {description}")
+            lines.append(
+                f"  `{item['reference']}` · {item['visibility']} · {item['timestamp']}"
+                + ("" if item.get("actionable") else " · inspect before Use")
+            )
     ranking = digest["ranking"]
     lines.extend(["", f"## {ranking['label']} ({len(digest['public_top'])})", ""])
-    lines.append("Scope: authorized organizations; global public ranking is unavailable.")
+    lines.append(
+        "Metric: lifetime downloads. Scope: authorized organizations; global public ranking "
+        "and run counts are unavailable."
+    )
     if not ranking["complete"]:
-        lines.append("Coverage is partial because one or more public Plays could not be inspected.")
+        lines.append("Coverage is partial because one or more public Plays could not be read.")
     lines.append("")
     if digest["public_top"]:
         for item in digest["public_top"]:
-            parameters = compact_json(item["parameters"])
+            creator = item.get("creator_name") or "Creator unavailable"
+            description = " ".join((item.get("description") or "No description provided.").split())
+            if len(description) > 180:
+                description = description[:177].rstrip() + "…"
             lines.append(
-                f"- `{item['reference']}` · {item['download_count']} downloads "
-                f"· parameters `{parameters}`"
+                f"- **{item['name']}** · by {creator} · {item['owner']} · "
+                f"{item['download_count']} downloads"
             )
+            lines.append(f"  {description}")
+            lines.append(f"  `{item['reference']}`")
     else:
         lines.append(f"— Unavailable: {ranking.get('reason', 'no eligible public Plays')}")
     stats = digest["personal_stats"]
@@ -345,8 +408,9 @@ def collect_digest(
     days: int = 1,
     since: str | None = None,
     checkpoint: Path | None = None,
-    public_limit: int = 5,
-    inspection_budget: int = 8,
+    public_limit: int = 10,
+    inspection_budget: int = 100,
+    update_metadata_budget: int = 100,
     update_inspection_budget: int = 4,
     org_slugs: list[str] | None = None,
     organizations: list[Organization] | None = None,
@@ -354,7 +418,7 @@ def collect_digest(
 ) -> dict[str, Any]:
     """Collect a digest without coupling callers to the CLI or output renderer."""
 
-    if min(days, public_limit, inspection_budget, update_inspection_budget) < 1:
+    if min(days, public_limit, inspection_budget, update_metadata_budget, update_inspection_budget) < 1:
         raise ValueError("digest limits and budgets must be at least 1")
     start, resolved_end = resolve_window(
         end=end or datetime.now(timezone.utc),
@@ -376,12 +440,15 @@ def collect_digest(
     )
     grouped = load_authorized_flows({org.slug for org in resolved_organizations})
     candidate_new, candidate_revised = classify_updates(grouped, start, resolved_end)
+    update_references = [item["reference"] for item in [*candidate_new, *candidate_revised]]
+    metadata_batch = load_registry_flow_infos(update_references, limit=update_metadata_budget)
+    update_metadata = {flow["reference"]: flow for _, flow in metadata_batch.flows}
     update_batch = inspect_references(
-        [item["reference"] for item in [*candidate_new, *candidate_revised]],
+        update_references,
         limit=update_inspection_budget,
     )
     update_inspections = {flow["reference"]: flow for _, flow in update_batch.flows}
-    inspected: InspectionBatch = inspect_authorized_public_flows(
+    inspected: InspectionBatch = load_authorized_public_flow_infos(
         grouped,
         limit=inspection_budget,
     )
@@ -397,6 +464,9 @@ def collect_digest(
         ranking_candidate_count=inspected.candidate_count,
         ranking_omitted_count=inspected.omitted_count,
         update_inspections=update_inspections,
+        update_metadata=update_metadata,
+        update_metadata_errors=metadata_batch.errors,
+        update_metadata_omitted_count=metadata_batch.omitted_count,
         update_inspection_errors=update_batch.errors,
         update_omitted_count=update_batch.omitted_count,
     )
@@ -407,12 +477,18 @@ def main() -> int:
     parser.add_argument("--days", type=int, default=1)
     parser.add_argument("--since", help="ISO-8601 start timestamp supplied by the host")
     parser.add_argument("--checkpoint", type=Path, help="read a host-persisted checkpoint token")
-    parser.add_argument("--public-limit", type=int, default=5)
+    parser.add_argument("--public-limit", type=int, default=10)
     parser.add_argument(
         "--inspection-budget",
         type=int,
-        default=8,
-        help="maximum authorized public Plays to inspect for ranking",
+        default=100,
+        help="maximum authorized public Plays to read for ranking",
+    )
+    parser.add_argument(
+        "--update-metadata-budget",
+        type=int,
+        default=100,
+        help="maximum new or revised Plays to enrich with creator metadata",
     )
     parser.add_argument(
         "--update-inspection-budget",
@@ -442,6 +518,7 @@ def main() -> int:
         args.days < 1
         or args.public_limit < 1
         or args.inspection_budget < 1
+        or args.update_metadata_budget < 1
         or args.update_inspection_budget < 1
     ):
         parser.error("digest limits and budgets must be at least 1")
@@ -464,6 +541,7 @@ def main() -> int:
                 window_days=args.days,
                 public_limit=args.public_limit,
                 inspection_budget=args.inspection_budget,
+                update_metadata_budget=args.update_metadata_budget,
                 update_inspection_budget=args.update_inspection_budget,
             )
             key = scope_key(scope)
@@ -479,6 +557,7 @@ def main() -> int:
             checkpoint=args.checkpoint,
             public_limit=args.public_limit,
             inspection_budget=args.inspection_budget,
+            update_metadata_budget=args.update_metadata_budget,
             update_inspection_budget=args.update_inspection_budget,
             org_slugs=[] if organizations is not None else args.org,
             organizations=organizations,

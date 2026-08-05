@@ -32,7 +32,7 @@ class DeliveryTest(unittest.TestCase):
         self.assertEqual(first["delivery_id"], second["delivery_id"])
         self.assertEqual("after_matching_delivered_ack", first["checkpoint_release"]["policy"])
         self.assertEqual(self.digest["next_checkpoint"], first["checkpoint_release"]["candidate"])
-        self.assertIn("# Play digest", first["message"]["body"])
+        self.assertIn("# What’s new in Plays", first["message"]["body"])
 
     def test_matching_delivered_ack_releases_checkpoint_without_persisting_it(self) -> None:
         envelope = build_delivery(self.digest, target_key="daily:self", channel="harness")

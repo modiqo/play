@@ -135,8 +135,9 @@ def _prepare_parser(subparsers: Any) -> None:
     parser.add_argument("--days", type=int, default=1)
     parser.add_argument("--since", help="ISO-8601 start timestamp supplied by the host")
     parser.add_argument("--checkpoint", type=Path, help="read a host-persisted checkpoint token")
-    parser.add_argument("--public-limit", type=int, default=5)
-    parser.add_argument("--inspection-budget", type=int, default=8)
+    parser.add_argument("--public-limit", type=int, default=10)
+    parser.add_argument("--inspection-budget", type=int, default=100)
+    parser.add_argument("--update-metadata-budget", type=int, default=100)
     parser.add_argument("--update-inspection-budget", type=int, default=4)
     parser.add_argument("--org", action="append", default=[])
 
@@ -160,6 +161,7 @@ def main() -> int:
                 checkpoint=args.checkpoint,
                 public_limit=args.public_limit,
                 inspection_budget=args.inspection_budget,
+                update_metadata_budget=args.update_metadata_budget,
                 update_inspection_budget=args.update_inspection_budget,
                 org_slugs=args.org,
             )

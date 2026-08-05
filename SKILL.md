@@ -168,9 +168,13 @@ Keep Awareness, Use, and Explore distinct:
 
 - Awareness is externally read-only. On an explicit digest request, use the remembered digest
   command: it may update only Play's local scope-keyed SHA and UTC checkpoint after presenting the
-  result. When its comparison status is `unchanged`, say only that nothing changed and finish.
-  Otherwise present new/revised authorized Plays and a truthfully labeled, explicitly scoped public
-  ranking, then use the declared elicitation to Run, Search, Create, or finish. Never present
+  result. Treat “whats new”, “what's new”, “anything new in Plays”, “catch me up on Plays”, and the compact
+  `$play digest` alias as the same awareness intent. Frame the result as a Play inbox. When its
+  comparison status is `unchanged`, say only “Nothing new since your last Play check.” and finish.
+  Otherwise group new/revised authorized Plays by organization and show title, publication author
+  when available, short description, visibility, timestamp, and canonical reference. Follow with
+  the top 10 authorized public Plays using the truthfully labeled available metric, then use the
+  declared elicitation to Run, Search, Create, or finish. Never present
   organization-scoped lifetime downloads as a global or trending ranking.
 - A Play selected from Awareness carries an exact canonical reference and displayed parameters into
   read-only inspection. Treat the selection as choosing what to inspect, never as execution approval.
