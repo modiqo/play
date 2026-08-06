@@ -117,6 +117,128 @@ def _string_list(payload: dict[str, Any], field: str, *, allow_empty: bool = Tru
     return value
 
 
+def _adapter_discovery(payload: dict[str, Any], modalities: Sequence[str]) -> dict[str, Any] | None:
+    """Validate proof that CALL exhausted installed and catalog discovery in order."""
+
+    if "call" not in modalities:
+        return None
+    discovery = payload.get("adapter_discovery")
+    if not isinstance(discovery, dict):
+        raise HandoffError("CALL requires a typed adapter_discovery record")
+    allowed = {
+        "status",
+        "query",
+        "searched_sources",
+        "choices",
+        "selected_id",
+        "evidence_refs",
+    }
+    unknown = set(discovery) - allowed
+    if unknown:
+        raise HandoffError(
+            f"adapter_discovery contains undeclared fields: {', '.join(sorted(unknown))}"
+        )
+    query = _string(discovery, "query")
+    sources = _string_list(discovery, "searched_sources", allow_empty=False)
+    if sources not in (["installed"], ["installed", "catalog"]):
+        raise HandoffError(
+            "adapter_discovery searched_sources must preserve installed then catalog order"
+        )
+    evidence_refs = _string_list(discovery, "evidence_refs", allow_empty=False)
+    status = _string(discovery, "status")
+    if status not in {"installed_ready", "catalog_empty", "selected", "catalog_rejected"}:
+        raise HandoffError("adapter_discovery status is not handoff-ready")
+    choices = discovery.get("choices")
+    if not isinstance(choices, list):
+        raise HandoffError("adapter_discovery choices must be a list")
+    normalized_choices = [_adapter_choice(choice) for choice in choices]
+    choice_ids = [choice["id"] for choice in normalized_choices]
+    if len(set(choice_ids)) != len(choice_ids):
+        raise HandoffError("adapter_discovery choices must have unique ids")
+    selected_id = discovery.get("selected_id")
+    if selected_id is not None and (
+        not isinstance(selected_id, str) or not selected_id
+    ):
+        raise HandoffError("adapter_discovery selected_id must be a non-empty string or null")
+
+    if status in {"installed_ready", "selected"}:
+        if selected_id not in choice_ids:
+            raise HandoffError("adapter_discovery selected_id must identify a returned choice")
+        selected = normalized_choices[choice_ids.index(selected_id)]
+        if selected["source"] == "catalog" and sources != ["installed", "catalog"]:
+            raise HandoffError("a catalog selection requires installed and catalog evidence")
+    elif selected_id is not None:
+        raise HandoffError(f"adapter_discovery {status} cannot carry selected_id")
+
+    if status == "installed_ready" and sources != ["installed"]:
+        raise HandoffError("installed_ready must stop after installed discovery")
+    if status == "catalog_empty":
+        if sources != ["installed", "catalog"] or normalized_choices:
+            raise HandoffError("catalog_empty requires an empty catalog result after installed discovery")
+    if status == "catalog_rejected":
+        if sources != ["installed", "catalog"] or not any(
+            choice["source"] == "catalog" for choice in normalized_choices
+        ):
+            raise HandoffError("catalog_rejected requires presented catalog choices")
+
+    return {
+        "status": status,
+        "query": query,
+        "searched_sources": sources,
+        "choices": normalized_choices,
+        "selected_id": selected_id,
+        "evidence_refs": evidence_refs,
+    }
+
+
+def _adapter_choice(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise HandoffError("adapter_discovery choices must be objects")
+    required = {
+        "id",
+        "label",
+        "description",
+        "source",
+        "provider",
+        "category",
+        "substrate",
+        "auth_shape",
+        "health",
+        "install_impact",
+        "next_command",
+    }
+    if set(value) != required:
+        raise HandoffError("adapter_discovery choice fields differ from the typed contract")
+    for field in ("id", "label", "description"):
+        _string(value, field)
+    for field in ("provider", "category", "next_command"):
+        field_value = value.get(field)
+        if field_value is not None and (
+            not isinstance(field_value, str) or not field_value
+        ):
+            raise HandoffError(f"adapter choice {field} must be a non-empty string or null")
+    enums = {
+        "source": {"installed", "catalog"},
+        "substrate": {"openapi", "graphql", "mcp", "google_discovery", "unknown"},
+        "auth_shape": {
+            "none",
+            "static_token",
+            "api_key",
+            "basic",
+            "oauth2",
+            "mcp_oauth_dcr",
+            "ambiguous",
+            "unknown",
+        },
+        "health": {"ready", "degraded", "auth_required", "unknown"},
+        "install_impact": {"none", "local-write", "human-gate", "unknown"},
+    }
+    for field, values in enums.items():
+        if value.get(field) not in values:
+            raise HandoffError(f"adapter choice {field} is invalid")
+    return dict(value)
+
+
 def prepare_handoff(payload: dict[str, Any]) -> dict[str, Any]:
     """Build a packet only when its exact Rote specialist is currently callable."""
 
@@ -161,6 +283,9 @@ def prepare_handoff(payload: dict[str, Any]) -> dict[str, Any]:
     idempotency_key = _string(payload, "idempotency_key")
     resume: dict[str, Any] | None = None
     resume_payload = payload.get("auth_repair_resume")
+    adapter_discovery = (
+        _adapter_discovery(payload, modalities) if resume_payload is None else None
+    )
     if resume_payload is not None:
         if not isinstance(resume_payload, dict):
             raise HandoffError("auth_repair_resume must be an object")
@@ -205,6 +330,10 @@ def prepare_handoff(payload: dict[str, Any]) -> dict[str, Any]:
         effect_policy = original_packet.get("effect_policy")
         evidence_contract = original_packet.get("evidence_contract")
         idempotency_key = original_packet.get("idempotency_key")
+        adapter_discovery = _adapter_discovery(
+            {"adapter_discovery": original_packet.get("adapter_discovery")},
+            modalities,
+        )
         if not all(
             isinstance(value, dict) for value in (constraints, inputs, effect_policy)
         ):
@@ -230,6 +359,7 @@ def prepare_handoff(payload: dict[str, Any]) -> dict[str, Any]:
         "constraints": constraints,
         "inputs": inputs,
         "capability_policy": capability_policy(selected_owner, modalities),
+        "adapter_discovery": adapter_discovery,
         "expected_events": {key: list(value) for key, value in EXPECTED_EVENTS.items()},
         "effect_policy": effect_policy,
         "evidence_contract": evidence_contract,
@@ -504,6 +634,16 @@ def verify_receipt(payload: dict[str, Any]) -> dict[str, Any]:
         expected_policy = capability_policy(owner, modalities)
         if packet.get("capability_policy") != expected_policy:
             reasons.append("packet capability policy differs from the closed Rote contract")
+        try:
+            expected_discovery = _adapter_discovery(
+                {"adapter_discovery": packet.get("adapter_discovery")},
+                modalities,
+            )
+        except HandoffError as error:
+            reasons.append(str(error))
+        else:
+            if packet.get("adapter_discovery") != expected_discovery:
+                reasons.append("packet adapter discovery differs from the typed contract")
     if packet.get("expected_events") != {
         key: list(value) for key, value in EXPECTED_EVENTS.items()
     }:

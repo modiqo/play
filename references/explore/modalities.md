@@ -36,9 +36,16 @@ handoff packet. Invoke only that specialist, then validate its typed receipt aga
 modality succeeds only when the receipt matches the run, state, action, owner, event, and evidence
 payload.
 
-CALL must converge on a Rote adapter before it can yield an outcome. Reuse a matching installed
-adapter when possible. Otherwise `rote-adapter-create` determines the substrate as `openapi`,
-`graphql`, or `mcp` from the strongest available evidence and creates it through Rote.
+CALL must pass through typed adapter discovery before its execution handoff. Search installed
+adapters first. When none adequately covers the capability, always search the built-in Rote adapter
+catalog. Present every catalog match, keeping REST/OpenAPI, GraphQL, and MCP entries distinct, and
+let the user choose. Only a successful zero-result catalog search or explicit rejection of every
+match permits a supplied specification or authoritative provider-document search.
+
+Bind the discovery query, ordered searched sources, choices, selection, and evidence into the CALL
+packet. Reuse the selected installed adapter when possible. Otherwise `rote-adapter-create`
+determines the substrate as `openapi`, `graphql`, or `mcp` from the selected catalog entry or later
+specification evidence and creates it through Rote.
 Authentication required during creation is completed by `rote-adapter-create` with the normal
 human gate. Recoverable authentication failure on an existing adapter follows the separate flow
 below.

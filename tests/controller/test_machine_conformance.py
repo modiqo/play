@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.machine import validate_bundle
+from play.handoff import capability_policy
 
 
 CONTROLLER = ROOT / "references" / "controller"
@@ -281,8 +282,16 @@ class MachineConformanceTest(unittest.TestCase):
             CONTEXT["$defs"]["execution"]["properties"]["owner"]["enum"],
         )
         self.assertEqual(
-            "explore_handoff",
+            "explore_dispatch",
             MACHINE["states"]["explore_route"]["on"]["route_selected"][0]["target"],
+        )
+        self.assertEqual(
+            "adapter_discover",
+            MACHINE["states"]["explore_dispatch"]["on"]["adapter_discovery_required"][0]["target"],
+        )
+        self.assertEqual(
+            "explore_handoff",
+            MACHINE["states"]["explore_dispatch"]["on"]["direct_handoff_ready"][0]["target"],
         )
         self.assertEqual(
             "blocked",
@@ -307,6 +316,33 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertIn("recoverable auth failure", execute_policy)
         self.assertIn("handoff.receipt", ACTIONS["execute_route"]["events"]["outcome_ready"])
         self.assertIn("route_provenance", ACTIONS["execute_route"]["events"]["outcome_ready"])
+
+    def test_call_searches_adapter_catalog_before_spec_discovery(self) -> None:
+        discovery = ACTIONS["discover_call_adapter"]
+        policy = " ".join(discovery["command_policy"])
+        self.assertEqual("rote-specialist", discovery["owner"])
+        self.assertEqual("read", discovery["effect"])
+        self.assertIn("rote adapter list --json", policy)
+        self.assertIn("always run rote adapter catalog search", policy)
+        self.assertIn("return every match", policy)
+        self.assertIn("successful zero-result catalog search", policy)
+        self.assertEqual(
+            "adapter_offer",
+            MACHINE["states"]["adapter_discover"]["on"]["adapter_choices_ready"][0]["target"],
+        )
+        self.assertEqual(
+            "explore_handoff",
+            MACHINE["states"]["adapter_offer"]["on"]["adapter_source_selected"][0]["target"],
+        )
+        self.assertEqual(
+            ["installed", "catalog", "provided_spec", "provider_docs"],
+            capability_policy("rote-using-adapters", ["call"])["discovery_order"],
+        )
+        handoff = json.loads((CONTROLLER / "handoff.schema.json").read_text())
+        self.assertEqual(
+            CONTEXT["$defs"]["adapterChoice"]["required"],
+            handoff["$defs"]["adapterChoice"]["required"],
+        )
 
     def test_probe_hints_cannot_replace_the_rote_write_guard(self) -> None:
         execute_policy = " ".join(ACTIONS["execute_route"]["command_policy"])

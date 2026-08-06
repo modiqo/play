@@ -335,8 +335,28 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(_target(states, "qualify", "play_creation_request") == "creator_search", "explicit creator intent must search before exploration")
     check(_target(states, "creator_classify", "creator_no_match") == "explore_prepare", "creator intent without a match must skip the redundant Explore prompt")
     check(
-        _target(states, "explore_route", "route_selected") == "explore_handoff",
-        "an approved route must prove specialist availability before execution",
+        _target(states, "explore_route", "route_selected") == "explore_dispatch",
+        "an approved route must dispatch CALL discovery before specialist preparation",
+    )
+    check(
+        _target(states, "explore_dispatch", "adapter_discovery_required") == "adapter_discover",
+        "a CALL route must enter typed adapter discovery",
+    )
+    check(
+        _target(states, "explore_dispatch", "direct_handoff_ready") == "explore_handoff",
+        "a non-CALL route may proceed directly to specialist preparation",
+    )
+    check(
+        _target(states, "adapter_discover", "adapter_choices_ready") == "adapter_offer",
+        "installed or catalog choices must be presented instead of silently selected",
+    )
+    check(
+        _target(states, "adapter_discover", "adapter_catalog_empty") == "explore_handoff",
+        "only a proven empty catalog may fall through to spec discovery",
+    )
+    check(
+        _target(states, "adapter_offer", "adapter_source_selected") == "explore_handoff",
+        "an explicit adapter choice must bind into specialist preparation",
     )
     check(
         _target(states, "explore_handoff", "specialist_handoff_ready") == "explore_execute",
@@ -386,6 +406,9 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(_target(states, "use_output", "detailed_output_ready") == "use_verify", "only detailed output may enter verification")
     check(_target(states, "use_output", "action_blocked") == "repair_offer", "incomplete output must enter repair instead of verification")
     check(predecessors["use_verify"] == {"use_output"}, "Use verification may follow only complete detailed output")
+    check(predecessors["explore_dispatch"] == {"explore_route"}, "route dispatch may follow only route selection")
+    check(predecessors["adapter_discover"] == {"explore_dispatch"}, "adapter discovery may follow only CALL dispatch")
+    check(predecessors["adapter_offer"] == {"adapter_discover"}, "adapter choice may follow only typed discovery")
     check(
         predecessors["explore_execute"] == {"explore_handoff"},
         "Explore execution may follow only a prepared specialist handoff",
@@ -419,6 +442,7 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "judge_policy",
         "output_policy",
         "output",
+        "adapter_discovery",
         "handoff",
         "auth_repair",
         "last_event",
@@ -499,6 +523,13 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "public publication presentation must include paste-ready social copy from returned URIs",
     )
     execute_policy = " ".join(actions.get("execute_route", {}).get("command_policy", []))
+    discovery_policy = " ".join(actions.get("discover_call_adapter", {}).get("command_policy", []))
+    check(
+        "always run rote adapter catalog search" in discovery_policy
+        and "never silently select" in discovery_policy
+        and "successful zero-result catalog search" in discovery_policy,
+        "CALL discovery must search and honor the adapter catalog before spec discovery",
+    )
     check(
         "must not call MCP, app, shell, or browser tools directly" in execute_policy,
         "delegated Explore must explicitly forbid direct tool execution",
@@ -529,6 +560,23 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(
         "route_provenance" in outcome_fields,
         "handoff receipts must require route provenance",
+    )
+    packet_schema = handoff_schema.get("$defs", {}).get("packet", {})
+    check(
+        "adapter_discovery" in packet_schema.get("required", []),
+        "CALL handoff packets must bind typed adapter discovery evidence",
+    )
+    discovery_order = (
+        packet_schema.get("properties", {})
+        .get("capability_policy", {})
+        .get("oneOf", [{}])[0]
+        .get("properties", {})
+        .get("discovery_order", {})
+        .get("const")
+    )
+    check(
+        discovery_order == ["installed", "catalog", "provided_spec", "provider_docs"],
+        "CALL handoff discovery must search installed adapters then catalog before specs",
     )
     auth_required_fields = (
         handoff_schema.get("$defs", {})

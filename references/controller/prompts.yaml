@@ -106,6 +106,21 @@ prompts:
       modality_widening_approved: [prompt_version, selected_at, allowed]
       modality_widening_declined: [prompt_version, selected_at]
 
+  choose_adapter_source:
+    question: Which installed or catalog adapter should the CALL route use?
+    selection: single
+    choices_from:
+      context: adapter_discovery.choices
+      label_field: label
+      description_field: description
+      value_field: adapter_discovery.selected_id
+      event: adapter_source_selected
+    choices:
+      - {id: reject, label: Search specifications, description: Reject these matches and continue with a provided specification or authoritative provider documentation., event: adapter_catalog_rejected}
+    events:
+      adapter_source_selected: [prompt_version, selected_at, adapter_discovery.selected_id]
+      adapter_catalog_rejected: [prompt_version, selected_at]
+
   approve_effect_confirmation:
     question: Approve this exact Rote-guarded operation using the displayed tool, impact, token, and workspace?
     selection: single

@@ -102,7 +102,8 @@ cases:
       - state: explore_route
         event: route_selected
         guards: {route_within_policy: true}
-        target: explore_handoff
+        target: explore_dispatch
+      - {state: explore_dispatch, event: direct_handoff_ready, target: explore_handoff}
       - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
       - {state: explore_execute, event: outcome_ready, target: explore_receipt}
       - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
@@ -128,7 +129,8 @@ cases:
       - state: explore_route
         event: route_selected
         guards: {route_within_policy: true}
-        target: explore_handoff
+        target: explore_dispatch
+      - {state: explore_dispatch, event: direct_handoff_ready, target: explore_handoff}
       - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
       - {state: explore_execute, event: confirmation_required, target: explore_receipt}
       - {state: explore_receipt, event: specialist_confirmation_required, target: effect_offer}
@@ -185,7 +187,8 @@ cases:
       - state: explore_route
         event: route_selected
         guards: {route_within_policy: true}
-        target: explore_handoff
+        target: explore_dispatch
+      - {state: explore_dispatch, event: direct_handoff_ready, target: explore_handoff}
       - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
       - {state: explore_execute, event: outcome_ready, target: explore_receipt}
       - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
@@ -238,7 +241,8 @@ cases:
       - state: explore_route
         event: route_selected
         guards: {route_within_policy: true}
-        target: explore_handoff
+        target: explore_dispatch
+      - {state: explore_dispatch, event: direct_handoff_ready, target: explore_handoff}
       - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
       - {state: explore_execute, event: outcome_ready, target: explore_receipt}
       - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
@@ -335,10 +339,30 @@ cases:
       - state: explore_route
         event: route_selected
         guards: {route_within_policy: true}
-        target: explore_handoff
+        target: explore_dispatch
+      - {state: explore_dispatch, event: adapter_discovery_required, target: adapter_discover}
+      - {state: adapter_discover, event: adapter_catalog_empty, target: explore_handoff}
       - {state: explore_handoff, event: specialist_unavailable, target: blocked}
     terminal: blocked
     excludes: [explore_execute, explore_receipt, explore_verify]
+
+  - name: CALL presents every catalog match before specialist preparation
+    steps:
+      - state: explore_route
+        event: route_selected
+        guards: {route_within_policy: true}
+        target: explore_dispatch
+      - {state: explore_dispatch, event: adapter_discovery_required, target: adapter_discover}
+      - {state: adapter_discover, event: adapter_choices_ready, target: adapter_offer}
+      - {state: adapter_offer, event: adapter_source_selected, target: explore_handoff}
+    terminal: explore_handoff
+    includes_once: [adapter_discover, adapter_offer]
+
+  - name: rejected catalog matches permit later spec discovery
+    steps:
+      - {state: adapter_discover, event: adapter_choices_ready, target: adapter_offer}
+      - {state: adapter_offer, event: adapter_catalog_rejected, target: explore_handoff}
+    terminal: explore_handoff
 
   - name: raw direct-tool output cannot pass specialist receipt validation
     steps:

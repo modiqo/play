@@ -29,7 +29,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("qualify", self.runtime.bundle.initial)
-        self.assertEqual(54, len(self.runtime.bundle.states))
+        self.assertEqual(57, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -172,6 +172,80 @@ class ControllerRuntimeTest(unittest.TestCase):
             ),
         ).cursor
         self.assertEqual("use_verify", verify_cursor.state)
+
+    def test_call_route_requires_catalog_discovery_before_handoff(self) -> None:
+        route_cursor = replace(self.cursor(), state=StateId("explore_route"))
+        dispatch_cursor = self.runtime.step(
+            route_cursor,
+            ControllerEvent(
+                id=EventId("route_selected"),
+                payload={
+                    "execution": {"owner": "rote-using-adapters"},
+                    "route": {"modalities": ["call"]},
+                    "justification": "A typed API is the smallest verifiable route.",
+                    "adapter_discovery": {"query": "stripe"},
+                },
+                guards={GuardId("route_within_policy"): True},
+            ),
+        ).cursor
+        self.assertEqual("explore_dispatch", dispatch_cursor.state)
+
+        discovery_cursor = self.runtime.step(
+            dispatch_cursor,
+            ControllerEvent(
+                id=EventId("adapter_discovery_required"),
+                payload={
+                    "execution": {"owner": "rote-using-adapters"},
+                    "route": {"modalities": ["call"]},
+                },
+                guards={},
+            ),
+        ).cursor
+        self.assertEqual("adapter_discover", discovery_cursor.state)
+
+        choice = {
+            "id": "stripe",
+            "label": "Stripe REST API",
+            "description": "Catalog OpenAPI adapter for Stripe.",
+            "source": "catalog",
+            "provider": "Stripe",
+            "category": "Payments",
+            "substrate": "openapi",
+            "auth_shape": "static_token",
+            "health": "unknown",
+            "install_impact": "local-write",
+            "next_command": "rote adapter catalog info stripe --json",
+        }
+        offer_cursor = self.runtime.step(
+            discovery_cursor,
+            ControllerEvent(
+                id=EventId("adapter_choices_ready"),
+                payload={
+                    "adapter_discovery": {
+                        "status": "catalog_choices",
+                        "searched_sources": ["installed", "catalog"],
+                        "choices": [choice],
+                        "evidence_refs": ["catalog-search:stripe"],
+                    }
+                },
+                guards={},
+            ),
+        ).cursor
+        self.assertEqual("adapter_offer", offer_cursor.state)
+
+        handoff_cursor = self.runtime.step(
+            offer_cursor,
+            ControllerEvent(
+                id=EventId("adapter_source_selected"),
+                payload={
+                    "prompt_version": "1",
+                    "selected_at": "2026-08-06T00:00:00Z",
+                    "adapter_discovery": {"selected_id": "stripe"},
+                },
+                guards={},
+            ),
+        ).cursor
+        self.assertEqual("explore_handoff", handoff_cursor.state)
 
     def test_rejects_unknown_event(self) -> None:
         with self.assertRaisesRegex(ControllerRuntimeError, "does not accept event"):

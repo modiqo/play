@@ -82,6 +82,10 @@ mutations:
   - record_exploration_context
   - record_missing_consent
   - record_route
+  - record_route_dispatch
+  - record_adapter_discovery
+  - select_adapter_source
+  - record_catalog_rejection
   - record_specialist_handoff
   - record_specialist_unavailable
   - record_specialist_response
@@ -328,21 +332,56 @@ actions:
     owner: play
     effect: none
     input_required: [request.requested_outcome, modality_policy, judge_policy]
+    command_policy:
+      - When selecting CALL, derive adapter_discovery.query from the provider or API named in the request; keep it concise enough for rote adapter catalog search.
+      - For a non-CALL route, set adapter_discovery.query to null.
     events:
-      route_selected: [execution.owner, route.modalities, justification]
+      route_selected: [execution.owner, route.modalities, justification, adapter_discovery.query]
       modality_widening_required: [requested_modalities, reason]
       no_safe_route: [reason, checked_capabilities]
+
+  dispatch_route:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [route.modalities, execution.owner, adapter_discovery.status]
+    command_policy:
+      - Emit adapter_discovery_required whenever route.modalities contains CALL, including combined routes.
+      - Emit direct_handoff_ready only for routes containing SHELL and/or DRIVE without CALL.
+      - Never infer adapter availability in this action; CALL must pass through the declared discovery state.
+    events:
+      adapter_discovery_required: [route.modalities, execution.owner]
+      direct_handoff_ready: [route.modalities, execution.owner]
+
+  discover_call_adapter:
+    kind: delegated
+    owner: rote-specialist
+    effect: read
+    input_required: [request.requested_outcome, route.modalities, execution.owner, adapter_discovery.query]
+    command_policy:
+      - Invoke rote-adapter-create for discovery only; this action must not create, configure, authenticate, or execute an adapter.
+      - Search installed adapters first with rote adapter list --json and inspect every plausible match with rote adapter info <id>.
+      - Only when no installed adapter adequately covers the requested capability, always run rote adapter catalog search <adapter_discovery.query> --json.
+      - When catalog search returns one or more matches, return every match as adapter_discovery.choices and emit adapter_choices_ready; never silently select one or continue to provider documentation.
+      - Preserve REST/OpenAPI, GraphQL, and MCP entries for the same provider as distinct choices with substrate, authentication shape, health/install impact, and next-command details when available.
+      - Emit adapter_catalog_empty only after a successful zero-result catalog search. Provider documentation or a supplied specification may be considered later, never before this evidence exists.
+      - A unique adequate installed adapter may emit adapter_ready. Multiple plausible installed adapters must emit adapter_choices_ready.
+    events:
+      adapter_ready: [adapter_discovery.status, adapter_discovery.searched_sources, adapter_discovery.choices, adapter_discovery.selected_id, adapter_discovery.evidence_refs]
+      adapter_choices_ready: [adapter_discovery.status, adapter_discovery.searched_sources, adapter_discovery.choices, adapter_discovery.evidence_refs]
+      adapter_catalog_empty: [adapter_discovery.status, adapter_discovery.searched_sources, adapter_discovery.choices, adapter_discovery.evidence_refs]
 
   prepare_specialist_handoff:
     kind: deterministic
     owner: play
     effect: none
-    input_required: [run_id, request.requested_outcome, route.modalities, execution.owner, execution.workspace, execution.idempotency_key, effect_policy]
+    input_required: [run_id, request.requested_outcome, route.modalities, execution.owner, execution.workspace, execution.idempotency_key, effect_policy, adapter_discovery]
     command: scripts/bin/play-handoff prepare --stdin --json
     command_policy:
       - Enumerate only rote-* skills exposed as callable by the current harness; installed files or raw MCP tools do not count as available specialists.
       - CALL requires rote-using-adapters, SHELL requires rote-shell, DRIVE requires rote-browse, and combined routes require rote-workspace.
-      - A CALL packet requires adapter convergence: reuse an installed adapter or ask rote-adapter-create to detect OpenAPI, GraphQL, or MCP, create the matching adapter, and complete its initial authentication.
+      - A CALL packet requires adapter convergence from the bound discovery record: reuse its selected installed adapter, use its selected catalog entry, or ask rote-adapter-create to continue from proven catalog exhaustion into provided-spec/provider-document discovery.
+      - Bind the typed adapter_discovery record into every CALL packet. It must prove installed inventory and either a selected catalog entry, explicit catalog rejection, or a zero-result catalog search before provided-spec or provider-document discovery.
       - Existing-adapter authentication repair is never performed inside packet preparation; it requires a typed auth_repair_required receipt, Play approval, and the separate rote-adapter-config repair handoff.
       - Provider schemas, endpoint metadata, documentation, and MCP server cards are discovery evidence only. They never authorize direct capability execution outside the Rote adapter.
       - When effect_policy.rote_confirmation is approved, invalidate the prior packet and bind the new packet to the exact Rote tool, impact, token, workspace, and evidence so the same specialist resumes only that guarded call.
@@ -358,7 +397,8 @@ actions:
     input_required: [execution.owner, consent.explore, route.modalities, handoff.owner, handoff.available, handoff.packet, handoff.packet_sha256]
     command_policy:
       - Invoke the selected rote-* skill through the harness skill mechanism with the exact play.handoff/v1 packet.
-      - For CALL, inspect installed adapters first. If none fits, delegate adapter creation to rote-adapter-create, which must determine OpenAPI, GraphQL, or MCP before using the matching Rote creation command.
+      - For CALL, accept only the packet-bound adapter_discovery result. Never repeat or skip its installed-then-catalog sequence, silently select an unchosen match, or replace it with model memory.
+      - Reuse the selected installed adapter. For a selected catalog entry or proven catalog exhaustion/rejection, delegate adapter creation to rote-adapter-create, which must determine OpenAPI, GraphQL, or MCP before using the matching Rote creation command.
       - Complete initial authentication for a newly created adapter through rote-adapter-create, including required human approval and masked secret entry, before invoking rote-using-adapters.
       - When a recoverable auth failure is classified, emit auth_repair_required with the adapter id, environment variable, opaque classified rung, distinguishing error, and evidence; do not collapse it into route_exhausted.
       - If adapter creation, type detection, non-recoverable authentication, or adapter execution cannot complete, emit route_exhausted with evidence; never fall back to a raw provider or MCP call.

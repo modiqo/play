@@ -30,6 +30,8 @@ invocable so declared handoffs can chain without requiring another user command.
    or recover the existing logical record by task key or run ID. Initialize `output_policy` to
    detailed mode, human presentation, a 200,000-byte inline limit, and artifact overflow; initialize
    the `output` record with null result fields, empty manifest lists, and `truncated: false`.
+   Initialize `adapter_discovery` with `status: unknown`, a null query and selected id, and empty
+   searched-source, choice, and evidence lists.
 4. Validate the context's machine version, current state, transition sequence, and pending action.
 5. Execute exactly one declared prompt or entry action for the current state.
 6. Accept only an event declared by the current state and validated by
@@ -328,11 +330,19 @@ and prepare a new packet that tells the same specialist to resume the same works
 the guarded call with `--confirm <token>`. Declining blocks without performing the effect. Do not
 independently classify, weaken, strengthen, or synthesize the guard.
 
-For a CALL route, make Rote adapter convergence part of that same delegated handoff. First reuse a
-matching installed adapter. If none exists, delegate to `rote-adapter-create`; it must determine from
-the available spec, endpoint, server card, or provider documentation whether the substrate is
-OpenAPI, GraphQL, or MCP, then use the matching Rote creation path. Delegate initial authentication
-during creation to `rote-adapter-create`. For a recoverable authentication failure from an existing
+For a CALL route, enter `explore_dispatch`, then `adapter_discover` before preparing the execution
+handoff. Ask `rote-adapter-create` to search installed adapters first. If none adequately covers the
+capability, it must run `rote adapter catalog search <adapter_discovery.query> --json`. Present every
+catalog match through `adapter_offer`; never silently choose one, collapse REST and MCP entries for
+the same provider, or continue to provider documentation while catalog matches remain. Only a
+successful zero-result catalog search or the user's explicit rejection permits supplied-spec or
+provider-document discovery. Bind the chosen or exhausted discovery record into the CALL packet.
+
+After discovery, make Rote adapter convergence part of the delegated execution handoff. Reuse the
+selected installed adapter or delegate creation to `rote-adapter-create`; it determines from the
+selected catalog entry, supplied spec, endpoint, server card, or provider documentation whether the
+substrate is OpenAPI, GraphQL, or MCP, then uses the matching Rote creation path. Delegate initial
+authentication during creation to `rote-adapter-create`. For a recoverable authentication failure from an existing
 CALL packet, use the dedicated approved `rote-adapter-config` repair handoff above, preserve its
 human approval gates, and keep secret entry masked. Only then execute through
 `rote-using-adapters`. Specs, endpoint metadata,

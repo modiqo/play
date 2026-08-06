@@ -20,6 +20,7 @@
     "play",
     "readiness",
     "route",
+    "adapter_discovery",
     "consent",
     "modality_policy",
     "judge_policy",
@@ -56,6 +57,7 @@
     "play": {"$ref": "#/$defs/play"},
     "readiness": {"$ref": "#/$defs/readiness"},
     "route": {"$ref": "#/$defs/route"},
+    "adapter_discovery": {"$ref": "#/$defs/adapterDiscovery"},
     "consent": {"$ref": "#/$defs/consent"},
     "modality_policy": {"$ref": "#/$defs/modalityPolicy"},
     "judge_policy": {"$ref": "#/$defs/judgePolicy"},
@@ -264,6 +266,37 @@
       "properties": {
         "modalities": {"type": "array", "uniqueItems": true, "items": {"enum": ["call", "shell", "drive"]}},
         "justification": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "adapterDiscovery": {
+      "type": "object",
+      "required": ["status", "query", "searched_sources", "choices", "selected_id", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"enum": ["unknown", "installed_ready", "installed_choices", "catalog_choices", "catalog_empty", "selected", "catalog_rejected"]},
+        "query": {"$ref": "#/$defs/nullableString"},
+        "searched_sources": {"type": "array", "uniqueItems": true, "items": {"enum": ["installed", "catalog"]}},
+        "choices": {"type": "array", "items": {"$ref": "#/$defs/adapterChoice"}},
+        "selected_id": {"$ref": "#/$defs/nullableString"},
+        "evidence_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "adapterChoice": {
+      "type": "object",
+      "required": ["id", "label", "description", "source", "provider", "category", "substrate", "auth_shape", "health", "install_impact", "next_command"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "source": {"enum": ["installed", "catalog"]},
+        "provider": {"$ref": "#/$defs/nullableString"},
+        "category": {"$ref": "#/$defs/nullableString"},
+        "substrate": {"enum": ["openapi", "graphql", "mcp", "google_discovery", "unknown"]},
+        "auth_shape": {"enum": ["none", "static_token", "api_key", "basic", "oauth2", "mcp_oauth_dcr", "ambiguous", "unknown"]},
+        "health": {"enum": ["ready", "degraded", "auth_required", "unknown"]},
+        "install_impact": {"enum": ["none", "local-write", "human-gate", "unknown"]},
+        "next_command": {"$ref": "#/$defs/nullableString"}
       }
     },
     "consent": {

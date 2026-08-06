@@ -261,11 +261,41 @@ states:
     entry: {action: select_modalities}
     "on":
       route_selected:
-        - {guard: route_within_policy, target: explore_handoff, mutate: record_route}
+        - {guard: route_within_policy, target: explore_dispatch, mutate: record_route}
         - {target: modality_offer, mutate: record_widening_request}
       modality_widening_required: [{target: modality_offer, mutate: record_widening_request}]
       no_safe_route: [{target: blocked, mutate: record_no_route}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  explore_dispatch:
+    owner: play
+    checkpoint: after
+    requires: [route.modalities, execution.owner, adapter_discovery.status]
+    entry: {action: dispatch_route}
+    "on":
+      adapter_discovery_required: [{target: adapter_discover, mutate: record_route_dispatch}]
+      direct_handoff_ready: [{target: explore_handoff, mutate: record_route_dispatch}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  adapter_discover:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [request.requested_outcome, route.modalities, execution.owner, adapter_discovery.query]
+    entry: {action: discover_call_adapter}
+    "on":
+      adapter_ready: [{target: explore_handoff, mutate: record_adapter_discovery}]
+      adapter_choices_ready: [{target: adapter_offer, mutate: record_adapter_discovery}]
+      adapter_catalog_empty: [{target: explore_handoff, mutate: record_adapter_discovery}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  adapter_offer:
+    owner: play
+    checkpoint: after
+    requires: [adapter_discovery.status, adapter_discovery.choices]
+    prompt: choose_adapter_source
+    "on":
+      adapter_source_selected: [{target: explore_handoff, mutate: select_adapter_source}]
+      adapter_catalog_rejected: [{target: explore_handoff, mutate: record_catalog_rejection}]
 
   modality_offer:
     owner: play

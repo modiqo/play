@@ -28,6 +28,28 @@ class HandoffTest(unittest.TestCase):
             "available_owners": available or [],
             "constraints": {"read_only": True},
             "inputs": {"query": "Heavybit founder perks discounts"},
+            "adapter_discovery": {
+                "status": "installed_ready",
+                "query": "crucible",
+                "searched_sources": ["installed"],
+                "choices": [
+                    {
+                        "id": "crucible",
+                        "label": "crucible",
+                        "description": "Installed Crucible MCP adapter",
+                        "source": "installed",
+                        "provider": "Heavybit",
+                        "category": None,
+                        "substrate": "mcp",
+                        "auth_shape": "oauth2",
+                        "health": "ready",
+                        "install_impact": "none",
+                        "next_command": "rote adapter info crucible",
+                    }
+                ],
+                "selected_id": "crucible",
+                "evidence_refs": ["adapter:crucible"],
+            },
             "effect_policy": {
                 "read_only": True,
                 "approval_gates": [],
@@ -190,6 +212,83 @@ class HandoffTest(unittest.TestCase):
         result = verify_receipt({"packet": prepared["packet"], "receipt": self.receipt(prepared)})
         self.assertTrue(result["ok"])
         self.assertEqual("specialist_outcome_ready", result["event"])
+
+    def test_call_packet_requires_typed_adapter_discovery(self) -> None:
+        payload = self.input(available=["rote-using-adapters"])
+        del payload["adapter_discovery"]
+        with self.assertRaisesRegex(ValueError, "typed adapter_discovery"):
+            prepare_handoff(payload)
+
+    def test_zero_catalog_results_can_fall_through_to_spec_discovery(self) -> None:
+        payload = self.input(available=["rote-using-adapters"])
+        payload["adapter_discovery"] = {
+            "status": "catalog_empty",
+            "query": "unlisted provider",
+            "searched_sources": ["installed", "catalog"],
+            "choices": [],
+            "selected_id": None,
+            "evidence_refs": ["adapter-list:1", "adapter-catalog-search:1"],
+        }
+        prepared = prepare_handoff(payload)
+        self.assertTrue(prepared["ok"])
+        self.assertEqual("catalog_empty", prepared["packet"]["adapter_discovery"]["status"])
+
+    def test_selected_catalog_entry_is_bound_into_the_call_packet(self) -> None:
+        payload = self.input(available=["rote-using-adapters"])
+        choice = payload["adapter_discovery"]["choices"][0]
+        choice.update(
+            {
+                "id": "stripe",
+                "label": "Stripe REST API",
+                "description": "Catalog OpenAPI adapter for Stripe",
+                "source": "catalog",
+                "provider": "Stripe",
+                "category": "Payments",
+                "substrate": "openapi",
+                "auth_shape": "static_token",
+                "health": "unknown",
+                "install_impact": "local-write",
+                "next_command": "rote adapter catalog info stripe --json",
+            }
+        )
+        payload["adapter_discovery"].update(
+            {
+                "status": "selected",
+                "query": "stripe",
+                "searched_sources": ["installed", "catalog"],
+                "selected_id": "stripe",
+                "evidence_refs": ["adapter-list:1", "adapter-catalog-search:stripe"],
+            }
+        )
+        prepared = prepare_handoff(payload)
+
+        self.assertTrue(prepared["ok"])
+        self.assertEqual("stripe", prepared["packet"]["adapter_discovery"]["selected_id"])
+
+    def test_unselected_catalog_choices_cannot_enter_execution_handoff(self) -> None:
+        payload = self.input(available=["rote-using-adapters"])
+        payload["adapter_discovery"].update(
+            {
+                "status": "catalog_choices",
+                "searched_sources": ["installed", "catalog"],
+                "selected_id": None,
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "not handoff-ready"):
+            prepare_handoff(payload)
+
+    def test_catalog_cannot_be_skipped_after_an_installed_miss(self) -> None:
+        payload = self.input(available=["rote-using-adapters"])
+        payload["adapter_discovery"] = {
+            "status": "catalog_empty",
+            "query": "unlisted provider",
+            "searched_sources": ["installed"],
+            "choices": [],
+            "selected_id": None,
+            "evidence_refs": ["adapter-list:1"],
+        }
+        with self.assertRaisesRegex(ValueError, "installed then catalog order|catalog_empty"):
+            prepare_handoff(payload)
 
     def test_probe_hints_are_not_an_approval_gate(self) -> None:
         payload = self.input(available=["rote-using-adapters"])

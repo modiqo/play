@@ -49,14 +49,23 @@ The portable packet and receipt shapes are declared in
 A CALL packet includes `capability_policy.kind=rote_adapter`. Treat that policy as a stop condition,
 not a suggestion:
 
-1. Search installed Rote adapters and reuse an adequate one.
-2. If missing, hand off to `rote-adapter-create`. Detect `openapi`, `graphql`, or `mcp` from the
-   provided spec/endpoint, catalog evidence, server card, or provider documentation. MCP uses
+1. In `adapter_discover`, ask `rote-adapter-create` to search installed Rote adapters and inspect
+   every plausible match. Reuse a unique adequate one; present multiple plausible adapters.
+2. If no installed adapter is adequate, always run
+   `rote adapter catalog search <adapter_discovery.query> --json`. Present every result through
+   `adapter_offer`; REST/OpenAPI, GraphQL, and MCP entries for the same provider are separate choices.
+3. Only after a successful zero-result catalog search or explicit rejection may
+   `rote-adapter-create` inspect a supplied spec/endpoint, server card, or provider documentation.
+   Detect `openapi`, `graphql`, or `mcp` from that ordered evidence. MCP uses
    `rote adapter new-from-mcp`; OpenAPI and GraphQL use the dry-run-first `rote adapter new` path.
-3. Complete initial authentication through the Rote creation flow. For a recoverable failure on an
+4. Complete initial authentication through the Rote creation flow. For a recoverable failure on an
    existing adapter, return the typed repair request described below. Do not ask Play to classify
    authentication or handle credentials.
-4. Execute the requested capability through `rote-using-adapters`.
+5. Execute the requested capability through `rote-using-adapters`.
+
+The CALL packet binds the typed `adapter_discovery` record. Missing installed-inventory evidence,
+catalog fallthrough without catalog evidence, an unselected match, or reordered discovery is an
+invalid handoff rather than permission to improvise.
 
 Probe hints are non-authoritative discovery metadata. They must never become a Play blocker or an
 approval event. If the adapter call is guarded, `rote-using-adapters` returns the exact Rote

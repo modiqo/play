@@ -89,10 +89,15 @@ stateDiagram-v2
     explore_offer --> explore_prepare : explore approved
     explore_offer --> exited : continue normally
     explore_prepare --> explore_route
-    explore_route --> explore_handoff : route within policy
+    explore_route --> explore_dispatch : route within policy
     explore_route --> modality_offer : widening required
     modality_offer --> explore_route : widening approved
     modality_offer --> blocked : declined
+    explore_dispatch --> adapter_discover : CALL route
+    explore_dispatch --> explore_handoff : SHELL / DRIVE route
+    adapter_discover --> explore_handoff : installed ready / catalog empty
+    adapter_discover --> adapter_offer : installed or catalog choices
+    adapter_offer --> explore_handoff : selected / catalog rejected
     explore_handoff --> explore_execute : typed packet ready
     explore_execute --> explore_receipt : typed specialist receipt
     explore_receipt --> explore_verify : outcome ready
@@ -201,15 +206,15 @@ different controller versions cannot be mixed accidentally.
 
 Baseline recorded on 2026-08-06 on an Apple Silicon Mac with Python 3.14.5,
 `python-statemachine` 3.2.0, bundle
-`55e50139238544f83993abb4e15df360d1e274b4bafaac52612cea9f05201062`, and 10,000
+`218b2fb376736590140f4cb5069d478b625c9874335920debada2dc83a566fa3`, and 10,000
 iterations:
 
 | Measurement | Latency |
 |---|---:|
-| Fresh-process bundle validation and compilation | 97.2 ms |
-| Warm transition, median | 0.433 ms |
-| Warm transition, p95 | 0.671 ms |
-| Warm transition, maximum | 5.76 ms |
+| Fresh-process bundle validation and compilation | 111.8 ms |
+| Warm transition, median | 0.447 ms |
+| Warm transition, p95 | 0.723 ms |
+| Warm transition, maximum | 6.08 ms |
 
 Treat these numbers as a development baseline, not a cross-machine guarantee. Future performance
 changes should record the command, iteration count, bundle SHA, Python version, and machine class.
@@ -466,10 +471,13 @@ through `rote-workspace`. Play first confirms that the exact skill is callable i
 harness, then validates its typed receipt before accepting the result. If the specialist is absent,
 Play blocks; it never substitutes a directly exposed MCP, app, shell, or browser tool.
 
-CALL routes also converge on an authenticated Rote adapter. Play reuses an installed adapter or asks
-Rote to detect OpenAPI, GraphQL, or MCP and create the appropriate adapter, then completes Rote's auth
-cycle before execution. The receipt records adapter, type, creation, and auth provenance, so a raw MCP
-call cannot masquerade as a delegated result.
+CALL routes also converge on an authenticated Rote adapter. Play first searches installed adapters.
+After an installed miss it must search the built-in adapter catalog and present every match, keeping
+REST/OpenAPI, GraphQL, and MCP options distinct. Only an empty catalog result or explicit rejection
+may fall through to a supplied specification or provider-document search. The selected or exhausted
+discovery evidence is bound into the handoff packet before Rote creates and authenticates an adapter.
+The receipt records adapter, type, creation, and auth provenance, so a raw MCP call cannot masquerade
+as a delegated result.
 
 DRIVE routes carry a current-version crystallization limit that Play discloses **before**
 exploration begins. Typed browser steps express navigation, waits, clicks, typing, and the
