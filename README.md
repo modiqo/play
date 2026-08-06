@@ -212,6 +212,25 @@ The public marketplace source is `modiqo/play`, so `.` can be replaced with that
 dependency from the separately trusted `rote-skills` marketplace; every harness still uses the same
 runtime preflight because plugin metadata alone cannot prove CLI installation or login state.
 
+### Kimi and other AGENTS.md-standard harnesses
+
+Kimi has no plugin marketplace. It discovers skills from AGENTS.md-standard roots — the shared
+`~/.agents/skills` directory and per-harness `~/.<harness>/skills` roots. Install Play for Kimi
+from this checkout:
+
+```bash
+just plan
+just install
+```
+
+`install` discovers every skills root containing rote skills — including `~/.agents/skills` —
+links this Play skill into each, and applies the activation metadata in
+[`agents/openai.yaml`](agents/openai.yaml) (`allow_implicit_invocation: true`) so Play stays
+implicitly invocable and the rote specialists remain model-invocable for chained handoffs. Play's
+structured prompts map to Kimi's `askquestion` control
+(`scripts/bin/play-question <prompt> --harness kimi`), and `just harness kimi` /
+`just smoke kimi` start and smoke-test the harness like Codex and Claude Code.
+
 Restart the harness after plugin installation. On first use, Play runs the bundled preflight. To
 make Play the preferred implicit entrypoint while keeping installed `rote` specialists
 model-invocable for chained handoffs, preview
@@ -257,8 +276,10 @@ just install
 just verify-profile
 ```
 
-If you use a cloned source checkout instead of the GitHub marketplace, update from the repository
-root with:
+Kimi and other AGENTS.md-standard roots (`~/.agents/skills`, `~/.<harness>/skills`) have no plugin
+cache to upgrade; they always follow the source-checkout path below. If you use a cloned source
+checkout instead of the GitHub marketplace — or need to refresh those AGENTS.md roots — update from
+the repository root with:
 
 ```bash
 git pull --ff-only
