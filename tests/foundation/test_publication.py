@@ -28,6 +28,14 @@ class PublicationPresentationTest(unittest.TestCase):
                 if visibility == "public"
                 else None
             ),
+            "credential_status": "verified" if visibility == "public" else "not_required",
+            "smoke_status": "verified" if visibility == "public" else "not_required",
+            "smoke_exact_reference": (
+                "https://play.modiqo.ai/daily-chores/modiqo-pricing-grid@0.0.1"
+                if visibility == "public"
+                else None
+            ),
+            "smoke_ns": 12_500_000 if visibility == "public" else None,
         }
 
     def test_public_readout_contains_clickable_links_and_paste_ready_copy(self) -> None:
@@ -70,12 +78,34 @@ class PublicationPresentationTest(unittest.TestCase):
                 "install_uri": payload["install_uri"],
             },
             "play": {"version": payload["version"]},
+            "publication_validation": {
+                "credential_status": payload["credential_status"],
+                "smoke_status": payload["smoke_status"],
+                "smoke_exact_reference": payload["smoke_exact_reference"],
+                "smoke_ns": payload["smoke_ns"],
+            },
         }
 
         result = build_publication_presentation(context)
 
         self.assertEqual(payload["play_uri"], result["play_uri"])
         self.assertEqual(payload["install_uri"], result["install_uri"])
+
+    def test_public_readout_requires_credential_and_smoke_verification(self) -> None:
+        payload = self.payload()
+        payload["smoke_status"] = "failed"
+        with self.assertRaisesRegex(PublicationPresentationError, "canonical smoke run"):
+            build_publication_presentation(payload)
+
+        payload = self.payload()
+        payload["credential_status"] = "failed"
+        with self.assertRaisesRegex(PublicationPresentationError, "credential contracts"):
+            build_publication_presentation(payload)
+
+        payload = self.payload()
+        payload["smoke_ns"] = None
+        with self.assertRaisesRegex(PublicationPresentationError, "smoke latency"):
+            build_publication_presentation(payload)
 
     def test_public_readout_requires_registry_returned_https_uris(self) -> None:
         payload = self.payload()

@@ -29,7 +29,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("qualify", self.runtime.bundle.initial)
-        self.assertEqual(57, len(self.runtime.bundle.states))
+        self.assertEqual(59, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,

@@ -19,7 +19,7 @@
   "states": {
     "qualify": {"orb": "solving", "label": "Understanding the request…"},
     "awareness_collect": {"orb": "searching", "label": "Checking what changed in Plays…"},
-  "awareness_present": {"orb": "working", "label": "Opening your Play inbox…"},
+    "awareness_present": {"orb": "working", "label": "Opening your Play inbox…"},
     "awareness_offer": {"orb": "listening", "label": "Waiting for a digest choice…"},
     "awareness_need": {"orb": "listening", "label": "Listening for what to find…"},
     "creator_need": {"orb": "listening", "label": "Listening for the Play outcome…"},
@@ -69,6 +69,8 @@
     "birth_bind": {"orb": "connecting", "label": "Binding the certificate to the minted Play…"},
     "index": {"orb": "working", "label": "Indexing the published Play…"},
     "saved_inspect": {"orb": "connecting", "label": "Reading the saved Play back…"},
+    "publication_credentials": {"orb": "connecting", "label": "Checking associated adapter credential contracts…"},
+    "publication_smoke": {"orb": "connecting", "label": "Running the canonical public Play smoke test…"},
     "saved_present": {"orb": "composing", "label": "Preparing the verified Play links and share copy…"},
     "receipt": {"orb": "breathing", "label": "Play completed with a verified receipt.", "message": "That’s a wrap—the receipt checks out.", "terminal": true},
     "completed": {"orb": "breathing", "label": "Play completed.", "message": "All settled—this Play has landed.", "terminal": true},

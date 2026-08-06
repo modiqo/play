@@ -94,7 +94,23 @@ class MachineConformanceTest(unittest.TestCase):
             "inspect_saved_play", MACHINE["states"]["saved_inspect"]["entry"]["action"]
         )
         inspected = MACHINE["states"]["saved_inspect"]["on"]["saved_play_inspected"][0]
-        self.assertEqual("saved_present", inspected["target"])
+        self.assertEqual("publication_credentials", inspected["target"])
+        self.assertEqual("saved_present", MACHINE["states"]["saved_inspect"]["on"]["saved_play_inspected"][1]["target"])
+        self.assertEqual(
+            "inspect_publication_credentials",
+            MACHINE["states"]["publication_credentials"]["entry"]["action"],
+        )
+        self.assertEqual(
+            "publication_smoke",
+            MACHINE["states"]["publication_credentials"]["on"]["associated_credentials_verified"][0]["target"],
+        )
+        self.assertEqual(
+            "smoke_publication", MACHINE["states"]["publication_smoke"]["entry"]["action"]
+        )
+        self.assertEqual(
+            "saved_present",
+            MACHINE["states"]["publication_smoke"]["on"]["public_smoke_verified"][0]["target"],
+        )
         self.assertEqual(
             "present_saved_play", MACHINE["states"]["saved_present"]["entry"]["action"]
         )
@@ -130,6 +146,55 @@ class MachineConformanceTest(unittest.TestCase):
             "presented",
         ):
             self.assertIn(field, publication["required"])
+
+    def test_publication_gate_compares_credential_contract_then_smokes_exact_uri(self) -> None:
+        credential_action = ACTIONS["inspect_publication_credentials"]
+        self.assertEqual("read", credential_action["effect"])
+        self.assertEqual(
+            "scripts/bin/play-publication-gate credentials --stdin --json",
+            credential_action["command"],
+        )
+        credential_policy = " ".join(credential_action["command_policy"])
+        self.assertIn("source, version, fingerprint, auth family", credential_policy)
+        self.assertIn("Never inspect, print, hash, copy, or persist a credential value", credential_policy)
+        self.assertIn("equal fingerprints as insufficient", credential_policy)
+
+        smoke_action = ACTIONS["smoke_publication"]
+        self.assertEqual("mixed", smoke_action["effect"])
+        self.assertEqual(
+            "scripts/bin/play-publication-gate smoke --stdin --json", smoke_action["command"]
+        )
+        smoke_policy = " ".join(smoke_action["command_policy"])
+        self.assertIn("exactly one rote play run", smoke_policy)
+        self.assertIn("fresh temporary working directory under /tmp", smoke_policy)
+
+        validation = CONTEXT["$defs"]["publicationValidation"]
+        for field in (
+            "credential_status",
+            "adapter_contracts",
+            "credential_contract_sha256",
+            "credential_check_ns",
+            "smoke_status",
+            "smoke_exact_reference",
+            "smoke_output_sha256",
+            "smoke_ns",
+            "isolated_workdir",
+        ):
+            self.assertIn(field, validation["required"])
+
+    def test_publication_mismatch_or_smoke_failure_blocks_presentation(self) -> None:
+        self.assertEqual(
+            "blocked",
+            MACHINE["states"]["publication_credentials"]["on"][
+                "associated_credentials_invalid"
+            ][0]["target"],
+        )
+        self.assertEqual(
+            "blocked",
+            MACHINE["states"]["publication_smoke"]["on"]["public_smoke_failed"][0][
+                "target"
+            ],
+        )
 
     def test_birth_is_captured_before_publish_and_bound_before_index(self) -> None:
         released = MACHINE["states"]["author_release"]["on"]["flow_released"][0]

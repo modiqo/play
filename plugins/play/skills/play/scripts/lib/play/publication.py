@@ -25,6 +25,7 @@ def _flatten_controller_context(payload: dict[str, Any]) -> dict[str, Any]:
 
     publication = payload.get("publication")
     play = payload.get("play")
+    validation = payload.get("publication_validation")
     if not isinstance(publication, dict):
         return payload
     flattened = {
@@ -37,6 +38,14 @@ def _flatten_controller_context(payload: dict[str, Any]) -> dict[str, Any]:
         "content_hash": publication.get("content_hash"),
         "play_uri": publication.get("uri"),
         "install_uri": publication.get("install_uri"),
+        "credential_status": (
+            validation.get("credential_status") if isinstance(validation, dict) else None
+        ),
+        "smoke_status": validation.get("smoke_status") if isinstance(validation, dict) else None,
+        "smoke_exact_reference": (
+            validation.get("smoke_exact_reference") if isinstance(validation, dict) else None
+        ),
+        "smoke_ns": validation.get("smoke_ns") if isinstance(validation, dict) else None,
     }
     return flattened
 
@@ -99,6 +108,30 @@ def build_publication_presentation(payload: dict[str, Any]) -> dict[str, Any]:
     play_uri = _https_url(payload, "play_uri", required=visibility == "public")
     install_uri = _https_url(payload, "install_uri", required=visibility == "public")
     exact_reference = _exact_reference(canonical_reference, version)
+    credential_status = _string(payload, "credential_status")
+    smoke_status = _string(payload, "smoke_status")
+    smoke_exact_reference = _optional_string(payload, "smoke_exact_reference")
+    smoke_ns = payload.get("smoke_ns")
+    if smoke_ns is not None and (
+        not isinstance(smoke_ns, int) or isinstance(smoke_ns, bool) or smoke_ns < 0
+    ):
+        raise PublicationPresentationError("smoke_ns must be null or a non-negative integer")
+    if visibility == "public":
+        if credential_status != "verified" or smoke_status != "verified":
+            raise PublicationPresentationError(
+                "public presentation requires verified credential contracts and canonical smoke run"
+            )
+        if smoke_exact_reference != play_uri:
+            raise PublicationPresentationError(
+                "public smoke reference must equal the registry-returned Play URI"
+            )
+        if smoke_ns is None:
+            raise PublicationPresentationError("public smoke latency is required")
+        assert isinstance(smoke_ns, int)
+    elif credential_status != "not_required" or smoke_status != "not_required":
+        raise PublicationPresentationError(
+            "private presentation requires publication validation to be not_required"
+        )
 
     share_copy: dict[str, str | None] = {"x": None, "linkedin": None}
     lines = [
@@ -110,7 +143,7 @@ def build_publication_presentation(payload: dict[str, Any]) -> dict[str, Any]:
         f"- Content hash: `{content_hash}`",
     ]
     if visibility == "public":
-        assert play_uri is not None and install_uri is not None
+        assert play_uri is not None and install_uri is not None and isinstance(smoke_ns, int)
         share_copy["x"] = _x_copy(title, description, play_uri)
         share_copy["linkedin"] = (
             f"I published {title} as a reusable Play.\n\n"
@@ -121,6 +154,8 @@ def build_publication_presentation(payload: dict[str, Any]) -> dict[str, Any]:
         lines[2:2] = [
             f"- Play page: [{title} — {description}]({play_uri})",
             f"- Install/bootstrap: [Install {title}]({install_uri})",
+            "- Associated credential contracts: verified",
+            f"- Canonical public smoke: verified ({smoke_ns / 1_000_000:.2f} ms)",
         ]
         lines.extend(
             [
@@ -150,6 +185,10 @@ def build_publication_presentation(payload: dict[str, Any]) -> dict[str, Any]:
         "content_hash": content_hash,
         "play_uri": play_uri,
         "install_uri": install_uri,
+        "credential_status": credential_status,
+        "smoke_status": smoke_status,
+        "smoke_exact_reference": smoke_exact_reference,
+        "smoke_ns": smoke_ns,
         "share_copy": share_copy,
         "markdown": "\n".join(lines),
     }

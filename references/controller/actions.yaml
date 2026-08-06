@@ -24,6 +24,7 @@ guards:
   - publication_is_private
   - publication_is_public
   - exact_published_version_is_indexed
+  - saved_public_inspection_matches_publication
   - saved_inspection_matches_publication
 
 mutations:
@@ -130,6 +131,10 @@ mutations:
   - record_index_mismatch
   - record_saved_inspection
   - record_saved_inspection_mismatch
+  - record_credential_contracts
+  - record_credential_contract_failure
+  - record_public_smoke
+  - record_public_smoke_failure
   - record_saved_presentation
 
 actions:
@@ -566,14 +571,47 @@ actions:
     events:
       saved_play_inspected: [publication.canonical_reference, publication.visibility, publication.title, publication.description, publication.content_hash, play.version, publication.inspect_ref]
 
+  inspect_publication_credentials:
+    kind: deterministic
+    owner: flow-runtime
+    effect: read
+    input_required: [publication.canonical_reference, publication.uri, publication.visibility, play.version]
+    command: scripts/bin/play-publication-gate credentials --stdin --json
+    command_policy:
+      - Run only for a matching canonical Public readback.
+      - Compare each selected registry adapter against the receipt-verified installed adapter by source, version, fingerprint, auth family, and declared credential environment-variable names.
+      - Read and retain credential metadata only. Never inspect, print, hash, copy, or persist a credential value.
+      - Treat equal fingerprints as insufficient when provenance, version, auth family, or credential names differ.
+      - Do not pull, repair, authenticate, delete backup files, or otherwise mutate adapters; return a typed failure and let the Rote-owned repair lifecycle handle remediation.
+    events:
+      associated_credentials_verified: [publication_validation.credential_status, publication_validation.adapter_contracts, publication_validation.credential_contract_sha256, publication_validation.credential_check_ns, publication_validation.evidence_refs]
+      associated_credentials_invalid: [reason, failure_class, credential_names, evidence_refs]
+
+  smoke_publication:
+    kind: deterministic
+    owner: flow-runtime
+    effect: mixed
+    input_required: [publication.uri, publication.visibility, play.version, request.parameters, consent.save, publication_validation.credential_status, publication_validation.credential_contract_sha256]
+    command: scripts/bin/play-publication-gate smoke --stdin --json
+    command_policy:
+      - Run only after Public save consent and a verified associated-credential contract.
+      - Invoke exactly one rote play run against the registry-returned, versioned publication.uri with the verified request parameters and --yes.
+      - Use a fresh temporary working directory under /tmp so repository and workspace files cannot make the smoke test pass.
+      - Reuse only the current host's Rote installation and credential store; do not read credential values or claim the result proves every consumer is configured.
+      - Retain only bounded metadata, latency, byte count, and output/error digests; do not put the Play's primary payload or credential values into controller context.
+    events:
+      public_smoke_verified: [publication_validation.smoke_status, publication_validation.smoke_exact_reference, publication_validation.smoke_run_ref, publication_validation.smoke_output_sha256, publication_validation.smoke_output_bytes, publication_validation.smoke_ns, publication_validation.isolated_workdir]
+      public_smoke_failed: [reason, failure_class, credential_names, evidence_refs]
+
   present_saved_play:
     kind: deterministic
     owner: play
     effect: none
-    input_required: [publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.uri, publication.install_uri, publication.content_hash, publication.inspect_ref, play.version]
+    input_required: [publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.uri, publication.install_uri, publication.content_hash, publication.inspect_ref, publication_validation.credential_status, publication_validation.smoke_status, play.version]
     command: scripts/bin/play-publication --stdin --json
     command_policy:
       - Run only after canonical inspection matches the authorized publication.
+      - For public Plays, run only after associated credential contracts and the isolated canonical URI smoke test are verified.
       - For public Plays, present a clickable Play page whose label includes the title and description, the install/bootstrap link, exact canonical reference, visibility, owner, and content hash.
       - For public Plays, include separate fenced plain-text blocks ready to paste into X and LinkedIn; the X copy must remain within 280 characters and both must contain the Play page URI.
       - Use only the registry-returned publication.uri and publication.install_uri. Never invent, reconstruct, shorten, or silently omit either URL.

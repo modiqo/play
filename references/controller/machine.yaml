@@ -518,14 +518,35 @@ states:
     entry: {action: inspect_saved_play}
     "on":
       saved_play_inspected:
+        - {guard: saved_public_inspection_matches_publication, target: publication_credentials, mutate: record_saved_inspection}
         - {guard: saved_inspection_matches_publication, target: saved_present, mutate: record_saved_inspection}
         - {target: blocked, mutate: record_saved_inspection_mismatch}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  publication_credentials:
+    owner: flow-runtime
+    checkpoint: both
+    requires: [publication.canonical_reference, publication.uri, publication.visibility, play.version]
+    entry: {action: inspect_publication_credentials}
+    "on":
+      associated_credentials_verified: [{target: publication_smoke, mutate: record_credential_contracts}]
+      associated_credentials_invalid: [{target: blocked, mutate: record_credential_contract_failure}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  publication_smoke:
+    owner: flow-runtime
+    checkpoint: both
+    requires: [publication.uri, publication.visibility, play.version, request.parameters, consent.save, publication_validation.credential_status, publication_validation.credential_contract_sha256]
+    entry: {action: smoke_publication}
+    "on":
+      public_smoke_verified: [{target: saved_present, mutate: record_public_smoke}]
+      public_smoke_failed: [{target: blocked, mutate: record_public_smoke_failure}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   saved_present:
     owner: play
     checkpoint: after
-    requires: [publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.content_hash, publication.inspect_ref, play.version]
+    requires: [publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.content_hash, publication.inspect_ref, publication_validation.credential_status, publication_validation.smoke_status, play.version]
     entry: {action: present_saved_play}
     "on":
       saved_play_presented: [{target: completed, mutate: record_saved_presentation}]

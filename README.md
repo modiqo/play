@@ -132,7 +132,13 @@ stateDiagram-v2
     public_publish --> birth_bind : published public
     birth_bind --> index
     index --> saved_inspect
-    saved_inspect --> completed : readback matches
+    saved_inspect --> saved_present : private readback matches
+    saved_inspect --> publication_credentials : public readback matches
+    publication_credentials --> publication_smoke : contracts verified
+    publication_credentials --> blocked : mismatch
+    publication_smoke --> saved_present : canonical URI run passes
+    publication_smoke --> blocked : run fails
+    saved_present --> completed
 
     %% ── Awareness, creator, management, birth ──
     awareness_collect --> awareness_present : new items
@@ -163,7 +169,8 @@ stateDiagram-v2
 State ownership is explicit: `play` owns prompts, output formatting, evaluators, and verification; `rote-specialist`
 states (`explore_execute`, `crystallize`, `author_release`, publication, `management_list`) are
 delegated through typed `play.handoff/v1` packets and validated `play.handoff-receipt/v1` receipts;
-`flow-runtime` owns `use_run` and `saved_inspect` via first-class `rote play run`/`inspect`.
+`flow-runtime` owns `use_run`, `saved_inspect`, `publication_credentials`, and
+`publication_smoke` via first-class Rote inspection/execution surfaces.
 Guards (for example `search_is_complete`, `route_within_policy`, `exploration_budget_remaining`,
 `exact_published_version_is_indexed`) are declared in `actions.yaml`, and
 `tests/controller/test_machine_conformance.py` fails when the machine, actions, prompts, or the
@@ -206,15 +213,19 @@ different controller versions cannot be mixed accidentally.
 
 Baseline recorded on 2026-08-06 on an Apple Silicon Mac with Python 3.14.5,
 `python-statemachine` 3.2.0, bundle
-`218b2fb376736590140f4cb5069d478b625c9874335920debada2dc83a566fa3`, and 10,000
+`075d74eb5bb153998598caac21e0acb68fc08754dd3e2b1156f154c9877dba6e`, and 10,000
 iterations:
 
-| Measurement | Latency |
+| Metric | Time |
 |---|---:|
-| Fresh-process bundle validation and compilation | 111.8 ms |
-| Warm transition, median | 0.447 ms |
-| Warm transition, p95 | 0.723 ms |
-| Warm transition, maximum | 6.08 ms |
+| One-time bundle compile | 106.62 ms |
+| Warm transition median | 0.462 ms |
+| Warm transition p95 | 0.741 ms |
+| Warm transition max | 6.29 ms |
+
+The earlier 57-state bundle measured a 0.447 ms median and 0.723 ms p95 on the same date. The
+59-state publication-safety bundle therefore adds no meaningful controller-path latency; public
+credential inspection and the canonical smoke run are separately timed external I/O gates.
 
 Treat these numbers as a development baseline, not a cross-machine guarantee. Future performance
 changes should record the command, iteration count, bundle SHA, Python version, and machine class.
@@ -462,7 +473,8 @@ existing, or Create distinct. Otherwise explicit create intent enters Explore di
 exploration is verified before Play asks:
 
 - **Private** — release and publish to an authorized private organization;
-- **Public** — release and publish under a selected public owner;
+- **Public** — release and publish under a selected public owner, verify associated adapter
+  credential contracts, then run the exact public URI once from an isolated directory;
 - **Skip** — keep the result without publishing or indexing a Play.
 
 Explore execution is fail-closed around Rote ownership. CALL routes only through
@@ -494,6 +506,34 @@ After release, Play captures a private birth certificate from the exploration ev
 Private or Public publication, it binds that certificate to the minted exact reference, then indexes
 and inspects the canonical version before calling the save successful. Organization membership,
 invitations, and sharing use the organization/list surface rather than hidden local state.
+
+### Public credential and canonical-run gate
+
+A successful registry push is not enough for a Public Play. After canonical readback, Play uses
+[`scripts/bin/play-publication-gate`](scripts/bin/play-publication-gate) to compare every associated
+adapter across three Rote-owned views:
+
+- the exact Play resolver's selected source, credential demand, and receipt status;
+- the installed adapter's version, fingerprint, auth family, and credential binding names;
+- the selected registry adapter's published version, fingerprint, and auth contract.
+
+Source/provenance, version, fingerprint, auth family, and environment-variable names must agree.
+This deliberately catches contracts such as local `GITHUB_API_TOKEN` versus published `GH_TOKEN`
+even when the two adapters have the same fingerprint. The checker handles static credentials and
+OAuth-family metadata, but never reads, hashes, prints, copies, or persists a token value.
+
+Only after that metadata check passes does Play invoke exactly one
+`rote play run <registry-returned-versioned-uri> <verified-parameters> --yes` from a fresh temporary
+working directory under `/tmp`. The temporary directory is removed afterward. Controller context
+retains only status, hashes, byte count, and elapsed nanoseconds—not the smoke run's primary output.
+This proves that the canonical URI resolves and runs with the current host's Rote/credential setup;
+it does not prove every consumer already has the required credentials.
+
+A mismatch, missing credential, provenance failure, or unsuccessful run blocks Play-page links,
+social copy, and congratulations. The gate does not silently pull or republish an adapter, change
+`token_env`, authenticate, delete transaction backups, or retry. Remediation stays with the
+appropriate Rote skill, after which the canonical gates run again. See the
+[GitHub token-env incident RCA](docs/rca/2026-08-06-github-token-env-var-confusion.md).
 
 Open or verify how one of your Plays was born:
 
@@ -693,7 +733,7 @@ harness roots, including installation, verification, idempotency, rollback, and 
 The foundation is Python-only. Commands under `scripts/bin/` and harness entrypoints under
 `scripts/harness/` are thin executables; reusable command, private-store, birth-certificate,
 registry, search, inventory, digest, elicitation, typed specialist handoff, typed controller runtime,
-and machine-validation logic lives in `scripts/lib/play/`. References and tests are
+public credential/smoke validation, and machine-validation logic lives in `scripts/lib/play/`. References and tests are
 grouped by controller, awareness, Explore, publication, integration, and harness use case.
 
 For isolated testing, override the discovered roots or reversible state location:

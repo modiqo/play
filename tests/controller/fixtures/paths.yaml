@@ -222,7 +222,7 @@ cases:
         target: saved_inspect
       - state: saved_inspect
         event: saved_play_inspected
-        guards: {saved_inspection_matches_publication: true}
+        guards: {saved_public_inspection_matches_publication: false, saved_inspection_matches_publication: true}
         target: saved_present
       - {state: saved_present, event: saved_play_presented, target: completed}
     terminal: completed
@@ -273,11 +273,32 @@ cases:
         target: saved_inspect
       - state: saved_inspect
         event: saved_play_inspected
-        guards: {saved_inspection_matches_publication: true}
-        target: saved_present
+        guards: {saved_public_inspection_matches_publication: true, saved_inspection_matches_publication: true}
+        target: publication_credentials
+      - {state: publication_credentials, event: associated_credentials_verified, target: publication_smoke}
+      - {state: publication_smoke, event: public_smoke_verified, target: saved_present}
       - {state: saved_present, event: saved_play_presented, target: completed}
     terminal: completed
-    includes_once: [author_release, birth_capture, public_owner, public_publish, birth_bind, index]
+    includes_once: [author_release, birth_capture, public_owner, public_publish, birth_bind, index, publication_credentials, publication_smoke]
+
+  - name: public credential mismatch blocks before smoke and presentation
+    steps:
+      - state: saved_inspect
+        event: saved_play_inspected
+        guards: {saved_public_inspection_matches_publication: true, saved_inspection_matches_publication: true}
+        target: publication_credentials
+      - {state: publication_credentials, event: associated_credentials_invalid, target: blocked}
+    terminal: blocked
+    excludes: [publication_smoke, saved_present]
+
+  - name: public smoke failure blocks before presentation
+    steps:
+      - state: publication_credentials
+        event: associated_credentials_verified
+        target: publication_smoke
+      - {state: publication_smoke, event: public_smoke_failed, target: blocked}
+    terminal: blocked
+    excludes: [saved_present]
 
   - name: public save can require owner selection
     steps:
@@ -296,8 +317,10 @@ cases:
         target: saved_inspect
       - state: saved_inspect
         event: saved_play_inspected
-        guards: {saved_inspection_matches_publication: true}
-        target: saved_present
+        guards: {saved_public_inspection_matches_publication: true, saved_inspection_matches_publication: true}
+        target: publication_credentials
+      - {state: publication_credentials, event: associated_credentials_verified, target: publication_smoke}
+      - {state: publication_smoke, event: public_smoke_verified, target: saved_present}
       - {state: saved_present, event: saved_play_presented, target: completed}
     terminal: completed
 

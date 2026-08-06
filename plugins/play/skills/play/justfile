@@ -1,7 +1,7 @@
 check: package-check
     scripts/bin/validate-machine
     uv run scripts/bin/play-machine describe --json
-    uv run pyright scripts/lib/play/controller.py scripts/lib/play/run_output.py scripts/bin/play-machine scripts/bin/play-run-output tests/controller/test_controller_runtime.py tests/foundation/test_run_output.py
+    uv run pyright scripts/lib/play/controller.py scripts/lib/play/run_output.py scripts/lib/play/publication.py scripts/lib/play/publication_gate.py scripts/bin/play-machine scripts/bin/play-run-output scripts/bin/play-publication scripts/bin/play-publication-gate tests/controller/test_controller_runtime.py tests/foundation/test_run_output.py tests/foundation/test_publication.py tests/foundation/test_publication_gate.py
     scripts/bin/play-question choose_creator_path --harness codex --check
     scripts/bin/play-question choose_creator_path --harness claude --check
     scripts/bin/play-question choose_creator_path --harness kimi --check

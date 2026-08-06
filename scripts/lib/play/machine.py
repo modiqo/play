@@ -299,13 +299,14 @@ def validate_bundle(root: Path) -> ValidationSummary:
         ),
         "auth_repair_handoff": ("auth_repair_execute", "auth_repair_receipt"),
         "auth_repair_execute": ("auth_repair_receipt",),
-        "crystallize": ("save_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "saved_present"),
-        "save_offer": ("author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "saved_present"),
-        "author_release": ("birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "saved_present"),
-        "birth_capture": ("private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "saved_present"),
-        "birth_bind": ("index", "saved_inspect", "saved_present"),
-        "index": ("saved_inspect", "saved_present"),
-        "saved_inspect": ("saved_present",),
+        "crystallize": ("save_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "saved_present"),
+        "save_offer": ("author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "saved_present"),
+        "author_release": ("birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "saved_present"),
+        "birth_capture": ("private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "saved_present"),
+        "birth_bind": ("index", "saved_inspect", "publication_credentials", "publication_smoke", "saved_present"),
+        "index": ("saved_inspect", "publication_credentials", "publication_smoke", "saved_present"),
+        "saved_inspect": ("publication_credentials", "publication_smoke", "saved_present"),
+        "publication_credentials": ("publication_smoke",),
         "use_output": ("use_verify", "use_receipt"),
     }
     for dominator, governed in rules.items():
@@ -424,10 +425,25 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(predecessors["birth_bind"] == {"private_publish", "public_publish"}, "birth binding may follow only successful private or public publication")
     check(predecessors["index"] == {"birth_bind"}, "index may follow only successful birth binding")
     check(predecessors["saved_inspect"] == {"index"}, "saved inspection may follow only successful indexing")
-    check(predecessors["saved_present"] == {"saved_inspect"}, "saved presentation may follow only successful canonical inspection")
+    check(predecessors["publication_credentials"] == {"saved_inspect"}, "public credential validation may follow only successful canonical inspection")
+    check(predecessors["publication_smoke"] == {"publication_credentials"}, "public smoke may follow only verified credential contracts")
+    check(predecessors["saved_present"] == {"saved_inspect", "publication_smoke"}, "saved presentation must follow private readback or verified public smoke")
     check(
-        _target(states, "saved_inspect", "saved_play_inspected") == "saved_present",
-        "a matching saved inspection must enter verified publication presentation",
+        _target(states, "saved_inspect", "saved_play_inspected") == "publication_credentials",
+        "a matching public inspection must enter associated credential validation",
+    )
+    check(
+        _target(states, "saved_inspect", "saved_play_inspected", 1) == "saved_present",
+        "a matching private inspection may enter verified publication presentation",
+    )
+    check(
+        _target(states, "publication_credentials", "associated_credentials_verified")
+        == "publication_smoke",
+        "verified associated credential contracts must enter canonical public smoke",
+    )
+    check(
+        _target(states, "publication_smoke", "public_smoke_verified") == "saved_present",
+        "public presentation may follow only a verified canonical smoke run",
     )
     check(
         _target(states, "saved_present", "saved_play_presented") == "completed",
@@ -445,6 +461,7 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "adapter_discovery",
         "handoff",
         "auth_repair",
+        "publication_validation",
         "last_event",
     ):
         check(field in context_roots, f"context schema must require {field}")
@@ -509,6 +526,16 @@ def validate_bundle(root: Path) -> ValidationSummary:
         == "scripts/bin/play-publication --stdin --json",
         "saved publication presentation must use the deterministic URI and social-copy renderer",
     )
+    check(
+        actions.get("inspect_publication_credentials", {}).get("command")
+        == "scripts/bin/play-publication-gate credentials --stdin --json",
+        "public publication credentials must use the deterministic metadata-only gate",
+    )
+    check(
+        actions.get("smoke_publication", {}).get("command")
+        == "scripts/bin/play-publication-gate smoke --stdin --json",
+        "public publication smoke must use the isolated canonical-run gate",
+    )
     public_fields = actions.get("publish_public", {}).get("events", {}).get("play_published", [])
     check(
         "publication.uri" in public_fields and "publication.install_uri" in public_fields,
@@ -521,6 +548,20 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "ready to paste into X and LinkedIn" in presentation_policy
         and "Never invent, reconstruct, shorten, or silently omit" in presentation_policy,
         "public publication presentation must include paste-ready social copy from returned URIs",
+    )
+    credential_policy = " ".join(
+        actions.get("inspect_publication_credentials", {}).get("command_policy", [])
+    )
+    smoke_policy = " ".join(actions.get("smoke_publication", {}).get("command_policy", []))
+    check(
+        "Never inspect, print, hash, copy, or persist a credential value" in credential_policy
+        and "equal fingerprints as insufficient" in credential_policy,
+        "public credential validation must compare contracts without reading secrets",
+    )
+    check(
+        "exactly one rote play run" in smoke_policy
+        and "fresh temporary working directory under /tmp" in smoke_policy,
+        "public smoke must run the exact canonical URI from isolated local context",
     )
     execute_policy = " ".join(actions.get("execute_route", {}).get("command_policy", []))
     discovery_policy = " ".join(actions.get("discover_call_adapter", {}).get("command_policy", []))

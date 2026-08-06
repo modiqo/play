@@ -146,7 +146,7 @@ prompts:
     selection: single
     choices:
       - {id: private, label: Private, description: Publish it to an authorized private organization., event: save_private, recommended: true}
-      - {id: public, label: Public, description: Publish it under a selected public identity or organization., event: save_public}
+      - {id: public, label: Public, description: Publish it under a selected public identity or organization, verify associated adapter credential contracts, and run the exact public URI once from an isolated directory before sharing it., event: save_public}
       - {id: skip, label: Skip, description: Keep the verified result but do not publish or index a Play., event: save_skipped}
     events:
       save_private: [prompt_version, selected_at]

@@ -37,6 +37,7 @@
     "creator",
     "management",
     "publication",
+    "publication_validation",
     "receipt_ref",
     "last_event"
   ],
@@ -77,6 +78,7 @@
     "creator": {"$ref": "#/$defs/creator"},
     "management": {"$ref": "#/$defs/management"},
     "publication": {"$ref": "#/$defs/publication"},
+    "publication_validation": {"$ref": "#/$defs/publicationValidation"},
     "receipt_ref": {"$ref": "#/$defs/nullableString"},
     "last_event": {"$ref": "#/$defs/lastEvent"}
   },
@@ -476,6 +478,44 @@
         },
         "org_summary_ref": {"$ref": "#/$defs/nullableString"},
         "plays_by_org_ref": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "adapterCredentialContract": {
+      "type": "object",
+      "required": ["adapter_id", "selected_source", "selected_version", "fingerprint", "auth_family", "credential_names", "credential_status", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "adapter_id": {"type": "string", "minLength": 1},
+        "selected_source": {"type": "string", "minLength": 1},
+        "selected_version": {"type": "string", "minLength": 1},
+        "fingerprint": {"type": "string", "minLength": 1},
+        "auth_family": {"enum": ["none", "static", "oauth"]},
+        "credential_names": {"$ref": "#/$defs/stringArray"},
+        "credential_status": {"type": "string", "minLength": 1},
+        "provenance": {"const": "receipt_verified"}
+      }
+    },
+    "publicationValidation": {
+      "type": "object",
+      "required": ["credential_status", "adapter_contracts", "credential_contract_sha256", "credential_check_ns", "smoke_status", "smoke_exact_reference", "smoke_run_ref", "smoke_output_sha256", "smoke_output_bytes", "smoke_ns", "isolated_workdir", "failure_reason", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "credential_status": {"enum": ["not_required", "pending", "verified", "failed"]},
+        "adapter_contracts": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/adapterCredentialContract"}
+        },
+        "credential_contract_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+        "credential_check_ns": {"type": ["integer", "null"], "minimum": 0},
+        "smoke_status": {"enum": ["not_required", "pending", "verified", "failed"]},
+        "smoke_exact_reference": {"$ref": "#/$defs/nullableString"},
+        "smoke_run_ref": {"$ref": "#/$defs/nullableString"},
+        "smoke_output_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+        "smoke_output_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "smoke_ns": {"type": ["integer", "null"], "minimum": 0},
+        "isolated_workdir": {"type": "boolean"},
+        "failure_reason": {"$ref": "#/$defs/nullableString"},
+        "evidence_refs": {"$ref": "#/$defs/stringArray"}
       }
     },
     "publication": {

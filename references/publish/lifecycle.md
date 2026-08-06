@@ -20,7 +20,9 @@ Do not offer to save before verification and candidate preparation.
   If needed, create a private organization whose only initial member is the current user. Private
   never means merely writing a local file.
 - **Public** authorizes authoring, releasing, and registry publication under a selected public
-  identity or organization. Ask for the owner only when it is ambiguous.
+  identity or organization. It also authorizes one run of the exact versioned public URI with the
+  verified parameters from an isolated `/tmp` directory after associated credential contracts pass.
+  Ask for the owner only when it is ambiguous.
 - **Skip** ends with the verified outcome and unpublished local exploration state. Do not author,
   release, publish, or index a Play.
 
@@ -39,8 +41,33 @@ reference, inspect response reference, title, description, content hash, and ret
 If the inspected owner, visibility, or version differs from the authorized publication, block
 instead of repairing it silently.
 
-On a matching readback, run `scripts/bin/play-publication --stdin --json` and present its Markdown
-exactly once. Include the canonical reference, exact version, visibility, owner, and content hash.
+For a matching Public readback, run `scripts/bin/play-publication-gate credentials --stdin --json`
+before any link, share copy, or congratulations. For each associated adapter, require the selected
+registry source to be among the resolved candidates and the installed adapter to be ready with a
+verified provenance receipt. Compare the installed and published adapter version and fingerprint,
+then compare auth family and every declared credential environment-variable name against Rote's
+resolved credential demand. Matching fingerprints do not excuse a provenance, version,
+authentication, or environment-variable mismatch. The gate may retain names such as
+`GITHUB_API_TOKEN`; it must never read, hash, print, copy, or persist the corresponding value.
+
+After that contract passes, run `scripts/bin/play-publication-gate smoke --stdin --json`. It invokes
+exactly one `rote play run <registry-returned-versioned-uri> <verified-parameters> --yes` from a
+fresh temporary working directory under `/tmp`. This removes repository and workspace context from
+the smoke test while retaining the current host's installed Rote and credential store. Preserve
+only success/failure, bounded classifications, output/error digests, byte count, and elapsed
+nanoseconds; never retain the smoke run's primary payload in controller context. A successful run
+proves the canonical URI resolves with the current host's credential setup, not that an arbitrary
+consumer already has credentials.
+
+Any credential-contract mismatch or public smoke failure blocks presentation. Do not silently pull
+or republish an adapter, change `token_env`, authenticate, delete transaction backups, or retry.
+Those remediations remain explicit Rote-owned work, after which the publication gates start again
+from canonical inspection.
+
+On a matching Private readback, or a Public readback whose credential and smoke gates passed, run
+`scripts/bin/play-publication --stdin --json` and present its Markdown exactly once. Include the
+canonical reference, exact version, visibility, owner, and content hash. For Public, also show that
+the credential contract and isolated smoke passed, including measured smoke latency.
 For Public, also include a clickable Play page link whose label carries the title and description,
 the install/bootstrap link, and separate fenced plain-text blocks ready to paste into X and
 LinkedIn. The X copy must be at most 280 characters; both social blocks must contain the returned

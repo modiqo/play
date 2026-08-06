@@ -31,7 +31,9 @@ invocable so declared handoffs can chain without requiring another user command.
    detailed mode, human presentation, a 200,000-byte inline limit, and artifact overflow; initialize
    the `output` record with null result fields, empty manifest lists, and `truncated: false`.
    Initialize `adapter_discovery` with `status: unknown`, a null query and selected id, and empty
-   searched-source, choice, and evidence lists.
+   searched-source, choice, and evidence lists. Initialize `publication_validation` with credential
+   and smoke statuses set to `not_required`, empty adapter contracts and evidence, null references,
+   digests, byte counts, and timings, and `isolated_workdir: false`.
 4. Validate the context's machine version, current state, transition sequence, and pending action.
 5. Execute exactly one declared prompt or entry action for the current state.
 6. Accept only an event declared by the current state and validated by
@@ -275,7 +277,9 @@ Play. Do not execute an exploration modality before approval. If the user contin
 - Keep writes and human gates visible in the delegated runtime.
 - Verify the requested outcome before preparing a candidate.
 - Ask Private, Public, or Skip only after candidate preparation.
-- Treat Private and Public as authorization to author, release, and publish with that visibility.
+- Treat Private as authorization to author, release, and publish with that visibility. Treat Public
+  as authorization to do the same, verify associated adapter credential contracts, and execute the
+  exact versioned public URI once with the verified parameters from an isolated `/tmp` directory.
 - Treat Skip as unpublished local exploration state, not a saved Play.
 - Treat private as registry-backed organization ownership, never merely a local file.
 - After release and before publication, capture the one-time owner-private birth object. After
@@ -283,9 +287,19 @@ Play. Do not execute an exploration modality before approval. If the user contin
   These writes are authorized parts of the declared save lifecycle; they never publish the birth.
 - Index the exact canonical version after successful Private or Public publication.
 - After indexing, run `rote play inspect <org/name> --json` against the canonical reference.
-  Verify its owner, version, and visibility, show a compact JSON-backed success readout, and
-  congratulate the user only after that readback matches the authorized publication.
-- After a matching public readback, present the exact registry-returned Play page URI and
+  Verify its owner, version, and visibility. For Public, compare every associated selected adapter
+  with `rote adapter info` and `rote registry adapter info`: require receipt-verified provenance and
+  matching source, version, fingerprint, auth family, and credential environment-variable names.
+  Never read or retain credential values. Fingerprint equality alone is insufficient.
+- After the public credential contract matches, run exactly one
+  `rote play run <registry-returned-versioned-uri> <verified-parameters> --yes` from a fresh
+  temporary directory under `/tmp`. Preserve only status, bounded metadata, digests, byte count,
+  and latency—not the smoke run's primary payload. This verifies canonical resolution and the
+  current host's credential readiness; it does not prove every consumer is configured. On any
+  mismatch or failure, block presentation and leave repair, authentication, pull, and cleanup to
+  their Rote owners.
+- Only after the matching readback and, for Public, successful contract and smoke gates, show the
+  compact JSON-backed success readout and congratulate the user. Present the exact registry-returned Play page URI and
   install/bootstrap URI, a clickable Play link labeled with its title and description, and fenced
   plain-text copy ready to paste into X and LinkedIn. Keep X within 280 characters and include the
   Play URI in both blocks. Never reconstruct or omit returned URLs, and never post the copy without
@@ -366,9 +380,10 @@ At terminal state, present only the outcome relevant to that terminal:
 
 - `receipt`: verified unchanged Use result;
 - `completed`: verified Explore result plus saved reference or explicit unpublished status;
-- `completed` for a saved Play: verified result, matching inspect readout, and—when Public—the Play
-  page, install/bootstrap link, and paste-ready X and LinkedIn copy, followed by a brief
-  congratulations;
+- `completed` for a saved Play: verified result, matching inspect readout, and—when Public—verified
+  associated adapter credential contracts, a successful isolated canonical URI smoke run with
+  measured latency, the Play page, install/bootstrap link, and paste-ready X and LinkedIn copy,
+  followed by a brief congratulations;
 - `completed` for management: the requested organization summary or grouped Play inventory;
 - `completed` for birth lookup: the requested owner-local certificate or an honest absent/ambiguous
   result;
