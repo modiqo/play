@@ -1,0 +1,21 @@
+[project]
+name = "modiqo-play-controller"
+version = "0.1.0"
+description = "Typed runtime for the declarative Play controller"
+requires-python = ">=3.10"
+dependencies = [
+    "python-statemachine[yaml]>=3.2,<3.3",
+    "PyYAML>=6,<7",
+]
+
+[dependency-groups]
+dev = ["pyright>=1.1.403,<2"]
+
+[tool.uv]
+package = false
+
+[tool.pyright]
+include = ["scripts/lib/play", "scripts/bin/play-machine", "tests"]
+extraPaths = ["scripts/lib"]
+venvPath = "."
+venv = ".venv"

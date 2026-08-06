@@ -13,7 +13,7 @@ from typing import Iterable, Sequence
 
 ROOT = Path(__file__).resolve().parents[3]
 TARGET = ROOT / "plugins" / "play" / "skills" / "play"
-TOP_LEVEL_FILES = ("SKILL.md", "justfile")
+TOP_LEVEL_FILES = ("SKILL.md", "justfile", "pyproject.toml", "uv.lock")
 DIRECTORIES = (
     "agents",
     "references",

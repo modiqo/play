@@ -162,6 +162,54 @@ Guards (for example `search_is_complete`, `route_within_policy`, `exploration_bu
 `tests/controller/test_machine_conformance.py` fails when the machine, actions, prompts, or the
 thinking-orbs presentation mapping drift.
 
+### Typed controller runtime
+
+The first executable-controller slice lives in
+[`scripts/lib/play/controller.py`](scripts/lib/play/controller.py). It compiles the authoritative
+Play YAML into [`python-statemachine`](https://python-statemachine.readthedocs.io/) 3.2, while
+retaining Play's existing machine, action, prompt, context, and handoff contracts as the source of
+truth. The runtime provides typed cursors and events, ordered guard evaluation, event-payload
+validation, bundle-SHA binding, terminal enforcement, declared mutation selection, and per-step
+timing.
+
+This is currently a transition kernel, not a replacement for the complete Play controller. It
+returns the exact declared mutation but does not yet apply mutation semantics to `play.context/v1`,
+dispatch entry actions, or checkpoint context. Those responsibilities remain model/harness-owned
+until their typed Python registries are implemented and replay-tested. Keeping this boundary
+explicit prevents a partial runtime from silently changing controller behavior.
+
+Install the locked development/runtime dependencies and inspect the compiled bundle:
+
+```bash
+uv sync
+uv run scripts/bin/play-machine describe --json
+```
+
+Measure controller-only latency with:
+
+```bash
+just benchmark-controller
+just benchmark-controller 10000
+```
+
+The benchmark compiles the bundle once, then repeatedly executes the `qualify → exited` transition
+with a new typed cursor. It excludes model inference, user interaction, external commands, network
+I/O, and mutation application. Every JSON result includes the exact bundle SHA so measurements from
+different controller versions cannot be mixed accidentally.
+
+Baseline recorded on 2026-08-06 on an Apple Silicon Mac with Python 3.14.5,
+`python-statemachine` 3.2.0, and 1,000 iterations:
+
+| Measurement | Latency |
+|---|---:|
+| Fresh-process bundle validation and compilation | 93.7 ms |
+| Warm transition, median | 0.427 ms |
+| Warm transition, p95 | 0.651 ms |
+| Warm transition, maximum | 4.70 ms |
+
+Treat these numbers as a development baseline, not a cross-machine guarantee. Future performance
+changes should record the command, iteration count, bundle SHA, Python version, and machine class.
+
 ## Install from a marketplace
 
 Play is packaged as one self-contained plugin under `plugins/play`. The package includes the skill,
@@ -594,10 +642,12 @@ newer content silently.
 ## Development checks
 
 ```bash
+uv sync
 just package
 just package-check
 just ui-check
 just test
+just benchmark-controller
 ```
 
 The tests exercise the declarative Play machine and the complete activation lifecycle in temporary
@@ -605,8 +655,8 @@ harness roots, including installation, verification, idempotency, rollback, and 
 
 The foundation is Python-only. Commands under `scripts/bin/` and harness entrypoints under
 `scripts/harness/` are thin executables; reusable command, private-store, birth-certificate,
-registry, search, inventory, digest, elicitation, typed specialist handoff, and machine-validation logic lives in
-`scripts/lib/play/`. References and tests are
+registry, search, inventory, digest, elicitation, typed specialist handoff, typed controller runtime,
+and machine-validation logic lives in `scripts/lib/play/`. References and tests are
 grouped by controller, awareness, Explore, publication, integration, and harness use case.
 
 For isolated testing, override the discovered roots or reversible state location:

@@ -1,5 +1,7 @@
 check: package-check
     scripts/bin/validate-machine
+    uv run scripts/bin/play-machine describe --json
+    uv run pyright scripts/lib/play/controller.py scripts/bin/play-machine tests/controller/test_controller_runtime.py
     scripts/bin/play-question choose_creator_path --harness codex --check
     scripts/bin/play-question choose_creator_path --harness claude --check
     scripts/bin/play-question choose_creator_path --harness kimi --check
@@ -32,7 +34,11 @@ ui-check:
     npm --prefix ui/thinking-orbs run typecheck
 
 test: check
-    python3 -m unittest discover -s tests -p 'test_*.py'
+    uv run python3 -m unittest discover -s tests -p 'test_*.py'
+
+# Measure warm typed-controller transition latency without model or external I/O.
+benchmark-controller iterations="1000":
+    uv run scripts/bin/play-machine benchmark --iterations {{iterations}} --json
 
 # Activate or safely converge Play-first metadata after harness/Rote skill updates.
 install:
