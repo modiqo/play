@@ -29,6 +29,12 @@ class CommandsTest(unittest.TestCase):
             run_json(["rote", "registry"], timeout_seconds=12)
         self.assertEqual(12, run.call_args.kwargs["timeout"])
 
+    @patch("play.commands.subprocess.run")
+    def test_passes_working_directory_to_subprocess(self, run) -> None:
+        run.return_value = subprocess.CompletedProcess(["rote"], 0, "{}", "")
+        run_json(["rote", "registry"], working_directory=Path("/tmp/workspace"))
+        self.assertEqual(Path("/tmp/workspace"), run.call_args.kwargs["cwd"])
+
     def test_invalid_environment_timeout_fails_before_execution(self) -> None:
         with self.assertRaisesRegex(CommandError, "must be a number"):
             run_json(

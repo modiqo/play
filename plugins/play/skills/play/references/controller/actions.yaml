@@ -2,6 +2,13 @@ schema: play.actions/v1
 
 owners: [play, rote-specialist, flow-runtime]
 effects: [none, read, local-write, external-write, mixed]
+specialist_owners: [rote-using-adapters, rote-shell, rote-browse, rote-workspace]
+adapter_specialist_owners: [rote-adapter-create, rote-adapter-config]
+route_owners:
+  call: rote-using-adapters
+  shell: rote-shell
+  drive: rote-browse
+  combined: rote-workspace
 
 guards:
   - search_is_complete
@@ -40,10 +47,12 @@ mutations:
   - record_non_outcome_exit
   - record_explicit_exit
   - set_management_request
+  - set_birth_request
   - record_management_choices
   - choose_management_views
   - record_management_inventory
   - record_management_presentation
+  - record_birth_presentation
   - record_blocker
   - record_search_results
   - record_search_presentation
@@ -71,6 +80,13 @@ mutations:
   - record_exploration_context
   - record_missing_consent
   - record_route
+  - record_specialist_handoff
+  - record_specialist_unavailable
+  - record_specialist_response
+  - record_invalid_specialist_receipt
+  - record_effect_confirmation
+  - approve_effect_confirmation
+  - decline_effect_confirmation
   - record_widening_request
   - record_no_route
   - widen_modality_policy
@@ -86,6 +102,8 @@ mutations:
   - record_save_skipped
   - record_release
   - record_missing_save_choice
+  - record_birth_capture
+  - record_birth_binding
   - record_private_org
   - record_private_org_violation
   - record_publication
@@ -112,6 +130,7 @@ actions:
       play_creation_request: [request.intent, request.requested_outcome, creator.intent, modality_policy]
       play_management_request: [request.intent, management.views]
       play_management_choice_required: [request.intent]
+      play_birth_request: [request.intent, birth.selector]
       conversation: [reason]
       play_excluded: [reason]
 
@@ -166,6 +185,15 @@ actions:
     input_required: [management.views, management.org_summary_ref, management.plays_by_org_ref]
     events:
       management_presented: [management.views, management.org_summary_ref, management.plays_by_org_ref]
+
+  show_play_birth:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [birth.selector]
+    command: scripts/bin/play-birth show <birth.selector> --json
+    events:
+      birth_ready: [birth.sha256, birth.flow_fingerprint, birth.object_ref, birth.exact_reference, birth.binding_ref]
 
   search_authorized_plays:
     kind: deterministic
@@ -276,14 +304,59 @@ actions:
       modality_widening_required: [requested_modalities, reason]
       no_safe_route: [reason, checked_capabilities]
 
+  prepare_specialist_handoff:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [run_id, request.requested_outcome, route.modalities, execution.owner, execution.workspace, execution.idempotency_key, effect_policy]
+    command: scripts/bin/play-handoff prepare --stdin --json
+    command_policy:
+      - Enumerate only rote-* skills exposed as callable by the current harness; installed files or raw MCP tools do not count as available specialists.
+      - CALL requires rote-using-adapters, SHELL requires rote-shell, DRIVE requires rote-browse, and combined routes require rote-workspace.
+      - A CALL packet requires adapter convergence: reuse an installed adapter or ask rote-adapter-create to detect OpenAPI, GraphQL, or MCP and create the matching adapter; ask rote-adapter-config to complete or repair authentication.
+      - Provider schemas, endpoint metadata, documentation, and MCP server cards are discovery evidence only. They never authorize direct capability execution outside the Rote adapter.
+      - When effect_policy.rote_confirmation is approved, invalidate the prior packet and bind the new packet to the exact Rote tool, impact, token, workspace, and evidence so the same specialist resumes only that guarded call.
+      - If the exact owner is unavailable, emit specialist_unavailable and block; never substitute a direct MCP, app, shell, or browser tool.
+    events:
+      specialist_handoff_ready: [handoff.owner, handoff.available, handoff.packet, handoff.packet_sha256, handoff.expected_events]
+      specialist_unavailable: [handoff.owner, handoff.available, handoff.blocked_reason, available_owners]
+
   execute_route:
     kind: delegated
     owner: rote-specialist
     effect: mixed
-    input_required: [execution.owner, consent.explore, route.modalities]
+    input_required: [execution.owner, consent.explore, route.modalities, handoff.owner, handoff.available, handoff.packet, handoff.packet_sha256]
+    command_policy:
+      - Invoke the selected rote-* skill through the harness skill mechanism with the exact play.handoff/v1 packet.
+      - For CALL, inspect installed adapters first. If none fits, delegate adapter creation to rote-adapter-create, which must determine OpenAPI, GraphQL, or MCP before using the matching Rote creation command.
+      - Complete the Rote-owned authentication cycle using rote-adapter-create or rote-adapter-config, including required human approval and masked secret entry, before invoking rote-using-adapters.
+      - If adapter creation, type detection, authentication, or adapter execution cannot complete, emit route_exhausted with evidence; never fall back to a raw provider or MCP call.
+      - Treat probe readOnlyHint and destructiveHint values as discovery metadata only; never emit confirmation_required, route_exhausted, or action_blocked solely from those hints.
+      - Attempt a matching operation through Rote. Emit confirmation_required only when the Rote call itself returns confirmation_required, preserving its exact tool, impact, token, workspace, and evidence.
+      - When the packet carries an approved Rote confirmation, resume the same workspace and retry only the guarded call with --confirm <token>; do not probe again or broaden the operation.
+      - During explore_execute, Play must not call MCP, app, shell, or browser tools directly; tool access never substitutes for the selected specialist.
+      - If the selected specialist cannot be invoked, emit action_blocked. Never fabricate a specialist event or receipt.
     events:
-      outcome_ready: [result_ref, response_refs, artifact_refs, modalities_used, effects]
-      route_exhausted: [reason, evidence_refs]
+      outcome_ready: [handoff.receipt, result_ref, response_refs, artifact_refs, modalities_used, effects, route_provenance]
+      route_exhausted: [handoff.receipt, reason, evidence_refs]
+      confirmation_required: [handoff.receipt, effect_confirmation]
+
+  validate_specialist_receipt:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [run_id, execution.owner, handoff.packet, handoff.packet_sha256, handoff.receipt]
+    command: scripts/bin/play-handoff verify --stdin --json
+    command_policy:
+      - Accept only play.handoff-receipt/v1 from the packet owner with matching run, state, action, packet SHA, declared event, complete payload, and skill executor identity.
+      - A successful CALL receipt must include adapter provenance: adapter id, detected OpenAPI/GraphQL/MCP substrate and evidence, reused/created status, Rote creation owner when applicable, verified/completed auth owner, and direct_tool_execution=false.
+      - Accept confirmation_required only when its typed receipt proves source=rote_confirmation_required and carries a non-empty tool, impact, token, workspace, and evidence.
+      - A raw MCP, app, shell, browser, or prose result has no valid specialist receipt and must emit specialist_receipt_invalid.
+    events:
+      specialist_outcome_ready: [handoff.receipt_ref, handoff.receipt_valid, result_ref, response_refs, artifact_refs, modalities_used, effects, route_provenance]
+      specialist_route_exhausted: [handoff.receipt_ref, handoff.receipt_valid, reason, evidence_refs]
+      specialist_confirmation_required: [handoff.receipt_ref, handoff.receipt_valid, effect_confirmation]
+      specialist_receipt_invalid: [handoff.receipt_valid, handoff.blocked_reason, evidence_refs]
 
   prepare_candidate:
     kind: delegated
@@ -301,6 +374,15 @@ actions:
     input_required: [candidate.reference, consent.save]
     events:
       flow_released: [candidate.released_flow, play.version, verification_refs]
+
+  capture_play_birth:
+    kind: deterministic
+    owner: play
+    effect: local-write
+    input_required: [candidate.released_flow, execution.workspace]
+    command: scripts/bin/play-birth capture --workspace <execution.workspace> --flow <candidate.released_flow> --json
+    events:
+      birth_captured: [birth.sha256, birth.flow_fingerprint, birth.object_ref, birth.capture_ref]
 
   ensure_private_org:
     kind: delegated
@@ -334,6 +416,15 @@ actions:
     input_required: [candidate.released_flow, publication.owner, consent.save]
     events:
       play_published: [publication.canonical_reference, visibility, owner, play.version]
+
+  bind_play_birth:
+    kind: deterministic
+    owner: play
+    effect: local-write
+    input_required: [birth.sha256, publication.canonical_reference, play.version]
+    command: scripts/bin/play-birth bind <birth.sha256> --reference <publication.canonical_reference>@<play.version> --json
+    events:
+      birth_bound: [birth.sha256, birth.exact_reference, birth.registry_content_hash, birth.binding_ref]
 
   index_playcard:
     kind: deterministic

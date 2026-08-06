@@ -5,7 +5,8 @@ description: >
   by a reusable procedure. Search local and authorized Play indexes, run an adequate Play, or ask
   whether to explore with rote and preserve a new Play. Also use for daily or weekly Play digests,
   new and revised organization Plays, top public Plays, personal impact, explicit create-a-Play
-  intent, or requests to search, list, inspect, run, create, save, share, and invite people to
+  intent, owner-local Play birth certificates, or requests to search, list, inspect, run, create,
+  save, share, show how a Play was born, and invite people to
   Plays, including work constrained to adapters, shell, browser, or combinations.
 ---
 
@@ -15,8 +16,8 @@ description: >
 
 Treat `play` as the user-facing controller. Treat `rote-*` skills as internal execution owners.
 Follow the declarative machine instead of reconstructing its lifecycle from prose.
-Keep Play implicitly available at harness startup and invoke explicit-only rote specialists through
-declared handoffs.
+Keep Play implicitly available at harness startup and keep all rote specialists model/harness-
+invocable so declared handoffs can chain without requiring another user command.
 
 ## Start or resume
 
@@ -57,6 +58,9 @@ prose when its declared return event is absent or invalid.
 - The on-demand digest store at `~/.rote/play/digest-state.json` is not controller context. It is a
   declared awareness cache containing only scope, SHA, and UTC checkpoint; do not add controller
   fields, digest cards, credentials, or registry payloads to it.
+- The owner-private birth store at `~/.play/births` is also not controller context. It is an
+  explicitly declared content-addressed store for redacted birth objects and URI bindings only.
+  Never put pending actions, consent, harness state, credentials, or raw workspace evidence in it.
 
 ## Keep execution quiet
 
@@ -125,6 +129,8 @@ prose when its declared return event is absent or invalid.
   [references/awareness/search.md](references/awareness/search.md).
 - Before `crystallize`, `save_offer`, authoring, publication, indexing, sharing, or invitation, read
   [references/publish/lifecycle.md](references/publish/lifecycle.md).
+- Before birth capture, URI binding, lookup, or verification, read
+  [references/publish/birth.md](references/publish/birth.md).
 - Before preserving any irreducible inference step, read
   [references/explore/judge.md](references/explore/judge.md).
 - Before organization summaries or Play listings, read
@@ -250,12 +256,17 @@ Do not execute an exploration modality before approval. If the user continues no
 - Treat user modality constraints as authoritative.
 - Ask before widening CALL, SHELL, or DRIVE.
 - Keep JUDGE forbidden unless the policy allows it.
+- Treat adapter probe hints, including `readOnlyHint` and `destructiveHint`, as discovery and
+  disclosure metadata only. Never turn a hint into an approval gate, blocker, or confirmation.
 - Keep writes and human gates visible in the delegated runtime.
 - Verify the requested outcome before preparing a candidate.
 - Ask Private, Public, or Skip only after candidate preparation.
 - Treat Private and Public as authorization to author, release, and publish with that visibility.
 - Treat Skip as unpublished local exploration state, not a saved Play.
 - Treat private as registry-backed organization ownership, never merely a local file.
+- After release and before publication, capture the one-time owner-private birth object. After
+  publication and before indexing, bind it to the minted exact reference and registry content hash.
+  These writes are authorized parts of the declared save lifecycle; they never publish the birth.
 - Index the exact canonical version after successful Private or Public publication.
 - After indexing, run `rote play inspect <org/name> --json` against the canonical reference.
   Verify its owner, version, and visibility, show a compact JSON-backed success readout, and
@@ -269,6 +280,39 @@ that require a specialist, build the normalized packet in
 its declared return event. Specialists own gap commands and evidence capture; Play owns consent,
 policy, transitions, and user-facing closure.
 
+Treat specialist dispatch as fail-closed. `CALL` means `rote-using-adapters`, `SHELL` means
+`rote-shell`, `DRIVE` means `rote-browse`, and combined routes mean `rote-workspace`. Before
+`explore_execute`, enter `explore_handoff`, enumerate the rote-* skills actually exposed as callable
+by this harness, and prepare the typed packet with `scripts/bin/play-handoff prepare --stdin --json`.
+An installed skill file, MCP server, app, shell, or browser tool is not proof that the selected
+specialist is callable. If the exact owner is unavailable, emit `specialist_unavailable` and block.
+
+During `explore_execute`, never call MCP, app, shell, or browser tools directly. Invoke only the
+selected rote-* skill through the harness skill mechanism. Route its response through
+`explore_receipt` and `scripts/bin/play-handoff verify --stdin --json`; accept `outcome_ready` or
+`route_exhausted` only with a matching `play.handoff-receipt/v1`. A Rote
+`confirmation_required` result must likewise arrive as the typed receipt event, then enter
+`effect_offer`; Play may not infer that event from probe annotations. A raw tool result, prose
+response, wrong owner, mismatched packet, or missing receipt must block and can never satisfy
+Explore.
+
+When `effect_offer` is entered, surface the exact Rote-provided tool, impact, confirmation token,
+workspace, and evidence. Approval must bind those exact fields, invalidate the old handoff packet,
+and prepare a new packet that tells the same specialist to resume the same workspace and retry only
+the guarded call with `--confirm <token>`. Declining blocks without performing the effect. Do not
+independently classify, weaken, strengthen, or synthesize the guard.
+
+For a CALL route, make Rote adapter convergence part of that same delegated handoff. First reuse a
+matching installed adapter. If none exists, delegate to `rote-adapter-create`; it must determine from
+the available spec, endpoint, server card, or provider documentation whether the substrate is
+OpenAPI, GraphQL, or MCP, then use the matching Rote creation path. Delegate missing or broken
+authentication to `rote-adapter-create` or `rote-adapter-config`, preserve human approval gates, and
+keep secret entry masked. Only then execute through `rote-using-adapters`. Specs, endpoint metadata,
+documentation, and MCP server cards may support type discovery; invoking the provider capability
+directly may not. A successful CALL receipt must carry the adapter id, detected substrate and
+evidence, creation/reuse provenance, auth provenance, and `direct_tool_execution=false`; otherwise
+block.
+
 Do not restart the top-level `rote` skill router after Play search. Enter the selected gap
 specialist directly so search and Explore consent occur exactly once. This restriction never
 applies to the first-class `rote play` CLI surface.
@@ -276,8 +320,9 @@ applies to the first-class `rote play` CLI surface.
 ## Stop safely
 
 Enter `blocked` when an action or evaluator returns invalid output, authority is missing, a required
-modality remains forbidden, an unsafe effect lacks approval, the exploration budget is exhausted,
-or machine state cannot be recovered. Report the blocker and evidence without inventing defaults.
+modality remains forbidden, an explicit Rote `confirmation_required` effect is declined or lacks
+approval, the exploration budget is exhausted, or machine state cannot be recovered. Probe hints
+alone never satisfy this condition. Report the blocker and evidence without inventing defaults.
 
 At terminal state, present only the outcome relevant to that terminal:
 
@@ -286,6 +331,8 @@ At terminal state, present only the outcome relevant to that terminal:
 - `completed` for a saved Play: verified result, matching inspect readout, and a brief
   congratulations;
 - `completed` for management: the requested organization summary or grouped Play inventory;
+- `completed` for birth lookup: the requested owner-local certificate or an honest absent/ambiguous
+  result;
 - `completed` for awareness: the requested digest and the user's declared dismissal or follow-up;
 - `exited`: confirmation that Play stepped aside for this task;
 - `blocked`: missing authority, capability, valid output, or recoverable state.

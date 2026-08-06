@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://play.modiqo.ai/schemas/play.handoff.v1.json",
+  "title": "Play specialist handoff packet or receipt",
+  "oneOf": [
+    {"$ref": "#/$defs/packet"},
+    {"$ref": "#/$defs/receipt"}
+  ],
+  "$defs": {
+    "specialistOwner": {
+      "enum": ["rote-using-adapters", "rote-shell", "rote-browse", "rote-workspace"]
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "packet": {
+      "type": "object",
+      "required": ["schema", "run_id", "state", "action", "owner", "requested_outcome", "modalities", "constraints", "inputs", "capability_policy", "expected_events", "effect_policy", "evidence_contract", "idempotency_key"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"const": "play.handoff/v1"},
+        "run_id": {"type": "string", "minLength": 1},
+        "state": {"const": "explore_execute"},
+        "action": {"const": "execute_route"},
+        "owner": {"$ref": "#/$defs/specialistOwner"},
+        "requested_outcome": {"type": "string", "minLength": 1},
+        "modalities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["call", "shell", "drive"]}},
+        "constraints": {"type": "object"},
+        "inputs": {"type": "object"},
+        "capability_policy": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["kind", "require_rote_adapter", "discovery_order", "type_selection", "substrate_detection", "create_owner", "configure_owner", "orchestration_owner", "adapter_execute_owner", "auth_cycle", "direct_tool_policy"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": {"const": "rote_adapter"},
+                "require_rote_adapter": {"const": true},
+                "discovery_order": {"const": ["installed", "catalog", "provided_spec", "provider_docs"]},
+                "type_selection": {"const": "auto"},
+                "substrate_detection": {"const": ["openapi", "graphql", "mcp"]},
+                "create_owner": {"const": "rote-adapter-create"},
+                "configure_owner": {"const": "rote-adapter-config"},
+                "orchestration_owner": {"$ref": "#/$defs/specialistOwner"},
+                "adapter_execute_owner": {"const": "rote-using-adapters"},
+                "auth_cycle": {
+                  "type": "object",
+                  "required": ["required", "human_gate", "secret_entry", "completion"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "required": {"const": true},
+                    "human_gate": {"const": true},
+                    "secret_entry": {"const": "masked"},
+                    "completion": {"const": ["verified", "completed"]}
+                  }
+                },
+                "direct_tool_policy": {"const": "metadata_discovery_only_never_execute"}
+              }
+            },
+            {
+              "type": "object",
+              "required": ["kind", "orchestration_owner", "direct_tool_policy"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": {"const": "rote_native"},
+                "orchestration_owner": {"$ref": "#/$defs/specialistOwner"},
+                "direct_tool_policy": {"const": "never_execute"}
+              }
+            }
+          ]
+        },
+        "expected_events": {
+          "type": "object",
+          "required": ["outcome_ready", "route_exhausted", "confirmation_required"],
+          "additionalProperties": false,
+          "properties": {
+            "outcome_ready": {"const": ["result_ref", "response_refs", "artifact_refs", "modalities_used", "effects", "route_provenance"]},
+            "route_exhausted": {"const": ["reason", "evidence_refs"]},
+            "confirmation_required": {"const": ["effect_confirmation"]}
+          }
+        },
+        "effect_policy": {"type": "object"},
+        "evidence_contract": {"$ref": "#/$defs/stringArray"},
+        "idempotency_key": {"type": "string", "minLength": 1}
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "required": ["schema", "packet_sha256", "run_id", "state", "action", "owner", "executor", "event", "payload", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"const": "play.handoff-receipt/v1"},
+        "packet_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "run_id": {"type": "string", "minLength": 1},
+        "state": {"const": "explore_execute"},
+        "action": {"const": "execute_route"},
+        "owner": {"$ref": "#/$defs/specialistOwner"},
+        "executor": {
+          "type": "object",
+          "required": ["kind", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "skill"},
+            "name": {"$ref": "#/$defs/specialistOwner"}
+          }
+        },
+        "event": {"enum": ["outcome_ready", "route_exhausted", "confirmation_required"]},
+        "payload": {
+          "type": "object",
+          "properties": {
+            "route_provenance": {"$ref": "#/$defs/routeProvenance"},
+            "effect_confirmation": {"$ref": "#/$defs/effectConfirmationRequired"}
+          }
+        },
+        "evidence_refs": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "effectConfirmationRequired": {
+      "type": "object",
+      "required": ["source", "status", "tool", "impact", "confirm_token", "workspace", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {"const": "rote_confirmation_required"},
+        "status": {"const": "required"},
+        "tool": {"type": "string", "minLength": 1},
+        "impact": {"type": "string", "minLength": 1},
+        "confirm_token": {"type": "string", "minLength": 1},
+        "workspace": {"type": "string", "minLength": 1},
+        "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "routeProvenance": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "adapter_id", "substrate", "type_evidence_ref", "adapter_status", "creation_owner", "auth_status", "auth_owner", "orchestration_owner", "adapter_execute_owner", "direct_tool_execution", "evidence_refs"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "rote_adapter"},
+            "adapter_id": {"type": "string", "minLength": 1},
+            "substrate": {"enum": ["openapi", "graphql", "mcp"]},
+            "type_evidence_ref": {"type": "string", "minLength": 1},
+            "adapter_status": {"enum": ["reused", "created"]},
+            "creation_owner": {"type": ["string", "null"], "enum": ["rote-adapter-create", null]},
+            "auth_status": {"enum": ["verified", "completed"]},
+            "auth_owner": {"enum": ["rote-using-adapters", "rote-adapter-create", "rote-adapter-config"]},
+            "orchestration_owner": {"$ref": "#/$defs/specialistOwner"},
+            "adapter_execute_owner": {"const": "rote-using-adapters"},
+            "direct_tool_execution": {"const": false},
+            "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "orchestration_owner", "direct_tool_execution", "evidence_refs"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "rote_native"},
+            "orchestration_owner": {"$ref": "#/$defs/specialistOwner"},
+            "direct_tool_execution": {"const": false},
+            "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+          }
+        }
+      ]
+    }
+  }
+}

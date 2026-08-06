@@ -2,7 +2,7 @@
 
 Play is the implicit pre-harness controller for reusable outcomes. It searches authorized Play
 indexes first, runs an adequate Play in Use mode, or asks before entering Explore mode. The
-existing `rote` and `rote-*` skills remain explicit-only specialists invoked through Play.
+existing `rote` and `rote-*` skills remain callable specialists that can hand off through Play.
 
 ## Start here
 
@@ -14,6 +14,7 @@ $play find a Play that retrieves recent emails
 $play run the PostHog daily active users report
 $play create a reusable weekly customer report
 $play whats new
+$play birth weekly customer report
 $play list my organizations and shared Plays
 Handle this normally without Play
 ```
@@ -27,6 +28,7 @@ Play keeps four decisions separate so each prompt is small and honest:
 | Solve a one-off task | Search first; if no adequate Play exists, offer Explore | Explore with rote, or continue normally |
 | Preserve successful exploration | Verify it before preparing a candidate | Private, Public, or Skip |
 | See what’s new | Pull an inbox grouped by organization and compare it with the remembered SHA | Run, search, create, or finish |
+| Revisit how a Play was born | Open the owner-private, redacted birth certificate | Choose an unambiguous name, reference, or birth SHA |
 
 Search selection is never execution approval. Before every run, Play shows what the exact version
 does, its parameters, adapters and credentials, what this machine must install or repair, declared
@@ -57,7 +59,17 @@ that the `rote` executable is present, an identity is authenticated, and `rote p
 it stops with the applicable setup commands when any precondition is missing. It never installs or
 authenticates Rote without permission.
 
-This checkout is itself a valid local marketplace:
+Install Play from its public marketplace after Rote setup:
+
+```bash
+codex plugin marketplace add modiqo/play
+codex plugin add play@play-skills
+
+claude plugin marketplace add modiqo/play
+claude plugin install play@play-skills
+```
+
+This checkout is also a valid local marketplace:
 
 ```bash
 # Run from this repository root.
@@ -68,14 +80,14 @@ claude plugin marketplace add .
 claude plugin install play@play-skills
 ```
 
-After this marketplace is published, `.` can be replaced with its GitHub `owner/repository`. The
-repository currently has no Git remote, so this README intentionally does not advertise a public
-Play marketplace address that does not yet exist. Claude's manifest declares the `rote` plugin as
-a dependency from the separately trusted `rote-skills` marketplace; every harness still uses the
-same runtime preflight because plugin metadata alone cannot prove CLI installation or login state.
+The public marketplace source is `modiqo/play`, so `.` can be replaced with that GitHub
+`owner/repository` from outside this checkout. Claude's manifest declares the `rote` plugin as a
+dependency from the separately trusted `rote-skills` marketplace; every harness still uses the same
+runtime preflight because plugin metadata alone cannot prove CLI installation or login state.
 
 Restart the harness after plugin installation. On first use, Play runs the bundled preflight. To
-make Play the implicit entrypoint while keeping installed `rote` specialists explicit-only, preview
+make Play the preferred implicit entrypoint while keeping installed `rote` specialists
+model-invocable for chained handoffs, preview
 and apply the bundled reversible activation profile from the installed skill directory:
 
 ```bash
@@ -84,9 +96,52 @@ just install
 just verify-profile
 ```
 
-In marketplace mode this profile does not create a second Play link. It only snapshots and updates
-the activation metadata of discovered `rote` skills. Uninstall restores those exact snapshots and
-fails closed if a managed file was subsequently changed.
+In marketplace mode this profile does not create a second Play link. It snapshots and updates the
+activation metadata of discovered `rote` skills so the harness can follow chained handoffs.
+Uninstall restores those exact snapshots and fails closed if a managed file was subsequently
+changed.
+
+## Update an installed Play plugin
+
+After a new Play release is pushed, refresh the marketplace snapshot and reinstall/update the
+plugin. Published changes must carry a new plugin version; a push that keeps the same version is not
+a reliable cache invalidation mechanism.
+
+For Codex:
+
+```bash
+codex plugin marketplace upgrade play-skills
+codex plugin add play@play-skills
+```
+
+For Claude Code:
+
+```bash
+claude plugin marketplace update play-skills
+claude plugin update play@play-skills
+```
+
+Restart the harness and start a new conversation after updating so it loads the refreshed skill. If
+you enabled the implicit Play-first profile, run the following from the newly installed Play skill
+directory to converge its reversible activation metadata after the plugin refresh:
+
+```bash
+just install
+just verify-profile
+```
+
+If you use a cloned source checkout instead of the GitHub marketplace, update from the repository
+root with:
+
+```bash
+git pull --ff-only
+just package
+just update
+```
+
+Then restart the harness and begin a new conversation. `just package` refreshes the self-contained
+marketplace payload; `just update` safely reapplies and verifies the source-linked Play-first
+profile.
 
 ## Enable from a source checkout
 
@@ -113,8 +168,9 @@ The links make source edits live immediately; a running harness must still be re
 the revised skill.
 
 `install` discovers every installed harness skill root containing `rote` or `rote-*`, links this
-Play skill into each root, and makes the rote skills explicit-only. It snapshots the original rote
-activation files so the change is reversible. Restart running harnesses after enabling the profile.
+Play skill into each root, and makes every Rote skill model-invocable so specialist handoffs can
+continue without another user command. It snapshots the original Rote activation files so the
+change is reversible. Restart running harnesses after enabling the profile.
 
 It is also the convergence command after `rote harness setup`, a plugin refresh, or a newly added
 harness. If Rote replaced managed skill files, `just install` preserves those refreshed files as the
@@ -204,9 +260,43 @@ exploration is verified before Play asks:
 - **Public** — release and publish under a selected public owner;
 - **Skip** — keep the result without publishing or indexing a Play.
 
-After Private or Public publication, Play indexes and inspects the canonical version before calling
-the save successful. Organization membership, invitations, and sharing use the organization/list
-surface rather than hidden local state.
+Explore execution is fail-closed around Rote ownership. CALL routes only through
+`rote-using-adapters`, SHELL through `rote-shell`, DRIVE through `rote-browse`, and combined work
+through `rote-workspace`. Play first confirms that the exact skill is callable in the current
+harness, then validates its typed receipt before accepting the result. If the specialist is absent,
+Play blocks; it never substitutes a directly exposed MCP, app, shell, or browser tool.
+
+CALL routes also converge on an authenticated Rote adapter. Play reuses an installed adapter or asks
+Rote to detect OpenAPI, GraphQL, or MCP and create the appropriate adapter, then completes Rote's auth
+cycle before execution. The receipt records adapter, type, creation, and auth provenance, so a raw MCP
+call cannot masquerade as a delegated result.
+
+After release, Play captures a private birth certificate from the exploration evidence. After
+Private or Public publication, it binds that certificate to the minted exact reference, then indexes
+and inspects the canonical version before calling the save successful. Organization membership,
+invitations, and sharing use the organization/list surface rather than hidden local state.
+
+Open or verify how one of your Plays was born:
+
+```text
+$play birth weekly customer report
+$play show how modiqo/weekly-customer-report was born
+scripts/bin/play-birth show modiqo/weekly-customer-report@1.0.0
+scripts/bin/play-birth list --json
+scripts/bin/play-birth verify weekly-customer-report --json
+scripts/bin/play-birth capture --workspace weekly-report-build --flow weekly-customer-report --json
+scripts/bin/play-birth bind <birth-sha> --reference modiqo/weekly-customer-report@1.0.0 --json
+```
+
+Birth certificates live under `~/.play/births`, independently of `.rote`. They are readable only by
+the local OS user, content-addressed, and captured once per released Flow fingerprint. They preserve
+safe counts, timings, dependency edges, modalities, token savings, artifact hashes, and the minted
+URI’s registry-supplied publication author provenance while
+excluding raw commands, parameters, queries, responses, credentials, and workspace paths. They are
+not uploaded to the registry and do not follow a Play to another machine. See
+[`references/publish/birth.md`](references/publish/birth.md) for capture, binding, privacy, and
+lookup semantics. Normal users need only `$play birth …`; capture and bind are controller-owned
+lifecycle commands shown here for diagnostics and integration testing.
 
 Open the externally read-only Play inbox:
 
@@ -265,6 +355,10 @@ For diagnostics or integrations, the same reusable building blocks are available
 scripts/bin/play-search recent emails --json
 scripts/bin/play-inspect warsaw-rust/posthog-dau-report@0.0.3 --json
 scripts/bin/play-inventory --json
+scripts/bin/play-handoff prepare --stdin --json
+scripts/bin/play-handoff verify --stdin --json
+scripts/bin/play-birth show weekly-customer-report --json
+scripts/bin/play-birth verify weekly-customer-report --json
 scripts/bin/play-question approve_play_run --harness codex
 scripts/bin/play-question approve_play_run --harness claude
 scripts/bin/play-question approve_play_run --harness kimi
@@ -277,8 +371,9 @@ controller performs exactly one `rote play run <exact-reference> <approved-param
 It uses `rote flow` or `rote registry flow` only where `rote play` has no equivalent capability and
 never decomposes a failed Play operation into a pull-plus-Flow-run fallback.
 
-After a new Play is published and indexed, Play reads the canonical registry entry back with JSON
-inspection, verifies its owner/version/visibility, and only then reports success.
+After a new Play is released, Play captures its owner-private birth object. After publication, it
+binds the object to the registry content hash, indexes the Play, reads the canonical registry entry
+back with JSON inspection, verifies its owner/version/visibility, and only then reports success.
 
 ## Optional thinking-orbs UI
 
@@ -300,7 +395,7 @@ The mapping uses all nine animations for distinct trajectories: listening for de
 searching for discovery, solving for classification and verification, connecting for existing-Play
 inspection/execution, weaving for multimodal exploration, shaping for crystallization, composing
 for release/publication, working for result assembly, and breathing for paused terminal states.
-Every one of the 42 machine states has exactly one accessible status label, and tests fail if the
+Every machine state has exactly one accessible status label, and tests fail if the
 machine and mapping drift.
 
 The installed skill also teaches the agent to use the same presentation at meaningful milestones:
@@ -350,8 +445,9 @@ The tests exercise the declarative Play machine and the complete activation life
 harness roots, including installation, verification, idempotency, rollback, and conflict handling.
 
 The foundation is Python-only. Commands under `scripts/bin/` and harness entrypoints under
-`scripts/harness/` are thin executables; reusable command, registry, search, inventory, digest,
-elicitation, and machine-validation logic lives in `scripts/lib/play/`. References and tests are
+`scripts/harness/` are thin executables; reusable command, private-store, birth-certificate,
+registry, search, inventory, digest, elicitation, typed specialist handoff, and machine-validation logic lives in
+`scripts/lib/play/`. References and tests are
 grouped by controller, awareness, Explore, publication, integration, and harness use case.
 
 For isolated testing, override the discovered roots or reversible state location:

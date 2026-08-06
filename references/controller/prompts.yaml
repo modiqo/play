@@ -106,6 +106,16 @@ prompts:
       modality_widening_approved: [prompt_version, selected_at, allowed]
       modality_widening_declined: [prompt_version, selected_at]
 
+  approve_effect_confirmation:
+    question: Approve this exact Rote-guarded operation using the displayed tool, impact, token, and workspace?
+    selection: single
+    choices:
+      - {id: approve, label: Approve guarded call, description: Resume the same Rote workspace and retry only this operation with its exact confirmation token., event: effect_confirmation_approved}
+      - {id: decline, label: Do not run, description: Stop without performing the guarded external effect., event: effect_confirmation_declined}
+    events:
+      effect_confirmation_approved: [prompt_version, selected_at, effect_policy.rote_confirmation.tool, effect_policy.rote_confirmation.impact, effect_policy.rote_confirmation.confirm_token, effect_policy.rote_confirmation.workspace]
+      effect_confirmation_declined: [prompt_version, selected_at, effect_policy.rote_confirmation.tool, effect_policy.rote_confirmation.confirm_token, effect_policy.rote_confirmation.workspace]
+
   private_public_or_skip:
     question: How should I preserve this verified Play?
     selection: single

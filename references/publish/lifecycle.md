@@ -24,10 +24,15 @@ Do not offer to save before verification and candidate preparation.
 - **Skip** ends with the verified outcome and unpublished local exploration state. Do not author,
   release, publish, or index a Play.
 
-## Publish and index
+## Capture birth, publish, bind, and index
 
-Publish the exact released version with the chosen visibility. Then index the canonical Playcard
-locally and run `rote play inspect <org/name> --json` for the canonical reference. Record the
+Immediately after release, capture the owner-private birth certificate described in
+[birth.md](birth.md). Capture is one-time and content-addressed by the released Flow fingerprint;
+block publication if truthful workspace evidence cannot be captured.
+
+Publish the exact released version with the chosen visibility. Bind the immutable birth object to
+the minted exact reference and registry content hash, then index the canonical Playcard locally and
+run `rote play inspect <org/name> --json` for the canonical reference. Record the birth SHA,
 canonical reference, version, visibility, owner, index reference, and inspect response reference.
 If the inspected owner, visibility, or version differs from the authorized publication, block
 instead of repairing it silently.

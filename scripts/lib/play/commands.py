@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, TypeVar
 
 
@@ -22,6 +23,7 @@ def run_text(
     error_type: type[ErrorT] = CommandError,
     environment: dict[str, str] | None = None,
     timeout_seconds: float | None = None,
+    working_directory: str | Path | None = None,
 ) -> str:
     effective_environment = os.environ.copy()
     effective_environment.setdefault("ROTE_NO_HINTS", "1")
@@ -42,6 +44,7 @@ def run_text(
             text=True,
             capture_output=True,
             env=effective_environment,
+            cwd=working_directory,
             check=False,
             timeout=timeout_seconds,
         )
@@ -59,12 +62,14 @@ def run_json(
     error_type: type[ErrorT] = CommandError,
     environment: dict[str, str] | None = None,
     timeout_seconds: float | None = None,
+    working_directory: str | Path | None = None,
 ) -> Any:
     output = run_text(
         command,
         error_type=error_type,
         environment=environment,
         timeout_seconds=timeout_seconds,
+        working_directory=working_directory,
     )
     label = " ".join(command[:4])
     try:
@@ -77,9 +82,11 @@ def run_rote_json(
     *arguments: str,
     error_type: type[ErrorT] = CommandError,
     timeout_seconds: float | None = None,
+    working_directory: str | Path | None = None,
 ) -> Any:
     return run_json(
         ["rote", *arguments],
         error_type=error_type,
         timeout_seconds=timeout_seconds,
+        working_directory=working_directory,
     )

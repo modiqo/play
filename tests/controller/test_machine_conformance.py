@@ -16,7 +16,8 @@ from play.machine import validate_bundle
 
 CONTROLLER = ROOT / "references" / "controller"
 MACHINE = yaml.safe_load((CONTROLLER / "machine.yaml").read_text())
-ACTIONS = yaml.safe_load((CONTROLLER / "actions.yaml").read_text())["actions"]
+ACTIONS_DOC = yaml.safe_load((CONTROLLER / "actions.yaml").read_text())
+ACTIONS = ACTIONS_DOC["actions"]
 PROMPTS = yaml.safe_load((CONTROLLER / "prompts.yaml").read_text())["prompts"]
 FIXTURES = yaml.safe_load((Path(__file__).parent / "fixtures" / "paths.yaml").read_text())
 CONTEXT = json.loads((CONTROLLER / "context.schema.json").read_text())
@@ -90,6 +91,30 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertEqual("saved_inspect", indexed["target"])
         self.assertEqual(
             "inspect_saved_play", MACHINE["states"]["saved_inspect"]["entry"]["action"]
+        )
+
+    def test_birth_is_captured_before_publish_and_bound_before_index(self) -> None:
+        released = MACHINE["states"]["author_release"]["on"]["flow_released"][0]
+        self.assertEqual("birth_capture", released["target"])
+        self.assertEqual(
+            "capture_play_birth", MACHINE["states"]["birth_capture"]["entry"]["action"]
+        )
+        for state in ("private_publish", "public_publish"):
+            self.assertEqual(
+                "birth_bind", MACHINE["states"][state]["on"]["play_published"][0]["target"]
+            )
+        self.assertEqual("index", MACHINE["states"]["birth_bind"]["on"]["birth_bound"][0]["target"])
+        self.assertEqual("local-write", ACTIONS["capture_play_birth"]["effect"])
+        self.assertEqual("local-write", ACTIONS["bind_play_birth"]["effect"])
+
+    def test_birth_lookup_is_an_owner_local_read(self) -> None:
+        self.assertEqual(
+            "birth_show", MACHINE["states"]["qualify"]["on"]["play_birth_request"][0]["target"]
+        )
+        self.assertEqual("read", ACTIONS["show_play_birth"]["effect"])
+        self.assertEqual(
+            "scripts/bin/play-birth show <birth.selector> --json",
+            ACTIONS["show_play_birth"]["command"],
         )
 
     def test_first_class_play_commands_cannot_be_decomposed(self) -> None:
@@ -169,6 +194,79 @@ class MachineConformanceTest(unittest.TestCase):
             if branch["target"] == "use_run"
         }
         self.assertEqual({"use_offer"}, incoming)
+
+    def test_explore_requires_a_callable_rote_specialist_and_typed_receipt(self) -> None:
+        specialists = [
+            "rote-using-adapters",
+            "rote-shell",
+            "rote-browse",
+            "rote-workspace",
+        ]
+        self.assertEqual(specialists, ACTIONS_DOC["specialist_owners"])
+        self.assertEqual(
+            ["rote-adapter-create", "rote-adapter-config"],
+            ACTIONS_DOC["adapter_specialist_owners"],
+        )
+        self.assertEqual(
+            [*specialists, None],
+            CONTEXT["$defs"]["execution"]["properties"]["owner"]["enum"],
+        )
+        self.assertEqual(
+            "explore_handoff",
+            MACHINE["states"]["explore_route"]["on"]["route_selected"][0]["target"],
+        )
+        self.assertEqual(
+            "blocked",
+            MACHINE["states"]["explore_handoff"]["on"]["specialist_unavailable"][0]["target"],
+        )
+        self.assertEqual(
+            "explore_receipt",
+            MACHINE["states"]["explore_execute"]["on"]["outcome_ready"][0]["target"],
+        )
+        self.assertEqual(
+            "explore_verify",
+            MACHINE["states"]["explore_receipt"]["on"]["specialist_outcome_ready"][0]["target"],
+        )
+        self.assertEqual(
+            "blocked",
+            MACHINE["states"]["explore_receipt"]["on"]["specialist_receipt_invalid"][0]["target"],
+        )
+        execute_policy = " ".join(ACTIONS["execute_route"]["command_policy"])
+        self.assertIn("must not call MCP, app, shell, or browser tools directly", execute_policy)
+        self.assertIn("determine OpenAPI, GraphQL, or MCP", execute_policy)
+        self.assertIn("Rote-owned authentication cycle", execute_policy)
+        self.assertIn("handoff.receipt", ACTIONS["execute_route"]["events"]["outcome_ready"])
+        self.assertIn("route_provenance", ACTIONS["execute_route"]["events"]["outcome_ready"])
+
+    def test_probe_hints_cannot_replace_the_rote_write_guard(self) -> None:
+        execute_policy = " ".join(ACTIONS["execute_route"]["command_policy"])
+        self.assertIn("discovery metadata only", execute_policy)
+        self.assertIn("Rote call itself returns confirmation_required", execute_policy)
+        self.assertEqual(
+            "explore_receipt",
+            MACHINE["states"]["explore_execute"]["on"]["confirmation_required"][0]["target"],
+        )
+        self.assertEqual(
+            "effect_offer",
+            MACHINE["states"]["explore_receipt"]["on"][
+                "specialist_confirmation_required"
+            ][0]["target"],
+        )
+        self.assertEqual(
+            "explore_handoff",
+            MACHINE["states"]["effect_offer"]["on"]["effect_confirmation_approved"][0][
+                "target"
+            ],
+        )
+        self.assertEqual(
+            "blocked",
+            MACHINE["states"]["effect_offer"]["on"]["effect_confirmation_declined"][0][
+                "target"
+            ],
+        )
+        self.assertEqual(
+            "approve_effect_confirmation", MACHINE["states"]["effect_offer"]["prompt"]
+        )
 
     def test_search_selection_is_inspection_only(self) -> None:
         self.assertEqual(

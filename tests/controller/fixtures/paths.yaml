@@ -41,7 +41,7 @@ cases:
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
     terminal: receipt
-    excludes: [search, classify, author_release, private_publish, public_publish, index]
+    excludes: [search, classify, author_release, birth_capture, private_publish, public_publish, birth_bind, index]
 
   - name: unresolved exact reference falls back to outcome search
     steps:
@@ -100,8 +100,10 @@ cases:
       - state: explore_route
         event: route_selected
         guards: {route_within_policy: true}
-        target: explore_execute
-      - {state: explore_execute, event: outcome_ready, target: explore_verify}
+        target: explore_handoff
+      - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
+      - {state: explore_execute, event: outcome_ready, target: explore_receipt}
+      - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
       - {state: explore_verify, event: outcome_verified, target: crystallize}
       - state: crystallize
         event: candidate_ready
@@ -109,7 +111,33 @@ cases:
         target: save_offer
       - {state: save_offer, event: save_skipped, target: completed}
     terminal: completed
-    excludes: [author_release, private_org, private_publish, public_owner, public_publish, index]
+    excludes: [author_release, birth_capture, private_org, private_publish, public_owner, public_publish, birth_bind, index]
+
+  - name: a Rote write guard can be approved and resumed without reclassification
+    steps:
+      - {state: qualify, event: outcome_request, target: search}
+      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
+      - {state: classify, event: no_match, target: explore_offer}
+      - {state: explore_offer, event: explore_approved, target: explore_prepare}
+      - state: explore_prepare
+        event: exploration_ready
+        guards: {explore_is_approved: true}
+        target: explore_route
+      - state: explore_route
+        event: route_selected
+        guards: {route_within_policy: true}
+        target: explore_handoff
+      - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
+      - {state: explore_execute, event: confirmation_required, target: explore_receipt}
+      - {state: explore_receipt, event: specialist_confirmation_required, target: effect_offer}
+      - {state: effect_offer, event: effect_confirmation_approved, target: explore_handoff}
+      - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
+      - {state: explore_execute, event: outcome_ready, target: explore_receipt}
+      - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
+      - {state: explore_verify, event: outcome_verified, target: crystallize}
+      - {state: crystallize, event: not_reusable, target: completed}
+    terminal: completed
+    includes_once: [effect_offer]
 
   - name: private save publishes to a private org and indexes
     steps: &explore_to_save
@@ -124,8 +152,10 @@ cases:
       - state: explore_route
         event: route_selected
         guards: {route_within_policy: true}
-        target: explore_execute
-      - {state: explore_execute, event: outcome_ready, target: explore_verify}
+        target: explore_handoff
+      - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
+      - {state: explore_execute, event: outcome_ready, target: explore_receipt}
+      - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
       - {state: explore_verify, event: outcome_verified, target: crystallize}
       - state: crystallize
         event: candidate_ready
@@ -134,6 +164,9 @@ cases:
       - {state: save_offer, event: save_private, target: author_release}
       - state: author_release
         event: flow_released
+        target: birth_capture
+      - state: birth_capture
+        event: birth_captured
         guards: {save_choice_private: true, save_choice_public: false}
         target: private_org
       - state: private_org
@@ -143,6 +176,9 @@ cases:
       - state: private_publish
         event: play_published
         guards: {publication_is_private: true}
+        target: birth_bind
+      - state: birth_bind
+        event: birth_bound
         target: index
       - state: index
         event: play_indexed
@@ -153,7 +189,7 @@ cases:
         guards: {saved_inspection_matches_publication: true}
         target: completed
     terminal: completed
-    includes_once: [author_release, private_org, private_publish, index]
+    includes_once: [author_release, birth_capture, private_org, private_publish, birth_bind, index]
 
   - name: public save with known owner publishes and indexes
     steps:
@@ -168,8 +204,10 @@ cases:
       - state: explore_route
         event: route_selected
         guards: {route_within_policy: true}
-        target: explore_execute
-      - {state: explore_execute, event: outcome_ready, target: explore_verify}
+        target: explore_handoff
+      - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
+      - {state: explore_execute, event: outcome_ready, target: explore_receipt}
+      - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
       - {state: explore_verify, event: outcome_verified, target: crystallize}
       - state: crystallize
         event: candidate_ready
@@ -178,12 +216,18 @@ cases:
       - {state: save_offer, event: save_public, target: author_release}
       - state: author_release
         event: flow_released
+        target: birth_capture
+      - state: birth_capture
+        event: birth_captured
         guards: {save_choice_private: false, save_choice_public: true}
         target: public_owner
       - {state: public_owner, event: public_owner_ready, target: public_publish}
       - state: public_publish
         event: play_published
         guards: {publication_is_public: true}
+        target: birth_bind
+      - state: birth_bind
+        event: birth_bound
         target: index
       - state: index
         event: play_indexed
@@ -194,7 +238,7 @@ cases:
         guards: {saved_inspection_matches_publication: true}
         target: completed
     terminal: completed
-    includes_once: [author_release, public_owner, public_publish, index]
+    includes_once: [author_release, birth_capture, public_owner, public_publish, birth_bind, index]
 
   - name: public save can require owner selection
     steps:
@@ -203,6 +247,9 @@ cases:
       - state: public_publish
         event: play_published
         guards: {publication_is_public: true}
+        target: birth_bind
+      - state: birth_bind
+        event: birth_bound
         target: index
       - state: index
         event: play_indexed
@@ -231,6 +278,13 @@ cases:
     terminal: completed
     excludes: [search, explore_offer]
 
+  - name: owner can retrieve a local Play birth certificate
+    steps:
+      - {state: qualify, event: play_birth_request, target: birth_show}
+      - {state: birth_show, event: birth_ready, target: completed}
+    terminal: completed
+    excludes: [search, use_run, explore_offer]
+
   - name: declined modality widening blocks exploration
     steps:
       - state: explore_route
@@ -240,10 +294,30 @@ cases:
       - {state: modality_offer, event: modality_widening_declined, target: blocked}
     terminal: blocked
 
+  - name: CALL blocks when rote-using-adapters is unavailable
+    steps:
+      - state: explore_route
+        event: route_selected
+        guards: {route_within_policy: true}
+        target: explore_handoff
+      - {state: explore_handoff, event: specialist_unavailable, target: blocked}
+    terminal: blocked
+    excludes: [explore_execute, explore_receipt, explore_verify]
+
+  - name: raw direct-tool output cannot pass specialist receipt validation
+    steps:
+      - {state: explore_execute, event: outcome_ready, target: explore_receipt}
+      - {state: explore_receipt, event: specialist_receipt_invalid, target: blocked}
+    terminal: blocked
+    excludes: [explore_verify]
+
   - name: exhausted route retries only within budget
     steps:
       - state: explore_execute
         event: route_exhausted
+        target: explore_receipt
+      - state: explore_receipt
+        event: specialist_route_exhausted
         guards: {exploration_budget_remaining: true}
         target: explore_route
       - {state: explore_route, event: no_safe_route, target: blocked}

@@ -16,6 +16,7 @@ states:
       play_creation_request: [{target: creator_search, mutate: set_creator_request}]
       play_management_request: [{target: management_list, mutate: set_management_request}]
       play_management_choice_required: [{target: management_offer, mutate: record_management_choices}]
+      play_birth_request: [{target: birth_show, mutate: set_birth_request}]
       conversation: [{target: exited, mutate: record_non_outcome_exit}]
       play_excluded: [{target: exited, mutate: record_explicit_exit}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
@@ -116,6 +117,15 @@ states:
     entry: {action: present_play_management}
     "on":
       management_presented: [{target: completed, mutate: record_management_presentation}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  birth_show:
+    owner: play
+    checkpoint: both
+    requires: [birth.selector]
+    entry: {action: show_play_birth}
+    "on":
+      birth_ready: [{target: completed, mutate: record_birth_presentation}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   search:
@@ -242,7 +252,7 @@ states:
     entry: {action: select_modalities}
     "on":
       route_selected:
-        - {guard: route_within_policy, target: explore_execute, mutate: record_route}
+        - {guard: route_within_policy, target: explore_handoff, mutate: record_route}
         - {target: modality_offer, mutate: record_widening_request}
       modality_widening_required: [{target: modality_offer, mutate: record_widening_request}]
       no_safe_route: [{target: blocked, mutate: record_no_route}]
@@ -256,17 +266,49 @@ states:
       modality_widening_approved: [{target: explore_route, mutate: widen_modality_policy}]
       modality_widening_declined: [{target: blocked, mutate: record_constraint_blocker}]
 
+  explore_handoff:
+    owner: play
+    checkpoint: after
+    requires: [execution.owner, route.modalities, consent.explore]
+    entry: {action: prepare_specialist_handoff}
+    "on":
+      specialist_handoff_ready: [{target: explore_execute, mutate: record_specialist_handoff}]
+      specialist_unavailable: [{target: blocked, mutate: record_specialist_unavailable}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
   explore_execute:
     owner: rote-specialist
     checkpoint: both
-    requires: [execution.owner, consent.explore]
+    requires: [execution.owner, consent.explore, handoff.owner, handoff.available, handoff.packet, handoff.packet_sha256]
     entry: {action: execute_route}
     "on":
-      outcome_ready: [{target: explore_verify, mutate: record_execution_evidence}]
-      route_exhausted:
+      outcome_ready: [{target: explore_receipt, mutate: record_specialist_response}]
+      route_exhausted: [{target: explore_receipt, mutate: record_specialist_response}]
+      confirmation_required: [{target: explore_receipt, mutate: record_specialist_response}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  explore_receipt:
+    owner: play
+    checkpoint: after
+    requires: [execution.owner, handoff.packet, handoff.packet_sha256, handoff.receipt]
+    entry: {action: validate_specialist_receipt}
+    "on":
+      specialist_outcome_ready: [{target: explore_verify, mutate: record_execution_evidence}]
+      specialist_route_exhausted:
         - {guard: exploration_budget_remaining, target: explore_route, mutate: consume_attempt}
         - {target: blocked, mutate: record_exhaustion}
+      specialist_confirmation_required: [{target: effect_offer, mutate: record_effect_confirmation}]
+      specialist_receipt_invalid: [{target: blocked, mutate: record_invalid_specialist_receipt}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  effect_offer:
+    owner: play
+    checkpoint: after
+    requires: [effect_policy.rote_confirmation]
+    prompt: approve_effect_confirmation
+    "on":
+      effect_confirmation_approved: [{target: explore_handoff, mutate: approve_effect_confirmation}]
+      effect_confirmation_declined: [{target: blocked, mutate: decline_effect_confirmation}]
 
   explore_verify:
     owner: play
@@ -306,9 +348,18 @@ states:
     requires: [candidate.reference, consent.save]
     entry: {action: author_release}
     "on":
-      flow_released:
-        - {guard: save_choice_private, target: private_org, mutate: record_release}
-        - {guard: save_choice_public, target: public_owner, mutate: record_release}
+      flow_released: [{target: birth_capture, mutate: record_release}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  birth_capture:
+    owner: play
+    checkpoint: both
+    requires: [candidate.released_flow, execution.workspace]
+    entry: {action: capture_play_birth}
+    "on":
+      birth_captured:
+        - {guard: save_choice_private, target: private_org, mutate: record_birth_capture}
+        - {guard: save_choice_public, target: public_owner, mutate: record_birth_capture}
         - {target: blocked, mutate: record_missing_save_choice}
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -328,7 +379,7 @@ states:
     entry: {action: publish_private}
     "on":
       play_published:
-        - {guard: publication_is_private, target: index, mutate: record_publication}
+        - {guard: publication_is_private, target: birth_bind, mutate: record_publication}
         - {target: blocked, mutate: record_visibility_mismatch}
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -355,8 +406,17 @@ states:
     entry: {action: publish_public}
     "on":
       play_published:
-        - {guard: publication_is_public, target: index, mutate: record_publication}
+        - {guard: publication_is_public, target: birth_bind, mutate: record_publication}
         - {target: blocked, mutate: record_visibility_mismatch}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  birth_bind:
+    owner: play
+    checkpoint: both
+    requires: [birth.sha256, publication.canonical_reference, play.version]
+    entry: {action: bind_play_birth}
+    "on":
+      birth_bound: [{target: index, mutate: record_birth_binding}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   index:

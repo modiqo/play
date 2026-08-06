@@ -16,6 +16,7 @@ from pathlib import Path
 
 
 SCHEMA = "play.activation-profile/v1"
+ACTIVATION_POLICY = "rote-handoff-invocable/v1"
 SOURCE = Path(
     os.environ.get("PLAY_PROFILE_SOURCE", Path(__file__).resolve().parents[2])
 ).expanduser().resolve()
@@ -160,7 +161,7 @@ def restore(path: Path, record: dict[str, object]) -> None:
         parent.rmdir()
 
 
-def explicit_skill_markdown(original: bytes) -> bytes:
+def invocable_skill_markdown(original: bytes) -> bytes:
     text = original.decode("utf-8")
     lines = text.splitlines(keepends=True)
     if not lines or lines[0].strip() != "---":
@@ -177,20 +178,20 @@ def explicit_skill_markdown(original: bytes) -> bytes:
         if not re.match(r"^disable-model-invocation\s*:", line)
     ]
     newline = "\r\n" if lines[0].endswith("\r\n") else "\n"
-    frontmatter.append(f"disable-model-invocation: true{newline}")
+    frontmatter.append(f"disable-model-invocation: false{newline}")
     return "".join(
         [lines[0], *frontmatter, lines[closing], *lines[closing + 1 :]]
     ).encode()
 
 
-def explicit_openai_yaml(original: bytes | None) -> bytes:
+def invocable_openai_yaml(original: bytes | None) -> bytes:
     if original is None:
-        return b"policy:\n  allow_implicit_invocation: false\n"
+        return b"policy:\n  allow_implicit_invocation: true\n"
 
     text = original.decode("utf-8")
     pattern = re.compile(r"(?m)^(\s{2}allow_implicit_invocation:)\s*[^\n]*$")
     if pattern.search(text):
-        return pattern.sub(r"\1 false", text).encode()
+        return pattern.sub(r"\1 true", text).encode()
 
     lines = text.splitlines(keepends=True)
     policy = next(
@@ -199,12 +200,12 @@ def explicit_openai_yaml(original: bytes | None) -> bytes:
     )
     newline = "\r\n" if any(line.endswith("\r\n") for line in lines) else "\n"
     if policy is not None:
-        lines.insert(policy + 1, f"  allow_implicit_invocation: false{newline}")
+        lines.insert(policy + 1, f"  allow_implicit_invocation: true{newline}")
         return "".join(lines).encode()
     separator = "" if not text or text.endswith(("\n", "\r")) else newline
     return (
         f"{text}{separator}policy:{newline}"
-        f"  allow_implicit_invocation: false{newline}"
+        f"  allow_implicit_invocation: true{newline}"
     ).encode()
 
 
@@ -215,15 +216,15 @@ def play_is_implicit() -> bool:
     )
 
 
-def rote_is_explicit(skill: Path) -> bool:
+def rote_is_invocable(skill: Path) -> bool:
     markdown = read_bytes(skill / "SKILL.md").decode("utf-8")
     metadata = skill / "agents" / "openai.yaml"
     return (
-        bool(re.search(r"(?m)^disable-model-invocation:\s*true\s*$", markdown))
+        bool(re.search(r"(?m)^disable-model-invocation:\s*false\s*$", markdown))
         and metadata.is_file()
         and bool(
             re.search(
-                r"(?m)^\s{2}allow_implicit_invocation:\s*false\s*$",
+                r"(?m)^\s{2}allow_implicit_invocation:\s*true\s*$",
                 read_bytes(metadata).decode("utf-8"),
             )
         )
@@ -269,8 +270,8 @@ def verify_state(state: dict[str, object]) -> list[str]:
             problems.append(f"missing or changed Play link: {link}")
     for value in state["rote_skills"]:
         skill = Path(str(value))
-        if not rote_is_explicit(skill):
-            problems.append(f"rote skill is not explicit-only: {skill}")
+        if not rote_is_invocable(skill):
+            problems.append(f"rote skill is not handoff-invocable: {skill}")
     return problems
 
 
@@ -326,6 +327,7 @@ def reconcile(state: dict[str, object]) -> None:
     rebased_skills: set[Path] = set()
     previous_skills = {Path(str(value)) for value in state["rote_skills"]}
     desired_skills = set(rote_skills)
+    policy_changed = state.get("activation_policy") != ACTIVATION_POLICY
 
     try:
         for skill in sorted(previous_skills - desired_skills, key=str):
@@ -346,15 +348,16 @@ def reconcile(state: dict[str, object]) -> None:
                 current_matches = (
                     path.is_file() and managed is not None and managed == digest(read_bytes(path))
                 )
-                if current_matches:
+                if current_matches and not policy_changed:
                     continue
                 rollback_files.setdefault(path, snapshot(path))
-                backups[str(path)] = snapshot(path)
+                if not current_matches:
+                    backups[str(path)] = snapshot(path)
                 if path == markdown:
-                    content = explicit_skill_markdown(read_bytes(path))
+                    content = invocable_skill_markdown(read_bytes(path))
                     mode_bits = path.stat().st_mode & 0o777
                 else:
-                    content = explicit_openai_yaml(read_bytes(path) if path.exists() else None)
+                    content = invocable_openai_yaml(read_bytes(path) if path.exists() else None)
                     mode_bits = 0o644
                 atomic_write(path, content, mode_bits)
                 backups[str(path)]["managed_sha256"] = digest(read_bytes(path))
@@ -370,6 +373,7 @@ def reconcile(state: dict[str, object]) -> None:
 
         profile_changed = bool(
             rebased_skills
+            or policy_changed
             or old_link_set != desired_link_set
             or previous_skills != desired_skills
             or list(map(str, roots)) != list(map(str, state["roots"]))
@@ -380,6 +384,7 @@ def reconcile(state: dict[str, object]) -> None:
 
         updated = {
             **state,
+            "activation_policy": ACTIVATION_POLICY,
             "mode": mode,
             "roots": [str(root) for root in roots],
             "play_links": [str(link) for link in play_links],
@@ -436,11 +441,11 @@ def install() -> None:
             backups[str(metadata)] = snapshot(metadata)
             atomic_write(
                 markdown,
-                explicit_skill_markdown(read_bytes(markdown)),
+                invocable_skill_markdown(read_bytes(markdown)),
                 markdown.stat().st_mode & 0o777,
             )
             original_metadata = read_bytes(metadata) if metadata.exists() else None
-            atomic_write(metadata, explicit_openai_yaml(original_metadata))
+            atomic_write(metadata, invocable_openai_yaml(original_metadata))
 
         for value, record in backups.items():
             record["managed_sha256"] = digest(read_bytes(Path(value)))
@@ -451,6 +456,7 @@ def install() -> None:
 
         state = {
             "schema": SCHEMA,
+            "activation_policy": ACTIVATION_POLICY,
             "source": str(SOURCE),
             "mode": mode,
             "roots": [str(root) for root in roots],
@@ -473,7 +479,7 @@ def install() -> None:
 
     print(
         f"activated Play-first {mode} profile across {len(roots)} harness root(s); "
-        f"made {len(rote_skills)} canonical rote skill(s) explicit-only"
+        f"made {len(rote_skills)} canonical rote skill(s) handoff-invocable"
     )
     print("restart the harness, or run just harness <name> / just smoke <name>")
 
@@ -570,7 +576,7 @@ def report(require_active: bool) -> None:
     print(
         f"Play-first profile: active ({state.get('mode', 'source-linked')}); "
         f"play implicit in {len(state['roots'])} root(s), "
-        f"{len(state['rote_skills'])} canonical rote skill(s) explicit-only"
+        f"{len(state['rote_skills'])} canonical rote skill(s) handoff-invocable"
     )
     if os.environ.get("PLAY_PROFILE_VERBOSE") == "1":
         for root in state["roots"]:
