@@ -290,12 +290,20 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "explore_handoff": ("explore_execute", "explore_receipt", "explore_verify"),
         "explore_execute": ("explore_receipt", "explore_verify"),
         "explore_receipt": ("explore_verify",),
-        "crystallize": ("save_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect"),
-        "save_offer": ("author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect"),
-        "author_release": ("birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect"),
-        "birth_capture": ("private_publish", "public_publish", "birth_bind", "index", "saved_inspect"),
-        "birth_bind": ("index", "saved_inspect"),
-        "index": ("saved_inspect",),
+        "auth_repair_offer": (
+            "auth_repair_handoff",
+            "auth_repair_execute",
+            "auth_repair_receipt",
+        ),
+        "auth_repair_handoff": ("auth_repair_execute", "auth_repair_receipt"),
+        "auth_repair_execute": ("auth_repair_receipt",),
+        "crystallize": ("save_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "saved_present"),
+        "save_offer": ("author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "saved_present"),
+        "author_release": ("birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "saved_present"),
+        "birth_capture": ("private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "saved_present"),
+        "birth_bind": ("index", "saved_inspect", "saved_present"),
+        "index": ("saved_inspect", "saved_present"),
+        "saved_inspect": ("saved_present",),
     }
     for dominator, governed in rules.items():
         for state in governed:
@@ -345,6 +353,26 @@ def validate_bundle(root: Path) -> ValidationSummary:
         _target(states, "explore_receipt", "specialist_receipt_invalid") == "blocked",
         "an invalid specialist receipt must block",
     )
+    check(
+        _target(states, "explore_receipt", "specialist_auth_repair_required")
+        == "auth_repair_offer",
+        "a recoverable auth failure must enter the dedicated repair offer",
+    )
+    check(
+        _target(states, "auth_repair_offer", "auth_repair_approved")
+        == "auth_repair_handoff",
+        "approved auth repair must enter its closed specialist handoff",
+    )
+    check(
+        _target(states, "auth_repair_receipt", "specialist_auth_repair_ready")
+        == "explore_handoff",
+        "validated auth repair must prepare a fresh execution handoff",
+    )
+    check(
+        _target(states, "auth_repair_receipt", "auth_repair_receipt_invalid")
+        == "blocked",
+        "an invalid auth repair receipt must block",
+    )
     for forbidden in ("use_preflight", "use_resolve"):
         check(forbidden not in states, f"{forbidden} must stay inside the rote play run controller")
     check(predecessors["use_run"] == {"use_offer"}, "execution may follow only post-inspection approval")
@@ -364,9 +392,26 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(predecessors["birth_bind"] == {"private_publish", "public_publish"}, "birth binding may follow only successful private or public publication")
     check(predecessors["index"] == {"birth_bind"}, "index may follow only successful birth binding")
     check(predecessors["saved_inspect"] == {"index"}, "saved inspection may follow only successful indexing")
+    check(predecessors["saved_present"] == {"saved_inspect"}, "saved presentation may follow only successful canonical inspection")
+    check(
+        _target(states, "saved_inspect", "saved_play_inspected") == "saved_present",
+        "a matching saved inspection must enter verified publication presentation",
+    )
+    check(
+        _target(states, "saved_present", "saved_play_presented") == "completed",
+        "a saved Play may complete only after its verified publication readout",
+    )
     check(edges["use_receipt"] == {"receipt", "blocked"}, "Use receipt must terminate without publication or indexing")
     check(_target(states, "save_offer", "save_skipped") == "completed", "Skip must complete without publication or indexing")
-    for field in ("mode", "resolution", "modality_policy", "judge_policy", "handoff", "last_event"):
+    for field in (
+        "mode",
+        "resolution",
+        "modality_policy",
+        "judge_policy",
+        "handoff",
+        "auth_repair",
+        "last_event",
+    ):
         check(field in context_roots, f"context schema must require {field}")
     modalities = context_schema.get("$defs", {}).get("modalityPolicy", {}).get("properties", {}).get("allowed", {}).get("items", {}).get("enum")
     check(modalities == ["call", "shell", "drive"], "CALL, SHELL, and DRIVE must be the closed modality set")
@@ -393,6 +438,17 @@ def validate_bundle(root: Path) -> ValidationSummary:
         handoff_owner_enum == expected_owner_enum,
         "handoff.owner must use the same closed Rote specialist set",
     )
+    auth_repair_owner_enum = (
+        context_schema.get("$defs", {})
+        .get("authRepair", {})
+        .get("properties", {})
+        .get("owner", {})
+        .get("enum")
+    )
+    check(
+        auth_repair_owner_enum == ["rote-adapter-config", None],
+        "auth repair must use a separate closed rote-adapter-config owner",
+    )
     check(
         actions.get("prepare_specialist_handoff", {}).get("command")
         == "scripts/bin/play-handoff prepare --stdin --json",
@@ -402,6 +458,34 @@ def validate_bundle(root: Path) -> ValidationSummary:
         actions.get("validate_specialist_receipt", {}).get("command")
         == "scripts/bin/play-handoff verify --stdin --json",
         "specialist receipts must use the reusable verification gate",
+    )
+    check(
+        actions.get("prepare_auth_repair_handoff", {}).get("command")
+        == "scripts/bin/play-handoff prepare-auth-repair --stdin --json",
+        "auth repair availability must use its dedicated handoff gate",
+    )
+    check(
+        actions.get("validate_auth_repair_receipt", {}).get("command")
+        == "scripts/bin/play-handoff verify-auth-repair --stdin --json",
+        "auth repair receipts must use their dedicated verification gate",
+    )
+    check(
+        actions.get("present_saved_play", {}).get("command")
+        == "scripts/bin/play-publication --stdin --json",
+        "saved publication presentation must use the deterministic URI and social-copy renderer",
+    )
+    public_fields = actions.get("publish_public", {}).get("events", {}).get("play_published", [])
+    check(
+        "publication.uri" in public_fields and "publication.install_uri" in public_fields,
+        "public publication must preserve registry-returned Play and install URIs",
+    )
+    presentation_policy = " ".join(
+        actions.get("present_saved_play", {}).get("command_policy", [])
+    )
+    check(
+        "ready to paste into X and LinkedIn" in presentation_policy
+        and "Never invent, reconstruct, shorten, or silently omit" in presentation_policy,
+        "public publication presentation must include paste-ready social copy from returned URIs",
     )
     execute_policy = " ".join(actions.get("execute_route", {}).get("command_policy", []))
     check(
@@ -413,8 +497,9 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "CALL adapter creation must auto-detect its substrate",
     )
     check(
-        "Rote-owned authentication cycle" in execute_policy,
-        "CALL adapter execution must complete authentication through Rote",
+        "Complete initial authentication" in execute_policy
+        and "recoverable auth failure" in execute_policy,
+        "CALL adapter execution must separate initial authentication from recoverable repair",
     )
     check(
         "route_provenance"
@@ -433,6 +518,28 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(
         "route_provenance" in outcome_fields,
         "handoff receipts must require route provenance",
+    )
+    auth_required_fields = (
+        handoff_schema.get("$defs", {})
+        .get("packet", {})
+        .get("properties", {})
+        .get("expected_events", {})
+        .get("properties", {})
+        .get("auth_repair_required", {})
+        .get("const", [])
+    )
+    check(
+        auth_required_fields == ["auth_repair"],
+        "CALL handoff receipts must expose the typed auth repair event",
+    )
+    check(
+        handoff_schema.get("$defs", {})
+        .get("authRepairPacket", {})
+        .get("properties", {})
+        .get("owner", {})
+        .get("const")
+        == "rote-adapter-config",
+        "auth repair packets must be closed to rote-adapter-config",
     )
 
     if errors:

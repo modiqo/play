@@ -30,16 +30,23 @@ Immediately after release, capture the owner-private birth certificate described
 [birth.md](birth.md). Capture is one-time and content-addressed by the released Flow fingerprint;
 block publication if truthful workspace evidence cannot be captured.
 
-Publish the exact released version with the chosen visibility. Bind the immutable birth object to
-the minted exact reference and registry content hash, then index the canonical Playcard locally and
-run `rote play inspect <org/name> --json` for the canonical reference. Record the birth SHA,
-canonical reference, version, visibility, owner, index reference, and inspect response reference.
+Publish the exact released version with the chosen visibility. For Public, preserve the Play page
+URI and install/bootstrap URI returned by the registry; do not reconstruct them from the canonical
+reference. Bind the immutable birth object to the minted exact reference and registry content hash,
+then index the canonical Playcard locally and run `rote play inspect <org/name> --json` for the
+canonical reference. Record the birth SHA, canonical reference, version, visibility, owner, index
+reference, inspect response reference, title, description, content hash, and returned URIs.
 If the inspected owner, visibility, or version differs from the authorized publication, block
 instead of repairing it silently.
 
-On a matching readback, present a small success readout backed by the inspected JSON. Include the
-canonical reference, exact version, visibility, owner, and content hash when present. Then briefly
-congratulate the user. Do not congratulate before the readback succeeds.
+On a matching readback, run `scripts/bin/play-publication --stdin --json` and present its Markdown
+exactly once. Include the canonical reference, exact version, visibility, owner, and content hash.
+For Public, also include a clickable Play page link whose label carries the title and description,
+the install/bootstrap link, and separate fenced plain-text blocks ready to paste into X and
+LinkedIn. The X copy must be at most 280 characters; both social blocks must contain the returned
+Play URI, and LinkedIn also carries the install URI. For Private, do not produce public URLs or
+social copy. These are copy-only outputs: never post or share them implicitly. Then briefly
+congratulate the user. Do not congratulate before the readback and presentation succeed.
 
 The index is a discovery cache, not the source of truth. A future outcome request starts at search;
 an explicit canonical reference goes directly to `rote play run`. In both cases the Play controller,

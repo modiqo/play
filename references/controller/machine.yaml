@@ -285,6 +285,7 @@ states:
       outcome_ready: [{target: explore_receipt, mutate: record_specialist_response}]
       route_exhausted: [{target: explore_receipt, mutate: record_specialist_response}]
       confirmation_required: [{target: explore_receipt, mutate: record_specialist_response}]
+      auth_repair_required: [{target: explore_receipt, mutate: record_specialist_response}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   explore_receipt:
@@ -298,6 +299,7 @@ states:
         - {guard: exploration_budget_remaining, target: explore_route, mutate: consume_attempt}
         - {target: blocked, mutate: record_exhaustion}
       specialist_confirmation_required: [{target: effect_offer, mutate: record_effect_confirmation}]
+      specialist_auth_repair_required: [{target: auth_repair_offer, mutate: record_auth_repair_required}]
       specialist_receipt_invalid: [{target: blocked, mutate: record_invalid_specialist_receipt}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -309,6 +311,46 @@ states:
     "on":
       effect_confirmation_approved: [{target: explore_handoff, mutate: approve_effect_confirmation}]
       effect_confirmation_declined: [{target: blocked, mutate: decline_effect_confirmation}]
+
+  auth_repair_offer:
+    owner: play
+    checkpoint: after
+    requires: [auth_repair.status, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.original_packet, auth_repair.original_packet_sha256]
+    prompt: approve_auth_repair
+    "on":
+      auth_repair_approved: [{target: auth_repair_handoff, mutate: approve_auth_repair}]
+      auth_repair_declined: [{target: blocked, mutate: decline_auth_repair}]
+
+  auth_repair_handoff:
+    owner: play
+    checkpoint: after
+    requires: [auth_repair.status, auth_repair.owner, auth_repair.original_packet, auth_repair.original_packet_sha256]
+    entry: {action: prepare_auth_repair_handoff}
+    "on":
+      auth_repair_handoff_ready: [{target: auth_repair_execute, mutate: record_auth_repair_handoff}]
+      auth_repair_specialist_unavailable: [{target: blocked, mutate: record_auth_repair_unavailable}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  auth_repair_execute:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [auth_repair.owner, auth_repair.packet, auth_repair.packet_sha256, auth_repair.original_packet_sha256]
+    entry: {action: execute_auth_repair}
+    "on":
+      auth_repair_ready: [{target: auth_repair_receipt, mutate: record_auth_repair_response}]
+      auth_repair_failed: [{target: auth_repair_receipt, mutate: record_auth_repair_response}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  auth_repair_receipt:
+    owner: play
+    checkpoint: after
+    requires: [auth_repair.packet, auth_repair.packet_sha256, auth_repair.receipt]
+    entry: {action: validate_auth_repair_receipt}
+    "on":
+      specialist_auth_repair_ready: [{target: explore_handoff, mutate: record_auth_repair_success}]
+      specialist_auth_repair_failed: [{target: blocked, mutate: record_auth_repair_failure}]
+      auth_repair_receipt_invalid: [{target: blocked, mutate: record_invalid_auth_repair_receipt}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
 
   explore_verify:
     owner: play
@@ -437,8 +479,17 @@ states:
     entry: {action: inspect_saved_play}
     "on":
       saved_play_inspected:
-        - {guard: saved_inspection_matches_publication, target: completed, mutate: record_saved_inspection}
+        - {guard: saved_inspection_matches_publication, target: saved_present, mutate: record_saved_inspection}
         - {target: blocked, mutate: record_saved_inspection_mismatch}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  saved_present:
+    owner: play
+    checkpoint: after
+    requires: [publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.content_hash, publication.inspect_ref, play.version]
+    entry: {action: present_saved_play}
+    "on":
+      saved_play_presented: [{target: completed, mutate: record_saved_presentation}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   receipt: {owner: play}

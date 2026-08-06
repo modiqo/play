@@ -116,6 +116,16 @@ prompts:
       effect_confirmation_approved: [prompt_version, selected_at, effect_policy.rote_confirmation.tool, effect_policy.rote_confirmation.impact, effect_policy.rote_confirmation.confirm_token, effect_policy.rote_confirmation.workspace]
       effect_confirmation_declined: [prompt_version, selected_at, effect_policy.rote_confirmation.tool, effect_policy.rote_confirmation.confirm_token, effect_policy.rote_confirmation.workspace]
 
+  approve_auth_repair:
+    question: Let rote-adapter-config repair authentication for the displayed adapter using its classified repair rung?
+    selection: single
+    choices:
+      - {id: repair, label: Repair authentication, description: Hand the typed failure to rote-adapter-config, preserve its native human gates, and retry the original CALL only after validated repair., event: auth_repair_approved}
+      - {id: stop, label: Do not repair, description: Stop without changing credentials, adapter authentication, or the original operation., event: auth_repair_declined}
+    events:
+      auth_repair_approved: [prompt_version, selected_at, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.original_packet_sha256]
+      auth_repair_declined: [prompt_version, selected_at, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.original_packet_sha256]
+
   private_public_or_skip:
     question: How should I preserve this verified Play?
     selection: single

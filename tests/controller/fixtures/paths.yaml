@@ -139,6 +139,37 @@ cases:
     terminal: completed
     includes_once: [effect_offer]
 
+  - name: recoverable CALL authentication can be repaired and retried
+    steps:
+      - {state: explore_execute, event: auth_repair_required, target: explore_receipt}
+      - {state: explore_receipt, event: specialist_auth_repair_required, target: auth_repair_offer}
+      - {state: auth_repair_offer, event: auth_repair_approved, target: auth_repair_handoff}
+      - {state: auth_repair_handoff, event: auth_repair_handoff_ready, target: auth_repair_execute}
+      - {state: auth_repair_execute, event: auth_repair_ready, target: auth_repair_receipt}
+      - {state: auth_repair_receipt, event: specialist_auth_repair_ready, target: explore_handoff}
+      - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
+      - {state: explore_execute, event: outcome_ready, target: explore_receipt}
+      - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
+      - {state: explore_verify, event: outcome_verified, target: crystallize}
+      - {state: crystallize, event: not_reusable, target: completed}
+    terminal: completed
+    includes_once: [auth_repair_offer, auth_repair_handoff, auth_repair_execute, auth_repair_receipt]
+
+  - name: declined authentication repair blocks without retrying the CALL
+    steps:
+      - {state: explore_execute, event: auth_repair_required, target: explore_receipt}
+      - {state: explore_receipt, event: specialist_auth_repair_required, target: auth_repair_offer}
+      - {state: auth_repair_offer, event: auth_repair_declined, target: blocked}
+    terminal: blocked
+    excludes: [auth_repair_handoff, auth_repair_execute, auth_repair_receipt]
+
+  - name: invalid authentication repair receipt blocks before CALL retry
+    steps:
+      - {state: auth_repair_execute, event: auth_repair_ready, target: auth_repair_receipt}
+      - {state: auth_repair_receipt, event: auth_repair_receipt_invalid, target: blocked}
+    terminal: blocked
+    excludes: [explore_handoff, explore_verify]
+
   - name: private save publishes to a private org and indexes
     steps: &explore_to_save
       - {state: qualify, event: outcome_request, target: search}
@@ -187,7 +218,8 @@ cases:
       - state: saved_inspect
         event: saved_play_inspected
         guards: {saved_inspection_matches_publication: true}
-        target: completed
+        target: saved_present
+      - {state: saved_present, event: saved_play_presented, target: completed}
     terminal: completed
     includes_once: [author_release, birth_capture, private_org, private_publish, birth_bind, index]
 
@@ -236,7 +268,8 @@ cases:
       - state: saved_inspect
         event: saved_play_inspected
         guards: {saved_inspection_matches_publication: true}
-        target: completed
+        target: saved_present
+      - {state: saved_present, event: saved_play_presented, target: completed}
     terminal: completed
     includes_once: [author_release, birth_capture, public_owner, public_publish, birth_bind, index]
 
@@ -258,7 +291,8 @@ cases:
       - state: saved_inspect
         event: saved_play_inspected
         guards: {saved_inspection_matches_publication: true}
-        target: completed
+        target: saved_present
+      - {state: saved_present, event: saved_play_presented, target: completed}
     terminal: completed
 
   - name: explicit organization summary bypasses Play search

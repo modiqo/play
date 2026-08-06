@@ -52,8 +52,10 @@
 | P-0046 | play | conclusion | fixed | scripts/lib/play/machine.py | Machine conformance validates declared state/action owner equality but d |
 | P-0047 | play | behavioral | open | tool:rote | After explore_approved selects CALL, Play must delegate through rote-usi |
 | P-0048 | play | conclusion | open | scripts/lib/play/handoff.py | A successful CALL receipt must prove execution through a Rote adapter by |
-| P-0049 | play | conclusion | open | references/integration/rote-handoffs.md | When CALL lacks an adequate installed adapter, the delegated Rote route  |
+| P-0049 | play | conclusion | obsolete-proposed | references/integration/rote-handoffs.md | When CALL lacks an adequate installed adapter, the delegated Rote route  |
 | P-0050 | plugin-creator | conclusion | open | README.md | Play release documentation must distinguish remote marketplace refresh f |
 | P-0051 | skill-creator | conclusion | open | scripts/harness/play-profile | The Play-first activation profile must keep every discovered Rote specia |
 | P-0052 | play | conclusion | fixed | references/controller/machine.yaml | Play currently has no resumable effect-approval transition during Explor |
 | P-0053 | play | conclusion | open | references/controller/machine.yaml | Play enters effect approval only from a validated Rote confirmation_requ |
+| P-0054 | play | conclusion | open | references/controller/machine.yaml | A recoverable CALL authentication failure enters a separately approved r |
+| P-0055 | play | conclusion | open | references/publish/lifecycle.md | A saved public Play may complete only after canonical inspection and det |

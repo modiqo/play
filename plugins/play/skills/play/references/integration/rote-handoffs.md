@@ -53,9 +53,9 @@ not a suggestion:
 2. If missing, hand off to `rote-adapter-create`. Detect `openapi`, `graphql`, or `mcp` from the
    provided spec/endpoint, catalog evidence, server card, or provider documentation. MCP uses
    `rote adapter new-from-mcp`; OpenAPI and GraphQL use the dry-run-first `rote adapter new` path.
-3. Complete or repair authentication through the Rote creation/configuration flow. Use
-   `rote-adapter-config` for an existing adapter, preserve explicit human approval, and use masked
-   secret entry. Do not ask Play to handle credentials.
+3. Complete initial authentication through the Rote creation flow. For a recoverable failure on an
+   existing adapter, return the typed repair request described below. Do not ask Play to classify
+   authentication or handle credentials.
 4. Execute the requested capability through `rote-using-adapters`.
 
 Probe hints are non-authoritative discovery metadata. They must never become a Play blocker or an
@@ -65,15 +65,39 @@ approval event. If the adapter call is guarded, `rote-using-adapters` returns th
 new packet and resume the same specialist, workspace, and guarded call with that token. A declined
 guard returns no effect and must not be retried.
 
-If any stage cannot complete, return `route_exhausted` with evidence. Do not substitute a direct API
-or MCP call. `outcome_ready` additionally requires `route_provenance` recording the adapter id,
+If any non-recoverable stage cannot complete, return `route_exhausted` with evidence. Do not
+substitute a direct API or MCP call. `outcome_ready` additionally requires `route_provenance`
+recording the adapter id,
 detected substrate and evidence, creation/reuse status, auth status/owner, orchestration owner,
 `adapter_execute_owner=rote-using-adapters`, and `direct_tool_execution=false`.
 
+## Recoverable authentication repair
+
+Do not collapse a recoverable CALL authentication failure into `route_exhausted`. The execution
+owner returns `auth_repair_required` with `source=rote_auth_repair_required`, `recoverable=true`, the
+adapter id, environment variable name, opaque classified rung, distinguishing error, and evidence.
+The packet must not contain a token, secret, credential value, or other undeclared field.
+
+After Play receives explicit approval, prepare `play.auth-repair-handoff/v1` with
+`scripts/bin/play-handoff prepare-auth-repair --stdin --json`. This is a separate closed handoff to
+`rote-adapter-config`; it neither adds that skill to the CALL execution owner set nor authorizes the
+provider operation. Bind the repair packet to the exact original CALL packet and SHA.
+
+Require `play.auth-repair-receipt/v1` and validate it with
+`scripts/bin/play-handoff verify-auth-repair --stdin --json`. A successful receipt must match the
+requested adapter, environment variable, and classified rung, name the repair action, and include
+evidence. A declined, unavailable, failed, mismatched, or malformed repair enters `blocked`.
+
+After validated repair, invalidate the prior execution packet and prepare a fresh
+`play.handoff/v1` packet for the original owner. Preserve the original requested outcome,
+modalities, constraints, inputs, effect policy, evidence contract, and idempotency key; attach only
+the original packet SHA, repair receipt reference, adapter id, and classified rung as resume
+provenance. The original CALL must execute and pass normal receipt and outcome verification.
+
 ## Ownership map
 
-- Adapter discovery and calls: `rote-using-adapters`, with adapter configuration/create skills only
-  when capability is absent.
+- Adapter discovery and calls: `rote-using-adapters`, with `rote-adapter-create` when capability is
+  absent and the separate approved `rote-adapter-config` handoff for recoverable authentication.
 - Local commands, files, logs, and process state: `rote-shell`.
 - Active-session browser work: `rote-browse`.
 - Multi-step adapter work and durable evidence: `rote-workspace`.

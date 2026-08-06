@@ -25,7 +25,9 @@ scripts/bin/play-birth bind <birth-sha-or-selector> --reference <owner/name>@<ve
 Binding confirms the exact registry version, content hash, and publication author provenance when
 the immutable registry metadata supplies it. It updates only the local index; it
 never mutates the content-addressed birth object. Bind before local Playcard indexing, then continue
-with the normal canonical inspection readback.
+with the normal canonical inspection readback. The birth output is not the terminal publication
+readout: after verified readback, Public must still present the registry-returned Play page and
+install/bootstrap URIs plus paste-ready X and LinkedIn copy.
 
 ## Private storage
 

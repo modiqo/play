@@ -38,11 +38,19 @@ payload.
 
 CALL must converge on a Rote adapter before it can yield an outcome. Reuse a matching installed
 adapter when possible. Otherwise `rote-adapter-create` determines the substrate as `openapi`,
-`graphql`, or `mcp` from the strongest available evidence and creates it through Rote. Missing or
-stale authentication is completed by `rote-adapter-create` or `rote-adapter-config` with the normal
-human gate. Provider specifications, endpoint metadata, and MCP server cards are discovery-only; the
-final capability call still runs through `rote-using-adapters` and reports adapter/type/auth
-provenance.
+`graphql`, or `mcp` from the strongest available evidence and creates it through Rote.
+Authentication required during creation is completed by `rote-adapter-create` with the normal
+human gate. Recoverable authentication failure on an existing adapter follows the separate flow
+below.
+Provider specifications, endpoint metadata, and MCP server cards are discovery-only; the final
+capability call still runs through `rote-using-adapters` and reports adapter/type/auth provenance.
+
+When `rote-using-adapters` classifies a CALL authentication failure as recoverable, it returns the
+typed adapter id, environment variable, opaque repair rung, distinguishing error, and evidence.
+Play asks whether to repair, then delegates a separate packet only to `rote-adapter-config`. Play
+does not interpret the rung or handle credentials. A validated successful repair produces a fresh
+execution packet that preserves the original inputs and idempotency key; it does not itself satisfy
+the requested outcome.
 
 ## Preserve policy
 

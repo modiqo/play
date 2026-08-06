@@ -14,6 +14,7 @@ class PluginPackageTest(unittest.TestCase):
         self.assertTrue((TARGET / "scripts/harness/start-harness").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-preflight").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-presentation").is_file())
+        self.assertTrue((TARGET / "scripts/bin/play-publication").is_file())
         self.assertTrue((TARGET / "ui/thinking-orbs/package-lock.json").is_file())
         self.assertTrue((TARGET / "ui/thinking-orbs/src/PlayActivity.tsx").is_file())
         self.assertTrue((TARGET / "ui/thinking-orbs/src/PlayThinkingOrb.tsx").is_file())

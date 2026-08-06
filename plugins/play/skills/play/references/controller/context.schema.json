@@ -26,6 +26,7 @@
     "effect_policy",
     "execution",
     "handoff",
+    "auth_repair",
     "evidence",
     "candidate",
     "birth",
@@ -59,6 +60,7 @@
     "effect_policy": {"$ref": "#/$defs/effectPolicy"},
     "execution": {"$ref": "#/$defs/execution"},
     "handoff": {"$ref": "#/$defs/handoff"},
+    "auth_repair": {"$ref": "#/$defs/authRepair"},
     "evidence": {"$ref": "#/$defs/evidence"},
     "candidate": {"$ref": "#/$defs/candidate"},
     "birth": {"$ref": "#/$defs/birth"},
@@ -274,6 +276,30 @@
         "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
       }
     },
+    "authRepair": {
+      "type": "object",
+      "required": ["status", "owner", "recoverable", "adapter_id", "env_var", "classified_rung", "distinguishing_error", "repair_action", "original_packet", "original_packet_sha256", "packet", "packet_sha256", "receipt", "receipt_ref", "receipt_valid", "blocked_reason", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"enum": ["none", "required", "approved", "repairing", "repaired", "declined", "failed"]},
+        "owner": {"type": ["string", "null"], "enum": ["rote-adapter-config", null]},
+        "recoverable": {"type": ["boolean", "null"]},
+        "adapter_id": {"$ref": "#/$defs/nullableString"},
+        "env_var": {"$ref": "#/$defs/nullableString"},
+        "classified_rung": {"$ref": "#/$defs/nullableString"},
+        "distinguishing_error": {"$ref": "#/$defs/nullableString"},
+        "repair_action": {"$ref": "#/$defs/nullableString"},
+        "original_packet": {"type": ["object", "null"]},
+        "original_packet_sha256": {"$ref": "#/$defs/nullableString"},
+        "packet": {"type": ["object", "null"]},
+        "packet_sha256": {"$ref": "#/$defs/nullableString"},
+        "receipt": {"type": ["object", "null"]},
+        "receipt_ref": {"$ref": "#/$defs/nullableString"},
+        "receipt_valid": {"type": "boolean"},
+        "blocked_reason": {"$ref": "#/$defs/nullableString"},
+        "evidence_refs": {"$ref": "#/$defs/stringArray"}
+      }
+    },
     "execution": {
       "type": "object",
       "required": ["owner", "workspace", "attempts", "budget", "pending_action", "idempotency_key"],
@@ -373,16 +399,32 @@
     },
     "publication": {
       "type": "object",
-      "required": ["owner", "private_org", "canonical_reference", "visibility", "indexed", "index_ref", "inspect_ref"],
+      "required": ["owner", "private_org", "canonical_reference", "title", "description", "uri", "install_uri", "content_hash", "visibility", "indexed", "index_ref", "inspect_ref", "share_copy", "presentation_ref", "presented"],
       "additionalProperties": false,
       "properties": {
         "owner": {"$ref": "#/$defs/nullableString"},
         "private_org": {"$ref": "#/$defs/nullableString"},
         "canonical_reference": {"$ref": "#/$defs/nullableString"},
+        "title": {"$ref": "#/$defs/nullableString"},
+        "description": {"$ref": "#/$defs/nullableString"},
+        "uri": {"$ref": "#/$defs/nullableString"},
+        "install_uri": {"$ref": "#/$defs/nullableString"},
+        "content_hash": {"$ref": "#/$defs/nullableString"},
         "visibility": {"type": ["string", "null"], "enum": ["private", "public", null]},
         "indexed": {"type": "boolean"},
         "index_ref": {"$ref": "#/$defs/nullableString"},
-        "inspect_ref": {"$ref": "#/$defs/nullableString"}
+        "inspect_ref": {"$ref": "#/$defs/nullableString"},
+        "share_copy": {
+          "type": "object",
+          "required": ["x", "linkedin"],
+          "additionalProperties": false,
+          "properties": {
+            "x": {"$ref": "#/$defs/nullableString"},
+            "linkedin": {"$ref": "#/$defs/nullableString"}
+          }
+        },
+        "presentation_ref": {"$ref": "#/$defs/nullableString"},
+        "presented": {"type": "boolean"}
       }
     },
     "lastEvent": {

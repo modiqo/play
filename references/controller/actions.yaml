@@ -87,6 +87,15 @@ mutations:
   - record_effect_confirmation
   - approve_effect_confirmation
   - decline_effect_confirmation
+  - record_auth_repair_required
+  - approve_auth_repair
+  - decline_auth_repair
+  - record_auth_repair_handoff
+  - record_auth_repair_unavailable
+  - record_auth_repair_response
+  - record_auth_repair_success
+  - record_auth_repair_failure
+  - record_invalid_auth_repair_receipt
   - record_widening_request
   - record_no_route
   - widen_modality_policy
@@ -115,6 +124,7 @@ mutations:
   - record_index_mismatch
   - record_saved_inspection
   - record_saved_inspection_mismatch
+  - record_saved_presentation
 
 actions:
   qualify_request:
@@ -313,7 +323,8 @@ actions:
     command_policy:
       - Enumerate only rote-* skills exposed as callable by the current harness; installed files or raw MCP tools do not count as available specialists.
       - CALL requires rote-using-adapters, SHELL requires rote-shell, DRIVE requires rote-browse, and combined routes require rote-workspace.
-      - A CALL packet requires adapter convergence: reuse an installed adapter or ask rote-adapter-create to detect OpenAPI, GraphQL, or MCP and create the matching adapter; ask rote-adapter-config to complete or repair authentication.
+      - A CALL packet requires adapter convergence: reuse an installed adapter or ask rote-adapter-create to detect OpenAPI, GraphQL, or MCP, create the matching adapter, and complete its initial authentication.
+      - Existing-adapter authentication repair is never performed inside packet preparation; it requires a typed auth_repair_required receipt, Play approval, and the separate rote-adapter-config repair handoff.
       - Provider schemas, endpoint metadata, documentation, and MCP server cards are discovery evidence only. They never authorize direct capability execution outside the Rote adapter.
       - When effect_policy.rote_confirmation is approved, invalidate the prior packet and bind the new packet to the exact Rote tool, impact, token, workspace, and evidence so the same specialist resumes only that guarded call.
       - If the exact owner is unavailable, emit specialist_unavailable and block; never substitute a direct MCP, app, shell, or browser tool.
@@ -329,8 +340,9 @@ actions:
     command_policy:
       - Invoke the selected rote-* skill through the harness skill mechanism with the exact play.handoff/v1 packet.
       - For CALL, inspect installed adapters first. If none fits, delegate adapter creation to rote-adapter-create, which must determine OpenAPI, GraphQL, or MCP before using the matching Rote creation command.
-      - Complete the Rote-owned authentication cycle using rote-adapter-create or rote-adapter-config, including required human approval and masked secret entry, before invoking rote-using-adapters.
-      - If adapter creation, type detection, authentication, or adapter execution cannot complete, emit route_exhausted with evidence; never fall back to a raw provider or MCP call.
+      - Complete initial authentication for a newly created adapter through rote-adapter-create, including required human approval and masked secret entry, before invoking rote-using-adapters.
+      - When a recoverable auth failure is classified, emit auth_repair_required with the adapter id, environment variable, opaque classified rung, distinguishing error, and evidence; do not collapse it into route_exhausted.
+      - If adapter creation, type detection, non-recoverable authentication, or adapter execution cannot complete, emit route_exhausted with evidence; never fall back to a raw provider or MCP call.
       - Treat probe readOnlyHint and destructiveHint values as discovery metadata only; never emit confirmation_required, route_exhausted, or action_blocked solely from those hints.
       - Attempt a matching operation through Rote. Emit confirmation_required only when the Rote call itself returns confirmation_required, preserving its exact tool, impact, token, workspace, and evidence.
       - When the packet carries an approved Rote confirmation, resume the same workspace and retry only the guarded call with --confirm <token>; do not probe again or broaden the operation.
@@ -340,6 +352,7 @@ actions:
       outcome_ready: [handoff.receipt, result_ref, response_refs, artifact_refs, modalities_used, effects, route_provenance]
       route_exhausted: [handoff.receipt, reason, evidence_refs]
       confirmation_required: [handoff.receipt, effect_confirmation]
+      auth_repair_required: [handoff.receipt, auth_repair]
 
   validate_specialist_receipt:
     kind: deterministic
@@ -351,12 +364,58 @@ actions:
       - Accept only play.handoff-receipt/v1 from the packet owner with matching run, state, action, packet SHA, declared event, complete payload, and skill executor identity.
       - A successful CALL receipt must include adapter provenance: adapter id, detected OpenAPI/GraphQL/MCP substrate and evidence, reused/created status, Rote creation owner when applicable, verified/completed auth owner, and direct_tool_execution=false.
       - Accept confirmation_required only when its typed receipt proves source=rote_confirmation_required and carries a non-empty tool, impact, token, workspace, and evidence.
+      - Accept auth_repair_required only when its typed receipt proves source=rote_auth_repair_required, recoverable=true, and carries a non-empty adapter id, environment variable, classified rung, distinguishing error, and evidence.
       - A raw MCP, app, shell, browser, or prose result has no valid specialist receipt and must emit specialist_receipt_invalid.
     events:
       specialist_outcome_ready: [handoff.receipt_ref, handoff.receipt_valid, result_ref, response_refs, artifact_refs, modalities_used, effects, route_provenance]
       specialist_route_exhausted: [handoff.receipt_ref, handoff.receipt_valid, reason, evidence_refs]
       specialist_confirmation_required: [handoff.receipt_ref, handoff.receipt_valid, effect_confirmation]
+      specialist_auth_repair_required: [handoff.receipt_ref, handoff.receipt_valid, auth_repair]
       specialist_receipt_invalid: [handoff.receipt_valid, handoff.blocked_reason, evidence_refs]
+
+  prepare_auth_repair_handoff:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [run_id, request.requested_outcome, auth_repair.status, auth_repair.owner, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.original_packet, auth_repair.original_packet_sha256, execution.idempotency_key]
+    command: scripts/bin/play-handoff prepare-auth-repair --stdin --json
+    command_policy:
+      - Require rote-adapter-config to be callable; it is the only permitted auth-repair owner and never becomes a CALL execution owner.
+      - Bind the repair packet to the validated original CALL packet and its SHA, preserving its requested outcome and idempotency key.
+      - Treat classified_rung as opaque Rote-owned classification; Play must not reinterpret or execute ladder mechanics.
+      - Never request, accept, or store raw credentials in Play context or the handoff packet.
+    events:
+      auth_repair_handoff_ready: [auth_repair.owner, auth_repair.packet, auth_repair.packet_sha256]
+      auth_repair_specialist_unavailable: [auth_repair.owner, auth_repair.blocked_reason, available_owners]
+
+  execute_auth_repair:
+    kind: delegated
+    owner: rote-specialist
+    effect: mixed
+    input_required: [auth_repair.owner, auth_repair.packet, auth_repair.packet_sha256, auth_repair.original_packet_sha256]
+    command_policy:
+      - Invoke only rote-adapter-config with the exact play.auth-repair-handoff/v1 packet.
+      - Let rote-adapter-config own classification checks, repair commands, OAuth and secret-entry gates, and ladder termination.
+      - Return one typed play.auth-repair-receipt/v1 receipt; never call the provider, adapter, or original operation from the repair state.
+    events:
+      auth_repair_ready: [auth_repair.receipt, auth_repair]
+      auth_repair_failed: [auth_repair.receipt, reason, evidence_refs]
+
+  validate_auth_repair_receipt:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [run_id, auth_repair.packet, auth_repair.packet_sha256, auth_repair.receipt]
+    command: scripts/bin/play-handoff verify-auth-repair --stdin --json
+    command_policy:
+      - Accept only a matching rote-adapter-config skill receipt for the exact repair packet, run, state, action, owner, and packet SHA.
+      - On success require the same adapter id, environment variable, and classified rung as the repair request plus a non-empty repair action and evidence.
+      - On success preserve the original operation inputs and idempotency key, then prepare a fresh execution packet carrying the validated repair receipt reference.
+      - Never treat repair success as outcome success; the original CALL must still execute and verify.
+    events:
+      specialist_auth_repair_ready: [auth_repair.receipt_ref, auth_repair.receipt_valid, auth_repair]
+      specialist_auth_repair_failed: [auth_repair.receipt_ref, auth_repair.receipt_valid, reason, evidence_refs]
+      auth_repair_receipt_invalid: [auth_repair.receipt_valid, auth_repair.blocked_reason, evidence_refs]
 
   prepare_candidate:
     kind: delegated
@@ -414,8 +473,10 @@ actions:
     owner: rote-specialist
     effect: external-write
     input_required: [candidate.released_flow, publication.owner, consent.save]
+    command_policy:
+      - Preserve the registry-returned public Play page URI and install/bootstrap URI exactly; do not reconstruct either URL from the canonical reference.
     events:
-      play_published: [publication.canonical_reference, visibility, owner, play.version]
+      play_published: [publication.canonical_reference, publication.uri, publication.install_uri, visibility, owner, play.version]
 
   bind_play_birth:
     kind: deterministic
@@ -442,8 +503,25 @@ actions:
     command: rote play inspect <publication.canonical_reference> --json
     command_policy:
       - Never replace first-class Play inspection with registry flow info.
+      - Return the inspected title, description, and registry content hash for the final verified publication readout.
     events:
-      saved_play_inspected: [publication.canonical_reference, publication.visibility, play.version, publication.inspect_ref]
+      saved_play_inspected: [publication.canonical_reference, publication.visibility, publication.title, publication.description, publication.content_hash, play.version, publication.inspect_ref]
+
+  present_saved_play:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.uri, publication.install_uri, publication.content_hash, publication.inspect_ref, play.version]
+    command: scripts/bin/play-publication --stdin --json
+    command_policy:
+      - Run only after canonical inspection matches the authorized publication.
+      - For public Plays, present a clickable Play page whose label includes the title and description, the install/bootstrap link, exact canonical reference, visibility, owner, and content hash.
+      - For public Plays, include separate fenced plain-text blocks ready to paste into X and LinkedIn; the X copy must remain within 280 characters and both must contain the Play page URI.
+      - Use only the registry-returned publication.uri and publication.install_uri. Never invent, reconstruct, shorten, or silently omit either URL.
+      - For private Plays, present the verified private reference without public URLs or social copy.
+      - Presenting copy does not post, share, invite, or perform any external write.
+    events:
+      saved_play_presented: [publication.presented, publication.share_copy, publication.presentation_ref, presentation.markdown]
 
 failure_event:
   id: action_blocked

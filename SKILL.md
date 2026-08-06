@@ -271,6 +271,11 @@ Do not execute an exploration modality before approval. If the user continues no
 - After indexing, run `rote play inspect <org/name> --json` against the canonical reference.
   Verify its owner, version, and visibility, show a compact JSON-backed success readout, and
   congratulate the user only after that readback matches the authorized publication.
+- After a matching public readback, present the exact registry-returned Play page URI and
+  install/bootstrap URI, a clickable Play link labeled with its title and description, and fenced
+  plain-text copy ready to paste into X and LinkedIn. Keep X within 280 characters and include the
+  Play URI in both blocks. Never reconstruct or omit returned URLs, and never post the copy without
+  a separate explicit request.
 
 ## Delegate execution
 
@@ -296,6 +301,15 @@ selected rote-* skill through the harness skill mechanism. Route its response th
 response, wrong owner, mismatched packet, or missing receipt must block and can never satisfy
 Explore.
 
+A recoverable CALL authentication failure must arrive as the typed `auth_repair_required` event;
+Play does not classify or execute the repair. After explicit approval, prepare a separate
+`play.auth-repair-handoff/v1` packet for `rote-adapter-config`, validate its matching repair receipt,
+then create a fresh execution packet for the original execution owner. Preserve the
+original operation inputs and idempotency key, bind the retry to the validated repair receipt, and
+still require the original CALL and outcome verification. Decline, an unavailable repair owner, a
+failed repair, or an invalid receipt blocks without running the provider operation. Never place raw
+credentials in Play context or either handoff packet.
+
 When `effect_offer` is entered, surface the exact Rote-provided tool, impact, confirmation token,
 workspace, and evidence. Approval must bind those exact fields, invalidate the old handoff packet,
 and prepare a new packet that tells the same specialist to resume the same workspace and retry only
@@ -305,9 +319,11 @@ independently classify, weaken, strengthen, or synthesize the guard.
 For a CALL route, make Rote adapter convergence part of that same delegated handoff. First reuse a
 matching installed adapter. If none exists, delegate to `rote-adapter-create`; it must determine from
 the available spec, endpoint, server card, or provider documentation whether the substrate is
-OpenAPI, GraphQL, or MCP, then use the matching Rote creation path. Delegate missing or broken
-authentication to `rote-adapter-create` or `rote-adapter-config`, preserve human approval gates, and
-keep secret entry masked. Only then execute through `rote-using-adapters`. Specs, endpoint metadata,
+OpenAPI, GraphQL, or MCP, then use the matching Rote creation path. Delegate initial authentication
+during creation to `rote-adapter-create`. For a recoverable authentication failure from an existing
+CALL packet, use the dedicated approved `rote-adapter-config` repair handoff above, preserve its
+human approval gates, and keep secret entry masked. Only then execute through
+`rote-using-adapters`. Specs, endpoint metadata,
 documentation, and MCP server cards may support type discovery; invoking the provider capability
 directly may not. A successful CALL receipt must carry the adapter id, detected substrate and
 evidence, creation/reuse provenance, auth provenance, and `direct_tool_execution=false`; otherwise
@@ -328,7 +344,8 @@ At terminal state, present only the outcome relevant to that terminal:
 
 - `receipt`: verified unchanged Use result;
 - `completed`: verified Explore result plus saved reference or explicit unpublished status;
-- `completed` for a saved Play: verified result, matching inspect readout, and a brief
+- `completed` for a saved Play: verified result, matching inspect readout, and—when Public—the Play
+  page, install/bootstrap link, and paste-ready X and LinkedIn copy, followed by a brief
   congratulations;
 - `completed` for management: the requested organization summary or grouped Play inventory;
 - `completed` for birth lookup: the requested owner-local certificate or an honest absent/ambiguous

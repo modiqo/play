@@ -92,6 +92,43 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertEqual(
             "inspect_saved_play", MACHINE["states"]["saved_inspect"]["entry"]["action"]
         )
+        inspected = MACHINE["states"]["saved_inspect"]["on"]["saved_play_inspected"][0]
+        self.assertEqual("saved_present", inspected["target"])
+        self.assertEqual(
+            "present_saved_play", MACHINE["states"]["saved_present"]["entry"]["action"]
+        )
+        self.assertEqual(
+            "completed",
+            MACHINE["states"]["saved_present"]["on"]["saved_play_presented"][0][
+                "target"
+            ],
+        )
+
+    def test_publication_readout_preserves_uris_and_social_copy(self) -> None:
+        published = ACTIONS["publish_public"]["events"]["play_published"]
+        self.assertIn("publication.uri", published)
+        self.assertIn("publication.install_uri", published)
+        self.assertEqual(
+            "scripts/bin/play-publication --stdin --json",
+            ACTIONS["present_saved_play"]["command"],
+        )
+        policy = " ".join(ACTIONS["present_saved_play"]["command_policy"])
+        self.assertIn("clickable Play page", policy)
+        self.assertIn("ready to paste into X and LinkedIn", policy)
+        self.assertIn("Never invent, reconstruct, shorten, or silently omit", policy)
+        self.assertIn("public URLs or social copy", policy)
+        publication = CONTEXT["$defs"]["publication"]
+        for field in (
+            "title",
+            "description",
+            "uri",
+            "install_uri",
+            "content_hash",
+            "share_copy",
+            "presentation_ref",
+            "presented",
+        ):
+            self.assertIn(field, publication["required"])
 
     def test_birth_is_captured_before_publish_and_bound_before_index(self) -> None:
         released = MACHINE["states"]["author_release"]["on"]["flow_released"][0]
@@ -234,7 +271,8 @@ class MachineConformanceTest(unittest.TestCase):
         execute_policy = " ".join(ACTIONS["execute_route"]["command_policy"])
         self.assertIn("must not call MCP, app, shell, or browser tools directly", execute_policy)
         self.assertIn("determine OpenAPI, GraphQL, or MCP", execute_policy)
-        self.assertIn("Rote-owned authentication cycle", execute_policy)
+        self.assertIn("Complete initial authentication", execute_policy)
+        self.assertIn("recoverable auth failure", execute_policy)
         self.assertIn("handoff.receipt", ACTIONS["execute_route"]["events"]["outcome_ready"])
         self.assertIn("route_provenance", ACTIONS["execute_route"]["events"]["outcome_ready"])
 
@@ -267,6 +305,61 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertEqual(
             "approve_effect_confirmation", MACHINE["states"]["effect_offer"]["prompt"]
         )
+
+    def test_recoverable_auth_uses_separate_approved_repair_loop(self) -> None:
+        self.assertEqual(
+            "explore_receipt",
+            MACHINE["states"]["explore_execute"]["on"]["auth_repair_required"][0][
+                "target"
+            ],
+        )
+        self.assertEqual(
+            "auth_repair_offer",
+            MACHINE["states"]["explore_receipt"]["on"][
+                "specialist_auth_repair_required"
+            ][0]["target"],
+        )
+        self.assertEqual(
+            "approve_auth_repair", MACHINE["states"]["auth_repair_offer"]["prompt"]
+        )
+        self.assertEqual(
+            "auth_repair_handoff",
+            MACHINE["states"]["auth_repair_offer"]["on"]["auth_repair_approved"][0][
+                "target"
+            ],
+        )
+        self.assertEqual(
+            "blocked",
+            MACHINE["states"]["auth_repair_offer"]["on"]["auth_repair_declined"][0][
+                "target"
+            ],
+        )
+        self.assertEqual(
+            "rote-adapter-config",
+            CONTEXT["$defs"]["authRepair"]["properties"]["owner"]["enum"][0],
+        )
+        self.assertNotIn("rote-adapter-config", ACTIONS_DOC["specialist_owners"])
+        self.assertEqual(
+            "scripts/bin/play-handoff prepare-auth-repair --stdin --json",
+            ACTIONS["prepare_auth_repair_handoff"]["command"],
+        )
+        self.assertEqual(
+            "scripts/bin/play-handoff verify-auth-repair --stdin --json",
+            ACTIONS["validate_auth_repair_receipt"]["command"],
+        )
+        self.assertEqual(
+            "explore_handoff",
+            MACHINE["states"]["auth_repair_receipt"]["on"][
+                "specialist_auth_repair_ready"
+            ][0]["target"],
+        )
+        self.assertEqual(
+            "blocked",
+            MACHINE["states"]["auth_repair_receipt"]["on"][
+                "auth_repair_receipt_invalid"
+            ][0]["target"],
+        )
+        self.assertIn("Never place raw\ncredentials", SKILL_TEXT)
 
     def test_search_selection_is_inspection_only(self) -> None:
         self.assertEqual(

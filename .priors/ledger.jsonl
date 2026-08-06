@@ -219,3 +219,32 @@
 {"action":"disposition","by":"agent","id":"P-0052","run":"run-022","scope_hash":"f3a941aa70b2","t":"event","to":"fixed"}
 {"action":"disposition","by":"agent","id":"P-0053","run":"run-022","scope_hash":"f3a941aa70b2","t":"event","to":"reaffirmed"}
 {"action":"commit","ns":"play","run":"run-022","summary":["Checked against 5 priors:","  ✓ 1 fixed — nice work","  → 4 carried (same identities, current scope state)","New this run: 0"],"t":"run"}
+{"action":"disposition","by":"agent","id":"P-0044","run":"run-023","scope_hash":"05f7e37a6a4c","t":"event","to":"still-open"}
+{"action":"disposition","by":"agent","id":"P-0048","run":"run-023","scope_hash":"fa506d702951","t":"event","to":"still-open"}
+{"action":"disposition","by":"agent","id":"P-0049","run":"run-023","scope_hash":"05f7e37a6a4c","t":"event","to":"still-open"}
+{"action":"disposition","by":"agent","id":"P-0053","run":"run-023","scope_hash":"f3a941aa70b2","t":"event","to":"still-open"}
+{"born":"run-023","claim":"A recoverable CALL authentication failure enters a separately approved rote-adapter-config repair handoff, and only a validated repair receipt may produce a fresh execution packet that preserves the original operation and idempotency key.","direction":"delegate-recoverable-auth-repair","evidence":"The controller routes typed auth_repair_required receipts through approval, repair handoff, repair execution, and repair receipt validation before returning to the original execution handoff.","facets":{"activation":"verify-phase","authority":"advisory","lifecycle":"stale-on-scope-change","obligation":"disposition-required","scope":"content-hash"},"id":"P-0054","ns":"play","scope_hash":"f3a941aa70b2","scope_ref":"references/controller/machine.yaml","severity":"major","t":"prior","type":"conclusion"}
+{"action":"commit","ns":"play","run":"run-023","summary":["Checked against 4 priors:","  → 4 carried (same identities, current scope state)","New this run: 1"],"t":"run"}
+{"action":"disposition","by":"agent","id":"P-0044","run":"run-024","scope_hash":"4d8c71debc40","t":"event","to":"reaffirmed"}
+{"action":"disposition","by":"agent","id":"P-0048","run":"run-024","scope_hash":"8c611e2100cc","t":"event","to":"reaffirmed"}
+{"action":"disposition","by":"agent","id":"P-0049","run":"run-024","scope_hash":"4d8c71debc40","t":"event","to":"obsolete-proposed"}
+{"action":"disposition","by":"agent","id":"P-0053","run":"run-024","scope_hash":"9ae75c7c667e","t":"event","to":"reaffirmed"}
+{"action":"disposition","by":"agent","id":"P-0054","run":"run-024","scope_hash":"9ae75c7c667e","t":"event","to":"reaffirmed"}
+{"action":"commit","ns":"play","run":"run-024","summary":["Checked against 5 priors:","  → 4 carried (same identities, current scope state)","  ? 1 need your call — `priors status --calls` to review","New this run: 0"],"t":"run"}
+{"action":"disposition","by":"agent","id":"P-0044","run":"run-025","scope_hash":"4d8c71debc40","t":"event","to":"still-open"}
+{"action":"disposition","by":"agent","id":"P-0048","run":"run-025","scope_hash":"b04e19248afb","t":"event","to":"reaffirmed"}
+{"action":"disposition","by":"agent","id":"P-0053","run":"run-025","scope_hash":"9ae75c7c667e","t":"event","to":"still-open"}
+{"action":"disposition","by":"agent","id":"P-0054","run":"run-025","scope_hash":"9ae75c7c667e","t":"event","to":"still-open"}
+{"action":"commit","ns":"play","run":"run-025","summary":["Checked against 4 priors:","  → 4 carried (same identities, current scope state)","New this run: 0"],"t":"run"}
+{"action":"disposition","by":"agent","id":"P-0044","run":"run-026","scope_hash":"4d8c71debc40","t":"event","to":"still-open"}
+{"action":"disposition","by":"agent","id":"P-0048","run":"run-026","scope_hash":"b04e19248afb","t":"event","to":"still-open"}
+{"action":"disposition","by":"agent","id":"P-0053","run":"run-026","scope_hash":"9ae75c7c667e","t":"event","to":"still-open"}
+{"action":"disposition","by":"agent","id":"P-0054","run":"run-026","scope_hash":"9ae75c7c667e","t":"event","to":"still-open"}
+{"born":"run-026","claim":"A saved public Play may complete only after canonical inspection and deterministic presentation of the registry-returned Play and install URIs plus paste-ready X and LinkedIn copy; private Plays must not emit public share copy.","direction":"preserve-verified-publication-output","evidence":"On a matching readback, run scripts/bin/play-publication --stdin --json; Public includes returned URLs and paste-ready X/LinkedIn blocks, while Private omits them.","facets":{"activation":"verify-phase","authority":"advisory","lifecycle":"stale-on-scope-change","obligation":"disposition-required","scope":"content-hash"},"id":"P-0055","ns":"play","scope_hash":"d7bedcd66161","scope_ref":"references/publish/lifecycle.md","severity":"major","t":"prior","type":"conclusion"}
+{"action":"commit","ns":"play","run":"run-026","summary":["Checked against 4 priors:","  → 4 carried (same identities, current scope state)","New this run: 1"],"t":"run"}
+{"action":"disposition","by":"agent","id":"P-0044","run":"run-027","scope_hash":"4d8c71debc40","t":"event","to":"still-open"}
+{"action":"disposition","by":"agent","id":"P-0048","run":"run-027","scope_hash":"b04e19248afb","t":"event","to":"still-open"}
+{"action":"disposition","by":"agent","id":"P-0053","run":"run-027","scope_hash":"ce8c0f58afad","t":"event","to":"reaffirmed"}
+{"action":"disposition","by":"agent","id":"P-0054","run":"run-027","scope_hash":"ce8c0f58afad","t":"event","to":"reaffirmed"}
+{"action":"disposition","by":"agent","id":"P-0055","run":"run-027","scope_hash":"a4754649e957","t":"event","to":"reaffirmed"}
+{"action":"commit","ns":"play","run":"run-027","summary":["Checked against 5 priors:","  → 5 carried (same identities, current scope state)","New this run: 0"],"t":"run"}

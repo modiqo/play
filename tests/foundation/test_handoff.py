@@ -9,7 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.handoff import owner_for_modalities, prepare_handoff, verify_receipt
+from play.handoff import (
+    owner_for_modalities,
+    prepare_auth_repair_handoff,
+    prepare_handoff,
+    verify_auth_repair_receipt,
+    verify_receipt,
+)
 
 
 class HandoffTest(unittest.TestCase):
@@ -91,6 +97,69 @@ class HandoffTest(unittest.TestCase):
             "evidence_refs": ["response:guard-1"],
         }
 
+    def auth_repair_required_receipt(self, prepared: dict) -> dict:
+        packet = prepared["packet"]
+        return {
+            "schema": "play.handoff-receipt/v1",
+            "packet_sha256": prepared["packet_sha256"],
+            "run_id": packet["run_id"],
+            "state": packet["state"],
+            "action": packet["action"],
+            "owner": packet["owner"],
+            "executor": {"kind": "skill", "name": packet["owner"]},
+            "event": "auth_repair_required",
+            "payload": {
+                "auth_repair": {
+                    "source": "rote_auth_repair_required",
+                    "status": "required",
+                    "recoverable": True,
+                    "adapter_id": "crucible",
+                    "env_var": "CRUCIBLE_TOKEN",
+                    "classified_rung": "oauth_subject_rejected",
+                    "distinguishing_error": "OAuth subject is no longer accepted",
+                    "evidence_refs": ["response:auth-1"],
+                }
+            },
+            "evidence_refs": ["response:auth-1"],
+        }
+
+    def auth_repair_input(self, prepared: dict, auth_repair: dict) -> dict:
+        return {
+            "run_id": prepared["packet"]["run_id"],
+            "available_owners": ["rote-adapter-config"],
+            "auth_repair": auth_repair,
+            "original_packet": prepared["packet"],
+            "original_packet_sha256": prepared["packet_sha256"],
+            "evidence_contract": ["evidence_refs"],
+            "idempotency_key": "play-run-17:auth-repair:1",
+        }
+
+    def auth_repair_receipt(self, prepared: dict) -> dict:
+        packet = prepared["packet"]
+        requested = packet["auth_repair"]
+        return {
+            "schema": "play.auth-repair-receipt/v1",
+            "packet_sha256": prepared["packet_sha256"],
+            "run_id": packet["run_id"],
+            "state": packet["state"],
+            "action": packet["action"],
+            "owner": packet["owner"],
+            "executor": {"kind": "skill", "name": "rote-adapter-config"},
+            "event": "auth_repair_ready",
+            "payload": {
+                "auth_repair": {
+                    "source": "rote_auth_repair_result",
+                    "status": "repaired",
+                    "adapter_id": requested["adapter_id"],
+                    "env_var": requested["env_var"],
+                    "classified_rung": requested["classified_rung"],
+                    "repair_action": "reauth",
+                    "evidence_refs": ["auth:repair-1"],
+                }
+            },
+            "evidence_refs": ["auth:repair-1"],
+        }
+
     def test_owner_is_closed_over_modalities(self) -> None:
         self.assertEqual("rote-using-adapters", owner_for_modalities(["call"]))
         self.assertEqual("rote-shell", owner_for_modalities(["shell"]))
@@ -149,6 +218,162 @@ class HandoffTest(unittest.TestCase):
         result = verify_receipt({"packet": prepared["packet"], "receipt": receipt})
         self.assertFalse(result["ok"])
         self.assertIn("rote_confirmation_required", " ".join(result["reasons"]))
+
+    def test_recoverable_auth_failure_enters_typed_repair_contract(self) -> None:
+        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        receipt = self.auth_repair_required_receipt(prepared)
+        result = verify_receipt({"packet": prepared["packet"], "receipt": receipt})
+
+        self.assertTrue(result["ok"])
+        self.assertEqual("specialist_auth_repair_required", result["event"])
+        self.assertEqual("oauth_subject_rejected", result["auth_repair"]["classified_rung"])
+
+    def test_auth_repair_request_rejects_undeclared_credential_material(self) -> None:
+        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        receipt = self.auth_repair_required_receipt(prepared)
+        receipt["payload"]["auth_repair"]["token"] = "must-not-enter-play"
+
+        result = verify_receipt({"packet": prepared["packet"], "receipt": receipt})
+
+        self.assertFalse(result["ok"])
+        self.assertIn("undeclared fields", " ".join(result["reasons"]))
+
+    def test_auth_repair_request_is_rejected_for_non_call_routes(self) -> None:
+        payload = self.input(owner="rote-shell", available=["rote-shell"])
+        payload["modalities"] = ["shell"]
+        prepared = prepare_handoff(payload)
+        receipt = self.auth_repair_required_receipt(prepared)
+
+        result = verify_receipt({"packet": prepared["packet"], "receipt": receipt})
+
+        self.assertFalse(result["ok"])
+        self.assertIn("only for a CALL route", " ".join(result["reasons"]))
+
+    def test_auth_repair_handoff_is_closed_to_adapter_config(self) -> None:
+        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        receipt = self.auth_repair_required_receipt(prepared)
+        verified = verify_receipt({"packet": prepared["packet"], "receipt": receipt})
+        repair_input = self.auth_repair_input(prepared, verified["auth_repair"])
+
+        repair_input["available_owners"] = ["rote-using-adapters"]
+        unavailable = prepare_auth_repair_handoff(repair_input)
+        self.assertFalse(unavailable["ok"])
+        self.assertEqual("auth_repair_specialist_unavailable", unavailable["event"])
+
+        repair_input["available_owners"] = ["rote-adapter-config"]
+        repair = prepare_auth_repair_handoff(repair_input)
+        self.assertTrue(repair["ok"])
+        self.assertEqual("rote-adapter-config", repair["packet"]["owner"])
+        self.assertEqual(prepared["packet_sha256"], repair["packet"]["original_packet_sha256"])
+
+    def test_auth_repair_receipt_must_match_requested_shape(self) -> None:
+        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        required = verify_receipt(
+            {
+                "packet": prepared["packet"],
+                "receipt": self.auth_repair_required_receipt(prepared),
+            }
+        )
+        repair = prepare_auth_repair_handoff(
+            self.auth_repair_input(prepared, required["auth_repair"])
+        )
+        receipt = self.auth_repair_receipt(repair)
+        receipt["payload"]["auth_repair"]["env_var"] = "WRONG_TOKEN"
+
+        result = verify_auth_repair_receipt(
+            {"packet": repair["packet"], "receipt": receipt}
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("auth_repair_receipt_invalid", result["event"])
+        self.assertIn("env_var does not match", " ".join(result["reasons"]))
+
+    def test_auth_repair_receipt_rejects_undeclared_credential_material(self) -> None:
+        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        required = verify_receipt(
+            {
+                "packet": prepared["packet"],
+                "receipt": self.auth_repair_required_receipt(prepared),
+            }
+        )
+        repair = prepare_auth_repair_handoff(
+            self.auth_repair_input(prepared, required["auth_repair"])
+        )
+        receipt = self.auth_repair_receipt(repair)
+        receipt["payload"]["auth_repair"]["access_token"] = "must-not-enter-play"
+
+        result = verify_auth_repair_receipt(
+            {"packet": repair["packet"], "receipt": receipt}
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertIn("undeclared fields", " ".join(result["reasons"]))
+
+    def test_validated_repair_resumes_original_call_with_fresh_packet(self) -> None:
+        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        required = verify_receipt(
+            {
+                "packet": prepared["packet"],
+                "receipt": self.auth_repair_required_receipt(prepared),
+            }
+        )
+        repair = prepare_auth_repair_handoff(
+            self.auth_repair_input(prepared, required["auth_repair"])
+        )
+        repaired = verify_auth_repair_receipt(
+            {"packet": repair["packet"], "receipt": self.auth_repair_receipt(repair)}
+        )
+        self.assertTrue(repaired["ok"])
+
+        resume_input = self.input(available=["rote-using-adapters"])
+        resume_input["inputs"] = {"query": "must be replaced from original"}
+        resume_input["idempotency_key"] = "must-be-replaced"
+        resume_input["auth_repair_resume"] = {
+            "original_packet": prepared["packet"],
+            "original_packet_sha256": prepared["packet_sha256"],
+            "repair_packet": repair["packet"],
+            "repair_receipt": self.auth_repair_receipt(repair),
+            "repair_receipt_ref": repaired["receipt_ref"],
+            "auth_repair": repaired["auth_repair"],
+        }
+        resumed = prepare_handoff(resume_input)
+
+        self.assertTrue(resumed["ok"])
+        self.assertNotEqual(prepared["packet_sha256"], resumed["packet_sha256"])
+        self.assertEqual(prepared["packet"]["inputs"], resumed["packet"]["inputs"])
+        self.assertEqual(
+            prepared["packet"]["idempotency_key"], resumed["packet"]["idempotency_key"]
+        )
+        self.assertEqual(prepared["packet_sha256"], resumed["packet"]["resume"]["original_packet_sha256"])
+        self.assertEqual(repaired["receipt_ref"], resumed["packet"]["resume"]["repair_receipt_ref"])
+
+    def test_resume_rejects_an_unvalidated_repair_receipt_reference(self) -> None:
+        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        required = verify_receipt(
+            {
+                "packet": prepared["packet"],
+                "receipt": self.auth_repair_required_receipt(prepared),
+            }
+        )
+        repair = prepare_auth_repair_handoff(
+            self.auth_repair_input(prepared, required["auth_repair"])
+        )
+        repair_receipt = self.auth_repair_receipt(repair)
+        repaired = verify_auth_repair_receipt(
+            {"packet": repair["packet"], "receipt": repair_receipt}
+        )
+        resume_input = self.input(available=["rote-using-adapters"])
+        resume_input["auth_repair_resume"] = {
+            "original_packet": prepared["packet"],
+            "original_packet_sha256": prepared["packet_sha256"],
+            "repair_packet": repair["packet"],
+            "repair_receipt": repair_receipt,
+            "repair_receipt_ref": "fabricated-receipt-reference",
+            "auth_repair": repaired["auth_repair"],
+        }
+
+        with self.assertRaisesRegex(ValueError, "receipt reference does not match"):
+            prepare_handoff(resume_input)
 
     def test_raw_mcp_result_cannot_satisfy_receipt(self) -> None:
         prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))

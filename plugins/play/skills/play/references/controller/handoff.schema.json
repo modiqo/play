@@ -4,7 +4,9 @@
   "title": "Play specialist handoff packet or receipt",
   "oneOf": [
     {"$ref": "#/$defs/packet"},
-    {"$ref": "#/$defs/receipt"}
+    {"$ref": "#/$defs/receipt"},
+    {"$ref": "#/$defs/authRepairPacket"},
+    {"$ref": "#/$defs/authRepairReceipt"}
   ],
   "$defs": {
     "specialistOwner": {
@@ -72,17 +74,19 @@
         },
         "expected_events": {
           "type": "object",
-          "required": ["outcome_ready", "route_exhausted", "confirmation_required"],
+          "required": ["outcome_ready", "route_exhausted", "confirmation_required", "auth_repair_required"],
           "additionalProperties": false,
           "properties": {
             "outcome_ready": {"const": ["result_ref", "response_refs", "artifact_refs", "modalities_used", "effects", "route_provenance"]},
             "route_exhausted": {"const": ["reason", "evidence_refs"]},
-            "confirmation_required": {"const": ["effect_confirmation"]}
+            "confirmation_required": {"const": ["effect_confirmation"]},
+            "auth_repair_required": {"const": ["auth_repair"]}
           }
         },
         "effect_policy": {"type": "object"},
         "evidence_contract": {"$ref": "#/$defs/stringArray"},
-        "idempotency_key": {"type": "string", "minLength": 1}
+        "idempotency_key": {"type": "string", "minLength": 1},
+        "resume": {"$ref": "#/$defs/authRepairResume"}
       }
     },
     "receipt": {
@@ -105,12 +109,13 @@
             "name": {"$ref": "#/$defs/specialistOwner"}
           }
         },
-        "event": {"enum": ["outcome_ready", "route_exhausted", "confirmation_required"]},
+        "event": {"enum": ["outcome_ready", "route_exhausted", "confirmation_required", "auth_repair_required"]},
         "payload": {
           "type": "object",
           "properties": {
             "route_provenance": {"$ref": "#/$defs/routeProvenance"},
-            "effect_confirmation": {"$ref": "#/$defs/effectConfirmationRequired"}
+            "effect_confirmation": {"$ref": "#/$defs/effectConfirmationRequired"},
+            "auth_repair": {"$ref": "#/$defs/authRepairRequired"}
           }
         },
         "evidence_refs": {"$ref": "#/$defs/stringArray"}
@@ -128,6 +133,106 @@
         "confirm_token": {"type": "string", "minLength": 1},
         "workspace": {"type": "string", "minLength": 1},
         "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "authRepairRequired": {
+      "type": "object",
+      "required": ["source", "status", "recoverable", "adapter_id", "env_var", "classified_rung", "distinguishing_error", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {"const": "rote_auth_repair_required"},
+        "status": {"const": "required"},
+        "recoverable": {"const": true},
+        "adapter_id": {"type": "string", "minLength": 1},
+        "env_var": {"type": "string", "minLength": 1},
+        "classified_rung": {"type": "string", "minLength": 1},
+        "distinguishing_error": {"type": "string", "minLength": 1},
+        "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "authRepairResult": {
+      "type": "object",
+      "required": ["source", "status", "adapter_id", "env_var", "classified_rung", "repair_action", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {"const": "rote_auth_repair_result"},
+        "status": {"const": "repaired"},
+        "adapter_id": {"type": "string", "minLength": 1},
+        "env_var": {"type": "string", "minLength": 1},
+        "classified_rung": {"type": "string", "minLength": 1},
+        "repair_action": {"type": "string", "minLength": 1},
+        "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "authRepairResume": {
+      "type": "object",
+      "required": ["kind", "original_packet_sha256", "repair_receipt_ref", "adapter_id", "classified_rung"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const": "auth_repair"},
+        "original_packet_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "repair_receipt_ref": {"type": "string", "minLength": 1},
+        "adapter_id": {"type": "string", "minLength": 1},
+        "classified_rung": {"type": "string", "minLength": 1}
+      }
+    },
+    "authRepairPacket": {
+      "type": "object",
+      "required": ["schema", "run_id", "state", "action", "owner", "requested_outcome", "auth_repair", "original_packet", "original_packet_sha256", "expected_events", "evidence_contract", "idempotency_key"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"const": "play.auth-repair-handoff/v1"},
+        "run_id": {"type": "string", "minLength": 1},
+        "state": {"const": "auth_repair_execute"},
+        "action": {"const": "execute_auth_repair"},
+        "owner": {"const": "rote-adapter-config"},
+        "requested_outcome": {"type": "string", "minLength": 1},
+        "auth_repair": {"$ref": "#/$defs/authRepairRequired"},
+        "original_packet": {"$ref": "#/$defs/packet"},
+        "original_packet_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "expected_events": {
+          "type": "object",
+          "required": ["auth_repair_ready", "auth_repair_failed"],
+          "additionalProperties": false,
+          "properties": {
+            "auth_repair_ready": {"const": ["auth_repair"]},
+            "auth_repair_failed": {"const": ["reason", "evidence_refs"]}
+          }
+        },
+        "evidence_contract": {"$ref": "#/$defs/stringArray"},
+        "idempotency_key": {"type": "string", "minLength": 1}
+      }
+    },
+    "authRepairReceipt": {
+      "type": "object",
+      "required": ["schema", "packet_sha256", "run_id", "state", "action", "owner", "executor", "event", "payload", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"const": "play.auth-repair-receipt/v1"},
+        "packet_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "run_id": {"type": "string", "minLength": 1},
+        "state": {"const": "auth_repair_execute"},
+        "action": {"const": "execute_auth_repair"},
+        "owner": {"const": "rote-adapter-config"},
+        "executor": {
+          "type": "object",
+          "required": ["kind", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "skill"},
+            "name": {"const": "rote-adapter-config"}
+          }
+        },
+        "event": {"enum": ["auth_repair_ready", "auth_repair_failed"]},
+        "payload": {
+          "type": "object",
+          "properties": {
+            "auth_repair": {"$ref": "#/$defs/authRepairResult"},
+            "reason": {"type": "string", "minLength": 1},
+            "evidence_refs": {"$ref": "#/$defs/stringArray"}
+          }
+        },
+        "evidence_refs": {"$ref": "#/$defs/stringArray"}
       }
     },
     "routeProvenance": {
