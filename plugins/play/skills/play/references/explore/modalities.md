@@ -52,7 +52,27 @@ does not interpret the rung or handle credentials. A validated successful repair
 execution packet that preserves the original inputs and idempotency key; it does not itself satisfy
 the requested outcome.
 
+## DRIVE crystallization limit (current version)
+
+Typed browser steps can express navigation, waits, clicks, typing, and the canonical extract
+slices (`clickable|links|headings|forms|errors`) only. They cannot carry a raw page snapshot or
+arbitrary DOM/table cell content, and front-end accessibility trees are volatile across sites and
+releases. A browser outcome whose required facts are not representable as a canonical slice can
+therefore crystallize only as a legacy stepless body, which `rote play run` rejects
+(`play_run_eligible: false`) and which must not be published as a runnable Play without explicit
+user approval of that limitation.
+
+Warn the user before exploration begins — at the Explore offer, or at the DRIVE route milestone
+when consent was already implied — whenever the route includes DRIVE and the outcome depends on
+extracting page content beyond the canonical slices (a table, grid, or arbitrary text). Say, to
+the effect: browser extractions like this cannot be crystallized into a `rote play run`-eligible
+Play in this version; a successful result can be kept as a verified outcome or preserved as a
+local legacy Flow replayed with `rote deno run`. At `save_offer`, repeat the limit so
+Private/Public/Skip is decided with full knowledge, and treat `play_run_eligible: false` from any
+push or release surface as a publication gate.
+
 ## Preserve policy
+
 
 Keep write approvals, authentication limits, redaction rules, and human gates visible. Prefer a
 read-only probe before a write where the specialist contract supports one. Do not treat access to

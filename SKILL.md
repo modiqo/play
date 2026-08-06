@@ -248,7 +248,11 @@ Never pipe input to automate a selector. If `rote play run` fails, report its fa
 declared repair path without decomposing the command.
 
 For partial, uncertain, or absent matches, ask whether to Explore with rote or continue normally.
-Do not execute an exploration modality before approval. If the user continues normally, enter
+When the likely route includes DRIVE and the outcome depends on extracting page content beyond the
+canonical typed slices, include the DRIVE crystallization limit from
+[references/explore/modalities.md](references/explore/modalities.md) in the Explore offer, so the
+user knows before consenting that the result may not be preservable as a `rote play run`-eligible
+Play. Do not execute an exploration modality before approval. If the user continues normally, enter
 `exited`, suppress Play re-entry for the same task, and let the ordinary harness proceed.
 
 ## Respect policy

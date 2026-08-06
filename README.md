@@ -35,6 +35,133 @@ does, its parameters, adapters and credentials, what this machine must install o
 operations and writes, and any unknown effect semantics. Only the next structured choice can
 authorize the exact inspected version and displayed parameters.
 
+## The Play state machine
+
+Play is driven by one declarative machine, [`references/controller/machine.yaml`](references/controller/machine.yaml)
+(`play.machine/v1`). The controller re-reads it on every activation, executes exactly one declared
+prompt or entry action per state, and accepts only events declared by
+[`actions.yaml`](references/controller/actions.yaml) and [`prompts.yaml`](references/controller/prompts.yaml).
+It never jumps states from conversational intuition. Initial state: `qualify`. Terminals:
+`receipt`, `completed`, `exited`, `blocked`. Any action failure emits `action_blocked` and lands in
+`blocked` (or, for a failed run, the `repair_offer` gate).
+
+```mermaid
+stateDiagram-v2
+    direction TB
+    [*] --> qualify
+
+    %% ── Qualify routes each request to one trajectory ──
+    qualify --> search : outcome / search request
+    qualify --> use_inspect : exact play request
+    qualify --> awareness_collect : whats new
+    qualify --> creator_search : create a Play
+    qualify --> management_list : list orgs / plays
+    qualify --> management_offer : ambiguous list request
+    qualify --> birth_show : birth lookup
+    qualify --> exited : conversation / excluded
+
+    %% ── Search and adequacy ──
+    search --> search_present : search-only request
+    search --> classify : outcome request
+    search_present --> search_offer
+    search_offer --> use_inspect : result selected
+    search_offer --> completed : dismissed
+    classify --> use_inspect : full match
+    classify --> explore_offer : partial / uncertain / no match
+
+    %% ── Use (existing Play) ──
+    use_inspect --> use_offer : inspected
+    use_inspect --> completed : not runnable
+    use_inspect --> search : reference unresolved
+    use_offer --> use_run : approved
+    use_offer --> completed : declined
+    use_run --> use_verify : run ready
+    use_run --> repair_offer : drifted / failed
+    use_verify --> use_receipt : outcome verified
+    use_verify --> repair_offer : not verified
+    use_receipt --> receipt
+    repair_offer --> explore_prepare : repair approved
+    repair_offer --> exited : continue normally
+
+    %% ── Explore (consent, route, delegated execution) ──
+    explore_offer --> explore_prepare : explore approved
+    explore_offer --> exited : continue normally
+    explore_prepare --> explore_route
+    explore_route --> explore_handoff : route within policy
+    explore_route --> modality_offer : widening required
+    modality_offer --> explore_route : widening approved
+    modality_offer --> blocked : declined
+    explore_handoff --> explore_execute : typed packet ready
+    explore_execute --> explore_receipt : typed specialist receipt
+    explore_receipt --> explore_verify : outcome ready
+    explore_receipt --> explore_route : route exhausted, budget left
+    explore_receipt --> effect_offer : rote confirmation required
+    explore_receipt --> auth_repair_offer : auth repair required
+    effect_offer --> explore_handoff : guarded call approved
+    effect_offer --> blocked : declined
+    auth_repair_offer --> auth_repair_handoff : approved
+    auth_repair_offer --> blocked : declined
+    auth_repair_handoff --> auth_repair_execute
+    auth_repair_execute --> auth_repair_receipt
+    auth_repair_receipt --> explore_handoff : validated repair
+    auth_repair_receipt --> blocked : failed / invalid
+    explore_verify --> crystallize : outcome verified
+    explore_verify --> explore_route : not verified, budget left
+
+    %% ── Save lifecycle (crystallize → publish → birth → index) ──
+    crystallize --> save_offer : candidate ready
+    crystallize --> completed : not reusable
+    save_offer --> author_release : Private or Public
+    save_offer --> completed : Skip
+    author_release --> birth_capture : flow released
+    birth_capture --> private_org : private
+    birth_capture --> public_owner : public
+    private_org --> private_publish
+    public_owner --> public_publish : owner resolved
+    public_owner --> public_owner_offer : owner ambiguous
+    public_owner_offer --> public_publish : owner selected
+    public_owner_offer --> blocked : declined
+    private_publish --> birth_bind : published private
+    public_publish --> birth_bind : published public
+    birth_bind --> index
+    index --> saved_inspect
+    saved_inspect --> completed : readback matches
+
+    %% ── Awareness, creator, management, birth ──
+    awareness_collect --> awareness_present : new items
+    awareness_collect --> completed : unchanged
+    awareness_present --> awareness_offer
+    awareness_offer --> use_inspect : play selected
+    awareness_offer --> awareness_need : search
+    awareness_offer --> creator_need : create
+    awareness_offer --> completed : done
+    awareness_need --> search
+    creator_need --> creator_search
+    creator_search --> creator_classify
+    creator_classify --> creator_offer : related Play exists
+    creator_classify --> explore_prepare : no match
+    creator_offer --> use_inspect : use existing
+    creator_offer --> explore_prepare : adapt / create distinct
+    management_offer --> management_list
+    management_list --> management_present
+    management_present --> completed
+    birth_show --> completed
+
+    receipt --> [*]
+    completed --> [*]
+    exited --> [*]
+    blocked --> [*]
+```
+
+State ownership is explicit: `play` owns prompts, evaluators, and verification; `rote-specialist`
+states (`explore_execute`, `crystallize`, `author_release`, publication, `management_list`) are
+delegated through typed `play.handoff/v1` packets and validated `play.handoff-receipt/v1` receipts;
+`flow-runtime` owns `use_run` and `saved_inspect` via first-class `rote play run`/`inspect`.
+Guards (for example `search_is_complete`, `route_within_policy`, `exploration_budget_remaining`,
+`exact_published_version_is_indexed`) are declared in `actions.yaml`, and
+`tests/controller/test_machine_conformance.py` fails when the machine, actions, prompts, or the
+thinking-orbs presentation mapping drift.
+
 ## Install from a marketplace
 
 Play is packaged as one self-contained plugin under `plugins/play`. The package includes the skill,
@@ -270,6 +397,17 @@ CALL routes also converge on an authenticated Rote adapter. Play reuses an insta
 Rote to detect OpenAPI, GraphQL, or MCP and create the appropriate adapter, then completes Rote's auth
 cycle before execution. The receipt records adapter, type, creation, and auth provenance, so a raw MCP
 call cannot masquerade as a delegated result.
+
+DRIVE routes carry a current-version crystallization limit that Play discloses **before**
+exploration begins. Typed browser steps express navigation, waits, clicks, typing, and the
+canonical extract slices only; they cannot carry a raw page snapshot or arbitrary DOM/table
+content, and front-end accessibility trees are volatile across sites and releases. A browser
+outcome whose required facts exceed the canonical slices can crystallize only as a legacy stepless
+body, which `rote play run` rejects (`play_run_eligible: false`). Play therefore warns at the
+Explore offer (or the DRIVE route milestone), repeats the limit at the save offer, and treats
+`play_run_eligible: false` as a publication gate requiring explicit user approval. See the
+[DRIVE crystallization limit](references/explore/modalities.md) guidance and the
+[RCA that motivated it](docs/rca/2026-08-05-drive-crystallization-not-play-run-eligible.md).
 
 After release, Play captures a private birth certificate from the exploration evidence. After
 Private or Public publication, it binds that certificate to the minted exact reference, then indexes
