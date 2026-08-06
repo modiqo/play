@@ -82,7 +82,8 @@ def validate_bundle(root: Path) -> ValidationSummary:
     states = machine.get("states", {})
     actions = actions_doc.get("actions", {})
     prompts = prompts_doc.get("prompts", {})
-    initial = machine.get("initial")
+    initial_value = machine.get("initial")
+    initial = initial_value if isinstance(initial_value, str) else ""
     terminals = set(machine.get("terminal", []))
     owners = set(actions_doc.get("owners", []))
     effects = set(actions_doc.get("effects", []))
@@ -121,7 +122,8 @@ def validate_bundle(root: Path) -> ValidationSummary:
         },
         "every exploration route must map to its exact Rote specialist",
     )
-    check(initial in states, f"initial state {initial!r} is missing")
+    check(isinstance(initial_value, str), "initial state must be a string")
+    check(initial in states, f"initial state {initial_value!r} is missing")
     check(bool(terminals), "at least one terminal state is required")
     for terminal in terminals:
         check(terminal in states, f"terminal state {terminal!r} is missing")
@@ -304,6 +306,7 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "birth_bind": ("index", "saved_inspect", "saved_present"),
         "index": ("saved_inspect", "saved_present"),
         "saved_inspect": ("saved_present",),
+        "use_output": ("use_verify", "use_receipt"),
     }
     for dominator, governed in rules.items():
         for state in governed:
@@ -318,8 +321,10 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(states.get("use_inspect", {}).get("entry", {}).get("action") == "inspect_registry_play", "Use must start with reusable Play inspection")
     check(states.get("use_offer", {}).get("prompt") == "approve_play_run", "Use must ask for post-inspection execution approval")
     check(states.get("use_run", {}).get("entry", {}).get("action") == "run_registry_play", "Use mode must be owned by run_registry_play")
+    check(states.get("use_output", {}).get("entry", {}).get("action") == "format_run_output", "Use output must be normalized by the deterministic formatter")
     check(actions.get("inspect_registry_play", {}).get("command") == "scripts/bin/play-inspect <match.reference> --json", "Use inspection must invoke the reusable first-class wrapper")
     check(actions.get("run_registry_play", {}).get("command") == "rote play run <inspection.exact_reference> <approved-parameters> --yes", "Use mode must invoke the approved exact Play")
+    check(actions.get("format_run_output", {}).get("command") == "scripts/bin/play-run-output --stdin --json", "Use output must invoke the reusable detailed formatter")
     check(actions.get("inspect_saved_play", {}).get("command") == "rote play inspect <publication.canonical_reference> --json", "saved Play readback must invoke rote play inspect --json")
     check(actions.get("search_authorized_plays", {}).get("command") == "scripts/bin/play-search <request.intent> --json", "Play discovery must invoke the unified local and registry search")
     check(_target(states, "qualify", "play_awareness_request") == "awareness_collect", "an awareness request must enter the digest path")
@@ -377,6 +382,10 @@ def validate_bundle(root: Path) -> ValidationSummary:
         check(forbidden not in states, f"{forbidden} must stay inside the rote play run controller")
     check(predecessors["use_run"] == {"use_offer"}, "execution may follow only post-inspection approval")
     check("use_inspect" in dominators["use_run"], "inspection must dominate execution")
+    check(_target(states, "use_run", "play_run_ready") == "use_output", "successful execution must enter detailed output formatting")
+    check(_target(states, "use_output", "detailed_output_ready") == "use_verify", "only detailed output may enter verification")
+    check(_target(states, "use_output", "action_blocked") == "repair_offer", "incomplete output must enter repair instead of verification")
+    check(predecessors["use_verify"] == {"use_output"}, "Use verification may follow only complete detailed output")
     check(
         predecessors["explore_execute"] == {"explore_handoff"},
         "Explore execution may follow only a prepared specialist handoff",
@@ -408,6 +417,8 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "resolution",
         "modality_policy",
         "judge_policy",
+        "output_policy",
+        "output",
         "handoff",
         "auth_repair",
         "last_event",

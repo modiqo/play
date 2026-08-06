@@ -232,6 +232,38 @@ class MachineConformanceTest(unittest.TestCase):
         }
         self.assertEqual({"use_offer"}, incoming)
 
+    def test_detailed_output_dominates_use_verification_and_receipt(self) -> None:
+        self.assertEqual(
+            "use_output",
+            MACHINE["states"]["use_run"]["on"]["play_run_ready"][0]["target"],
+        )
+        self.assertEqual(
+            "use_verify",
+            MACHINE["states"]["use_output"]["on"]["detailed_output_ready"][0]["target"],
+        )
+        self.assertEqual(
+            "repair_offer",
+            MACHINE["states"]["use_output"]["on"]["action_blocked"][0]["target"],
+        )
+        incoming = {
+            state_name
+            for state_name, state in MACHINE["states"].items()
+            for branches in state.get("on", {}).values()
+            for branch in branches
+            if branch["target"] == "use_verify"
+        }
+        self.assertEqual({"use_output"}, incoming)
+        self.assertEqual(
+            "scripts/bin/play-run-output --stdin --json",
+            ACTIONS["format_run_output"]["command"],
+        )
+
+    def test_run_output_policy_forbids_summary_results(self) -> None:
+        policy = " ".join(ACTIONS["run_registry_play"]["command_policy"])
+        self.assertIn("Never request summary output", policy)
+        self.assertIn("compact Play summary cannot prove full detail", policy)
+        self.assertEqual("detailed", CONTEXT["$defs"]["outputPolicy"]["properties"]["mode"]["const"])
+
     def test_explore_requires_a_callable_rote_specialist_and_typed_receipt(self) -> None:
         specialists = [
             "rote-using-adapters",

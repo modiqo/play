@@ -37,6 +37,7 @@
     "use_inspect": {"orb": "connecting", "label": "Inspecting the Play and its dependencies…"},
     "use_offer": {"orb": "listening", "label": "Waiting for run approval…"},
     "use_run": {"orb": "connecting", "label": "Running the approved Play…"},
+    "use_output": {"orb": "solving", "label": "Formatting the complete Play result…"},
     "use_verify": {"orb": "solving", "label": "Verifying the Play outcome…"},
     "use_receipt": {"orb": "working", "label": "Building the verified receipt…"},
     "repair_offer": {"orb": "listening", "label": "Waiting for a repair choice…"},

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -14,6 +15,7 @@ from play.controller import (
     ControllerRuntimeError,
     EventId,
     GuardId,
+    StateId,
 )
 
 
@@ -27,7 +29,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("qualify", self.runtime.bundle.initial)
-        self.assertEqual(53, len(self.runtime.bundle.states))
+        self.assertEqual(54, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -117,6 +119,59 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         self.assertEqual("blocked", result.cursor.state)
         self.assertEqual("record_incomplete_search", result.transition.mutation)
+
+    def test_complete_run_output_is_required_before_verification(self) -> None:
+        run_cursor = replace(self.cursor(), state=StateId("use_run"))
+        output_cursor = self.runtime.step(
+            run_cursor,
+            ControllerEvent(
+                id=EventId("play_run_ready"),
+                payload={
+                    "play": {"version": "1.2.0"},
+                    "resolution": {"local_state": "exact_ready", "pull_performed": False},
+                    "result_ref": "result:1",
+                    "response_refs": ["response:1"],
+                    "artifact_refs": [],
+                    "effects": ["read"],
+                    "output": {
+                        "mode": "detailed",
+                        "detail": "full",
+                        "source": "rote_human_presentation",
+                        "format": "markdown",
+                        "primary": "# Result",
+                        "manifest": {
+                            "response_refs": ["response:1"],
+                            "artifact_refs": [],
+                            "effects": ["read"],
+                        },
+                        "truncated": False,
+                        "full_output_ref": None,
+                    },
+                },
+                guards={},
+            ),
+        ).cursor
+        self.assertEqual("use_output", output_cursor.state)
+
+        verify_cursor = self.runtime.step(
+            output_cursor,
+            ControllerEvent(
+                id=EventId("detailed_output_ready"),
+                payload={
+                    "output": {
+                        "presentation_markdown": "# Play result\n\n# Result",
+                        "presentation_sha256": "a" * 64,
+                        "inline_bytes": 23,
+                        "primary_bytes": 8,
+                        "format_ns": 100,
+                        "truncated": False,
+                        "full_output_ref": None,
+                    }
+                },
+                guards={},
+            ),
+        ).cursor
+        self.assertEqual("use_verify", verify_cursor.state)
 
     def test_rejects_unknown_event(self) -> None:
         with self.assertRaisesRegex(ControllerRuntimeError, "does not accept event"):

@@ -24,6 +24,8 @@
     "modality_policy",
     "judge_policy",
     "effect_policy",
+    "output_policy",
+    "output",
     "execution",
     "handoff",
     "auth_repair",
@@ -58,6 +60,11 @@
     "modality_policy": {"$ref": "#/$defs/modalityPolicy"},
     "judge_policy": {"$ref": "#/$defs/judgePolicy"},
     "effect_policy": {"$ref": "#/$defs/effectPolicy"},
+    "output_policy": {
+      "$ref": "#/$defs/outputPolicy",
+      "default": {"mode": "detailed", "preferred_presentation": "human", "max_inline_bytes": 200000, "overflow": "artifact"}
+    },
+    "output": {"$ref": "#/$defs/runOutput"},
     "execution": {"$ref": "#/$defs/execution"},
     "handoff": {"$ref": "#/$defs/handoff"},
     "auth_repair": {"$ref": "#/$defs/authRepair"},
@@ -182,6 +189,47 @@
         "owner": {"$ref": "#/$defs/nullableString"},
         "modalities": {"$ref": "#/$defs/stringArray"},
         "effects": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "outputPolicy": {
+      "type": "object",
+      "required": ["mode", "preferred_presentation", "max_inline_bytes", "overflow"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"const": "detailed"},
+        "preferred_presentation": {"enum": ["human", "json"]},
+        "max_inline_bytes": {"type": "integer", "minimum": 1},
+        "overflow": {"const": "artifact"}
+      }
+    },
+    "runOutput": {
+      "type": "object",
+      "required": ["mode", "detail", "source", "format", "primary", "manifest", "truncated", "full_output_ref", "presentation_markdown", "presentation_sha256", "inline_bytes", "primary_bytes", "format_ns"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"type": ["string", "null"], "enum": ["detailed", null]},
+        "detail": {"type": ["string", "null"], "enum": ["full", "summary", null]},
+        "source": {"type": ["string", "null"], "enum": ["rote_human_presentation", "rote_json_presentation", "structured_responses", "rote_compact_summary", null]},
+        "format": {"type": ["string", "null"], "enum": ["markdown", "json", "text", null]},
+        "primary": {},
+        "manifest": {"$ref": "#/$defs/outputManifest"},
+        "truncated": {"type": "boolean"},
+        "full_output_ref": {"$ref": "#/$defs/nullableString"},
+        "presentation_markdown": {"$ref": "#/$defs/nullableString"},
+        "presentation_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+        "inline_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "primary_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "format_ns": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "outputManifest": {
+      "type": "object",
+      "required": ["response_refs", "artifact_refs", "effects"],
+      "additionalProperties": false,
+      "properties": {
+        "response_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "artifact_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "effects": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
       }
     },
     "handoff": {

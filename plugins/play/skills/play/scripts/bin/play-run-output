@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Validate and render a complete detailed Play result from JSON stdin."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts" / "lib"))
+
+from play.render import json_text
+from play.run_output import RunOutputError, build_detailed_output
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--stdin", action="store_true", required=True)
+    parser.add_argument("--json", action="store_true", dest="as_json")
+    args = parser.parse_args()
+    try:
+        payload = json.load(sys.stdin)
+        if not isinstance(payload, dict):
+            raise RunOutputError("stdin must contain a JSON object")
+        started_ns = time.perf_counter_ns()
+        result = build_detailed_output(payload)
+        result["format_ns"] = time.perf_counter_ns() - started_ns
+    except (json.JSONDecodeError, RunOutputError) as error:
+        parser.exit(1, f"play-run-output: {error}\n")
+    print(json_text(result) if args.as_json else result["presentation_markdown"])
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

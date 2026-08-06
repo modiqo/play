@@ -72,6 +72,8 @@ mutations:
   - approve_inspected_run
   - record_run_dismissal
   - record_controller_run
+  - record_formatted_output
+  - record_incomplete_output
   - record_verification
   - attach_receipt
   - approve_repair_explore
@@ -263,16 +265,33 @@ actions:
     kind: deterministic
     owner: flow-runtime
     effect: mixed
-    input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, request.original, request.parameters, effect_policy]
+    input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, request.original, request.parameters, effect_policy, output_policy]
     command: rote play run <inspection.exact_reference> <approved-parameters> --yes
     command_policy:
       - Use --yes only after approve_play_run returns play_run_approved for this exact inspection digest, reference, and displayed parameters.
       - A run command in the original request, an Awareness selection, or a search selection never substitutes for post-inspection approval.
       - If the inspection changes or parameters change, discard approval and return to use_inspect.
       - Never replace this command with registry pull plus flow run, even when the Play is already local.
+      - Never request summary output. Preserve the complete primary payload, response and artifact references, effects, and any full-output reference returned by Rote.
+      - Prefer Rote's human presentation for steps-with-presentation Plays; accept JSON or structured responses only when they retain the full primary result.
+      - A compact Play summary cannot prove full detail and must not emit play_run_ready.
     events:
-      play_run_ready: [play.version, resolution.local_state, resolution.pull_performed, result_ref, response_refs, artifact_refs, effects]
+      play_run_ready: [play.version, resolution.local_state, resolution.pull_performed, result_ref, response_refs, artifact_refs, effects, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
       play_drifted: [reason, evidence_refs]
+
+  format_run_output:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [match.reference, play.version, output_policy.max_inline_bytes, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
+    command: scripts/bin/play-run-output --stdin --json
+    command_policy:
+      - Preserve Markdown exactly, render flat JSON records as a Markdown table, and pretty-print other JSON or text without summarizing it.
+      - Reject summary-only or compact-summary sources; verification cannot begin without a complete primary result.
+      - If inline output exceeds output_policy.max_inline_bytes, require a full_output_ref and render a bounded preview that links to the complete result.
+      - Record formatting latency without including it in the presentation digest.
+    events:
+      detailed_output_ready: [output.presentation_markdown, output.presentation_sha256, output.inline_bytes, output.primary_bytes, output.format_ns, output.truncated, output.full_output_ref]
 
   verify_outcome:
     kind: evaluator
@@ -292,9 +311,9 @@ actions:
     kind: deterministic
     owner: play
     effect: none
-    input_required: [match.reference, evidence.verification]
+    input_required: [match.reference, evidence.verification, output.presentation_markdown, output.presentation_sha256]
     events:
-      receipt_ready: [receipt_ref]
+      receipt_ready: [receipt_ref, output.presentation_markdown, output.presentation_sha256]
 
   prepare_exploration:
     kind: deterministic

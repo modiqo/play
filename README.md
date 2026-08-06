@@ -75,8 +75,10 @@ stateDiagram-v2
     use_inspect --> search : reference unresolved
     use_offer --> use_run : approved
     use_offer --> completed : declined
-    use_run --> use_verify : run ready
+    use_run --> use_output : run ready
     use_run --> repair_offer : drifted / failed
+    use_output --> use_verify : detailed output ready
+    use_output --> repair_offer : incomplete / summary only
     use_verify --> use_receipt : outcome verified
     use_verify --> repair_offer : not verified
     use_receipt --> receipt
@@ -153,7 +155,7 @@ stateDiagram-v2
     blocked --> [*]
 ```
 
-State ownership is explicit: `play` owns prompts, evaluators, and verification; `rote-specialist`
+State ownership is explicit: `play` owns prompts, output formatting, evaluators, and verification; `rote-specialist`
 states (`explore_execute`, `crystallize`, `author_release`, publication, `management_list`) are
 delegated through typed `play.handoff/v1` packets and validated `play.handoff-receipt/v1` receipts;
 `flow-runtime` owns `use_run` and `saved_inspect` via first-class `rote play run`/`inspect`.
@@ -198,14 +200,16 @@ I/O, and mutation application. Every JSON result includes the exact bundle SHA s
 different controller versions cannot be mixed accidentally.
 
 Baseline recorded on 2026-08-06 on an Apple Silicon Mac with Python 3.14.5,
-`python-statemachine` 3.2.0, and 1,000 iterations:
+`python-statemachine` 3.2.0, bundle
+`55e50139238544f83993abb4e15df360d1e274b4bafaac52612cea9f05201062`, and 10,000
+iterations:
 
 | Measurement | Latency |
 |---|---:|
-| Fresh-process bundle validation and compilation | 93.7 ms |
-| Warm transition, median | 0.427 ms |
-| Warm transition, p95 | 0.651 ms |
-| Warm transition, maximum | 4.70 ms |
+| Fresh-process bundle validation and compilation | 97.2 ms |
+| Warm transition, median | 0.433 ms |
+| Warm transition, p95 | 0.671 ms |
+| Warm transition, maximum | 5.76 ms |
 
 Treat these numbers as a development baseline, not a cross-machine guarantee. Future performance
 changes should record the command, iteration count, bundle SHA, Python version, and machine class.
@@ -561,6 +565,7 @@ For diagnostics or integrations, the same reusable building blocks are available
 ```bash
 scripts/bin/play-search recent emails --json
 scripts/bin/play-inspect warsaw-rust/posthog-dau-report@0.0.3 --json
+scripts/bin/play-run-output --stdin --json
 scripts/bin/play-inventory --json
 scripts/bin/play-handoff prepare --stdin --json
 scripts/bin/play-handoff verify --stdin --json
@@ -577,6 +582,30 @@ and Kimi `askquestion`, or a numbered Markdown fallback. `play-inspect` normaliz
 controller performs exactly one `rote play run <exact-reference> <approved-parameters> --yes`.
 It uses `rote flow` or `rote registry flow` only where `rote play` has no equivalent capability and
 never decomposes a failed Play operation into a pull-plus-Flow-run fallback.
+
+### Detailed run output
+
+Successful Use-mode execution passes through `use_output` before verification. The run contract
+requires detailed mode, full detail, a complete primary payload, and a manifest of response
+references, artifact references, and effects. `scripts/bin/play-run-output` then applies stable
+presentation rules:
+
+- Human Markdown is preserved rather than summarized.
+- Flat JSON records become a Markdown table; other JSON is sorted and pretty-printed.
+- Plain text is kept verbatim in a fenced block.
+- Run metadata follows the primary result in a separate **Run details** section.
+- Inline overflow is allowed only when the complete output has an artifact reference; the displayed
+  preview points to that preserved result.
+
+Compact or summary-only output cannot reach `use_verify`, `use_receipt`, or the terminal receipt.
+It enters the declared repair gate instead. This matters for legacy Rote DAGs: if the runtime cannot
+provide a human/JSON presentation or complete structured responses, Play reports the output as
+incomplete instead of presenting the compact run summary as the user's result.
+
+Every formatted result includes `format_ns`, `primary_bytes`, `inline_bytes`, and a stable
+`presentation_sha256`. For example, formatting a two-row JSON result into a 294-byte Markdown
+presentation took 55,375 ns (0.055 ms) on the baseline machine. This is an observed per-run value,
+not a cross-machine performance guarantee.
 
 After a new Play is released, Play captures its owner-private birth object. After publication, it
 binds the object to the registry content hash, indexes the Play, reads the canonical registry entry

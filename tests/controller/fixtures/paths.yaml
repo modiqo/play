@@ -37,7 +37,8 @@ cases:
       - {state: qualify, event: exact_play_request, target: use_inspect}
       - {state: use_inspect, event: play_inspected, target: use_offer}
       - {state: use_offer, event: play_run_approved, target: use_run}
-      - {state: use_run, event: play_run_ready, target: use_verify}
+      - {state: use_run, event: play_run_ready, target: use_output}
+      - {state: use_output, event: detailed_output_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
     terminal: receipt
@@ -63,7 +64,8 @@ cases:
         target: use_inspect
       - {state: use_inspect, event: play_inspected, target: use_offer}
       - {state: use_offer, event: play_run_approved, target: use_run}
-      - {state: use_run, event: play_run_ready, target: use_verify}
+      - {state: use_run, event: play_run_ready, target: use_output}
+      - {state: use_output, event: detailed_output_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
     terminal: receipt
@@ -363,6 +365,13 @@ cases:
       - {state: repair_offer, event: ordinary_execution_selected, target: exited}
     terminal: exited
 
+  - name: incomplete run output cannot reach verification
+    steps:
+      - {state: use_output, event: action_blocked, target: repair_offer}
+      - {state: repair_offer, event: ordinary_execution_selected, target: exited}
+    terminal: exited
+    excludes: [use_verify, use_receipt, receipt]
+
   - name: drift can enter consented repair exploration
     steps:
       - {state: use_run, event: play_drifted, target: repair_offer}
@@ -381,7 +390,8 @@ cases:
       - {state: awareness_offer, event: awareness_play_selected, target: use_inspect}
       - {state: use_inspect, event: play_inspected, target: use_offer}
       - {state: use_offer, event: play_run_approved, target: use_run}
-      - {state: use_run, event: play_run_ready, target: use_verify}
+      - {state: use_run, event: play_run_ready, target: use_output}
+      - {state: use_output, event: detailed_output_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
     terminal: receipt

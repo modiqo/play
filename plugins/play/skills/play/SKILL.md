@@ -27,7 +27,9 @@ invocable so declared handoffs can chain without requiring another user command.
    alter the activation profile without the user's permission.
 2. Read [references/controller/machine.yaml](references/controller/machine.yaml) on every activation.
 3. Create a logical `play.context/v1` record in harness-owned thread/session state for a new task,
-   or recover the existing logical record by task key or run ID.
+   or recover the existing logical record by task key or run ID. Initialize `output_policy` to
+   detailed mode, human presentation, a 200,000-byte inline limit, and artifact overflow; initialize
+   the `output` record with null result fields, empty manifest lists, and `truncated: false`.
 4. Validate the context's machine version, current state, transition sequence, and pending action.
 5. Execute exactly one declared prompt or entry action for the current state.
 6. Accept only an event declared by the current state and validated by
@@ -73,8 +75,10 @@ prose when its declared return event is absent or invalid.
   its verified receipt. During Explore, keep result-dependent commands separate when correctness
   requires it, but do not narrate each command.
 - For non-interactive rote execution, suppress optional CLI chatter when safe with
-  `ROTE_FLOW_PROGRESS=0` and `ROTE_NO_HINTS=1`, and prefer summary or structured result modes.
-  Never suppress primary payloads, errors, approval gates, effect disclosures, or receipts.
+  `ROTE_FLOW_PROGRESS=0` and `ROTE_NO_HINTS=1`. Never request summary output for a Play run.
+  Prefer Rote's human presentation when available; otherwise accept JSON or structured responses
+  only when they preserve the complete primary payload. Never suppress primary payloads, errors,
+  approval gates, effect disclosures, full-output references, or receipts.
 - Tool-call rendering is owned by the host UI, not this skill. Do not claim the skill can hide tool
   calls. A single visible execution requires a host-level Play runtime/tool that owns the machine;
   do not fake it by collapsing result-dependent or approval-gated actions into an unsafe shell
@@ -102,6 +106,10 @@ prose when its declared return event is absent or invalid.
 - Immediately before the single approved `rote play run`, present `use_run` once. Rote owns any
   progress it renders while that blocking command executes. Resume Play presentation only after the
   command returns and the machine enters its next milestone.
+- After the run, pass its complete payload through `use_output` before verification. Render the
+  detailed result first with stable Markdown formatting, then its response references, artifact
+  references, effects, and receipt. A compact summary is an incomplete result, not a successful
+  terminal presentation.
 - Keep messages warm and brief, but never let whimsy obscure approval scope, writes, blockers,
   receipts, or the user's actual result. User-supplied tone and accessibility preferences win.
 
