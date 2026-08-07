@@ -107,6 +107,66 @@ class ElicitationTest(unittest.TestCase):
                 },
             )
 
+    def test_dynamic_public_owner_choices_bind_typed_payloads(self) -> None:
+        question = parse_question(
+            "select_public_owner",
+            {
+                "question": "{publication.owner_summary} Which namespace should own it?",
+                "template_fields": ["publication.owner_summary"],
+                "selection": "single",
+                "choices_from": {
+                    "context": "publication.owner_choices",
+                    "id_field": "id",
+                    "label_field": "display_name",
+                    "description_field": "ownership_description",
+                    "value_source_field": "owner",
+                    "value_field": "publication.owner",
+                    "recommended_field": "recommended",
+                    "event": "public_owner_selected",
+                },
+                "choices": [
+                    {
+                        "id": "cancel",
+                        "label": "Cancel",
+                        "description": "Stop publication.",
+                        "event": "public_owner_declined",
+                    }
+                ],
+            },
+        )
+        context = {
+            "publication": {
+                "owner_summary": "Your profile handle `chetan` is already claimed.",
+                "owner_choices": [
+                    {
+                        "id": "profile:chetan",
+                        "owner": "chetan",
+                        "display_name": "@chetan (profile handle)",
+                        "ownership_description": "Use the claimed handle.",
+                        "recommended": True,
+                    },
+                    {
+                        "id": "org:chetanconikee",
+                        "owner": "chetanconikee",
+                        "display_name": "Chetan (chetanconikee)",
+                        "ownership_description": "Use the authorized org.",
+                        "recommended": False,
+                    },
+                ],
+            }
+        }
+        payload = native_payload(question, "codex", context)
+        self.assertEqual(
+            ["profile:chetan", "org:chetanconikee", "cancel"],
+            [choice["id"] for choice in payload["choices"]],
+        )
+        self.assertEqual(
+            {"publication.owner": "chetan"}, payload["choices"][0]["payload"]
+        )
+        self.assertTrue(payload["choices"][0]["recommended"])
+        self.assertIn("already claimed", payload["question"])
+        self.assertIn("Chetan (chetanconikee)", markdown_fallback(question, context))
+
 
 if __name__ == "__main__":
     unittest.main()

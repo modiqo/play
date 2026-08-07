@@ -399,6 +399,16 @@ def _resolve_guard_values(event: ControllerEvent) -> dict[GuardId, bool]:
     values[GuardId("public_publication_matches_captured_birth")] = (
         visibility == "public" and matching_birth
     )
+    owner_resolution = _path_value(event.payload, "publication.owner_resolution")
+    selected_owner = _path_value(event.payload, "publication.owner")
+    values[GuardId("public_owner_is_resolved")] = (
+        owner_resolution == "resolved"
+        and isinstance(selected_owner, str)
+        and bool(selected_owner)
+    )
+    values[GuardId("public_owner_choice_is_required")] = (
+        owner_resolution == "choice_required"
+    )
     return values
 
 

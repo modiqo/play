@@ -246,7 +246,15 @@ def validate_bundle(root: Path) -> ValidationSummary:
                     presented.add(choice["event"])
         source = prompt.get("choices_from")
         if isinstance(source, dict):
-            for field in ("context", "label_field", "description_field", "value_field", "event"):
+            for field in (
+                "context",
+                "id_field",
+                "label_field",
+                "description_field",
+                "value_source_field",
+                "value_field",
+                "event",
+            ):
                 check(isinstance(source.get(field), str) and bool(source.get(field)),
                       f"prompt {name}: choices_from needs {field}")
             if source.get("event"):
@@ -319,8 +327,9 @@ def validate_bundle(root: Path) -> ValidationSummary:
         ),
         "auth_repair_handoff": ("auth_repair_execute", "auth_repair_receipt"),
         "auth_repair_execute": ("auth_repair_receipt",),
-        "crystallize": ("save_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
-        "save_offer": ("author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
+        "crystallize": ("save_prepare", "save_offer", "public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
+        "save_prepare": ("save_offer", "public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
+        "save_offer": ("public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
         "author_release": ("birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
         "birth_capture": ("private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
         "birth_bind": ("index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
@@ -561,6 +570,37 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "a saved Play may complete only after its verified birth certificate is presented",
     )
     check(
+        _target(states, "crystallize", "candidate_ready") == "save_prepare"
+        and predecessors["save_prepare"] == {"crystallize"}
+        and predecessors["save_offer"] == {"save_prepare"},
+        "verified candidates must resolve public namespaces before the save choice",
+    )
+    check(
+        _target(states, "save_prepare", "public_owner_context_ready") == "save_offer"
+        and _target(states, "save_prepare", "public_owner_context_unavailable")
+        == "save_offer"
+        and actions.get("resolve_public_owner", {}).get("command")
+        == "scripts/bin/play-public-owner --json",
+        "pre-save owner resolution must use the typed read-only namespace probe",
+    )
+    check(
+        _target(states, "save_offer", "save_public") == "author_release"
+        and states.get("save_offer", {}).get("on", {}).get("save_public", [{}])[0].get("guard")
+        == "public_owner_is_resolved"
+        and _target(states, "save_offer", "save_public", 1) == "public_owner_offer"
+        and states.get("save_offer", {}).get("on", {}).get("save_public", [{}, {}])[1].get("guard")
+        == "public_owner_choice_is_required"
+        and _target(states, "save_offer", "save_public", 2) == "blocked"
+        and _target(states, "public_owner_offer", "public_owner_selected")
+        == "author_release",
+        "Public must bind a resolved or selected namespace before release",
+    )
+    check(
+        _target(states, "birth_capture", "birth_captured", 1) == "public_publish"
+        and "public_owner" not in states,
+        "post-release birth capture must not re-run public owner resolution",
+    )
+    check(
         _target(states, "author_release", "flow_released") == "birth_capture"
         and states.get("author_release", {}).get("on", {}).get("flow_released", [{}])[0].get("guard")
         == "released_candidate_is_unpublished"
@@ -629,6 +669,23 @@ def validate_bundle(root: Path) -> ValidationSummary:
         == ["unknown", "unpublished", "published"],
         "candidate context must track the pre-publication lifecycle boundary",
     )
+    publication_schema = context_schema.get("$defs", {}).get("publication", {})
+    owner_fields = {
+        "owner_resolution",
+        "profile_handle",
+        "owner_choices",
+        "owner_summary",
+        "owner_probe_ref",
+        "owner_probe_ns",
+    }
+    check(
+        owner_fields <= set(publication_schema.get("required", []))
+        and publication_schema.get("properties", {})
+        .get("owner_resolution", {})
+        .get("enum")
+        == ["unknown", "resolved", "choice_required", "unavailable"],
+        "publication context must retain typed pre-save owner resolution",
+    )
     auth_repair_owner_enum = (
         context_schema.get("$defs", {})
         .get("authRepair", {})
@@ -679,6 +736,27 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(
         "publication.uri" in public_fields and "publication.install_uri" in public_fields,
         "public publication must preserve registry-returned Play and install URIs",
+    )
+    owner_action = actions.get("resolve_public_owner", {})
+    owner_policy = " ".join(owner_action.get("command_policy", []))
+    check(
+        owner_action.get("owner") == "play"
+        and owner_action.get("effect") == "read"
+        and "rote registry whoami --verbose" in owner_policy
+        and "rote registry org list --json" in owner_policy
+        and "never run or recommend rote profile set-handle" in owner_policy,
+        "public owner resolution must probe claimed handles and authorized orgs without mutation",
+    )
+    save_prompt = prompts.get("private_public_or_skip", {})
+    owner_prompt = prompts.get("select_public_owner", {})
+    owner_source = owner_prompt.get("choices_from", {})
+    check(
+        save_prompt.get("template_fields") == ["publication.owner_summary"]
+        and owner_prompt.get("template_fields") == ["publication.owner_summary"]
+        and owner_source.get("context") == "publication.owner_choices"
+        and owner_source.get("value_source_field") == "owner"
+        and owner_source.get("value_field") == "publication.owner",
+        "save and owner prompts must render the typed preflight namespace choices",
     )
     release_action = actions.get("author_release", {})
     private_publish_action = actions.get("publish_private", {})

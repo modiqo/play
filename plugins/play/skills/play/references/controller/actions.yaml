@@ -22,6 +22,8 @@ guards:
   - outcome_is_verified
   - save_choice_private
   - save_choice_public
+  - public_owner_is_resolved
+  - public_owner_choice_is_required
   - released_candidate_is_unpublished
   - private_org_policy_satisfied
   - private_publication_matches_captured_birth
@@ -129,9 +131,12 @@ mutations:
   - record_exhaustion
   - record_verification_failure
   - record_candidate
+  - record_public_owner_context
+  - record_public_owner_unavailable
   - record_unpublished_result
   - choose_private
   - choose_public
+  - choose_resolved_public_owner
   - record_save_skipped
   - record_release
   - record_publication_boundary_violation
@@ -142,7 +147,6 @@ mutations:
   - record_private_org_violation
   - record_publication
   - record_public_owner
-  - record_public_owner_choices
   - record_owner_blocker
   - record_index
   - record_index_mismatch
@@ -650,13 +654,19 @@ actions:
       play_published: [publication.canonical_reference, publication.birth_sha256, visibility, owner, play.version, birth.sha256]
 
   resolve_public_owner:
-    kind: delegated
-    owner: rote-specialist
+    kind: deterministic
+    owner: play
     effect: read
-    input_required: [consent.save]
+    input_required: [candidate.reference]
+    command: scripts/bin/play-public-owner --json
+    command_policy:
+      - Before the save choice, run the read-only live surfaces rote registry whoami --verbose and rote registry org list --json exactly once each.
+      - Treat a claimed profile handle and authorized organization slugs as distinct publication namespaces; never infer that an organization created during adapter publication changed the profile handle.
+      - Retain only safe handle/slug/display metadata, bounded descriptions, timing, and a digest of raw output. Never retain registry tokens, user ids, or raw command output.
+      - If the profile handle is already claimed, say so and never run or recommend rote profile set-handle. If no handle exists but an authorized organization does, offer that organization without a handle-claim attempt.
     events:
-      public_owner_ready: [publication.owner]
-      public_owner_choice_required: [owner_choices]
+      public_owner_context_ready: [publication.owner_resolution, publication.profile_handle, publication.owner, publication.owner_choices, publication.owner_summary, publication.owner_probe_ref, publication.owner_probe_ns]
+      public_owner_context_unavailable: [publication.owner_resolution, publication.profile_handle, publication.owner, publication.owner_choices, publication.owner_summary, publication.owner_probe_ref, publication.owner_probe_ns]
 
   publish_public:
     kind: delegated

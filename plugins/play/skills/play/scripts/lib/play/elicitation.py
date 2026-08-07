@@ -32,6 +32,20 @@ class Choice:
     description: str
     event: str
     recommended: bool = False
+    value_field: str | None = None
+    value: str | None = None
+
+
+@dataclass(frozen=True)
+class ChoiceSource:
+    context: str
+    id_field: str
+    label_field: str
+    description_field: str
+    value_source_field: str
+    value_field: str
+    event: str
+    recommended_field: str | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +59,7 @@ class Question:
     input_label: str | None = None
     input_event: str | None = None
     template_fields: tuple[str, ...] = ()
+    choice_source: ChoiceSource | None = None
 
 
 def parse_question(prompt_id: str, prompt: dict[str, Any]) -> Question:
@@ -71,13 +86,52 @@ def parse_question(prompt_id: str, prompt: dict[str, Any]) -> Question:
             )
         )
     input_spec = prompt.get("input")
+    raw_source = prompt.get("choices_from")
+    choice_source = None
+    if raw_source is not None:
+        if not isinstance(raw_source, dict):
+            raise ElicitationError(f"{prompt_id}: choices_from must be an object")
+        required_source = (
+            "context",
+            "id_field",
+            "label_field",
+            "description_field",
+            "value_source_field",
+            "value_field",
+            "event",
+        )
+        if any(
+            not isinstance(raw_source.get(field), str) or not raw_source[field]
+            for field in required_source
+        ):
+            raise ElicitationError(
+                f"{prompt_id}: choices_from needs context, id_field, label_field, "
+                "description_field, value_source_field, value_field, and event"
+            )
+        recommended_field = raw_source.get("recommended_field")
+        if recommended_field is not None and (
+            not isinstance(recommended_field, str) or not recommended_field
+        ):
+            raise ElicitationError(
+                f"{prompt_id}: choices_from recommended_field must be a non-empty string"
+            )
+        choice_source = ChoiceSource(
+            context=raw_source["context"],
+            id_field=raw_source["id_field"],
+            label_field=raw_source["label_field"],
+            description_field=raw_source["description_field"],
+            value_source_field=raw_source["value_source_field"],
+            value_field=raw_source["value_field"],
+            event=raw_source["event"],
+            recommended_field=recommended_field,
+        )
     if selection == "text":
         if choices or not isinstance(input_spec, dict):
             raise ElicitationError(f"{prompt_id}: text selection needs input and no choices")
         for field in ("id", "label", "event"):
             if not isinstance(input_spec.get(field), str) or not input_spec[field]:
                 raise ElicitationError(f"{prompt_id}: input needs {field}")
-    elif not choices:
+    elif not choices and choice_source is None:
         raise ElicitationError(f"{prompt_id}: at least one static choice is required")
     minimum = prompt.get("minimum_selected", 1)
     if not isinstance(minimum, int) or minimum < 1:
@@ -107,6 +161,7 @@ def parse_question(prompt_id: str, prompt: dict[str, Any]) -> Question:
         input_spec.get("label") if isinstance(input_spec, dict) else None,
         input_spec.get("event") if isinstance(input_spec, dict) else None,
         template_fields,
+        choice_source,
     )
 
 
@@ -121,10 +176,61 @@ def _context_value(context: Mapping[str, Any], dotted: str) -> str:
     return value
 
 
+def _context_object(context: Mapping[str, Any], dotted: str) -> object:
+    value: object = context
+    for segment in dotted.split("."):
+        if not isinstance(value, Mapping) or segment not in value:
+            raise ElicitationError(f"missing dynamic choice context {dotted!r}")
+        value = value[segment]
+    return value
+
+
+def _dynamic_choices(source: ChoiceSource, context: Mapping[str, Any]) -> tuple[Choice, ...]:
+    raw_choices = _context_object(context, source.context)
+    if not isinstance(raw_choices, list):
+        raise ElicitationError(f"dynamic choice context {source.context!r} must be an array")
+    choices: list[Choice] = []
+    seen: set[str] = set()
+    for raw in raw_choices:
+        if not isinstance(raw, Mapping):
+            raise ElicitationError(f"dynamic choice context {source.context!r} is malformed")
+        fields = (source.id_field, source.label_field, source.description_field)
+        if any(not isinstance(raw.get(field), str) or not raw[field] for field in fields):
+            raise ElicitationError(f"dynamic choice context {source.context!r} is malformed")
+        choice_id = raw[source.id_field]
+        if choice_id in seen:
+            raise ElicitationError(f"dynamic choice id {choice_id!r} is duplicated")
+        seen.add(choice_id)
+        recommended = False
+        if source.recommended_field is not None:
+            raw_recommended = raw.get(source.recommended_field)
+            if not isinstance(raw_recommended, bool):
+                raise ElicitationError(
+                    f"dynamic choice recommended field {source.recommended_field!r} "
+                    "must be boolean"
+                )
+            recommended = raw_recommended
+        value = raw.get(source.value_source_field)
+        if not isinstance(value, str) or not value:
+            raise ElicitationError(f"dynamic choice {choice_id!r} has no string value")
+        choices.append(
+            Choice(
+                id=choice_id,
+                label=raw[source.label_field],
+                description=raw[source.description_field],
+                event=source.event,
+                recommended=recommended,
+                value_field=source.value_field,
+                value=value,
+            )
+        )
+    return tuple(choices)
+
+
 def resolve_question(question: Question, context: Mapping[str, Any]) -> Question:
     """Resolve only placeholders explicitly declared by the prompt contract."""
 
-    if not question.template_fields:
+    if not question.template_fields and question.choice_source is None:
         return question
     values = {field: _context_value(context, field) for field in question.template_fields}
     text = question.text
@@ -134,19 +240,24 @@ def resolve_question(question: Question, context: Mapping[str, Any]) -> Question
         id=question.id,
         text=text,
         selection=question.selection,
-        choices=question.choices,
+        choices=(
+            (*_dynamic_choices(question.choice_source, context), *question.choices)
+            if question.choice_source is not None
+            else question.choices
+        ),
         minimum_selected=question.minimum_selected,
         input_id=question.input_id,
         input_label=question.input_label,
         input_event=question.input_event,
         template_fields=(),
+        choice_source=None,
     )
 
 
 def native_payload(
     question: Question, harness: str, context: Mapping[str, Any] | None = None
 ) -> dict[str, Any]:
-    if question.template_fields:
+    if question.template_fields or question.choice_source is not None:
         if context is None:
             raise ElicitationError("templated question requires controller context")
         question = resolve_question(question, context)
@@ -157,16 +268,7 @@ def native_payload(
         "question": question.text,
         "selection": question.selection,
         "minimum_selected": question.minimum_selected,
-        "choices": [
-            {
-                "id": choice.id,
-                "label": choice.label,
-                "description": choice.description,
-                "event": choice.event,
-                "recommended": choice.recommended,
-            }
-            for choice in question.choices
-        ],
+        "choices": [_native_choice(choice) for choice in question.choices],
         "input": (
             {
                 "id": question.input_id,
@@ -179,10 +281,23 @@ def native_payload(
     }
 
 
+def _native_choice(choice: Choice) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "id": choice.id,
+        "label": choice.label,
+        "description": choice.description,
+        "event": choice.event,
+        "recommended": choice.recommended,
+    }
+    if choice.value_field is not None and choice.value is not None:
+        payload["payload"] = {choice.value_field: choice.value}
+    return payload
+
+
 def markdown_fallback(
     question: Question, context: Mapping[str, Any] | None = None
 ) -> str:
-    if question.template_fields:
+    if question.template_fields or question.choice_source is not None:
         if context is None:
             raise ElicitationError("templated question requires controller context")
         question = resolve_question(question, context)
@@ -233,7 +348,9 @@ def main(prompts_path: Path, arguments: list[str] | None = None) -> int:
         if not isinstance(context, dict):
             parser.error("--context-json must decode to an object")
     if args.check:
-        if not question.template_fields or context is not None:
+        if (
+            not question.template_fields and question.choice_source is None
+        ) or context is not None:
             native_payload(question, args.harness, context)
             markdown_fallback(question, context)
         return 0

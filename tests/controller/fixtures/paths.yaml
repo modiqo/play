@@ -174,7 +174,8 @@ cases:
       - state: crystallize
         event: candidate_ready
         guards: {outcome_is_verified: true}
-        target: save_offer
+        target: save_prepare
+      - {state: save_prepare, event: public_owner_context_ready, target: save_offer}
       - {state: save_offer, event: save_skipped, target: completed}
     terminal: completed
     excludes: [author_release, birth_capture, private_org, private_publish, public_owner, public_publish, birth_bind, index]
@@ -261,7 +262,8 @@ cases:
       - state: crystallize
         event: candidate_ready
         guards: {outcome_is_verified: true}
-        target: save_offer
+        target: save_prepare
+      - {state: save_prepare, event: public_owner_context_ready, target: save_offer}
       - {state: save_offer, event: save_private, target: author_release}
       - state: author_release
         event: flow_released
@@ -325,8 +327,12 @@ cases:
       - state: crystallize
         event: candidate_ready
         guards: {outcome_is_verified: true}
-        target: save_offer
-      - {state: save_offer, event: save_public, target: author_release}
+        target: save_prepare
+      - {state: save_prepare, event: public_owner_context_ready, target: save_offer}
+      - state: save_offer
+        event: save_public
+        guards: {public_owner_is_resolved: true, public_owner_choice_is_required: false}
+        target: author_release
       - state: author_release
         event: flow_released
         guards: {released_candidate_is_unpublished: true}
@@ -334,8 +340,7 @@ cases:
       - state: birth_capture
         event: birth_captured
         guards: {save_choice_private: false, save_choice_public: true}
-        target: public_owner
-      - {state: public_owner, event: public_owner_ready, target: public_publish}
+        target: public_publish
       - state: public_publish
         event: play_published
         guards: {public_publication_matches_captured_birth: true}
@@ -355,7 +360,7 @@ cases:
       - {state: publication_smoke, event: public_smoke_verified, target: birth_present}
       - {state: birth_present, event: birth_certificate_presented, target: completed}
     terminal: completed
-    includes_once: [author_release, birth_capture, public_owner, public_publish, birth_bind, index, publication_credentials, publication_smoke]
+    includes_once: [save_prepare, author_release, birth_capture, public_publish, birth_bind, index, publication_credentials, publication_smoke]
 
   - name: public credential mismatch blocks before smoke and presentation
     steps:
@@ -378,8 +383,20 @@ cases:
 
   - name: public save can require owner selection
     steps:
-      - {state: public_owner, event: public_owner_choice_required, target: public_owner_offer}
-      - {state: public_owner_offer, event: public_owner_selected, target: public_publish}
+      - {state: save_prepare, event: public_owner_context_ready, target: save_offer}
+      - state: save_offer
+        event: save_public
+        guards: {public_owner_is_resolved: false, public_owner_choice_is_required: true}
+        target: public_owner_offer
+      - {state: public_owner_offer, event: public_owner_selected, target: author_release}
+      - state: author_release
+        event: flow_released
+        guards: {released_candidate_is_unpublished: true}
+        target: birth_capture
+      - state: birth_capture
+        event: birth_captured
+        guards: {save_choice_private: false, save_choice_public: true}
+        target: public_publish
       - state: public_publish
         event: play_published
         guards: {public_publication_matches_captured_birth: true}
@@ -399,6 +416,16 @@ cases:
       - {state: publication_smoke, event: public_smoke_verified, target: birth_present}
       - {state: birth_present, event: birth_certificate_presented, target: completed}
     terminal: completed
+
+  - name: unavailable namespace probe blocks only a Public selection
+    steps:
+      - {state: save_prepare, event: public_owner_context_unavailable, target: save_offer}
+      - state: save_offer
+        event: save_public
+        guards: {public_owner_is_resolved: false, public_owner_choice_is_required: false}
+        target: blocked
+    terminal: blocked
+    excludes: [public_owner_offer, author_release, birth_capture, public_publish]
 
   - name: explicit organization summary bypasses Play search
     steps:

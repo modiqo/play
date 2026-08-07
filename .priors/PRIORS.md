@@ -60,3 +60,4 @@
 | P-0054 | play | conclusion | open | references/controller/machine.yaml | A recoverable CALL authentication failure enters a separately approved r |
 | P-0055 | play | conclusion | open | references/publish/lifecycle.md | A saved public Play may complete only after canonical inspection and det |
 | P-0056 | play | conclusion | open | references/controller/machine.yaml | A Play save run must block when author_release reports prior registry pu |
+| P-0057 | play | conclusion | open | references/publish/lifecycle.md | Before save consent, Play must resolve the claimed profile handle and au |

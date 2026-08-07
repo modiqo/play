@@ -633,10 +633,19 @@
     },
     "publication": {
       "type": "object",
-      "required": ["owner", "private_org", "canonical_reference", "birth_sha256", "title", "description", "uri", "install_uri", "content_hash", "visibility", "indexed", "index_ref", "inspect_ref", "share_copy", "presentation_ref", "presented"],
+      "required": ["owner", "owner_resolution", "profile_handle", "owner_choices", "owner_summary", "owner_probe_ref", "owner_probe_ns", "private_org", "canonical_reference", "birth_sha256", "title", "description", "uri", "install_uri", "content_hash", "visibility", "indexed", "index_ref", "inspect_ref", "share_copy", "presentation_ref", "presented"],
       "additionalProperties": false,
       "properties": {
         "owner": {"$ref": "#/$defs/nullableString"},
+        "owner_resolution": {"enum": ["unknown", "resolved", "choice_required", "unavailable"]},
+        "profile_handle": {"$ref": "#/$defs/nullableString"},
+        "owner_choices": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/publicationOwnerChoice"}
+        },
+        "owner_summary": {"$ref": "#/$defs/nullableString"},
+        "owner_probe_ref": {"$ref": "#/$defs/nullableString"},
+        "owner_probe_ns": {"type": ["integer", "null"], "minimum": 0},
         "private_org": {"$ref": "#/$defs/nullableString"},
         "canonical_reference": {"$ref": "#/$defs/nullableString"},
         "birth_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
@@ -660,6 +669,19 @@
         },
         "presentation_ref": {"$ref": "#/$defs/nullableString"},
         "presented": {"type": "boolean"}
+      }
+    },
+    "publicationOwnerChoice": {
+      "type": "object",
+      "required": ["id", "owner", "kind", "display_name", "ownership_description", "recommended"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "owner": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["profile_handle", "organization"]},
+        "display_name": {"type": "string", "minLength": 1},
+        "ownership_description": {"type": "string", "minLength": 1},
+        "recommended": {"type": "boolean"}
       }
     },
     "lastEvent": {

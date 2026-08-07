@@ -492,19 +492,42 @@ states:
     entry: {action: prepare_candidate}
     "on":
       candidate_ready:
-        - {guard: outcome_is_verified, target: save_offer, mutate: record_candidate}
+        - {guard: outcome_is_verified, target: save_prepare, mutate: record_candidate}
         - {target: blocked, mutate: record_verification_failure}
       not_reusable: [{target: completed, mutate: record_unpublished_result}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  save_prepare:
+    owner: play
+    checkpoint: both
+    requires: [candidate.reference]
+    entry: {action: resolve_public_owner}
+    "on":
+      public_owner_context_ready: [{target: save_offer, mutate: record_public_owner_context}]
+      public_owner_context_unavailable: [{target: save_offer, mutate: record_public_owner_unavailable}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   save_offer:
     owner: play
     checkpoint: after
+    requires: [publication.owner_resolution, publication.owner_choices, publication.owner_summary]
     prompt: private_public_or_skip
     "on":
       save_private: [{target: author_release, mutate: choose_private}]
-      save_public: [{target: author_release, mutate: choose_public}]
+      save_public:
+        - {guard: public_owner_is_resolved, target: author_release, mutate: choose_resolved_public_owner}
+        - {guard: public_owner_choice_is_required, target: public_owner_offer, mutate: choose_public}
+        - {target: blocked, mutate: record_owner_blocker}
       save_skipped: [{target: completed, mutate: record_save_skipped}]
+
+  public_owner_offer:
+    owner: play
+    checkpoint: after
+    requires: [publication.owner_resolution, publication.owner_choices, publication.owner_summary]
+    prompt: select_public_owner
+    "on":
+      public_owner_selected: [{target: author_release, mutate: record_public_owner}]
+      public_owner_declined: [{target: blocked, mutate: record_owner_blocker}]
 
   author_release:
     owner: rote-specialist
@@ -526,7 +549,7 @@ states:
     "on":
       birth_captured:
         - {guard: save_choice_private, target: private_org, mutate: record_birth_capture}
-        - {guard: save_choice_public, target: public_owner, mutate: record_birth_capture}
+        - {guard: save_choice_public, target: public_publish, mutate: record_birth_capture}
         - {target: blocked, mutate: record_missing_save_choice}
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -549,23 +572,6 @@ states:
         - {guard: private_publication_matches_captured_birth, target: birth_bind, mutate: record_publication}
         - {target: blocked, mutate: record_publication_boundary_violation}
       action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  public_owner:
-    owner: rote-specialist
-    checkpoint: both
-    entry: {action: resolve_public_owner}
-    "on":
-      public_owner_ready: [{target: public_publish, mutate: record_public_owner}]
-      public_owner_choice_required: [{target: public_owner_offer, mutate: record_public_owner_choices}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  public_owner_offer:
-    owner: play
-    checkpoint: after
-    prompt: select_public_owner
-    "on":
-      public_owner_selected: [{target: public_publish, mutate: record_public_owner}]
-      public_owner_declined: [{target: blocked, mutate: record_owner_blocker}]
 
   public_publish:
     owner: rote-specialist

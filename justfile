@@ -1,7 +1,7 @@
 check: package-check
     scripts/bin/validate-machine
     uv run scripts/bin/play-machine describe --json
-    uv run pyright scripts/lib/play/controller.py scripts/lib/play/elicitation.py scripts/lib/play/onboarding.py scripts/lib/play/run_output.py scripts/lib/play/publication.py scripts/lib/play/publication_gate.py scripts/lib/play/certificate.py scripts/bin/play-machine scripts/bin/play-onboarding scripts/bin/play-run-output scripts/bin/play-publication scripts/bin/play-publication-gate scripts/bin/play-certificate tests/controller/test_controller_runtime.py tests/foundation/test_elicitation.py tests/foundation/test_onboarding.py tests/foundation/test_run_output.py tests/foundation/test_publication.py tests/foundation/test_publication_gate.py tests/foundation/test_certificate.py
+    uv run pyright scripts/lib/play/controller.py scripts/lib/play/elicitation.py scripts/lib/play/onboarding.py scripts/lib/play/public_owner.py scripts/lib/play/run_output.py scripts/lib/play/publication.py scripts/lib/play/publication_gate.py scripts/lib/play/certificate.py scripts/bin/play-machine scripts/bin/play-onboarding scripts/bin/play-public-owner scripts/bin/play-run-output scripts/bin/play-publication scripts/bin/play-publication-gate scripts/bin/play-certificate tests/controller/test_controller_runtime.py tests/foundation/test_elicitation.py tests/foundation/test_onboarding.py tests/foundation/test_public_owner.py tests/foundation/test_run_output.py tests/foundation/test_publication.py tests/foundation/test_publication_gate.py tests/foundation/test_certificate.py
     scripts/bin/play-question choose_creator_path --harness codex --check
     scripts/bin/play-question choose_creator_path --harness claude --check
     scripts/bin/play-question choose_creator_path --harness kimi --check
@@ -11,6 +11,12 @@ check: package-check
     scripts/bin/play-question choose_search_result --harness codex --check
     scripts/bin/play-question choose_search_result --harness claude --check
     scripts/bin/play-question choose_search_result --harness kimi --check
+    scripts/bin/play-question private_public_or_skip --harness codex --context-json '{"publication":{"owner_summary":"Your claimed handle is ready."}}' --check
+    scripts/bin/play-question private_public_or_skip --harness claude --context-json '{"publication":{"owner_summary":"Your claimed handle is ready."}}' --check
+    scripts/bin/play-question private_public_or_skip --harness kimi --context-json '{"publication":{"owner_summary":"Your claimed handle is ready."}}' --check
+    scripts/bin/play-question select_public_owner --harness codex --context-json '{"publication":{"owner_summary":"Your claimed handle is ready.","owner_choices":[{"id":"profile:chetan","owner":"chetan","display_name":"@chetan","ownership_description":"Use the claimed handle.","recommended":true}]}}' --check
+    scripts/bin/play-question select_public_owner --harness claude --context-json '{"publication":{"owner_summary":"Your claimed handle is ready.","owner_choices":[{"id":"profile:chetan","owner":"chetan","display_name":"@chetan","ownership_description":"Use the claimed handle.","recommended":true}]}}' --check
+    scripts/bin/play-question select_public_owner --harness kimi --context-json '{"publication":{"owner_summary":"Your claimed handle is ready.","owner_choices":[{"id":"profile:chetan","owner":"chetan","display_name":"@chetan","ownership_description":"Use the claimed handle.","recommended":true}]}}' --check
     scripts/bin/play-question welcome_play_request --harness codex --context-json '{"onboarding":{"email_handle":"friend"}}' --check
     scripts/bin/play-question welcome_play_request --harness claude --context-json '{"onboarding":{"email_handle":"friend"}}' --check
     scripts/bin/play-question welcome_play_request --harness kimi --context-json '{"onboarding":{"email_handle":"friend"}}' --check

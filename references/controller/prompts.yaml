@@ -14,8 +14,10 @@ prompts:
     selection: single
     choices_from:
       context: awareness.play_choices
+      id_field: reference
       label_field: label
       description_field: description
+      value_source_field: reference
       value_field: match.reference
       event: awareness_play_selected
     choices:
@@ -59,8 +61,10 @@ prompts:
     selection: single
     choices_from:
       context: search.play_choices
+      id_field: reference
       label_field: label
       description_field: description
+      value_source_field: reference
       value_field: match.reference
       event: search_play_selected
     choices:
@@ -119,8 +123,10 @@ prompts:
     selection: single
     choices_from:
       context: adapter_discovery.choices
+      id_field: id
       label_field: label
       description_field: description
+      value_source_field: id
       value_field: adapter_discovery.selected_id
       event: adapter_source_selected
     choices:
@@ -150,7 +156,8 @@ prompts:
       auth_repair_declined: [prompt_version, selected_at, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.original_packet_sha256]
 
   private_public_or_skip:
-    question: How should I preserve this verified Play?
+    question: "{publication.owner_summary} How should I preserve this verified Play?"
+    template_fields: [publication.owner_summary]
     selection: single
     choices:
       - {id: private, label: Private, description: Publish it to an authorized private organization., event: save_private, recommended: true}
@@ -158,17 +165,21 @@ prompts:
       - {id: skip, label: Skip, description: Keep the verified result but do not publish or index a Play., event: save_skipped}
     events:
       save_private: [prompt_version, selected_at]
-      save_public: [prompt_version, selected_at]
+      save_public: [prompt_version, selected_at, publication.owner_resolution, publication.owner]
       save_skipped: [prompt_version, selected_at]
 
   select_public_owner:
-    question: Which public identity or organization should own this Play?
+    question: "{publication.owner_summary} Which public namespace should own this Play?"
+    template_fields: [publication.owner_summary]
     selection: single
     choices_from:
-      context: owner_choices
+      context: publication.owner_choices
+      id_field: id
       label_field: display_name
       description_field: ownership_description
+      value_source_field: owner
       value_field: publication.owner
+      recommended_field: recommended
       event: public_owner_selected
     choices:
       - {id: cancel, label: Cancel publication, description: Stop without selecting a public owner., event: public_owner_declined}

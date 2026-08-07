@@ -47,6 +47,8 @@ invocable so declared handoffs can chain without requiring another user command.
    only the `author_release` receipt may change it to `unpublished`, and any evidence that it is
    already `published` is a lifecycle-boundary violation. Initialize `publication.birth_sha256`
    to null; only a publication receipt may set it, and it must equal the captured `birth.sha256`.
+   Initialize public-owner resolution to `unknown`, with null profile handle, owner, summary,
+   probe reference, and timing plus an empty owner-choice list.
 4. Validate the context's machine version, current state, transition sequence, and pending action.
 5. Execute exactly one declared prompt or entry action for the current state.
 6. Accept only an event declared by the current state and validated by
@@ -328,7 +330,13 @@ Play. Do not execute an exploration modality before approval. If the user contin
   disclosure metadata only. Never turn a hint into an approval gate, blocker, or confirmation.
 - Keep writes and human gates visible in the delegated runtime.
 - Verify the requested outcome before preparing a candidate.
-- Ask Private, Public, or Skip only after candidate preparation.
+- After candidate preparation and before asking Private, Public, or Skip, enter `save_prepare` and
+  run `scripts/bin/play-public-owner --json`. It probes `rote registry whoami --verbose` and
+  `rote registry org list --json` read-only, distinguishes the claimed profile handle from
+  authorized organization namespaces, and supplies the namespace summary to the save prompt.
+- Ask Private, Public, or Skip only after candidate preparation and this owner probe. If Public is
+  selected, bind a unique resolved namespace or present the typed authorized-owner choices before
+  `author_release`. Never defer owner selection until after release or birth capture.
 - Treat Private as authorization to author, release, and publish with that visibility. Treat Public
   as authorization to do the same, verify associated adapter credential contracts, and execute the
   exact versioned public URI once with the verified parameters from an isolated `/tmp` directory.
@@ -343,6 +351,10 @@ Play. Do not execute an exploration modality before approval. If the user contin
   fresh publication-only handoff that carries and echoes the captured birth SHA. Never send one
   specialist an end-to-end author/release/publish request, and reject a publication receipt whose
   birth SHA does not match the captured object.
+- Treat a release-time “claim a handle” hint as non-authoritative CLI guidance. When the pre-save
+  probe found a claimed handle or the user selected an authorized organization, do not run or
+  recommend `rote profile set-handle`; continue with the bound namespace. If no namespace is
+  available, Public blocks while Private and Skip remain available.
 - Index the exact canonical version after successful Private or Public publication.
 - After indexing, run `rote play inspect <org/name> --json` against the canonical reference.
   Verify its owner, version, and visibility. For Public, compare every associated selected adapter

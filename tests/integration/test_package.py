@@ -17,6 +17,7 @@ class PluginPackageTest(unittest.TestCase):
         self.assertTrue((TARGET / "scripts/bin/play-presentation").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-publication").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-publication-gate").is_file())
+        self.assertTrue((TARGET / "scripts/bin/play-public-owner").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-certificate").is_file())
         self.assertTrue((TARGET / "ui/thinking-orbs/package-lock.json").is_file())
         self.assertTrue((TARGET / "ui/thinking-orbs/src/PlayActivity.tsx").is_file())

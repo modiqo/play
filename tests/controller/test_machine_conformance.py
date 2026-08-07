@@ -335,6 +335,60 @@ class MachineConformanceTest(unittest.TestCase):
         )
         self.assertIn("Publication is never a terminal milestone", SKILL_TEXT)
 
+    def test_public_namespace_is_resolved_before_save_and_release(self) -> None:
+        self.assertEqual(
+            "save_prepare",
+            MACHINE["states"]["crystallize"]["on"]["candidate_ready"][0]["target"],
+        )
+        self.assertEqual(
+            "resolve_public_owner",
+            MACHINE["states"]["save_prepare"]["entry"]["action"],
+        )
+        action = ACTIONS["resolve_public_owner"]
+        self.assertEqual("play", action["owner"])
+        self.assertEqual("read", action["effect"])
+        self.assertEqual("scripts/bin/play-public-owner --json", action["command"])
+        policy = " ".join(action["command_policy"])
+        self.assertIn("rote registry whoami --verbose", policy)
+        self.assertIn("rote registry org list --json", policy)
+        self.assertIn("never run or recommend rote profile set-handle", policy)
+
+        public = MACHINE["states"]["save_offer"]["on"]["save_public"]
+        self.assertEqual("public_owner_is_resolved", public[0]["guard"])
+        self.assertEqual("author_release", public[0]["target"])
+        self.assertEqual("public_owner_choice_is_required", public[1]["guard"])
+        self.assertEqual("public_owner_offer", public[1]["target"])
+        self.assertEqual("blocked", public[2]["target"])
+        self.assertEqual(
+            "author_release",
+            MACHINE["states"]["public_owner_offer"]["on"][
+                "public_owner_selected"
+            ][0]["target"],
+        )
+        self.assertNotIn("public_owner", MACHINE["states"])
+        self.assertEqual(
+            "public_publish",
+            MACHINE["states"]["birth_capture"]["on"]["birth_captured"][1]["target"],
+        )
+
+        save_prompt = PROMPTS["private_public_or_skip"]
+        self.assertEqual(["publication.owner_summary"], save_prompt["template_fields"])
+        owner_prompt = PROMPTS["select_public_owner"]
+        self.assertEqual(
+            "publication.owner_choices", owner_prompt["choices_from"]["context"]
+        )
+        self.assertEqual("owner", owner_prompt["choices_from"]["value_source_field"])
+        publication = CONTEXT["$defs"]["publication"]
+        for field in (
+            "owner_resolution",
+            "profile_handle",
+            "owner_choices",
+            "owner_summary",
+            "owner_probe_ref",
+            "owner_probe_ns",
+        ):
+            self.assertIn(field, publication["required"])
+
     def test_birth_lookup_is_an_owner_local_read(self) -> None:
         self.assertEqual(
             "birth_show", MACHINE["states"]["qualify"]["on"]["play_birth_request"][0]["target"]

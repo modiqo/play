@@ -16,13 +16,26 @@ descriptions, selection mode, or events with an improvised free-form prompt.
 
 Do not offer to save before verification and candidate preparation.
 
+After candidate preparation, enter `save_prepare` and run
+`scripts/bin/play-public-owner --json` before showing the save question. The typed read-only probe
+uses `rote registry whoami --verbose` for the actually claimed profile handle and
+`rote registry org list --json` for authorized organization namespaces. Preserve only safe
+handle/slug/display metadata, bounded prompt copy, timing, and a digest of the raw output.
+
+Include the resulting namespace summary in `private_public_or_skip`. If Public is chosen, either
+bind the sole resolved namespace or ask `select_public_owner` from the probed finite choices before
+`author_release`. A profile handle and an organization slug are distinct even when adapter
+publication created the organization. Do not run or recommend `rote profile set-handle` when a
+handle is already claimed or when the user selected an authorized organization. If lookup is
+unavailable, keep Private and Skip selectable but block Public.
+
 - **Private** authorizes authoring, releasing, and registry publication to a private organization.
   If needed, create a private organization whose only initial member is the current user. Private
   never means merely writing a local file.
 - **Public** authorizes authoring, releasing, and registry publication under a selected public
   identity or organization. It also authorizes one run of the exact versioned public URI with the
   verified parameters from an isolated `/tmp` directory after associated credential contracts pass.
-  Ask for the owner only when it is ambiguous.
+  Ask for the owner only when the pre-save probe returned multiple authorized namespaces.
 - **Skip** ends with the verified outcome and unpublished local exploration state. Do not author,
   release, publish, or index a Play.
 

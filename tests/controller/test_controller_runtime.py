@@ -349,6 +349,62 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         self.assertEqual("birth_bind", matched.cursor.state)
 
+    def test_public_owner_guard_is_derived_before_release(self) -> None:
+        save_cursor = replace(self.cursor(), state=StateId("save_offer"))
+        resolved = self.runtime.step(
+            save_cursor,
+            ControllerEvent(
+                id=EventId("save_public"),
+                payload={
+                    "prompt_version": "1",
+                    "selected_at": "2026-08-07T00:00:00Z",
+                    "publication": {
+                        "owner_resolution": "resolved",
+                        "owner": "chetanconikee",
+                    },
+                },
+                guards={GuardId("public_owner_is_resolved"): False},
+            ),
+        )
+        self.assertEqual("author_release", resolved.cursor.state)
+
+        choice = self.runtime.step(
+            save_cursor,
+            ControllerEvent(
+                id=EventId("save_public"),
+                payload={
+                    "prompt_version": "1",
+                    "selected_at": "2026-08-07T00:00:00Z",
+                    "publication": {
+                        "owner_resolution": "choice_required",
+                        "owner": None,
+                    },
+                },
+                guards={GuardId("public_owner_is_resolved"): True},
+            ),
+        )
+        self.assertEqual("public_owner_offer", choice.cursor.state)
+
+        unavailable = self.runtime.step(
+            save_cursor,
+            ControllerEvent(
+                id=EventId("save_public"),
+                payload={
+                    "prompt_version": "1",
+                    "selected_at": "2026-08-07T00:00:00Z",
+                    "publication": {
+                        "owner_resolution": "unavailable",
+                        "owner": "spoofed",
+                    },
+                },
+                guards={
+                    GuardId("public_owner_is_resolved"): True,
+                    GuardId("public_owner_choice_is_required"): True,
+                },
+            ),
+        )
+        self.assertEqual("blocked", unavailable.cursor.state)
+
     def test_direct_registry_publication_is_a_typed_blocking_event(self) -> None:
         release_cursor = replace(self.cursor(), state=StateId("author_release"))
         result = self.runtime.step(

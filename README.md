@@ -150,19 +150,19 @@ stateDiagram-v2
     explore_verify --> explore_route : not verified, budget left
 
     %% ── Save lifecycle (crystallize → publish → birth → index) ──
-    crystallize --> save_offer : candidate ready
+    crystallize --> save_prepare : candidate ready
+    save_prepare --> save_offer : profile + authorized namespaces resolved
     crystallize --> completed : not reusable
-    save_offer --> author_release : Private or Public
+    save_offer --> author_release : Private / Public owner resolved
+    save_offer --> public_owner_offer : Public owner choice required
     save_offer --> completed : Skip
+    public_owner_offer --> author_release : owner selected
+    public_owner_offer --> blocked : declined
     author_release --> birth_capture : unpublished flow released
     author_release --> blocked : specialist published early
     birth_capture --> private_org : private
-    birth_capture --> public_owner : public
+    birth_capture --> public_publish : public
     private_org --> private_publish
-    public_owner --> public_publish : owner resolved
-    public_owner --> public_owner_offer : owner ambiguous
-    public_owner_offer --> public_publish : owner selected
-    public_owner_offer --> blocked : declined
     private_publish --> birth_bind : published private + birth SHA matches
     public_publish --> birth_bind : published public + birth SHA matches
     birth_bind --> index
@@ -249,15 +249,15 @@ different controller versions cannot be mixed accidentally.
 
 Baseline recorded on 2026-08-06 on an Apple Silicon Mac with Python 3.14.5,
 `python-statemachine` 3.2.0, bundle
-`8e14a174c8de2742bc469c6cc6ec09d64b8aba3268e33e93b02b4777cae482fd`, and 10,000
+`d09293286a8120ebb1259bac766d348decb793651999a16416b8751543765756`, and 10,000
 iterations:
 
 | Metric | Time |
 |---|---:|
-| One-time bundle compile | 125.99 ms |
-| Warm invocation transition median | 0.534 ms |
-| Warm invocation transition p95 | 0.796 ms |
-| Warm invocation transition max | 5.48 ms |
+| One-time bundle compile | 136.79 ms |
+| Warm invocation transition median | 0.556 ms |
+| Warm invocation transition p95 | 0.911 ms |
+| Warm invocation transition max | 5.78 ms |
 
 The preceding 67-state typed-certificate bundle, before the enforced release/publication boundary,
 measured a 0.517 ms median and 0.741 ms p95 on the same date. The boundary-enforced bundle remains
@@ -270,6 +270,10 @@ result records its local store verification and rendering latency in `birth.cert
 
 Treat these numbers as a development baseline, not a cross-machine guarantee. Future performance
 changes should record the command, iteration count, bundle SHA, Python version, and machine class.
+
+The first live pre-save namespace sample ran the profile and organization reads concurrently and
+completed in 4.089 seconds. That timing is recorded as `publication.owner_probe_ns`; it is external
+registry I/O and is intentionally separate from the sub-millisecond controller transition numbers.
 
 ## Install from a marketplace
 
@@ -558,6 +562,13 @@ and only a fresh `rote-registry` handoff may publish that exact artifact while e
 birth SHA. If a broad registry-flow request publishes early, the machine emits
 `publication_boundary_violated` and blocks instead of treating a registry summary as completion or
 offering a retrospective certificate.
+
+Public namespace resolution also happens before release. The typed
+[`play-public-owner`](scripts/bin/play-public-owner) probe reads the claimed Rote profile handle and
+authorized organizations, distinguishes those two identity kinds, and inserts a bounded summary
+into the save prompt. Public owner selection is completed before `author_release`; a later generic
+CLI hint to claim a handle cannot trigger a redundant `rote profile set-handle` attempt. If the
+probe is unavailable, Private and Skip remain available while Public fails closed.
 
 ### Public credential and canonical-run gate
 
