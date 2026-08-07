@@ -1,4 +1,4 @@
-"""Deterministic Play invocation, greeting, identity, and public-card helpers."""
+"""Deterministic Play invocation, identity, welcome, and public-card helpers."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ _NAME_VERSION = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9_-]*(?:@[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?)?$"
 )
 _OK_EMAIL = re.compile(r"(?im)^ok:\s*([^@\s]+@[^@\s]+\.[^@\s]+)$")
+_SAFE_HUMAN_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 class OnboardingError(RuntimeError):
@@ -209,6 +210,81 @@ def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
         "email_handle": handle,
         "identity_ref": f"sha256:{digest}",
         "whoami_ns": time.perf_counter_ns() - started,
+    }
+
+
+def _safe_human_name(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = _SAFE_HUMAN_NAME.sub(" ", value.strip())
+    normalized = " ".join(normalized.split())[:80].strip()
+    return normalized or None
+
+
+def render_exploration_welcome(human_name: str) -> str:
+    """Render the stable human-as-expert exploration welcome."""
+
+    return (
+        f"Welcome to this exploration, where you, {human_name}, are the domain expert and I, "
+        "your agent, am the apprentice. I bring broad expertise, but you can ask me to watch, "
+        "question, and follow your steering through this task so your expertise becomes our "
+        "rote memory. Buckle up—Rote can help us through this."
+    )
+
+
+def prepare_exploration_welcome(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Resolve a bounded human name and prepare the typed Explore welcome."""
+
+    started = time.perf_counter_ns()
+    onboarding = payload.get("onboarding")
+    identity_status = "unavailable"
+    identity_source = "neutral_fallback"
+    identity_ref: str | None = None
+    human_name: str | None = None
+
+    if isinstance(onboarding, dict) and onboarding.get("identity_status") == "authenticated":
+        human_name = _safe_human_name(onboarding.get("email_handle"))
+        candidate_ref = onboarding.get("identity_ref")
+        identity_ref = candidate_ref if isinstance(candidate_ref, str) else None
+        if human_name is not None:
+            identity_status = "authenticated"
+            identity_source = "onboarding_email_handle"
+
+    if human_name is None:
+        probe = probe_rote()
+        if probe["rote_status"] == "installed":
+            try:
+                identity = inspect_identity(
+                    {"onboarding": {"rote_command": probe["rote_command"]}}
+                )
+            except OnboardingError as error:
+                identity_ref = f"sha256:{hashlib.sha256(str(error).encode()).hexdigest()}"
+            else:
+                identity_ref = identity["identity_ref"]
+                human_name = _safe_human_name(identity.get("email_handle"))
+                if identity["identity_status"] == "authenticated" and human_name is not None:
+                    identity_status = "authenticated"
+                    identity_source = "live_email_handle"
+
+    display_name = human_name or "friend"
+    markdown = render_exploration_welcome(display_name)
+    presentation_ref = f"sha256:{hashlib.sha256(markdown.encode()).hexdigest()}"
+    return {
+        "schema": SCHEMA,
+        "kind": "exploration_welcome",
+        "ok": True,
+        "exploration": {
+            "welcome_status": "presented",
+            "human_name": human_name,
+            "identity_status": identity_status,
+            "identity_source": identity_source,
+            "identity_ref": identity_ref,
+            "welcome_markdown": markdown,
+            "welcome_ref": presentation_ref,
+            "resolve_ns": time.perf_counter_ns() - started,
+        },
+        "presentation_markdown": markdown,
+        "presentation_ref": presentation_ref,
     }
 
 
@@ -446,7 +522,10 @@ def _read_payload() -> dict[str, Any]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("classify", "probe", "identity", "card", "present-card"))
+    parser.add_argument(
+        "mode",
+        choices=("classify", "probe", "identity", "explore-welcome", "card", "present-card"),
+    )
     parser.add_argument("--stdin", action="store_true")
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args(argv)
@@ -461,6 +540,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 result = classify_payload(payload)
             elif args.mode == "identity":
                 result = inspect_identity(payload)
+            elif args.mode == "explore-welcome":
+                result = prepare_exploration_welcome(payload)
             elif args.mode == "card":
                 result = fetch_public_card(payload)
             else:

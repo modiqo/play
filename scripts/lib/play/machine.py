@@ -426,7 +426,17 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(_target(states, "awareness_collect", "awareness_unchanged") == "completed", "unchanged awareness must finish without an action prompt")
     check(_target(states, "awareness_offer", "awareness_play_selected") == "use_inspect", "an exact awareness selection must enter inspection")
     check(_target(states, "qualify", "play_creation_request") == "creator_search", "explicit creator intent must search before exploration")
-    check(_target(states, "creator_classify", "creator_no_match") == "explore_prepare", "creator intent without a match must skip the redundant Explore prompt")
+    check(_target(states, "creator_classify", "creator_no_match") == "explore_welcome", "creator intent without a match must skip the redundant Explore prompt and welcome the human")
+    check(
+        actions.get("present_exploration_welcome", {}).get("command")
+        == "scripts/bin/play-onboarding explore-welcome --stdin --json",
+        "Explore must use the deterministic identity-aware welcome",
+    )
+    check(
+        _target(states, "explore_welcome", "exploration_welcome_presented")
+        == "explore_prepare",
+        "the exploration workspace may be prepared only after the welcome is presented",
+    )
     check(
         _target(states, "explore_route", "route_selected") == "explore_dispatch",
         "an approved route must dispatch CALL discovery before specialist preparation",
@@ -499,6 +509,15 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(_target(states, "use_output", "detailed_output_ready") == "use_verify", "only detailed output may enter verification")
     check(_target(states, "use_output", "action_blocked") == "repair_offer", "incomplete output must enter repair instead of verification")
     check(predecessors["use_verify"] == {"use_output"}, "Use verification may follow only complete detailed output")
+    check(
+        predecessors["explore_welcome"]
+        == {"creator_classify", "creator_offer", "explore_offer", "repair_offer"},
+        "every initial approved Explore path must enter the welcome exactly once",
+    )
+    check(
+        predecessors["explore_prepare"] == {"explore_welcome"},
+        "workspace preparation may follow only the human welcome",
+    )
     check(predecessors["explore_dispatch"] == {"explore_route"}, "route dispatch may follow only route selection")
     check(predecessors["adapter_discover"] == {"explore_dispatch"}, "adapter discovery may follow only CALL dispatch")
     check(predecessors["adapter_offer"] == {"adapter_discover"}, "adapter choice may follow only typed discovery")
@@ -551,6 +570,7 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "output_policy",
         "output",
         "onboarding",
+        "exploration",
         "adapter_discovery",
         "handoff",
         "auth_repair",

@@ -49,6 +49,7 @@
     "use_receipt": {"orb": "working", "label": "Building the verified receipt…"},
     "repair_offer": {"orb": "listening", "label": "Waiting for a repair choice…"},
     "explore_offer": {"orb": "listening", "label": "Waiting for exploration consent…"},
+    "explore_welcome": {"orb": "weaving", "label": "Welcoming the domain expert and apprentice…", "message": "Buckle up—Rote is ready to explore with us."},
     "explore_prepare": {"orb": "weaving", "label": "Preparing the exploration context…"},
     "explore_route": {"orb": "solving", "label": "Selecting a safe exploration route…"},
     "explore_dispatch": {"orb": "weaving", "label": "Preparing the selected Rote route…"},

@@ -39,7 +39,8 @@ invocable so declared handoffs can chain without requiring another user command.
    digests, byte counts, and timings, and `isolated_workdir: false`. Initialize `onboarding` with
    `intent`, Rote, and identity statuses set to `unknown`; setup status `not_required`; null command,
    email, handle, URI, card, references, and timings; false off-PATH/presented flags; and empty
-   evidence.
+   evidence. Initialize `exploration` with welcome status `pending`, identity status and source
+   `unknown`, and null human name, identity reference, welcome Markdown/reference, and timing.
 4. Validate the context's machine version, current state, transition sequence, and pending action.
 5. Execute exactly one declared prompt or entry action for the current state.
 6. Accept only an event declared by the current state and validated by
@@ -231,6 +232,13 @@ Keep Awareness, Use, and Explore distinct:
   avoid redundant creation; if a related Play exists, ask whether to Use, Adapt, or Create distinct.
 - Explicit creator intent is Explore consent. Do not repeat the generic Explore-or-exit question,
   but preserve authentication, effect, modality widening, and publication gates.
+- After any path grants Explore consent, enter `explore_welcome` exactly once before workspace
+  preparation. Reuse a verified onboarding email handle or live-probe `rote whoami` through
+  `scripts/bin/play-onboarding explore-welcome --stdin --json`. Present the declared thinking-orb
+  fallback followed by the returned welcome: honor the named human as the domain expert, frame the
+  agent as their apprentice, invite them to ask the agent to watch and steer, and explain that their
+  expertise can become rote memory. If identity is unavailable, say `friend`; never invent a name
+  or block approved exploration solely because personalization failed.
 - Recommend CALL for suitable adapters, SHELL for local work, and DRIVE for authenticated browser
   work. Present the recommendation as a milestone; ask only when policy requires a decision.
 

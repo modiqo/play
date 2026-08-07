@@ -156,7 +156,7 @@ states:
     entry: {action: classify_creator_options}
     "on":
       creator_match_ready: [{target: creator_offer, mutate: record_creator_match}]
-      creator_no_match: [{target: explore_prepare, mutate: approve_creator_explore}]
+      creator_no_match: [{target: explore_welcome, mutate: approve_creator_explore}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   creator_offer:
@@ -165,8 +165,8 @@ states:
     prompt: choose_creator_path
     "on":
       creator_use_selected: [{target: use_inspect, mutate: enter_creator_use}]
-      creator_adapt_selected: [{target: explore_prepare, mutate: approve_adapt_explore}]
-      creator_create_selected: [{target: explore_prepare, mutate: approve_creator_explore}]
+      creator_adapt_selected: [{target: explore_welcome, mutate: approve_adapt_explore}]
+      creator_create_selected: [{target: explore_welcome, mutate: approve_creator_explore}]
 
   management_offer:
     owner: play
@@ -307,7 +307,7 @@ states:
     checkpoint: after
     prompt: repair_or_exit
     "on":
-      repair_approved: [{target: explore_prepare, mutate: approve_repair_explore}]
+      repair_approved: [{target: explore_welcome, mutate: approve_repair_explore}]
       ordinary_execution_selected: [{target: exited, mutate: record_ordinary_exit}]
 
   explore_offer:
@@ -315,8 +315,17 @@ states:
     checkpoint: after
     prompt: explore_or_exit
     "on":
-      explore_approved: [{target: explore_prepare, mutate: approve_explore}]
+      explore_approved: [{target: explore_welcome, mutate: approve_explore}]
       ordinary_execution_selected: [{target: exited, mutate: record_ordinary_exit}]
+
+  explore_welcome:
+    owner: play
+    checkpoint: both
+    requires: [consent.explore, onboarding.identity_status]
+    entry: {action: present_exploration_welcome}
+    "on":
+      exploration_welcome_presented: [{target: explore_prepare, mutate: record_exploration_welcome}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
 
   explore_prepare:
     owner: play

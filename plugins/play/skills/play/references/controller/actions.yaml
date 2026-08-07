@@ -95,6 +95,7 @@ mutations:
   - approve_repair_explore
   - record_ordinary_exit
   - approve_explore
+  - record_exploration_welcome
   - record_exploration_context
   - record_missing_consent
   - record_route
@@ -421,6 +422,21 @@ actions:
     input_required: [match.reference, evidence.verification, output.presentation_markdown, output.presentation_sha256]
     events:
       receipt_ready: [receipt_ref, output.presentation_markdown, output.presentation_sha256]
+
+  present_exploration_welcome:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [consent.explore, onboarding.identity_status]
+    command: scripts/bin/play-onboarding explore-welcome --stdin --json
+    command_policy:
+      - Reuse a verified onboarding email handle when present; otherwise live-probe Rote and run exactly one whoami through the existing bounded identity reader.
+      - Retain only the safe email handle and a digest of identity output; never retain or display the full email, raw whoami output, or credentials.
+      - If identity is unavailable, use the neutral word friend and continue; never invent a personal name or block an already approved exploration only because personalization failed.
+      - Present the exact explore_welcome thinking-orb fallback first, then presentation.markdown exactly once before creating the exploration workspace.
+      - Honor the human as the domain expert, frame the agent as their apprentice, invite watching and steering, and explain that learned expertise can become rote memory.
+    events:
+      exploration_welcome_presented: [exploration.welcome_status, exploration.human_name, exploration.identity_status, exploration.identity_source, exploration.identity_ref, exploration.welcome_markdown, exploration.welcome_ref, exploration.resolve_ns, presentation.markdown]
 
   prepare_exploration:
     kind: deterministic

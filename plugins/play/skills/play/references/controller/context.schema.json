@@ -21,6 +21,7 @@
     "readiness",
     "route",
     "onboarding",
+    "exploration",
     "adapter_discovery",
     "consent",
     "modality_policy",
@@ -60,6 +61,7 @@
     "readiness": {"$ref": "#/$defs/readiness"},
     "route": {"$ref": "#/$defs/route"},
     "onboarding": {"$ref": "#/$defs/onboarding"},
+    "exploration": {"$ref": "#/$defs/exploration"},
     "adapter_discovery": {"$ref": "#/$defs/adapterDiscovery"},
     "consent": {"$ref": "#/$defs/consent"},
     "modality_policy": {"$ref": "#/$defs/modalityPolicy"},
@@ -267,6 +269,21 @@
         "card_presented": {"type": "boolean"},
         "card_presentation_ref": {"$ref": "#/$defs/nullableString"},
         "evidence_refs": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "exploration": {
+      "type": "object",
+      "required": ["welcome_status", "human_name", "identity_status", "identity_source", "identity_ref", "welcome_markdown", "welcome_ref", "resolve_ns"],
+      "additionalProperties": false,
+      "properties": {
+        "welcome_status": {"enum": ["pending", "presented"]},
+        "human_name": {"$ref": "#/$defs/nullableString"},
+        "identity_status": {"enum": ["unknown", "authenticated", "unavailable"]},
+        "identity_source": {"enum": ["unknown", "onboarding_email_handle", "live_email_handle", "neutral_fallback"]},
+        "identity_ref": {"$ref": "#/$defs/nullableString"},
+        "welcome_markdown": {"$ref": "#/$defs/nullableString"},
+        "welcome_ref": {"$ref": "#/$defs/nullableString"},
+        "resolve_ns": {"type": ["integer", "null"], "minimum": 0}
       }
     },
     "outputPolicy": {

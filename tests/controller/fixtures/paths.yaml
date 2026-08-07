@@ -156,7 +156,8 @@ cases:
       - {state: qualify, event: outcome_request, target: search}
       - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
       - {state: classify, event: no_match, target: explore_offer}
-      - {state: explore_offer, event: explore_approved, target: explore_prepare}
+      - {state: explore_offer, event: explore_approved, target: explore_welcome}
+      - {state: explore_welcome, event: exploration_welcome_presented, target: explore_prepare}
       - state: explore_prepare
         event: exploration_ready
         guards: {explore_is_approved: true}
@@ -183,7 +184,8 @@ cases:
       - {state: qualify, event: outcome_request, target: search}
       - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
       - {state: classify, event: no_match, target: explore_offer}
-      - {state: explore_offer, event: explore_approved, target: explore_prepare}
+      - {state: explore_offer, event: explore_approved, target: explore_welcome}
+      - {state: explore_welcome, event: exploration_welcome_presented, target: explore_prepare}
       - state: explore_prepare
         event: exploration_ready
         guards: {explore_is_approved: true}
@@ -241,7 +243,8 @@ cases:
       - {state: qualify, event: outcome_request, target: search}
       - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
       - {state: classify, event: no_match, target: explore_offer}
-      - {state: explore_offer, event: explore_approved, target: explore_prepare}
+      - {state: explore_offer, event: explore_approved, target: explore_welcome}
+      - {state: explore_welcome, event: exploration_welcome_presented, target: explore_prepare}
       - state: explore_prepare
         event: exploration_ready
         guards: {explore_is_approved: true}
@@ -295,7 +298,8 @@ cases:
       - {state: qualify, event: outcome_request, target: search}
       - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
       - {state: classify, event: no_match, target: explore_offer}
-      - {state: explore_offer, event: explore_approved, target: explore_prepare}
+      - {state: explore_offer, event: explore_approved, target: explore_welcome}
+      - {state: explore_welcome, event: exploration_welcome_presented, target: explore_prepare}
       - state: explore_prepare
         event: exploration_ready
         guards: {explore_is_approved: true}
@@ -484,7 +488,8 @@ cases:
   - name: drift can enter consented repair exploration
     steps:
       - {state: use_run, event: play_drifted, target: repair_offer}
-      - {state: repair_offer, event: repair_approved, target: explore_prepare}
+      - {state: repair_offer, event: repair_approved, target: explore_welcome}
+      - {state: explore_welcome, event: exploration_welcome_presented, target: explore_prepare}
       - state: explore_prepare
         event: exploration_ready
         guards: {explore_is_approved: true}
@@ -526,7 +531,8 @@ cases:
         event: creator_search_ready
         guards: {search_is_complete: true}
         target: creator_classify
-      - {state: creator_classify, event: creator_no_match, target: explore_prepare}
+      - {state: creator_classify, event: creator_no_match, target: explore_welcome}
+      - {state: explore_welcome, event: exploration_welcome_presented, target: explore_prepare}
       - state: explore_prepare
         event: exploration_ready
         guards: {explore_is_approved: true}

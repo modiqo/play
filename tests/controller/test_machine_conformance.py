@@ -336,9 +336,35 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["creator_search"]["on"]["creator_search_ready"][0]["target"],
         )
         self.assertEqual(
-            "explore_prepare",
+            "explore_welcome",
             MACHINE["states"]["creator_classify"]["on"]["creator_no_match"][0]["target"],
         )
+
+    def test_every_new_exploration_welcomes_the_human_before_workspace_creation(self) -> None:
+        self.assertEqual(
+            "scripts/bin/play-onboarding explore-welcome --stdin --json",
+            ACTIONS["present_exploration_welcome"]["command"],
+        )
+        self.assertEqual(
+            "explore_prepare",
+            MACHINE["states"]["explore_welcome"]["on"][
+                "exploration_welcome_presented"
+            ][0]["target"],
+        )
+        for state, event in (
+            ("explore_offer", "explore_approved"),
+            ("repair_offer", "repair_approved"),
+            ("creator_classify", "creator_no_match"),
+            ("creator_offer", "creator_adapt_selected"),
+            ("creator_offer", "creator_create_selected"),
+        ):
+            with self.subTest(state=state, event=event):
+                self.assertEqual(
+                    "explore_welcome", MACHINE["states"][state]["on"][event][0]["target"]
+                )
+        exploration = CONTEXT["$defs"]["exploration"]
+        self.assertIn("human_name", exploration["required"])
+        self.assertIn("welcome_markdown", exploration["required"])
 
     def test_open_text_prompts_have_stable_input_events(self) -> None:
         for name in ("describe_awareness_need", "describe_creator_need"):

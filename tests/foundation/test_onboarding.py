@@ -15,8 +15,10 @@ from play.onboarding import (
     classify_invocation,
     inspect_identity,
     normalize_card,
+    prepare_exploration_welcome,
     probe_rote,
     render_card,
+    render_exploration_welcome,
 )
 
 
@@ -155,6 +157,81 @@ class RoteGreetingProbeTest(unittest.TestCase):
         self.assertEqual("setup_required", result["identity_status"])
         self.assertIsNone(result["email"])
         self.assertIsNone(result["email_handle"])
+
+
+class ExplorationWelcomeTest(unittest.TestCase):
+    def test_reuses_authenticated_onboarding_handle_without_another_probe(self) -> None:
+        with patch("play.onboarding.probe_rote") as probe:
+            result = prepare_exploration_welcome(
+                {
+                    "onboarding": {
+                        "identity_status": "authenticated",
+                        "email_handle": "chetan",
+                        "identity_ref": "sha256:identity",
+                    }
+                }
+            )
+
+        probe.assert_not_called()
+        exploration = result["exploration"]
+        self.assertEqual("chetan", exploration["human_name"])
+        self.assertEqual("onboarding_email_handle", exploration["identity_source"])
+        self.assertIn("you, chetan, are the domain expert", result["presentation_markdown"])
+        self.assertIn("your agent, am the apprentice", result["presentation_markdown"])
+        self.assertIn("rote memory", result["presentation_markdown"])
+
+    @patch("play.onboarding.inspect_identity")
+    @patch("play.onboarding.probe_rote")
+    def test_live_identity_is_used_without_retaining_the_email(self, probe, identity) -> None:
+        probe.return_value = {
+            "rote_status": "installed",
+            "rote_command": "/opt/bin/rote",
+        }
+        identity.return_value = {
+            "identity_status": "authenticated",
+            "email": "chetan@modiqo.ai",
+            "email_handle": "chetan",
+            "identity_ref": "sha256:identity",
+        }
+
+        result = prepare_exploration_welcome({"onboarding": {}})
+
+        self.assertEqual("live_email_handle", result["exploration"]["identity_source"])
+        self.assertNotIn("chetan@modiqo.ai", str(result))
+
+    @patch("play.onboarding.probe_rote", return_value={"rote_status": "missing"})
+    def test_missing_identity_uses_neutral_fallback_without_inventing_a_name(
+        self, _probe
+    ) -> None:
+        result = prepare_exploration_welcome({"onboarding": {}})
+
+        exploration = result["exploration"]
+        self.assertIsNone(exploration["human_name"])
+        self.assertEqual("unavailable", exploration["identity_status"])
+        self.assertEqual("neutral_fallback", exploration["identity_source"])
+        self.assertIn("you, friend, are the domain expert", result["presentation_markdown"])
+
+    @patch("play.onboarding.inspect_identity", side_effect=OnboardingError("probe timed out"))
+    @patch(
+        "play.onboarding.probe_rote",
+        return_value={"rote_status": "installed", "rote_command": "/opt/bin/rote"},
+    )
+    def test_identity_probe_failure_still_presents_the_neutral_welcome(
+        self, _probe, _identity
+    ) -> None:
+        result = prepare_exploration_welcome({"onboarding": {}})
+
+        exploration = result["exploration"]
+        self.assertEqual("presented", exploration["welcome_status"])
+        self.assertEqual("neutral_fallback", exploration["identity_source"])
+        self.assertTrue(str(exploration["identity_ref"]).startswith("sha256:"))
+
+    def test_renderer_has_the_human_expert_apprentice_contract(self) -> None:
+        rendered = render_exploration_welcome("Ada")
+        self.assertIn("you, Ada, are the domain expert", rendered)
+        self.assertIn("I, your agent, am the apprentice", rendered)
+        self.assertIn("watch, question, and follow your steering", rendered)
+        self.assertIn("Buckle up—Rote", rendered)
 
 
 class PublicCardTest(unittest.TestCase):

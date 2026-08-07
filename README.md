@@ -44,6 +44,12 @@ or unauthenticated Rote is handed to the guided `rote-setup` skill. A public Pla
 Rote inspection when available; without Rote, Play reads the URI's bounded public JSON card and
 shows its own inspect and consent-gated install/bootstrap paths without executing them.
 
+When Explore begins, Play resolves the signed-in human's email handle without retaining raw identity
+output and welcomes them as the domain expert, with the agent as their apprentice. The welcome
+explicitly invites the human to watch, question, and steer the work so their expertise can become
+shared rote memory. It appears once after Explore consent and before any workspace is created; if
+personalization is unavailable, Play uses the neutral `friend` fallback instead of inventing a name.
+
 ## The Play state machine
 
 Play is driven by one declarative machine, [`references/controller/machine.yaml`](references/controller/machine.yaml)
@@ -107,12 +113,15 @@ stateDiagram-v2
     use_verify --> use_receipt : outcome verified
     use_verify --> repair_offer : not verified
     use_receipt --> receipt
-    repair_offer --> explore_prepare : repair approved
+    repair_offer --> explore_welcome : repair approved
     repair_offer --> exited : continue normally
 
     %% ── Explore (consent, route, delegated execution) ──
-    explore_offer --> explore_prepare : explore approved
+    explore_offer --> explore_welcome : explore approved
     explore_offer --> exited : continue normally
+    creator_classify --> explore_welcome : create intent + no match
+    creator_offer --> explore_welcome : adapt / create selected
+    explore_welcome --> explore_prepare : human welcomed
     explore_prepare --> explore_route
     explore_route --> explore_dispatch : route within policy
     explore_route --> modality_offer : widening required
@@ -239,19 +248,21 @@ different controller versions cannot be mixed accidentally.
 
 Baseline recorded on 2026-08-06 on an Apple Silicon Mac with Python 3.14.5,
 `python-statemachine` 3.2.0, bundle
-`73e642bd7c6693a0d61d043327102990dbc7b662d535108e58fc56b3d3eaa548`, and 10,000
+`9566767552c4780dd8353503c70796e68a1d8f4edd0ab7b3ce147520e6494c1a`, and 10,000
 iterations:
 
 | Metric | Time |
 |---|---:|
-| One-time bundle compile | 121.36 ms |
-| Warm invocation transition median | 0.512 ms |
-| Warm invocation transition p95 | 0.743 ms |
-| Warm invocation transition max | 5.97 ms |
+| One-time bundle compile | 122.17 ms |
+| Warm invocation transition median | 0.517 ms |
+| Warm invocation transition p95 | 0.749 ms |
+| Warm invocation transition max | 5.89 ms |
 
 The preceding 59-state publication-safety bundle measured a 0.462 ms median and 0.741 ms p95 on the
-same date. The 66-state onboarding bundle keeps p95 effectively flat; live `whoami`, registry
-inspection, public-card fetches, and setup are separately timed external I/O actions.
+same date. The 67-state identity-aware exploration bundle keeps p95 effectively flat. A single live
+`explore-welcome` sample on the same machine resolved the signed-in Rote identity and rendered the
+welcome in 1.624 seconds; almost all of that is the external `rote whoami` call. Registry inspection,
+public-card fetches, and setup are likewise separately timed external I/O actions.
 
 Treat these numbers as a development baseline, not a cross-machine guarantee. Future performance
 changes should record the command, iteration count, bundle SHA, Python version, and machine class.
