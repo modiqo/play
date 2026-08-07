@@ -166,13 +166,13 @@ stateDiagram-v2
     public_publish --> birth_bind : published public
     birth_bind --> index
     index --> saved_inspect
-    saved_inspect --> saved_present : private readback matches
+    saved_inspect --> birth_present : private readback matches
     saved_inspect --> publication_credentials : public readback matches
     publication_credentials --> publication_smoke : contracts verified
     publication_credentials --> blocked : mismatch
-    publication_smoke --> saved_present : canonical URI run passes
+    publication_smoke --> birth_present : canonical URI run passes
     publication_smoke --> blocked : run fails
-    saved_present --> completed
+    birth_present --> completed : certificate + trace learning + farewell
 
     %% ── Awareness, creator, management, birth ──
     awareness_collect --> awareness_present : new items
@@ -248,21 +248,22 @@ different controller versions cannot be mixed accidentally.
 
 Baseline recorded on 2026-08-06 on an Apple Silicon Mac with Python 3.14.5,
 `python-statemachine` 3.2.0, bundle
-`9566767552c4780dd8353503c70796e68a1d8f4edd0ab7b3ce147520e6494c1a`, and 10,000
+`818c595797d80aacdfa9eaa9fe46c3e51d77ae210704751d5dd5d83fea638098`, and 10,000
 iterations:
 
 | Metric | Time |
 |---|---:|
-| One-time bundle compile | 122.17 ms |
+| One-time bundle compile | 122.64 ms |
 | Warm invocation transition median | 0.517 ms |
-| Warm invocation transition p95 | 0.749 ms |
+| Warm invocation transition p95 | 0.741 ms |
 | Warm invocation transition max | 5.89 ms |
 
 The preceding 59-state publication-safety bundle measured a 0.462 ms median and 0.741 ms p95 on the
-same date. The 67-state identity-aware exploration bundle keeps p95 effectively flat. A single live
+same date. The 67-state typed-certificate bundle keeps p95 effectively flat. A single live
 `explore-welcome` sample on the same machine resolved the signed-in Rote identity and rendered the
 welcome in 1.624 seconds; almost all of that is the external `rote whoami` call. Registry inspection,
-public-card fetches, and setup are likewise separately timed external I/O actions.
+public-card fetches, and setup are likewise separately timed external I/O actions. Every certificate
+result records its local store verification and rendering latency in `birth.certificate_ns`.
 
 Treat these numbers as a development baseline, not a cross-machine guarantee. Future performance
 changes should record the command, iteration count, bundle SHA, Python version, and machine class.
@@ -542,7 +543,10 @@ Explore offer (or the DRIVE route milestone), repeats the limit at the save offe
 
 After release, Play captures a private birth certificate from the exploration evidence. After
 Private or Public publication, it binds that certificate to the minted exact reference, then indexes
-and inspects the canonical version before calling the save successful. Organization membership,
+and inspects the canonical version before calling the save successful. The final typed Python
+renderer frames the verified certificate with the Play URI, X and LinkedIn copy for Public Plays,
+and a redacted trace-learning summary showing explicit successes, errors, and unknown outcomes. It
+closes with a personalized thank-you to the human domain expert. Organization membership,
 invitations, and sharing use the organization/list surface rather than hidden local state.
 
 ### Public credential and canonical-run gate
@@ -587,8 +591,8 @@ scripts/bin/play-birth bind <birth-sha> --reference modiqo/weekly-customer-repor
 
 Birth certificates live under `~/.play/births`, independently of `.rote`. They are readable only by
 the local OS user, content-addressed, and captured once per released Flow fingerprint. They preserve
-safe counts, timings, dependency edges, modalities, token savings, artifact hashes, and the minted
-URI’s registry-supplied publication author provenance while
+safe counts, explicit success/error/unknown outcomes, timings, dependency edges, modalities, token
+savings, artifact hashes, and the minted URI’s registry-supplied publication author provenance while
 excluding raw commands, parameters, queries, responses, credentials, and workspace paths. They are
 not uploaded to the registry and do not follow a Play to another machine. See
 [`references/publish/birth.md`](references/publish/birth.md) for capture, binding, privacy, and

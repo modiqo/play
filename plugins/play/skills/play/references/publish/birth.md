@@ -27,7 +27,20 @@ the immutable registry metadata supplies it. It updates only the local index; it
 never mutates the content-addressed birth object. Bind before local Playcard indexing, then continue
 with the normal canonical inspection readback. The birth output is not the terminal publication
 readout: after verified readback, Public must still present the registry-returned Play page and
-install/bootstrap URIs plus paste-ready X and LinkedIn copy.
+install/bootstrap URIs plus paste-ready X and LinkedIn copy through the typed certificate renderer.
+
+After matching canonical readback—and, for Public, credential and smoke verification—render the
+bound certificate with:
+
+```bash
+scripts/bin/play-certificate --stdin --json
+```
+
+The controller context on stdin supplies verified publication metadata and the safe human handle;
+the renderer independently reads the owner-local immutable birth object. It fails closed when the
+birth SHA, exact reference, or registry content hash differs. Its visualization includes redacted
+trace successes, errors, and unknown outcomes, the public Play URI and share copy when applicable,
+and the personalized closing. It never posts social copy or exposes raw trace content.
 
 ## Private storage
 
@@ -60,7 +73,8 @@ The birth object stores only:
 
 - safe released-Flow metadata and hashes of portable package members;
 - workspace name, command/response/variable totals, timing, execution mode, and token savings;
-- command-type and dependency-type counts, safe numeric dependency edges, and inferred modalities;
+- command-type and dependency-type counts, safe numeric dependency edges, inferred modalities,
+  and explicit success/error/unknown command-outcome counts;
 - the evidence methods used and explicit privacy exclusions.
 
 The binding index adds only exact references, registry content hashes, and publication author

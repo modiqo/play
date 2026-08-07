@@ -41,6 +41,9 @@ invocable so declared handoffs can chain without requiring another user command.
    email, handle, URI, card, references, and timings; false off-PATH/presented flags; and empty
    evidence. Initialize `exploration` with welcome status `pending`, identity status and source
    `unknown`, and null human name, identity reference, welcome Markdown/reference, and timing.
+   Initialize birth certificate presentation as false with null certificate reference and timing,
+   plus a zeroed trace-learning record whose evidence method is `not_presented` and whose summary
+   states that presentation is pending.
 4. Validate the context's machine version, current state, transition sequence, and pending action.
 5. Execute exactly one declared prompt or entry action for the current state.
 6. Accept only an event declared by the current state and validated by
@@ -337,12 +340,14 @@ Play. Do not execute an exploration modality before approval. If the user contin
   current host's credential readiness; it does not prove every consumer is configured. On any
   mismatch or failure, block presentation and leave repair, authentication, pull, and cleanup to
   their Rote owners.
-- Only after the matching readback and, for Public, successful contract and smoke gates, show the
-  compact JSON-backed success readout and congratulate the user. Present the exact registry-returned Play page URI and
-  install/bootstrap URI, a clickable Play link labeled with its title and description, and fenced
-  plain-text copy ready to paste into X and LinkedIn. Keep X within 280 characters and include the
-  Play URI in both blocks. Never reconstruct or omit returned URLs, and never post the copy without
-  a separate explicit request.
+- Only after the matching readback and, for Public, successful contract and smoke gates, enter
+  `birth_present` and run `scripts/bin/play-certificate --stdin --json`. Require the immutable
+  owner-local birth object to be bound to the same exact reference and content hash. Present its
+  typed certificate visualization with the exact registry-returned Play URI, paste-ready X and
+  LinkedIn copy, and successes/errors/unknown counts derived only from the same redacted trace.
+  Never reconstruct URLs, infer unknown commands as successes, or post the copy. End with “Dear
+  `<name>`. It was a pleasure working with you, and we did an excellent job.” using the safe Explore
+  or onboarding handle, with `friend` only as a truthful fallback.
 
 ## Delegate execution
 
@@ -421,8 +426,8 @@ At terminal state, present only the outcome relevant to that terminal:
 - `completed`: verified Explore result plus saved reference or explicit unpublished status;
 - `completed` for a saved Play: verified result, matching inspect readout, and—when Public—verified
   associated adapter credential contracts, a successful isolated canonical URI smoke run with
-  measured latency, the Play page, install/bootstrap link, and paste-ready X and LinkedIn copy,
-  followed by a brief congratulations;
+  measured latency, then the typed owner-local birth certificate visualization, Play URI,
+  paste-ready X and LinkedIn copy, redacted trace-learning counts, and personalized closing;
 - `completed` for management: the requested organization summary or grouped Play inventory;
 - `completed` for birth lookup: the requested owner-local certificate or an honest absent/ambiguous
   result;

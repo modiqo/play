@@ -319,13 +319,13 @@ def validate_bundle(root: Path) -> ValidationSummary:
         ),
         "auth_repair_handoff": ("auth_repair_execute", "auth_repair_receipt"),
         "auth_repair_execute": ("auth_repair_receipt",),
-        "crystallize": ("save_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "saved_present"),
-        "save_offer": ("author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "saved_present"),
-        "author_release": ("birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "saved_present"),
-        "birth_capture": ("private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "saved_present"),
-        "birth_bind": ("index", "saved_inspect", "publication_credentials", "publication_smoke", "saved_present"),
-        "index": ("saved_inspect", "publication_credentials", "publication_smoke", "saved_present"),
-        "saved_inspect": ("publication_credentials", "publication_smoke", "saved_present"),
+        "crystallize": ("save_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
+        "save_offer": ("author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
+        "author_release": ("birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
+        "birth_capture": ("private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
+        "birth_bind": ("index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
+        "index": ("saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
+        "saved_inspect": ("publication_credentials", "publication_smoke", "birth_present"),
         "publication_credentials": ("publication_smoke",),
         "use_output": ("use_verify", "use_receipt"),
     }
@@ -538,14 +538,14 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(predecessors["saved_inspect"] == {"index"}, "saved inspection may follow only successful indexing")
     check(predecessors["publication_credentials"] == {"saved_inspect"}, "public credential validation may follow only successful canonical inspection")
     check(predecessors["publication_smoke"] == {"publication_credentials"}, "public smoke may follow only verified credential contracts")
-    check(predecessors["saved_present"] == {"saved_inspect", "publication_smoke"}, "saved presentation must follow private readback or verified public smoke")
+    check(predecessors["birth_present"] == {"saved_inspect", "publication_smoke"}, "birth certificate presentation must follow private readback or verified public smoke")
     check(
         _target(states, "saved_inspect", "saved_play_inspected") == "publication_credentials",
         "a matching public inspection must enter associated credential validation",
     )
     check(
-        _target(states, "saved_inspect", "saved_play_inspected", 1) == "saved_present",
-        "a matching private inspection may enter verified publication presentation",
+        _target(states, "saved_inspect", "saved_play_inspected", 1) == "birth_present",
+        "a matching private inspection may enter verified birth certificate presentation",
     )
     check(
         _target(states, "publication_credentials", "associated_credentials_verified")
@@ -553,12 +553,12 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "verified associated credential contracts must enter canonical public smoke",
     )
     check(
-        _target(states, "publication_smoke", "public_smoke_verified") == "saved_present",
-        "public presentation may follow only a verified canonical smoke run",
+        _target(states, "publication_smoke", "public_smoke_verified") == "birth_present",
+        "public certificate presentation may follow only a verified canonical smoke run",
     )
     check(
-        _target(states, "saved_present", "saved_play_presented") == "completed",
-        "a saved Play may complete only after its verified publication readout",
+        _target(states, "birth_present", "birth_certificate_presented") == "completed",
+        "a saved Play may complete only after its verified birth certificate is presented",
     )
     check(edges["use_receipt"] == {"receipt", "blocked"}, "Use receipt must terminate without publication or indexing")
     check(_target(states, "save_offer", "save_skipped") == "completed", "Skip must complete without publication or indexing")
@@ -635,9 +635,9 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "auth repair receipts must use their dedicated verification gate",
     )
     check(
-        actions.get("present_saved_play", {}).get("command")
-        == "scripts/bin/play-publication --stdin --json",
-        "saved publication presentation must use the deterministic URI and social-copy renderer",
+        actions.get("present_birth_certificate", {}).get("command")
+        == "scripts/bin/play-certificate --stdin --json",
+        "saved Play completion must use the typed birth certificate renderer",
     )
     check(
         actions.get("inspect_publication_credentials", {}).get("command")
@@ -655,12 +655,14 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "public publication must preserve registry-returned Play and install URIs",
     )
     presentation_policy = " ".join(
-        actions.get("present_saved_play", {}).get("command_policy", [])
+        actions.get("present_birth_certificate", {}).get("command_policy", [])
     )
     check(
         "ready to paste into X and LinkedIn" in presentation_policy
-        and "Never invent, reconstruct, shorten, or silently omit" in presentation_policy,
-        "public publication presentation must include paste-ready social copy from returned URIs",
+        and "Never invent, reconstruct, shorten, or silently omit" in presentation_policy
+        and "same redacted trace" in presentation_policy
+        and "we did an excellent job" in presentation_policy,
+        "the certificate must include truthful trace learning, social copy, and personalized closure",
     )
     credential_policy = " ".join(
         actions.get("inspect_publication_credentials", {}).get("command_policy", [])

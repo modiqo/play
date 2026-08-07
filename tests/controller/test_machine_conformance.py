@@ -159,7 +159,7 @@ class MachineConformanceTest(unittest.TestCase):
         )
         inspected = MACHINE["states"]["saved_inspect"]["on"]["saved_play_inspected"][0]
         self.assertEqual("publication_credentials", inspected["target"])
-        self.assertEqual("saved_present", MACHINE["states"]["saved_inspect"]["on"]["saved_play_inspected"][1]["target"])
+        self.assertEqual("birth_present", MACHINE["states"]["saved_inspect"]["on"]["saved_play_inspected"][1]["target"])
         self.assertEqual(
             "inspect_publication_credentials",
             MACHINE["states"]["publication_credentials"]["entry"]["action"],
@@ -172,32 +172,33 @@ class MachineConformanceTest(unittest.TestCase):
             "smoke_publication", MACHINE["states"]["publication_smoke"]["entry"]["action"]
         )
         self.assertEqual(
-            "saved_present",
+            "birth_present",
             MACHINE["states"]["publication_smoke"]["on"]["public_smoke_verified"][0]["target"],
         )
         self.assertEqual(
-            "present_saved_play", MACHINE["states"]["saved_present"]["entry"]["action"]
+            "present_birth_certificate", MACHINE["states"]["birth_present"]["entry"]["action"]
         )
         self.assertEqual(
             "completed",
-            MACHINE["states"]["saved_present"]["on"]["saved_play_presented"][0][
+            MACHINE["states"]["birth_present"]["on"]["birth_certificate_presented"][0][
                 "target"
             ],
         )
 
-    def test_publication_readout_preserves_uris_and_social_copy(self) -> None:
+    def test_birth_certificate_preserves_uris_social_copy_and_trace_learning(self) -> None:
         published = ACTIONS["publish_public"]["events"]["play_published"]
         self.assertIn("publication.uri", published)
         self.assertIn("publication.install_uri", published)
         self.assertEqual(
-            "scripts/bin/play-publication --stdin --json",
-            ACTIONS["present_saved_play"]["command"],
+            "scripts/bin/play-certificate --stdin --json",
+            ACTIONS["present_birth_certificate"]["command"],
         )
-        policy = " ".join(ACTIONS["present_saved_play"]["command_policy"])
-        self.assertIn("clickable Play page", policy)
+        policy = " ".join(ACTIONS["present_birth_certificate"]["command_policy"])
         self.assertIn("ready to paste into X and LinkedIn", policy)
         self.assertIn("Never invent, reconstruct, shorten, or silently omit", policy)
         self.assertIn("public URLs or social copy", policy)
+        self.assertIn("same redacted trace", policy)
+        self.assertIn("we did an excellent job", policy)
         publication = CONTEXT["$defs"]["publication"]
         for field in (
             "title",
@@ -210,6 +211,14 @@ class MachineConformanceTest(unittest.TestCase):
             "presented",
         ):
             self.assertIn(field, publication["required"])
+        birth = CONTEXT["$defs"]["birth"]
+        for field in (
+            "certificate_presented",
+            "certificate_ref",
+            "certificate_ns",
+            "trace_learning",
+        ):
+            self.assertIn(field, birth["required"])
 
     def test_publication_gate_compares_credential_contract_then_smokes_exact_uri(self) -> None:
         credential_action = ACTIONS["inspect_publication_credentials"]

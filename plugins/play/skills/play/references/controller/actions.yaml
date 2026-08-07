@@ -151,7 +151,7 @@ mutations:
   - record_credential_contract_failure
   - record_public_smoke
   - record_public_smoke_failure
-  - record_saved_presentation
+  - record_birth_certificate_presentation
 
 actions:
   classify_play_invocation:
@@ -717,22 +717,24 @@ actions:
       public_smoke_verified: [publication_validation.smoke_status, publication_validation.smoke_exact_reference, publication_validation.smoke_run_ref, publication_validation.smoke_output_sha256, publication_validation.smoke_output_bytes, publication_validation.smoke_ns, publication_validation.isolated_workdir]
       public_smoke_failed: [reason, failure_class, credential_names, evidence_refs]
 
-  present_saved_play:
+  present_birth_certificate:
     kind: deterministic
     owner: play
-    effect: none
-    input_required: [publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.uri, publication.install_uri, publication.content_hash, publication.inspect_ref, publication_validation.credential_status, publication_validation.smoke_status, play.version]
-    command: scripts/bin/play-publication --stdin --json
+    effect: read
+    input_required: [birth.sha256, birth.flow_fingerprint, birth.exact_reference, birth.registry_content_hash, birth.binding_ref, publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.uri, publication.install_uri, publication.content_hash, publication.inspect_ref, publication_validation.credential_status, publication_validation.smoke_status, play.version, exploration.human_name, onboarding.email_handle]
+    command: scripts/bin/play-certificate --stdin --json
     command_policy:
-      - Run only after canonical inspection matches the authorized publication.
+      - Run only after canonical inspection matches the authorized publication and the immutable owner-local birth certificate is bound to the same exact reference and registry content hash.
       - For public Plays, run only after associated credential contracts and the isolated canonical URI smoke test are verified.
-      - For public Plays, present a clickable Play page whose label includes the title and description, the install/bootstrap link, exact canonical reference, visibility, owner, and content hash.
-      - For public Plays, include separate fenced plain-text blocks ready to paste into X and LinkedIn; the X copy must remain within 280 characters and both must contain the Play page URI.
+      - Render the certificate through typed Python as a stable text visualization containing the birth SHA, Flow fingerprint, exact publication, human domain expert, and redacted trace-learning counts.
+      - Derive successes, errors, and unknown outcomes only from the same redacted trace captured in the immutable birth object; never infer missing outcomes as successes.
+      - For public Plays, include the registry-returned Play URI and separate fenced plain-text blocks ready to paste into X and LinkedIn; the X copy must remain within 280 characters and both must contain the Play page URI.
       - Use only the registry-returned publication.uri and publication.install_uri. Never invent, reconstruct, shorten, or silently omit either URL.
-      - For private Plays, present the verified private reference without public URLs or social copy.
+      - For private Plays, certify the verified private reference without public URLs or social copy.
+      - End with the resolved safe human handle in the exact sentiment that it was a pleasure working together and that we did an excellent job; use friend only when no verified handle is available.
       - Presenting copy does not post, share, invite, or perform any external write.
     events:
-      saved_play_presented: [publication.presented, publication.share_copy, publication.presentation_ref, presentation.markdown]
+      birth_certificate_presented: [birth.certificate_presented, birth.certificate_ref, birth.certificate_ns, birth.trace_learning, publication.presented, publication.share_copy, publication.presentation_ref, presentation.markdown]
 
 failure_event:
   id: action_blocked

@@ -512,7 +512,7 @@
     },
     "birth": {
       "type": "object",
-      "required": ["selector", "sha256", "flow_fingerprint", "object_ref", "capture_ref", "exact_reference", "registry_content_hash", "binding_ref"],
+      "required": ["selector", "sha256", "flow_fingerprint", "object_ref", "capture_ref", "exact_reference", "registry_content_hash", "binding_ref", "certificate_presented", "certificate_ref", "certificate_ns", "trace_learning"],
       "additionalProperties": false,
       "properties": {
         "selector": {"$ref": "#/$defs/nullableString"},
@@ -522,7 +522,28 @@
         "capture_ref": {"$ref": "#/$defs/nullableString"},
         "exact_reference": {"$ref": "#/$defs/nullableString"},
         "registry_content_hash": {"$ref": "#/$defs/nullableString"},
-        "binding_ref": {"$ref": "#/$defs/nullableString"}
+        "binding_ref": {"$ref": "#/$defs/nullableString"},
+        "certificate_presented": {"type": "boolean"},
+        "certificate_ref": {"$ref": "#/$defs/nullableString"},
+        "certificate_ns": {"type": ["integer", "null"], "minimum": 0},
+        "trace_learning": {"$ref": "#/$defs/traceLearning"}
+      }
+    },
+    "traceLearning": {
+      "type": "object",
+      "required": ["commands", "responses", "successes", "errors", "unknown", "dependency_edges", "modalities", "duration_seconds", "trace_method", "summary"],
+      "additionalProperties": false,
+      "properties": {
+        "commands": {"type": "integer", "minimum": 0},
+        "responses": {"type": "integer", "minimum": 0},
+        "successes": {"type": "integer", "minimum": 0},
+        "errors": {"type": "integer", "minimum": 0},
+        "unknown": {"type": "integer", "minimum": 0},
+        "dependency_edges": {"type": "integer", "minimum": 0},
+        "modalities": {"$ref": "#/$defs/stringArray"},
+        "duration_seconds": {"type": ["number", "null"], "minimum": 0},
+        "trace_method": {"type": "string", "minLength": 1},
+        "summary": {"type": "string", "minLength": 1}
       }
     },
     "awareness": {

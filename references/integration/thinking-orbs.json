@@ -79,7 +79,7 @@
     "saved_inspect": {"orb": "connecting", "label": "Reading the saved Play back…"},
     "publication_credentials": {"orb": "connecting", "label": "Checking associated adapter credential contracts…"},
     "publication_smoke": {"orb": "connecting", "label": "Running the canonical public Play smoke test…"},
-    "saved_present": {"orb": "composing", "label": "Preparing the verified Play links and share copy…"},
+    "birth_present": {"orb": "working", "label": "Framing the verified Play birth certificate and trace learning…", "message": "Framing what we learned into a certificate…"},
     "receipt": {"orb": "breathing", "label": "Play completed with a verified receipt.", "message": "That’s a wrap—the receipt checks out.", "terminal": true},
     "completed": {"orb": "breathing", "label": "Play completed.", "message": "All settled—this Play has landed.", "terminal": true},
     "exited": {"orb": "breathing", "label": "Play stepped aside.", "message": "Stepping aside—the regular route has it from here.", "terminal": true},

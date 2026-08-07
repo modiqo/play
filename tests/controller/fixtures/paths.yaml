@@ -288,8 +288,8 @@ cases:
       - state: saved_inspect
         event: saved_play_inspected
         guards: {saved_public_inspection_matches_publication: false, saved_inspection_matches_publication: true}
-        target: saved_present
-      - {state: saved_present, event: saved_play_presented, target: completed}
+        target: birth_present
+      - {state: birth_present, event: birth_certificate_presented, target: completed}
     terminal: completed
     includes_once: [author_release, birth_capture, private_org, private_publish, birth_bind, index]
 
@@ -342,8 +342,8 @@ cases:
         guards: {saved_public_inspection_matches_publication: true, saved_inspection_matches_publication: true}
         target: publication_credentials
       - {state: publication_credentials, event: associated_credentials_verified, target: publication_smoke}
-      - {state: publication_smoke, event: public_smoke_verified, target: saved_present}
-      - {state: saved_present, event: saved_play_presented, target: completed}
+      - {state: publication_smoke, event: public_smoke_verified, target: birth_present}
+      - {state: birth_present, event: birth_certificate_presented, target: completed}
     terminal: completed
     includes_once: [author_release, birth_capture, public_owner, public_publish, birth_bind, index, publication_credentials, publication_smoke]
 
@@ -355,7 +355,7 @@ cases:
         target: publication_credentials
       - {state: publication_credentials, event: associated_credentials_invalid, target: blocked}
     terminal: blocked
-    excludes: [publication_smoke, saved_present]
+    excludes: [publication_smoke, birth_present]
 
   - name: public smoke failure blocks before presentation
     steps:
@@ -364,7 +364,7 @@ cases:
         target: publication_smoke
       - {state: publication_smoke, event: public_smoke_failed, target: blocked}
     terminal: blocked
-    excludes: [saved_present]
+    excludes: [birth_present]
 
   - name: public save can require owner selection
     steps:
@@ -386,8 +386,8 @@ cases:
         guards: {saved_public_inspection_matches_publication: true, saved_inspection_matches_publication: true}
         target: publication_credentials
       - {state: publication_credentials, event: associated_credentials_verified, target: publication_smoke}
-      - {state: publication_smoke, event: public_smoke_verified, target: saved_present}
-      - {state: saved_present, event: saved_play_presented, target: completed}
+      - {state: publication_smoke, event: public_smoke_verified, target: birth_present}
+      - {state: birth_present, event: birth_certificate_presented, target: completed}
     terminal: completed
 
   - name: explicit organization summary bypasses Play search

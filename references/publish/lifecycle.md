@@ -65,15 +65,18 @@ Those remediations remain explicit Rote-owned work, after which the publication 
 from canonical inspection.
 
 On a matching Private readback, or a Public readback whose credential and smoke gates passed, run
-`scripts/bin/play-publication --stdin --json` and present its Markdown exactly once. Include the
-canonical reference, exact version, visibility, owner, and content hash. For Public, also show that
-the credential contract and isolated smoke passed, including measured smoke latency.
-For Public, also include a clickable Play page link whose label carries the title and description,
-the install/bootstrap link, and separate fenced plain-text blocks ready to paste into X and
-LinkedIn. The X copy must be at most 280 characters; both social blocks must contain the returned
-Play URI, and LinkedIn also carries the install URI. For Private, do not produce public URLs or
-social copy. These are copy-only outputs: never post or share them implicitly. Then briefly
-congratulate the user. Do not congratulate before the readback and presentation succeed.
+`scripts/bin/play-certificate --stdin --json` and present its Markdown exactly once. The typed
+renderer must resolve the immutable owner-local birth object, require its binding to match the exact
+reference and registry content hash, and visualize its birth SHA, Flow fingerprint, publication,
+human domain expert, and trace learning. Count successes, errors, and unknown outcomes only from
+explicit status evidence in the same redacted birth trace; never treat missing status as success.
+
+For Public, include the exact registry-returned Play URI and separate fenced plain-text blocks ready
+to paste into X and LinkedIn. The X copy must be at most 280 characters; both social blocks contain
+the returned Play URI, and LinkedIn also carries the install URI. For Private, do not produce public
+URLs or social copy. These are copy-only outputs: never post or share them implicitly. End with the
+safe human handle and the exact sentiment that it was a pleasure working together and that we did
+an excellent job. Do not show this closure before readback, binding, and Public gates succeed.
 
 The index is a discovery cache, not the source of truth. A future outcome request starts at search;
 an explicit canonical reference goes directly to `rote play run`. In both cases the Play controller,

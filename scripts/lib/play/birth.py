@@ -19,6 +19,8 @@ from .private_store import PrivateStoreError, atomic_write_json, ensure_private_
 
 BIRTH_SCHEMA = "play.birth/v1"
 INDEX_SCHEMA = "play.birth-index/v1"
+_SUCCESS_OUTCOMES = {"complete", "completed", "ok", "passed", "success", "succeeded"}
+_ERROR_OUTCOMES = {"cancelled", "canceled", "error", "failed", "failure", "timeout"}
 
 
 class BirthError(ValueError):
@@ -226,6 +228,45 @@ def _safe_integer_map(value: object) -> dict[str, int]:
     }
 
 
+def _command_outcome(command: dict[str, Any]) -> str:
+    """Classify only explicit, non-sensitive command outcome evidence."""
+
+    for field in ("success", "ok"):
+        value = command.get(field)
+        if isinstance(value, bool):
+            return "success" if value else "error"
+    failed = command.get("failed")
+    if isinstance(failed, bool):
+        return "error" if failed else "success"
+    for field in ("exit_code", "returncode"):
+        value = command.get(field)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return "success" if value == 0 else "error"
+    for field in ("status", "outcome", "result"):
+        value = command.get(field)
+        if isinstance(value, str):
+            normalized = value.strip().casefold()
+            if normalized in _SUCCESS_OUTCOMES:
+                return "success"
+            if normalized in _ERROR_OUTCOMES:
+                return "error"
+    for field in ("error", "error_message"):
+        value = command.get(field)
+        if value is True or (isinstance(value, str) and value.strip()):
+            return "error"
+    return "unknown"
+
+
+def _outcome_counts(commands: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(_command_outcome(command) for command in commands)
+    return {
+        "total": len(commands),
+        "successes": counts["success"],
+        "errors": counts["error"],
+        "unknown": counts["unknown"],
+    }
+
+
 def _journey(stats: dict[str, Any], commands: list[dict[str, Any]], dependencies: list[dict[str, Any]]) -> dict[str, Any]:
     command_types: Counter[str] = Counter(
         item["command_type"]
@@ -249,8 +290,20 @@ def _journey(stats: dict[str, Any], commands: list[dict[str, Any]], dependencies
         and isinstance(item.get("dependency_type"), str)
         and isinstance(item.get("source_response"), int)
     ]
+    raw_command_total = stats.get("commands")
+    command_total = (
+        raw_command_total
+        if isinstance(raw_command_total, int) and not isinstance(raw_command_total, bool)
+        else len(commands)
+    )
+    outcomes = _outcome_counts(commands)
+    if command_total >= outcomes["total"]:
+        outcomes["unknown"] += command_total - outcomes["total"]
+        outcomes["total"] = command_total
+    else:
+        command_total = outcomes["total"]
     return {
-        "commands": stats.get("commands") if isinstance(stats.get("commands"), int) else len(commands),
+        "commands": command_total,
         "responses": stats.get("responses") if isinstance(stats.get("responses"), int) else sum(_response_count(item.get("response_ids")) for item in commands),
         "variables": stats.get("variables") if isinstance(stats.get("variables"), int) else None,
         "execution_mode": stats.get("execution_mode") if isinstance(stats.get("execution_mode"), str) else None,
@@ -261,6 +314,7 @@ def _journey(stats: dict[str, Any], commands: list[dict[str, Any]], dependencies
         "dependency_types": dict(sorted(dependency_types.items())),
         "dependency_edges": edges,
         "modalities": _modalities(command_types),
+        "outcomes": outcomes,
         "token_savings": _safe_integer_map(stats.get("token_savings")),
     }
 

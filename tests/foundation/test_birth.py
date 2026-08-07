@@ -81,6 +81,7 @@ class BirthTest(unittest.TestCase):
                 "command_type": "QueryRead",
                 "params": '{"api_key":"must-never-be-stored"}',
                 "response_ids": "[11]",
+                "status": "succeeded",
                 "timestamp": "2026-08-05T01:00:00+00:00",
             },
             {
@@ -88,6 +89,7 @@ class BirthTest(unittest.TestCase):
                 "command_type": "ProcessExec",
                 "params": '{"command":"curl private.example"}',
                 "response_ids": "[12]",
+                "status": "failed",
                 "timestamp": "2026-08-05T01:01:30+00:00",
             },
         ]
@@ -141,6 +143,10 @@ class BirthTest(unittest.TestCase):
         record = json.loads(serialized)
         self.assertEqual(["adapter", "shell"], record["journey"]["modalities"])
         self.assertEqual(90.0, record["journey"]["duration_seconds"])
+        self.assertEqual(
+            {"total": 2, "successes": 1, "errors": 1, "unknown": 0},
+            record["journey"]["outcomes"],
+        )
         self.assertEqual("workspace-inspect-json-fallback", record["sources"]["trace"])
         self.assertEqual(0o600, stat.S_IMODE(record_path.stat().st_mode))
         self.assertEqual(0o700, stat.S_IMODE(record_path.parent.stat().st_mode))

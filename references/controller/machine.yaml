@@ -602,7 +602,7 @@ states:
     "on":
       saved_play_inspected:
         - {guard: saved_public_inspection_matches_publication, target: publication_credentials, mutate: record_saved_inspection}
-        - {guard: saved_inspection_matches_publication, target: saved_present, mutate: record_saved_inspection}
+        - {guard: saved_inspection_matches_publication, target: birth_present, mutate: record_saved_inspection}
         - {target: blocked, mutate: record_saved_inspection_mismatch}
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -622,17 +622,17 @@ states:
     requires: [publication.uri, publication.visibility, play.version, request.parameters, consent.save, publication_validation.credential_status, publication_validation.credential_contract_sha256]
     entry: {action: smoke_publication}
     "on":
-      public_smoke_verified: [{target: saved_present, mutate: record_public_smoke}]
+      public_smoke_verified: [{target: birth_present, mutate: record_public_smoke}]
       public_smoke_failed: [{target: blocked, mutate: record_public_smoke_failure}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
-  saved_present:
+  birth_present:
     owner: play
-    checkpoint: after
-    requires: [publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.content_hash, publication.inspect_ref, publication_validation.credential_status, publication_validation.smoke_status, play.version]
-    entry: {action: present_saved_play}
+    checkpoint: both
+    requires: [birth.sha256, birth.flow_fingerprint, birth.exact_reference, birth.registry_content_hash, birth.binding_ref, publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.uri, publication.install_uri, publication.content_hash, publication.inspect_ref, publication_validation.credential_status, publication_validation.smoke_status, play.version, exploration.human_name, onboarding.email_handle]
+    entry: {action: present_birth_certificate}
     "on":
-      saved_play_presented: [{target: completed, mutate: record_saved_presentation}]
+      birth_certificate_presented: [{target: completed, mutate: record_birth_certificate_presentation}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   receipt: {owner: play}
