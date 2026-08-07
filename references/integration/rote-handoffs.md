@@ -134,6 +134,20 @@ its recovery direction.
 - Private organization creation and invitations: `rote-org`.
 - Repeated failures: `rote-troubleshooting`.
 
+## Save-lifecycle boundary
+
+Do not reuse the Explore execution packet or send one broad task across release and publication.
+For `author_release`, invoke only `rote-flow-authoring`, scope the request to author/test/lint/local
+release, and require an explicitly unpublished released candidate. A receipt that contains a
+registry reference or says publication already occurred maps to
+`publication_boundary_violated`, not `flow_released`.
+
+After Play captures `birth.sha256` and `birth.capture_ref`, invoke `rote-registry` separately for
+`private_publish` or `public_publish`. Its inputs include the exact released Flow, visibility/owner
+consent, and captured birth receipt; its `play_published` payload must echo that birth SHA. Reject a
+mismatch and do not proceed to binding. Neither specialist may select the next state or provide the
+terminal user-facing publication response.
+
 Specialists may consult their own grammar and guidance, but they may not change Play mode, widen
 modalities, grant consent, choose visibility, or select the next machine state.
 

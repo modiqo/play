@@ -265,6 +265,7 @@ cases:
       - {state: save_offer, event: save_private, target: author_release}
       - state: author_release
         event: flow_released
+        guards: {released_candidate_is_unpublished: true}
         target: birth_capture
       - state: birth_capture
         event: birth_captured
@@ -276,7 +277,7 @@ cases:
         target: private_publish
       - state: private_publish
         event: play_published
-        guards: {publication_is_private: true}
+        guards: {private_publication_matches_captured_birth: true}
         target: birth_bind
       - state: birth_bind
         event: birth_bound
@@ -292,6 +293,14 @@ cases:
       - {state: birth_present, event: birth_certificate_presented, target: completed}
     terminal: completed
     includes_once: [author_release, birth_capture, private_org, private_publish, birth_bind, index]
+
+  - name: direct registry publication during release blocks without a retrospective birth
+    steps:
+      - state: author_release
+        event: publication_boundary_violated
+        target: blocked
+    terminal: blocked
+    excludes: [birth_capture, private_publish, public_publish, birth_bind, birth_present, completed]
 
   - name: public save with known owner publishes and indexes
     steps:
@@ -320,6 +329,7 @@ cases:
       - {state: save_offer, event: save_public, target: author_release}
       - state: author_release
         event: flow_released
+        guards: {released_candidate_is_unpublished: true}
         target: birth_capture
       - state: birth_capture
         event: birth_captured
@@ -328,7 +338,7 @@ cases:
       - {state: public_owner, event: public_owner_ready, target: public_publish}
       - state: public_publish
         event: play_published
-        guards: {publication_is_public: true}
+        guards: {public_publication_matches_captured_birth: true}
         target: birth_bind
       - state: birth_bind
         event: birth_bound
@@ -372,7 +382,7 @@ cases:
       - {state: public_owner_offer, event: public_owner_selected, target: public_publish}
       - state: public_publish
         event: play_published
-        guards: {publication_is_public: true}
+        guards: {public_publication_matches_captured_birth: true}
         target: birth_bind
       - state: birth_bind
         event: birth_bound

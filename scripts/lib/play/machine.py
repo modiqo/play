@@ -560,6 +560,23 @@ def validate_bundle(root: Path) -> ValidationSummary:
         _target(states, "birth_present", "birth_certificate_presented") == "completed",
         "a saved Play may complete only after its verified birth certificate is presented",
     )
+    check(
+        _target(states, "author_release", "flow_released") == "birth_capture"
+        and states.get("author_release", {}).get("on", {}).get("flow_released", [{}])[0].get("guard")
+        == "released_candidate_is_unpublished"
+        and _target(states, "author_release", "flow_released", 1) == "blocked"
+        and _target(states, "author_release", "publication_boundary_violated") == "blocked",
+        "release must stop unpublished for birth capture and block any early publication",
+    )
+    check(
+        states.get("private_publish", {}).get("on", {}).get("play_published", [{}])[0].get("guard")
+        == "private_publication_matches_captured_birth"
+        and states.get("public_publish", {}).get("on", {}).get("play_published", [{}])[0].get("guard")
+        == "public_publication_matches_captured_birth"
+        and _target(states, "private_publish", "play_published", 1) == "blocked"
+        and _target(states, "public_publish", "play_published", 1) == "blocked",
+        "publication receipts must match the captured birth before binding",
+    )
     check(edges["use_receipt"] == {"receipt", "blocked"}, "Use receipt must terminate without publication or indexing")
     check(_target(states, "save_offer", "save_skipped") == "completed", "Skip must complete without publication or indexing")
     for field in (
@@ -602,6 +619,15 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(
         handoff_owner_enum == expected_owner_enum,
         "handoff.owner must use the same closed Rote specialist set",
+    )
+    candidate_schema = context_schema.get("$defs", {}).get("candidate", {})
+    check(
+        "publication_status" in candidate_schema.get("required", [])
+        and candidate_schema.get("properties", {})
+        .get("publication_status", {})
+        .get("enum")
+        == ["unknown", "unpublished", "published"],
+        "candidate context must track the pre-publication lifecycle boundary",
     )
     auth_repair_owner_enum = (
         context_schema.get("$defs", {})
@@ -654,6 +680,36 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "publication.uri" in public_fields and "publication.install_uri" in public_fields,
         "public publication must preserve registry-returned Play and install URIs",
     )
+    release_action = actions.get("author_release", {})
+    private_publish_action = actions.get("publish_private", {})
+    public_publish_action = actions.get("publish_public", {})
+    check(
+        release_action.get("specialist") == "rote-flow-authoring"
+        and private_publish_action.get("specialist") == "rote-registry"
+        and public_publish_action.get("specialist") == "rote-registry",
+        "release and publication must use separate closed specialists",
+    )
+    release_policy = " ".join(release_action.get("command_policy", []))
+    check(
+        "stop before every registry push" in release_policy
+        and "Never delegate an end-to-end release-and-publish request" in release_policy
+        and "publication_boundary_violated" in release_action.get("events", {}),
+        "author release must return before publication and report boundary violations",
+    )
+    for action_name, action in (
+        ("publish_private", private_publish_action),
+        ("publish_public", public_publish_action),
+    ):
+        policy = " ".join(action.get("command_policy", []))
+        check(
+            "birth.sha256" in action.get("input_required", [])
+            and "birth.capture_ref" in action.get("input_required", [])
+            and "birth.sha256" in action.get("events", {}).get("play_published", [])
+            and "publication.birth_sha256"
+            in action.get("events", {}).get("play_published", [])
+            and "publication-only handoff" in policy,
+            f"{action_name} must be a post-capture publication-only handoff",
+        )
     presentation_policy = " ".join(
         actions.get("present_birth_certificate", {}).get("command_policy", [])
     )

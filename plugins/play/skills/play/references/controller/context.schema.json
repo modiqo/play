@@ -501,13 +501,14 @@
     },
     "candidate": {
       "type": "object",
-      "required": ["reference", "reusable", "contract", "released_flow"],
+      "required": ["reference", "reusable", "contract", "released_flow", "publication_status"],
       "additionalProperties": false,
       "properties": {
         "reference": {"$ref": "#/$defs/nullableString"},
         "reusable": {"type": ["boolean", "null"]},
         "contract": {"$ref": "#/$defs/nullableString"},
-        "released_flow": {"$ref": "#/$defs/nullableString"}
+        "released_flow": {"$ref": "#/$defs/nullableString"},
+        "publication_status": {"enum": ["unknown", "unpublished", "published"]}
       }
     },
     "birth": {
@@ -632,12 +633,13 @@
     },
     "publication": {
       "type": "object",
-      "required": ["owner", "private_org", "canonical_reference", "title", "description", "uri", "install_uri", "content_hash", "visibility", "indexed", "index_ref", "inspect_ref", "share_copy", "presentation_ref", "presented"],
+      "required": ["owner", "private_org", "canonical_reference", "birth_sha256", "title", "description", "uri", "install_uri", "content_hash", "visibility", "indexed", "index_ref", "inspect_ref", "share_copy", "presentation_ref", "presented"],
       "additionalProperties": false,
       "properties": {
         "owner": {"$ref": "#/$defs/nullableString"},
         "private_org": {"$ref": "#/$defs/nullableString"},
         "canonical_reference": {"$ref": "#/$defs/nullableString"},
+        "birth_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
         "title": {"$ref": "#/$defs/nullableString"},
         "description": {"$ref": "#/$defs/nullableString"},
         "uri": {"$ref": "#/$defs/nullableString"},

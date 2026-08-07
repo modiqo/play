@@ -204,9 +204,10 @@ class ControllerRuntime:
             event.payload,
             self.bundle.event_requirements.get((cursor.state, event.id), ()),
         )
-        selected = _select_transition(branches, event.guards)
+        guard_values = _resolve_guard_values(event)
+        selected = _select_transition(branches, guard_values)
 
-        listener = _guard_listener(self.bundle.guards, event.guards)
+        listener = _guard_listener(self.bundle.guards, guard_values)
         model = RuntimeModel(state=str(cursor.state))
         chart = self._chart_class(model=model, listeners=[listener])
         chart.send(str(event.id))
@@ -377,6 +378,30 @@ def _select_transition(
     raise ControllerRuntimeError("no transition guard was satisfied")
 
 
+def _resolve_guard_values(event: ControllerEvent) -> dict[GuardId, bool]:
+    """Derive security-sensitive lifecycle guards from typed payloads, not caller claims."""
+
+    values = dict(event.guards)
+    status_guard = GuardId("released_candidate_is_unpublished")
+    values[status_guard] = _path_value(event.payload, "candidate.publication_status") == "unpublished"
+
+    captured_birth = _path_value(event.payload, "birth.sha256")
+    receipt_birth = _path_value(event.payload, "publication.birth_sha256")
+    matching_birth = (
+        isinstance(captured_birth, str)
+        and bool(captured_birth)
+        and captured_birth == receipt_birth
+    )
+    visibility = _path_value(event.payload, "visibility")
+    values[GuardId("private_publication_matches_captured_birth")] = (
+        visibility == "private" and matching_birth
+    )
+    values[GuardId("public_publication_matches_captured_birth")] = (
+        visibility == "public" and matching_birth
+    )
+    return values
+
+
 def _validate_event_payload(payload: Mapping[str, Any], required: tuple[str, ...]) -> None:
     missing = [path for path in required if not _has_path(payload, path)]
     if missing:
@@ -394,6 +419,15 @@ def _has_path(payload: Mapping[str, Any], path: str) -> bool:
             return False
         current = current[part]
     return True
+
+
+def _path_value(payload: Mapping[str, Any], path: str) -> Any:
+    current: Any = payload
+    for part in path.split("."):
+        if not isinstance(current, Mapping) or part not in current:
+            return None
+        current = current[part]
+    return current
 
 
 def _required_string(payload: Mapping[str, Any], field: str) -> str:

@@ -512,7 +512,10 @@ states:
     requires: [candidate.reference, consent.save]
     entry: {action: author_release}
     "on":
-      flow_released: [{target: birth_capture, mutate: record_release}]
+      flow_released:
+        - {guard: released_candidate_is_unpublished, target: birth_capture, mutate: record_release}
+        - {target: blocked, mutate: record_publication_boundary_violation}
+      publication_boundary_violated: [{target: blocked, mutate: record_publication_boundary_violation}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   birth_capture:
@@ -543,8 +546,8 @@ states:
     entry: {action: publish_private}
     "on":
       play_published:
-        - {guard: publication_is_private, target: birth_bind, mutate: record_publication}
-        - {target: blocked, mutate: record_visibility_mismatch}
+        - {guard: private_publication_matches_captured_birth, target: birth_bind, mutate: record_publication}
+        - {target: blocked, mutate: record_publication_boundary_violation}
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   public_owner:
@@ -570,8 +573,8 @@ states:
     entry: {action: publish_public}
     "on":
       play_published:
-        - {guard: publication_is_public, target: birth_bind, mutate: record_publication}
-        - {target: blocked, mutate: record_visibility_mismatch}
+        - {guard: public_publication_matches_captured_birth, target: birth_bind, mutate: record_publication}
+        - {target: blocked, mutate: record_publication_boundary_violation}
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   birth_bind:

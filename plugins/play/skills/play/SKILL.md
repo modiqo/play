@@ -43,7 +43,10 @@ invocable so declared handoffs can chain without requiring another user command.
    `unknown`, and null human name, identity reference, welcome Markdown/reference, and timing.
    Initialize birth certificate presentation as false with null certificate reference and timing,
    plus a zeroed trace-learning record whose evidence method is `not_presented` and whose summary
-   states that presentation is pending.
+   states that presentation is pending. Initialize `candidate.publication_status` to `unknown`;
+   only the `author_release` receipt may change it to `unpublished`, and any evidence that it is
+   already `published` is a lifecycle-boundary violation. Initialize `publication.birth_sha256`
+   to null; only a publication receipt may set it, and it must equal the captured `birth.sha256`.
 4. Validate the context's machine version, current state, transition sequence, and pending action.
 5. Execute exactly one declared prompt or entry action for the current state.
 6. Accept only an event declared by the current state and validated by
@@ -54,6 +57,13 @@ invocable so declared handoffs can chain without requiring another user command.
 
 Never jump states based on conversational intuition. Never infer completion from a specialist's
 prose when its declared return event is absent or invalid.
+
+Publication is never a terminal milestone. Never print “published,” Play links, share copy, or
+congratulations as the final response to `flow_released` or `play_published`. Those are intermediate
+events. A saved Play reaches `completed` only through `birth_present → birth_certificate_presented`.
+If a specialist publishes while the controller is in `author_release`, emit
+`publication_boundary_violated` and block; do not offer a retrospective certificate as though the
+pre-publication birth had been captured.
 
 ## Own context without inventing storage
 
@@ -327,6 +337,12 @@ Play. Do not execute an exploration modality before approval. If the user contin
 - After release and before publication, capture the one-time owner-private birth object. After
   publication and before indexing, bind it to the minted exact reference and registry content hash.
   These writes are authorized parts of the declared save lifecycle; they never publish the birth.
+- Keep release and publication as two separate specialist invocations. `author_release` invokes
+  `rote-flow-authoring` only through local release and must return an `unpublished` candidate.
+  After `birth_capture` succeeds, `private_publish` or `public_publish` invokes `rote-registry` in a
+  fresh publication-only handoff that carries and echoes the captured birth SHA. Never send one
+  specialist an end-to-end author/release/publish request, and reject a publication receipt whose
+  birth SHA does not match the captured object.
 - Index the exact canonical version after successful Private or Public publication.
 - After indexing, run `rote play inspect <org/name> --json` against the canonical reference.
   Verify its owner, version, and visibility. For Public, compare every associated selected adapter
@@ -434,3 +450,7 @@ At terminal state, present only the outcome relevant to that terminal:
 - `completed` for awareness: the requested digest and the user's declared dismissal or follow-up;
 - `exited`: confirmation that Play stepped aside for this task;
 - `blocked`: missing authority, capability, valid output, or recoverable state.
+
+A registry push performed outside this save trajectory is not a completed Play-controller run.
+Report it as `blocked` with the boundary evidence; never substitute the registry summary for the
+missing immutable birth certificate.

@@ -272,16 +272,68 @@ class MachineConformanceTest(unittest.TestCase):
     def test_birth_is_captured_before_publish_and_bound_before_index(self) -> None:
         released = MACHINE["states"]["author_release"]["on"]["flow_released"][0]
         self.assertEqual("birth_capture", released["target"])
+        self.assertEqual("released_candidate_is_unpublished", released["guard"])
+        self.assertEqual(
+            "blocked",
+            MACHINE["states"]["author_release"]["on"]["flow_released"][1]["target"],
+        )
+        self.assertEqual(
+            "blocked",
+            MACHINE["states"]["author_release"]["on"][
+                "publication_boundary_violated"
+            ][0]["target"],
+        )
         self.assertEqual(
             "capture_play_birth", MACHINE["states"]["birth_capture"]["entry"]["action"]
         )
-        for state in ("private_publish", "public_publish"):
+        expected_guards = {
+            "private_publish": "private_publication_matches_captured_birth",
+            "public_publish": "public_publication_matches_captured_birth",
+        }
+        for state, expected_guard in expected_guards.items():
             self.assertEqual(
                 "birth_bind", MACHINE["states"][state]["on"]["play_published"][0]["target"]
+            )
+            self.assertEqual(
+                expected_guard,
+                MACHINE["states"][state]["on"]["play_published"][0]["guard"],
+            )
+            self.assertEqual(
+                "blocked", MACHINE["states"][state]["on"]["play_published"][1]["target"]
             )
         self.assertEqual("index", MACHINE["states"]["birth_bind"]["on"]["birth_bound"][0]["target"])
         self.assertEqual("local-write", ACTIONS["capture_play_birth"]["effect"])
         self.assertEqual("local-write", ACTIONS["bind_play_birth"]["effect"])
+
+    def test_release_and_publication_are_distinct_closed_handoffs(self) -> None:
+        release = ACTIONS["author_release"]
+        self.assertEqual("rote-flow-authoring", release["specialist"])
+        self.assertIn("candidate.publication_status", release["events"]["flow_released"])
+        self.assertIn("publication_boundary_violated", release["events"])
+        release_policy = " ".join(release["command_policy"])
+        self.assertIn("stop before every registry push", release_policy)
+        self.assertIn("Never delegate an end-to-end release-and-publish request", release_policy)
+
+        for name in ("publish_private", "publish_public"):
+            publication = ACTIONS[name]
+            self.assertEqual("rote-registry", publication["specialist"])
+            self.assertIn("birth.sha256", publication["input_required"])
+            self.assertIn("birth.capture_ref", publication["input_required"])
+            self.assertIn("birth.sha256", publication["events"]["play_published"])
+            self.assertIn(
+                "publication.birth_sha256", publication["events"]["play_published"]
+            )
+            policy = " ".join(publication["command_policy"])
+            self.assertIn("publication-only handoff", policy)
+            self.assertIn("Return the captured birth SHA unchanged", policy)
+
+        candidate = CONTEXT["$defs"]["candidate"]
+        self.assertIn("publication_status", candidate["required"])
+        self.assertEqual(
+            ["unknown", "unpublished", "published"],
+            candidate["properties"]["publication_status"]["enum"],
+        )
+        self.assertIn("Publication is never a terminal milestone", SKILL_TEXT)
 
     def test_birth_lookup_is_an_owner_local_read(self) -> None:
         self.assertEqual(

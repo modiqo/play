@@ -28,6 +28,18 @@ Do not offer to save before verification and candidate preparation.
 
 ## Capture birth, publish, bind, and index
 
+The state boundary is mandatory, not descriptive. Invoke `rote-flow-authoring` for authoring,
+testing, linting, and local release only, then require it to return an explicitly `unpublished`
+released candidate. Return control to Play and run `birth_capture` before a registry write is
+authorized. Only afterward may a new, publication-only `rote-registry` handoff push the exact
+released Flow. That handoff carries the captured birth SHA and must echo it unchanged in its
+publication receipt. Never delegate author/release/publish as one task.
+
+If authoring returns evidence that it already published the Flow, emit
+`publication_boundary_violated` and block. Do not show links, share copy, congratulations, or offer
+to manufacture a retrospective birth certificate. The published registry artifact may remain
+valid, but it was not born through this controller run.
+
 Immediately after release, capture the owner-private birth certificate described in
 [birth.md](birth.md). Capture is one-time and content-addressed by the released Flow fingerprint;
 block publication if truthful workspace evidence cannot be captured.
@@ -77,6 +89,9 @@ the returned Play URI, and LinkedIn also carries the install URI. For Private, d
 URLs or social copy. These are copy-only outputs: never post or share them implicitly. End with the
 safe human handle and the exact sentiment that it was a pleasure working together and that we did
 an excellent job. Do not show this closure before readback, binding, and Public gates succeed.
+`play_published` is therefore an intermediate event, never permission to end with a registry
+summary. The only successful terminal route for a saved Play is
+`birth_present → birth_certificate_presented → completed`.
 
 The index is a discovery cache, not the source of truth. A future outcome request starts at search;
 an explicit canonical reference goes directly to `rote play run`. In both cases the Play controller,

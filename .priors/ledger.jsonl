@@ -248,3 +248,10 @@
 {"action":"disposition","by":"agent","id":"P-0054","run":"run-027","scope_hash":"ce8c0f58afad","t":"event","to":"reaffirmed"}
 {"action":"disposition","by":"agent","id":"P-0055","run":"run-027","scope_hash":"a4754649e957","t":"event","to":"reaffirmed"}
 {"action":"commit","ns":"play","run":"run-027","summary":["Checked against 5 priors:","  → 5 carried (same identities, current scope state)","New this run: 0"],"t":"run"}
+{"action":"disposition","by":"agent","id":"P-0044","run":"run-028","scope_hash":"a0b0830c739f","t":"event","to":"reaffirmed"}
+{"action":"disposition","by":"agent","id":"P-0048","run":"run-028","scope_hash":"fe3c22fe5ed1","t":"event","to":"reaffirmed"}
+{"action":"disposition","by":"agent","id":"P-0053","run":"run-028","scope_hash":"3b97b5f4c8df","t":"event","to":"reaffirmed"}
+{"action":"disposition","by":"agent","id":"P-0054","run":"run-028","scope_hash":"3b97b5f4c8df","t":"event","to":"reaffirmed"}
+{"action":"disposition","by":"agent","id":"P-0055","run":"run-028","scope_hash":"9a8f697ec3d8","t":"event","to":"reaffirmed"}
+{"born":"run-028","claim":"A Play save run must block when author_release reports prior registry publication, and no publication may reach birth_bind unless its receipt matches the pre-publication captured birth SHA.","direction":"enforce-lifecycle-boundary","evidence":"publication_boundary_violated targets blocked; private/public play_published transitions require *_publication_matches_captured_birth.","facets":{"activation":"verify-phase","authority":"advisory","lifecycle":"stale-on-scope-change","obligation":"disposition-required","scope":"content-hash"},"id":"P-0056","ns":"play","scope_hash":"3b97b5f4c8df","scope_ref":"references/controller/machine.yaml","severity":"major","t":"prior","type":"conclusion"}
+{"action":"commit","ns":"play","run":"run-028","summary":["Checked against 5 priors:","  → 5 carried (same identities, current scope state)","New this run: 1"],"t":"run"}

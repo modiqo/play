@@ -22,9 +22,10 @@ guards:
   - outcome_is_verified
   - save_choice_private
   - save_choice_public
+  - released_candidate_is_unpublished
   - private_org_policy_satisfied
-  - publication_is_private
-  - publication_is_public
+  - private_publication_matches_captured_birth
+  - public_publication_matches_captured_birth
   - exact_published_version_is_indexed
   - saved_public_inspection_matches_publication
   - saved_inspection_matches_publication
@@ -133,13 +134,13 @@ mutations:
   - choose_public
   - record_save_skipped
   - record_release
+  - record_publication_boundary_violation
   - record_missing_save_choice
   - record_birth_capture
   - record_birth_binding
   - record_private_org
   - record_private_org_violation
   - record_publication
-  - record_visibility_mismatch
   - record_public_owner
   - record_public_owner_choices
   - record_owner_blocker
@@ -607,10 +608,16 @@ actions:
   author_release:
     kind: delegated
     owner: rote-specialist
+    specialist: rote-flow-authoring
     effect: local-write
     input_required: [candidate.reference, consent.save]
+    command_policy:
+      - "Invoke rote-flow-authoring for this state only: author, test, lint, and release the candidate, then stop before every registry push or publication command."
+      - Never delegate an end-to-end release-and-publish request. The specialist must return control to Play so birth_capture can record the immutable owner-local birth before publication begins.
+      - Emit flow_released only with candidate.publication_status=unpublished. If a registry publication already occurred, emit publication_boundary_violated; never reinterpret the published artifact as a valid pre-publication birth.
     events:
-      flow_released: [candidate.released_flow, play.version, verification_refs]
+      flow_released: [candidate.released_flow, candidate.publication_status, play.version, verification_refs]
+      publication_boundary_violated: [candidate.publication_status, publication.canonical_reference, reason, evidence_refs]
 
   capture_play_birth:
     kind: deterministic
@@ -632,10 +639,15 @@ actions:
   publish_private:
     kind: delegated
     owner: rote-specialist
+    specialist: rote-registry
     effect: external-write
-    input_required: [candidate.released_flow, publication.private_org, consent.save]
+    input_required: [candidate.released_flow, candidate.publication_status, birth.sha256, birth.capture_ref, publication.private_org, consent.save]
+    command_policy:
+      - Invoke rote-registry in a new, publication-only handoff after birth_capture has succeeded; pass the exact released Flow and the captured birth receipt.
+      - Do not author, modify, test, or release the Flow in this state, and never reuse the broader rote-flow-authoring request that produced the release.
+      - Return the captured birth SHA unchanged as publication.birth_sha256 with the publication receipt so the controller can reject a publication detached from its pre-publication birth.
     events:
-      play_published: [publication.canonical_reference, visibility, owner, play.version]
+      play_published: [publication.canonical_reference, publication.birth_sha256, visibility, owner, play.version, birth.sha256]
 
   resolve_public_owner:
     kind: delegated
@@ -649,12 +661,16 @@ actions:
   publish_public:
     kind: delegated
     owner: rote-specialist
+    specialist: rote-registry
     effect: external-write
-    input_required: [candidate.released_flow, publication.owner, consent.save]
+    input_required: [candidate.released_flow, candidate.publication_status, birth.sha256, birth.capture_ref, publication.owner, consent.save]
     command_policy:
+      - Invoke rote-registry in a new, publication-only handoff after birth_capture has succeeded; pass the exact released Flow and the captured birth receipt.
+      - Do not author, modify, test, or release the Flow in this state, and never reuse the broader rote-flow-authoring request that produced the release.
+      - Return the captured birth SHA unchanged as publication.birth_sha256 with the publication receipt so the controller can reject a publication detached from its pre-publication birth.
       - Preserve the registry-returned public Play page URI and install/bootstrap URI exactly; do not reconstruct either URL from the canonical reference.
     events:
-      play_published: [publication.canonical_reference, publication.uri, publication.install_uri, visibility, owner, play.version]
+      play_published: [publication.canonical_reference, publication.uri, publication.install_uri, publication.birth_sha256, visibility, owner, play.version, birth.sha256]
 
   bind_play_birth:
     kind: deterministic

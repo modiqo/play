@@ -154,7 +154,8 @@ stateDiagram-v2
     crystallize --> completed : not reusable
     save_offer --> author_release : Private or Public
     save_offer --> completed : Skip
-    author_release --> birth_capture : flow released
+    author_release --> birth_capture : unpublished flow released
+    author_release --> blocked : specialist published early
     birth_capture --> private_org : private
     birth_capture --> public_owner : public
     private_org --> private_publish
@@ -162,8 +163,8 @@ stateDiagram-v2
     public_owner --> public_owner_offer : owner ambiguous
     public_owner_offer --> public_publish : owner selected
     public_owner_offer --> blocked : declined
-    private_publish --> birth_bind : published private
-    public_publish --> birth_bind : published public
+    private_publish --> birth_bind : published private + birth SHA matches
+    public_publish --> birth_bind : published public + birth SHA matches
     birth_bind --> index
     index --> saved_inspect
     saved_inspect --> birth_present : private readback matches
@@ -248,18 +249,20 @@ different controller versions cannot be mixed accidentally.
 
 Baseline recorded on 2026-08-06 on an Apple Silicon Mac with Python 3.14.5,
 `python-statemachine` 3.2.0, bundle
-`818c595797d80aacdfa9eaa9fe46c3e51d77ae210704751d5dd5d83fea638098`, and 10,000
+`8e14a174c8de2742bc469c6cc6ec09d64b8aba3268e33e93b02b4777cae482fd`, and 10,000
 iterations:
 
 | Metric | Time |
 |---|---:|
-| One-time bundle compile | 122.64 ms |
-| Warm invocation transition median | 0.517 ms |
-| Warm invocation transition p95 | 0.741 ms |
-| Warm invocation transition max | 5.89 ms |
+| One-time bundle compile | 125.99 ms |
+| Warm invocation transition median | 0.534 ms |
+| Warm invocation transition p95 | 0.796 ms |
+| Warm invocation transition max | 5.48 ms |
 
-The preceding 59-state publication-safety bundle measured a 0.462 ms median and 0.741 ms p95 on the
-same date. The 67-state typed-certificate bundle keeps p95 effectively flat. A single live
+The preceding 67-state typed-certificate bundle, before the enforced release/publication boundary,
+measured a 0.517 ms median and 0.741 ms p95 on the same date. The boundary-enforced bundle remains
+sub-millisecond at p95 in this sample; the benchmark intentionally reports observed latency rather
+than attributing run-to-run variance to the two added transitions. A single live
 `explore-welcome` sample on the same machine resolved the signed-in Rote identity and rendered the
 welcome in 1.624 seconds; almost all of that is the external `rote whoami` call. Registry inspection,
 public-card fetches, and setup are likewise separately timed external I/O actions. Every certificate
@@ -549,6 +552,13 @@ and a redacted trace-learning summary showing explicit successes, errors, and un
 closes with a personalized thank-you to the human domain expert. Organization membership,
 invitations, and sharing use the organization/list surface rather than hidden local state.
 
+Release and publication are deliberately separate specialist handoffs. `rote-flow-authoring` must
+stop after an explicitly unpublished local release. Play then captures the immutable birth object,
+and only a fresh `rote-registry` handoff may publish that exact artifact while echoing the captured
+birth SHA. If a broad registry-flow request publishes early, the machine emits
+`publication_boundary_violated` and blocks instead of treating a registry summary as completion or
+offering a retrospective certificate.
+
 ### Public credential and canonical-run gate
 
 A successful registry push is not enough for a Public Play. After canonical readback, Play uses
@@ -699,7 +709,8 @@ not a cross-machine performance guarantee.
 
 After a new Play is released, Play captures its owner-private birth object. After publication, it
 binds the object to the registry content hash, indexes the Play, reads the canonical registry entry
-back with JSON inspection, verifies its owner/version/visibility, and only then reports success.
+back with JSON inspection, verifies its owner/version/visibility, and only then presents the typed
+certificate and reports success. A `play_published` event alone is always intermediate.
 
 ## Optional thinking-orbs UI
 

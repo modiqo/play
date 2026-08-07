@@ -270,6 +270,123 @@ class ControllerRuntimeTest(unittest.TestCase):
         ).cursor
         self.assertEqual("explore_handoff", handoff_cursor.state)
 
+    def test_release_cannot_cross_publication_boundary_before_birth_capture(self) -> None:
+        release_cursor = replace(self.cursor(), state=StateId("author_release"))
+        payload = {
+            "candidate": {
+                "released_flow": "posthog-dau-new@0.0.1",
+                "publication_status": "published",
+            },
+            "play": {"version": "0.0.1"},
+            "verification_refs": ["release:posthog-dau-new@0.0.1"],
+        }
+        result = self.runtime.step(
+            release_cursor,
+            ControllerEvent(
+                id=EventId("flow_released"),
+                payload=payload,
+                guards={GuardId("released_candidate_is_unpublished"): True},
+            ),
+        )
+        self.assertEqual("blocked", result.cursor.state)
+        self.assertEqual("record_publication_boundary_violation", result.transition.mutation)
+
+    def test_unpublished_release_enters_birth_capture_despite_spoofed_false_guard(self) -> None:
+        release_cursor = replace(self.cursor(), state=StateId("author_release"))
+        result = self.runtime.step(
+            release_cursor,
+            ControllerEvent(
+                id=EventId("flow_released"),
+                payload={
+                    "candidate": {
+                        "released_flow": "posthog-dau-new@0.0.2",
+                        "publication_status": "unpublished",
+                    },
+                    "play": {"version": "0.0.2"},
+                    "verification_refs": ["release:posthog-dau-new@0.0.2"],
+                },
+                guards={GuardId("released_candidate_is_unpublished"): False},
+            ),
+        )
+        self.assertEqual("birth_capture", result.cursor.state)
+
+    def test_publication_receipt_must_match_captured_birth(self) -> None:
+        publish_cursor = replace(self.cursor(), state=StateId("public_publish"))
+        captured = "a" * 64
+        base_payload = {
+            "publication": {
+                "canonical_reference": "chetanconikee/posthog-dau-new@0.0.2",
+                "uri": "https://play.modiqo.ai/chetanconikee/posthog-dau-new@0.0.2",
+                "install_uri": "https://play.modiqo.ai/install?play=chetanconikee/posthog-dau-new@0.0.2",
+                "birth_sha256": "b" * 64,
+            },
+            "visibility": "public",
+            "owner": "chetanconikee",
+            "play": {"version": "0.0.2"},
+            "birth": {"sha256": captured},
+        }
+        mismatch = self.runtime.step(
+            publish_cursor,
+            ControllerEvent(
+                id=EventId("play_published"),
+                payload=base_payload,
+                guards={GuardId("public_publication_matches_captured_birth"): True},
+            ),
+        )
+        self.assertEqual("blocked", mismatch.cursor.state)
+
+        matching_payload = {
+            **base_payload,
+            "publication": {**base_payload["publication"], "birth_sha256": captured},
+        }
+        matched = self.runtime.step(
+            publish_cursor,
+            ControllerEvent(
+                id=EventId("play_published"),
+                payload=matching_payload,
+                guards={GuardId("public_publication_matches_captured_birth"): False},
+            ),
+        )
+        self.assertEqual("birth_bind", matched.cursor.state)
+
+    def test_direct_registry_publication_is_a_typed_blocking_event(self) -> None:
+        release_cursor = replace(self.cursor(), state=StateId("author_release"))
+        result = self.runtime.step(
+            release_cursor,
+            ControllerEvent(
+                id=EventId("publication_boundary_violated"),
+                payload={
+                    "candidate": {"publication_status": "published"},
+                    "publication": {
+                        "canonical_reference": "chetanconikee/posthog-dau-new@0.0.1"
+                    },
+                    "reason": "registry flow published before birth_capture",
+                    "evidence_refs": ["registry:posthog-dau-new@0.0.1"],
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("blocked", result.cursor.state)
+        self.assertNotEqual("completed", result.cursor.state)
+
+    def test_release_receipt_requires_explicit_publication_status(self) -> None:
+        release_cursor = replace(self.cursor(), state=StateId("author_release"))
+        with self.assertRaisesRegex(
+            ControllerRuntimeError, "candidate.publication_status"
+        ):
+            self.runtime.step(
+                release_cursor,
+                ControllerEvent(
+                    id=EventId("flow_released"),
+                    payload={
+                        "candidate": {"released_flow": "posthog-dau-new@0.0.1"},
+                        "play": {"version": "0.0.1"},
+                        "verification_refs": ["release:posthog-dau-new@0.0.1"],
+                    },
+                    guards={GuardId("released_candidate_is_unpublished"): True},
+                ),
+            )
+
     def test_rejects_unknown_event(self) -> None:
         with self.assertRaisesRegex(ControllerRuntimeError, "does not accept event"):
             self.runtime.step(
