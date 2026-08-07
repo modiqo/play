@@ -8,7 +8,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.elicitation import markdown_fallback, native_payload, parse_question
+from play.elicitation import (
+    ElicitationError,
+    markdown_fallback,
+    native_payload,
+    parse_question,
+    resolve_question,
+)
 
 
 class ElicitationTest(unittest.TestCase):
@@ -67,6 +73,39 @@ class ElicitationTest(unittest.TestCase):
         )
         self.assertEqual("need_described", native_payload(question, "claude")["input"]["event"])
         self.assertIn("Reply with desired outcome.", markdown_fallback(question))
+
+    def test_typed_template_resolves_email_handle_from_context(self) -> None:
+        question = parse_question(
+            "welcome",
+            {
+                "question": "How are you, {onboarding.email_handle}? What can I help you with?",
+                "template_fields": ["onboarding.email_handle"],
+                "selection": "text",
+                "input": {"id": "request", "label": "What you need", "event": "described"},
+                "events": {"described": ["request.original"]},
+            },
+        )
+        context = {"onboarding": {"email_handle": "chetan"}}
+        self.assertEqual(
+            "How are you, chetan? What can I help you with?",
+            resolve_question(question, context).text,
+        )
+        self.assertIn("chetan", native_payload(question, "codex", context)["question"])
+        self.assertIn("chetan", markdown_fallback(question, context))
+        with self.assertRaises(ElicitationError):
+            native_payload(question, "codex")
+
+    def test_prompt_placeholders_must_be_declared_exactly(self) -> None:
+        with self.assertRaisesRegex(ElicitationError, "match template_fields exactly"):
+            parse_question(
+                "bad_welcome",
+                {
+                    "question": "Hello {onboarding.email_handle}?",
+                    "selection": "text",
+                    "input": {"id": "request", "label": "Request", "event": "described"},
+                    "events": {"described": []},
+                },
+            )
 
 
 if __name__ == "__main__":

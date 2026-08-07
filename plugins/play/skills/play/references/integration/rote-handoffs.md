@@ -103,6 +103,20 @@ modalities, constraints, inputs, effect policy, evidence contract, and idempoten
 the original packet SHA, repair receipt reference, adapter id, and classified rung as resume
 provenance. The original CALL must execute and pass normal receipt and outcome verification.
 
+## Empty-invocation setup handoff
+
+An empty `$play` or `/play` invocation may hand off to `rote-setup` only after the typed live probe
+reports the binary missing, or a sequential `rote whoami` reports no authenticated email. This is
+an onboarding handoff, not an Explore execution owner and not a CALL authentication-repair packet.
+
+Pass the onboarding intent, live Rote status, resolved command when present, and expected closed
+events. `rote-setup` owns its sequential binary/state probes, install choice, remote-code approval,
+login, and optional remaining onboarding. Play must not inline an installer or login command. Accept
+only `rote_setup_completed`, `rote_setup_paused`, or `setup_specialist_unavailable` with the declared
+payload. A completed result always returns to `onboarding_probe`; Play rechecks the binary and then
+`whoami` rather than trusting a prose success claim. A pause or unavailable specialist blocks with
+its recovery direction.
+
 ## Ownership map
 
 - Adapter discovery and calls: `rote-using-adapters`, with `rote-adapter-create` when capability is
@@ -116,6 +130,7 @@ provenance. The original CALL must execute and pass normal receipt and outcome v
   directly; never hand these operations to `rote-flow-run`.
 - Registry publication and sharing: `rote-registry`.
 - Registry inspection, organization summaries, and grouped Play inventories: `rote-registry`.
+- Empty Play onboarding when Rote is missing or unauthenticated: `rote-setup`.
 - Private organization creation and invitations: `rote-org`.
 - Repeated failures: `rote-troubleshooting`.
 

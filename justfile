@@ -1,7 +1,7 @@
 check: package-check
     scripts/bin/validate-machine
     uv run scripts/bin/play-machine describe --json
-    uv run pyright scripts/lib/play/controller.py scripts/lib/play/run_output.py scripts/lib/play/publication.py scripts/lib/play/publication_gate.py scripts/bin/play-machine scripts/bin/play-run-output scripts/bin/play-publication scripts/bin/play-publication-gate tests/controller/test_controller_runtime.py tests/foundation/test_run_output.py tests/foundation/test_publication.py tests/foundation/test_publication_gate.py
+    uv run pyright scripts/lib/play/controller.py scripts/lib/play/elicitation.py scripts/lib/play/onboarding.py scripts/lib/play/run_output.py scripts/lib/play/publication.py scripts/lib/play/publication_gate.py scripts/bin/play-machine scripts/bin/play-onboarding scripts/bin/play-run-output scripts/bin/play-publication scripts/bin/play-publication-gate tests/controller/test_controller_runtime.py tests/foundation/test_elicitation.py tests/foundation/test_onboarding.py tests/foundation/test_run_output.py tests/foundation/test_publication.py tests/foundation/test_publication_gate.py
     scripts/bin/play-question choose_creator_path --harness codex --check
     scripts/bin/play-question choose_creator_path --harness claude --check
     scripts/bin/play-question choose_creator_path --harness kimi --check
@@ -11,6 +11,9 @@ check: package-check
     scripts/bin/play-question choose_search_result --harness codex --check
     scripts/bin/play-question choose_search_result --harness claude --check
     scripts/bin/play-question choose_search_result --harness kimi --check
+    scripts/bin/play-question welcome_play_request --harness codex --context-json '{"onboarding":{"email_handle":"friend"}}' --check
+    scripts/bin/play-question welcome_play_request --harness claude --context-json '{"onboarding":{"email_handle":"friend"}}' --check
+    scripts/bin/play-question welcome_play_request --harness kimi --context-json '{"onboarding":{"email_handle":"friend"}}' --check
     typos README.md SKILL.md agents references scripts tests justfile
 
 # Generate the self-contained marketplace skill from this repository's source of truth.

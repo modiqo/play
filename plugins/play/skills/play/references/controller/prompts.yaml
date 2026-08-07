@@ -1,6 +1,14 @@
 schema: play.prompts/v1
 
 prompts:
+  welcome_play_request:
+    question: How are you, {onboarding.email_handle}? What can I help you with?
+    template_fields: [onboarding.email_handle]
+    selection: text
+    input: {id: request, label: What you need, event: welcome_request_described}
+    events:
+      welcome_request_described: [prompt_version, selected_at, request.original]
+
   select_awareness_action:
     question: What would you like to do from What’s new?
     selection: single

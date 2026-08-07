@@ -11,6 +11,8 @@ route_owners:
   combined: rote-workspace
 
 guards:
+  - onboarding_is_greeting
+  - onboarding_is_play_uri
   - search_is_complete
   - search_only_requested
   - match_satisfies_constraints
@@ -28,6 +30,19 @@ guards:
   - saved_inspection_matches_publication
 
 mutations:
+  - start_greeting_onboarding
+  - start_uri_onboarding
+  - record_ordinary_invocation
+  - record_rote_probe
+  - enter_onboarding_uri_use
+  - record_onboarding_intent_mismatch
+  - record_onboarding_identity
+  - record_welcome_request
+  - record_rote_setup
+  - record_rote_setup_pause
+  - record_setup_specialist_unavailable
+  - record_onboarding_card
+  - record_onboarding_card_presentation
   - set_request_contract
   - set_search_request
   - set_awareness_request
@@ -138,6 +153,89 @@ mutations:
   - record_saved_presentation
 
 actions:
+  classify_play_invocation:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [request.original]
+    command: scripts/bin/play-onboarding classify --stdin --json
+    command_policy:
+      - Treat only a trimmed `$play` or `/play` with no arguments as an empty greeting invocation.
+      - Treat a bare or prefixed canonical HTTPS play.modiqo.ai owner/name URI as a Play URI invocation.
+      - Send every other request unchanged to normal Play qualification; never use model inference for these lexical routes.
+    events:
+      empty_play_invocation: [onboarding.intent, onboarding.classify_ns]
+      play_uri_invocation: [onboarding.intent, onboarding.play_uri, match.reference, onboarding.classify_ns]
+      ordinary_play_invocation: [onboarding.classify_ns]
+
+  probe_rote_for_onboarding:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [onboarding.intent]
+    command: scripts/bin/play-onboarding probe --json
+    command_policy:
+      - Probe live state in order: PATH first, then ~/.local/bin/rote and ~/.cargo/bin/rote. Do not invoke rote during this action.
+      - Never infer installation from memory, a prior session, or the existence of ~/.rote.
+    events:
+      rote_available: [onboarding.rote_status, onboarding.rote_command, onboarding.rote_off_path, onboarding.probe_ns]
+      rote_missing: [onboarding.rote_status, onboarding.rote_command, onboarding.rote_off_path, onboarding.probe_ns]
+
+  inspect_onboarding_identity:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [onboarding.rote_status, onboarding.rote_command]
+    command: scripts/bin/play-onboarding identity --stdin --json
+    command_policy:
+      - Run exactly one `<onboarding.rote_command> whoami` only after the binary probe reports installed.
+      - Extract the authenticated email and its local-part handle; retain a digest instead of raw stdout or stderr.
+      - If whoami is unauthenticated or lacks an email, request rote-setup instead of inventing an identity.
+    events:
+      onboarding_identity_ready: [onboarding.identity_status, onboarding.email, onboarding.email_handle, onboarding.identity_ref, onboarding.whoami_ns]
+      onboarding_identity_setup_required: [onboarding.identity_status, onboarding.email, onboarding.email_handle, onboarding.identity_ref, onboarding.whoami_ns]
+
+  handoff_rote_setup:
+    kind: delegated
+    owner: rote-specialist
+    effect: mixed
+    input_required: [onboarding.intent, onboarding.rote_status, onboarding.setup_status]
+    command_policy:
+      - Invoke the rote-setup skill through the harness skill mechanism; rote-setup owns all live probes, install choices, remote-code approval, login, and optional onboarding.
+      - Do not run an installer, login command, or credential flow directly from Play.
+      - Require live setup results and re-enter onboarding_probe after completion so Play verifies the binary and identity itself.
+      - Treat a missing callable rote-setup skill as setup_specialist_unavailable; never replace it with an improvised curl installer.
+    events:
+      rote_setup_completed: [onboarding.setup_status, onboarding.rote_command, onboarding.email, evidence_refs]
+      rote_setup_paused: [onboarding.setup_status, reason, recoverable, evidence_refs]
+      setup_specialist_unavailable: [reason, recoverable, evidence_refs]
+
+  fetch_onboarding_play_card:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [onboarding.play_uri, onboarding.rote_status]
+    command: scripts/bin/play-onboarding card --stdin --json
+    command_policy:
+      - Run only when the live Rote probe reports missing.
+      - Curl only canonical HTTPS play.modiqo.ai owner/name Play URIs, without redirects, credentials, cookies, or arbitrary headers.
+      - Require a matching rote.play.v1 JSON card with a read-only inspect action and bounded size.
+      - Read and present the card's own inspect, install, bootstrap, parameters, requirements, credentials, and effects; never execute an install or run action.
+    events:
+      onboarding_play_card_ready: [onboarding.card]
+
+  present_onboarding_play_card:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [onboarding.card]
+    command: scripts/bin/play-onboarding present-card --stdin --json
+    command_policy:
+      - Present the complete normalized card with its read-only inspect command and consent-gated install/bootstrap links.
+      - Do not describe a fetched card as locally inspected and do not ask for run approval while Rote is absent.
+    events:
+      onboarding_play_card_presented: [onboarding.card_presented, onboarding.card_presentation_ref, presentation.markdown]
+
   qualify_request:
     kind: evaluator
     owner: play

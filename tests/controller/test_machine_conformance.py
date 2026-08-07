@@ -78,6 +78,70 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertEqual("Play logical controller context", CONTEXT["title"])
         self.assertIn("does not define or authorize filesystem persistence", CONTEXT["$comment"])
 
+    def test_empty_invocation_uses_typed_live_identity_or_setup(self) -> None:
+        self.assertEqual("invoke", MACHINE["initial"])
+        self.assertEqual(
+            "scripts/bin/play-onboarding classify --stdin --json",
+            ACTIONS["classify_play_invocation"]["command"],
+        )
+        self.assertEqual(
+            "onboarding_probe",
+            MACHINE["states"]["invoke"]["on"]["empty_play_invocation"][0]["target"],
+        )
+        available = MACHINE["states"]["onboarding_probe"]["on"]["rote_available"]
+        missing = MACHINE["states"]["onboarding_probe"]["on"]["rote_missing"]
+        self.assertEqual("onboarding_identity", available[0]["target"])
+        self.assertEqual("onboarding_setup", missing[0]["target"])
+        self.assertEqual(
+            "scripts/bin/play-onboarding identity --stdin --json",
+            ACTIONS["inspect_onboarding_identity"]["command"],
+        )
+        self.assertEqual(
+            "onboarding_setup",
+            MACHINE["states"]["onboarding_identity"]["on"][
+                "onboarding_identity_setup_required"
+            ][0]["target"],
+        )
+        self.assertEqual(
+            "onboarding_probe",
+            MACHINE["states"]["onboarding_setup"]["on"]["rote_setup_completed"][0][
+                "target"
+            ],
+        )
+        setup_policy = " ".join(ACTIONS["handoff_rote_setup"]["command_policy"])
+        self.assertIn("Invoke the rote-setup skill", setup_policy)
+        self.assertIn("Do not run an installer", setup_policy)
+        prompt = PROMPTS["welcome_play_request"]
+        self.assertEqual(["onboarding.email_handle"], prompt["template_fields"])
+        self.assertIn("{onboarding.email_handle}", prompt["question"])
+
+    def test_play_uri_uses_inspect_or_bounded_public_card(self) -> None:
+        available = MACHINE["states"]["onboarding_probe"]["on"]["rote_available"]
+        missing = MACHINE["states"]["onboarding_probe"]["on"]["rote_missing"]
+        self.assertEqual("use_inspect", available[1]["target"])
+        self.assertEqual("onboarding_card_fetch", missing[1]["target"])
+        card_action = ACTIONS["fetch_onboarding_play_card"]
+        self.assertEqual("read", card_action["effect"])
+        self.assertEqual(
+            "scripts/bin/play-onboarding card --stdin --json", card_action["command"]
+        )
+        policy = " ".join(card_action["command_policy"])
+        self.assertIn("canonical HTTPS play.modiqo.ai", policy)
+        self.assertIn("never execute an install or run action", policy)
+        onboarding = CONTEXT["$defs"]["onboarding"]
+        for field in (
+            "intent",
+            "rote_status",
+            "rote_command",
+            "identity_status",
+            "email",
+            "email_handle",
+            "play_uri",
+            "setup_status",
+            "card",
+        ):
+            self.assertIn(field, onboarding["required"])
+
     def test_every_prompt_has_structured_choices(self) -> None:
         for name, prompt in PROMPTS.items():
             with self.subTest(prompt=name):

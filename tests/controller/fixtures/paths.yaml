@@ -1,6 +1,68 @@
 schema: play.conformance-paths/v1
 
 cases:
+  - name: empty Play invocation greets an authenticated Rote user
+    steps:
+      - {state: invoke, event: empty_play_invocation, target: onboarding_probe}
+      - state: onboarding_probe
+        event: rote_available
+        guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
+        target: onboarding_identity
+      - {state: onboarding_identity, event: onboarding_identity_ready, target: onboarding_welcome}
+      - {state: onboarding_welcome, event: welcome_request_described, target: invoke}
+      - {state: invoke, event: ordinary_play_invocation, target: qualify}
+      - {state: qualify, event: conversation, target: exited}
+    terminal: exited
+    includes_once: [onboarding_probe, onboarding_identity, onboarding_welcome]
+
+  - name: empty Play invocation hands missing Rote to setup then reprobes
+    steps:
+      - {state: invoke, event: empty_play_invocation, target: onboarding_probe}
+      - state: onboarding_probe
+        event: rote_missing
+        guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
+        target: onboarding_setup
+      - {state: onboarding_setup, event: rote_setup_completed, target: onboarding_probe}
+      - state: onboarding_probe
+        event: rote_available
+        guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
+        target: onboarding_identity
+      - {state: onboarding_identity, event: onboarding_identity_ready, target: onboarding_welcome}
+      - {state: onboarding_welcome, event: welcome_request_described, target: invoke}
+      - {state: invoke, event: ordinary_play_invocation, target: qualify}
+      - {state: qualify, event: conversation, target: exited}
+    terminal: exited
+    includes_once: [onboarding_setup, onboarding_identity, onboarding_welcome]
+
+  - name: Play URI uses first-class inspection when Rote is installed
+    steps:
+      - {state: invoke, event: play_uri_invocation, target: onboarding_probe}
+      - state: onboarding_probe
+        event: rote_available
+        guards: {onboarding_is_greeting: false, onboarding_is_play_uri: true}
+        target: use_inspect
+      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_offer, event: play_run_declined, target: completed}
+    terminal: completed
+    excludes: [onboarding_identity, onboarding_card_fetch, onboarding_setup, use_run]
+
+  - name: Play URI reads its public card when Rote is missing
+    steps:
+      - {state: invoke, event: play_uri_invocation, target: onboarding_probe}
+      - state: onboarding_probe
+        event: rote_missing
+        guards: {onboarding_is_greeting: false, onboarding_is_play_uri: true}
+        target: onboarding_card_fetch
+      - {state: onboarding_card_fetch, event: onboarding_play_card_ready, target: onboarding_card_present}
+      - {state: onboarding_card_present, event: onboarding_play_card_presented, target: completed}
+    terminal: completed
+    excludes: [onboarding_identity, onboarding_setup, use_inspect, use_run]
+
+  - name: missing setup specialist blocks without installing directly
+    steps:
+      - {state: onboarding_setup, event: setup_specialist_unavailable, target: blocked}
+    terminal: blocked
+
   - name: non-outcome conversation exits the hook
     steps:
       - {state: qualify, event: conversation, target: exited}

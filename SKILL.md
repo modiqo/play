@@ -7,7 +7,8 @@ description: >
   new and revised organization Plays, top public Plays, personal impact, explicit create-a-Play
   intent, owner-local Play birth certificates, or requests to search, list, inspect, run, create,
   save, share, show how a Play was born, and invite people to
-  Plays, including work constrained to adapters, shell, browser, or combinations.
+  Plays, including work constrained to adapters, shell, browser, or combinations. Also use for
+  empty `$play` or `/play` invocations and bare or prefixed public Play URIs.
 ---
 
 # Play
@@ -21,10 +22,12 @@ invocable so declared handoffs can chain without requiring another user command.
 
 ## Start or resume
 
-1. Before the first Play task in a harness session, run `scripts/bin/play-preflight --harness
-   <codex|claude|generic> --json`. Continue only when its `ready` field is true. If setup is
-   required, show its harness-specific commands and stop; do not install Rote, authenticate, or
-   alter the activation profile without the user's permission.
+1. Enter the deterministic `invoke` state before model qualification. It recognizes only an empty
+   `$play` or `/play`, a bare or prefixed canonical `https://play.modiqo.ai/<owner>/<name>` URI, or
+   an ordinary request. For an ordinary request, run `scripts/bin/play-preflight --harness
+   <codex|claude|generic> --json` before continuing. Empty and URI invocations use the typed live
+   onboarding probe instead, because missing Rote is a declared setup/card branch rather than an
+   early preflight exit.
 2. Read [references/controller/machine.yaml](references/controller/machine.yaml) on every activation.
 3. Create a logical `play.context/v1` record in harness-owned thread/session state for a new task,
    or recover the existing logical record by task key or run ID. Initialize `output_policy` to
@@ -33,7 +36,10 @@ invocable so declared handoffs can chain without requiring another user command.
    Initialize `adapter_discovery` with `status: unknown`, a null query and selected id, and empty
    searched-source, choice, and evidence lists. Initialize `publication_validation` with credential
    and smoke statuses set to `not_required`, empty adapter contracts and evidence, null references,
-   digests, byte counts, and timings, and `isolated_workdir: false`.
+   digests, byte counts, and timings, and `isolated_workdir: false`. Initialize `onboarding` with
+   `intent`, Rote, and identity statuses set to `unknown`; setup status `not_required`; null command,
+   email, handle, URI, card, references, and timings; false off-PATH/presented flags; and empty
+   evidence.
 4. Validate the context's machine version, current state, transition sequence, and pending action.
 5. Execute exactly one declared prompt or entry action for the current state.
 6. Accept only an event declared by the current state and validated by
@@ -160,6 +166,31 @@ prose when its declared return event is absent or invalid.
   exhaustive machine-state mapping in its adjacent JSON file. Never infer visual state from prose.
 
 Do not load unrelated references.
+
+## Welcome and URI onboarding
+
+Keep this trajectory fully typed and live-probed:
+
+- A trimmed `$play` or `/play` with no arguments enters `onboarding_probe`. Check PATH first, then
+  `~/.local/bin/rote` and `~/.cargo/bin/rote`; do not infer installation from memory or `~/.rote`.
+- When Rote is installed, enter `onboarding_identity` and run exactly one resolved-binary
+  `whoami`. Extract the authenticated email and local-part handle, retain only a digest of raw
+  output, then ask the templated text prompt: “How are you, `<handle>`? What can I help you with?”
+  Route its answer back through `invoke`; do not assume every answer is an outcome request.
+- If Rote is absent or `whoami` is not authenticated, invoke the callable `rote-setup` skill. That
+  specialist owns sequential live probing, install choices, remote-code approval, login, and
+  optional onboarding. Play must not run an installer or login itself. After a successful return,
+  re-enter `onboarding_probe` and independently verify binary and identity state.
+- A canonical Play URI with installed Rote enters the existing `use_inspect` state and therefore
+  uses `scripts/bin/play-inspect`, backed by `rote play inspect`. Inspection remains read-only and
+  run approval remains a separate prompt.
+- A canonical Play URI without Rote enters `onboarding_card_fetch`. Curl only the exact HTTPS
+  `play.modiqo.ai` owner/name URI, without redirects, credentials, cookies, or custom headers.
+  Require a matching bounded `rote.play.v1` JSON card whose inspect action is read-only. Present
+  its description, parameters, adapter and credential names, effects, inspect command, and its own
+  consent-gated install/bootstrap links. Never execute those actions or claim local inspection.
+- Reject other hosts, schemes, credentials-in-URL, ports, queries, fragments, malformed cards, or
+  mismatched card identities. Send nonempty non-URI invocations unchanged to normal qualification.
 
 ## Search both Play sources
 

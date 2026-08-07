@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
+import string
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import yaml
 
@@ -42,6 +44,7 @@ class Question:
     input_id: str | None = None
     input_label: str | None = None
     input_event: str | None = None
+    template_fields: tuple[str, ...] = ()
 
 
 def parse_question(prompt_id: str, prompt: dict[str, Any]) -> Question:
@@ -79,6 +82,21 @@ def parse_question(prompt_id: str, prompt: dict[str, Any]) -> Question:
     minimum = prompt.get("minimum_selected", 1)
     if not isinstance(minimum, int) or minimum < 1:
         raise ElicitationError(f"{prompt_id}: minimum_selected must be at least 1")
+    raw_template_fields = prompt.get("template_fields", [])
+    if not isinstance(raw_template_fields, list) or any(
+        not isinstance(field, str) or not field for field in raw_template_fields
+    ):
+        raise ElicitationError(f"{prompt_id}: template_fields must be non-empty strings")
+    template_fields = tuple(raw_template_fields)
+    placeholders = tuple(
+        field_name
+        for _, field_name, _, _ in string.Formatter().parse(text)
+        if field_name is not None
+    )
+    if set(placeholders) != set(template_fields):
+        raise ElicitationError(
+            f"{prompt_id}: question placeholders must match template_fields exactly"
+        )
     return Question(
         prompt_id,
         text.strip(),
@@ -88,10 +106,50 @@ def parse_question(prompt_id: str, prompt: dict[str, Any]) -> Question:
         input_spec.get("id") if isinstance(input_spec, dict) else None,
         input_spec.get("label") if isinstance(input_spec, dict) else None,
         input_spec.get("event") if isinstance(input_spec, dict) else None,
+        template_fields,
     )
 
 
-def native_payload(question: Question, harness: str) -> dict[str, Any]:
+def _context_value(context: Mapping[str, Any], dotted: str) -> str:
+    value: object = context
+    for segment in dotted.split("."):
+        if not isinstance(value, Mapping) or segment not in value:
+            raise ElicitationError(f"missing prompt template field {dotted!r}")
+        value = value[segment]
+    if not isinstance(value, str) or not value:
+        raise ElicitationError(f"prompt template field {dotted!r} must be a non-empty string")
+    return value
+
+
+def resolve_question(question: Question, context: Mapping[str, Any]) -> Question:
+    """Resolve only placeholders explicitly declared by the prompt contract."""
+
+    if not question.template_fields:
+        return question
+    values = {field: _context_value(context, field) for field in question.template_fields}
+    text = question.text
+    for field, value in values.items():
+        text = text.replace("{" + field + "}", value)
+    return Question(
+        id=question.id,
+        text=text,
+        selection=question.selection,
+        choices=question.choices,
+        minimum_selected=question.minimum_selected,
+        input_id=question.input_id,
+        input_label=question.input_label,
+        input_event=question.input_event,
+        template_fields=(),
+    )
+
+
+def native_payload(
+    question: Question, harness: str, context: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
+    if question.template_fields:
+        if context is None:
+            raise ElicitationError("templated question requires controller context")
+        question = resolve_question(question, context)
     surface = NATIVE_SURFACES.get(harness.casefold(), "structured_elicitation")
     return {
         "surface": surface,
@@ -121,8 +179,15 @@ def native_payload(question: Question, harness: str) -> dict[str, Any]:
     }
 
 
-def markdown_fallback(question: Question) -> str:
+def markdown_fallback(
+    question: Question, context: Mapping[str, Any] | None = None
+) -> str:
+    if question.template_fields:
+        if context is None:
+            raise ElicitationError("templated question requires controller context")
+        question = resolve_question(question, context)
     if question.selection == "text":
+        assert question.input_label is not None
         return f"{question.text}\n\nReply with {question.input_label.casefold()}."
     lines = [question.text, ""]
     for index, choice in enumerate(question.choices, 1):
@@ -153,17 +218,27 @@ def main(prompts_path: Path, arguments: list[str] | None = None) -> int:
     parser.add_argument("--harness", default="codex")
     parser.add_argument("--format", choices=("native", "markdown"), default="native")
     parser.add_argument("--check", action="store_true", help="validate without rendering")
+    parser.add_argument("--context-json", help="logical controller context for prompt templates")
     args = parser.parse_args(arguments)
     try:
         question = load_question(prompts_path, args.prompt_id)
     except ElicitationError as error:
         parser.error(str(error))
+    context = None
+    if args.context_json:
+        try:
+            context = json.loads(args.context_json)
+        except json.JSONDecodeError as error:
+            parser.error(f"--context-json must be valid JSON: {error}")
+        if not isinstance(context, dict):
+            parser.error("--context-json must decode to an object")
     if args.check:
-        native_payload(question, args.harness)
-        markdown_fallback(question)
+        if not question.template_fields or context is not None:
+            native_payload(question, args.harness, context)
+            markdown_fallback(question, context)
         return 0
     if args.format == "markdown":
-        print(markdown_fallback(question))
+        print(markdown_fallback(question, context))
     else:
-        print(json_text(native_payload(question, args.harness)))
+        print(json_text(native_payload(question, args.harness, context)))
     return 0

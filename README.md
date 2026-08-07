@@ -10,6 +10,9 @@ You do not need to remember organization/name slugs or lower-level rote commands
 outcome in ordinary language:
 
 ```text
+$play
+/play
+$play https://play.modiqo.ai/chetan/list-my-github-repos@0.0.2
 $play find a Play that retrieves recent emails
 $play run the PostHog daily active users report
 $play create a reusable weekly customer report
@@ -35,20 +38,42 @@ does, its parameters, adapters and credentials, what this machine must install o
 operations and writes, and any unknown effect semantics. Only the next structured choice can
 authorize the exact inspected version and displayed parameters.
 
+An empty `$play` or `/play` is a warm typed entrypoint. Play live-probes for Rote, reads the signed-in
+email with `rote whoami`, and asks “How are you, `<email handle>`? What can I help you with?” Missing
+or unauthenticated Rote is handed to the guided `rote-setup` skill. A public Play URI uses first-class
+Rote inspection when available; without Rote, Play reads the URI's bounded public JSON card and
+shows its own inspect and consent-gated install/bootstrap paths without executing them.
+
 ## The Play state machine
 
 Play is driven by one declarative machine, [`references/controller/machine.yaml`](references/controller/machine.yaml)
 (`play.machine/v1`). The controller re-reads it on every activation, executes exactly one declared
 prompt or entry action per state, and accepts only events declared by
 [`actions.yaml`](references/controller/actions.yaml) and [`prompts.yaml`](references/controller/prompts.yaml).
-It never jumps states from conversational intuition. Initial state: `qualify`. Terminals:
+It never jumps states from conversational intuition. Initial state: `invoke`. Terminals:
 `receipt`, `completed`, `exited`, `blocked`. Any action failure emits `action_blocked` and lands in
 `blocked` (or, for a failed run, the `repair_offer` gate).
 
 ```mermaid
 stateDiagram-v2
     direction TB
-    [*] --> qualify
+    [*] --> invoke
+
+    %% ── Typed invocation and warm onboarding ──
+    invoke --> onboarding_probe : empty $play or /play
+    invoke --> onboarding_probe : canonical Play URI
+    invoke --> qualify : ordinary request
+    onboarding_probe --> onboarding_identity : greeting + Rote installed
+    onboarding_probe --> onboarding_setup : greeting + Rote missing
+    onboarding_probe --> use_inspect : URI + Rote installed
+    onboarding_probe --> onboarding_card_fetch : URI + Rote missing
+    onboarding_identity --> onboarding_welcome : authenticated email
+    onboarding_identity --> onboarding_setup : login/setup required
+    onboarding_setup --> onboarding_probe : setup completed; reprobe
+    onboarding_setup --> blocked : paused / unavailable
+    onboarding_welcome --> invoke : user describes need
+    onboarding_card_fetch --> onboarding_card_present : card ready
+    onboarding_card_present --> completed
 
     %% ── Qualify routes each request to one trajectory ──
     qualify --> search : outcome / search request
@@ -166,7 +191,8 @@ stateDiagram-v2
     blocked --> [*]
 ```
 
-State ownership is explicit: `play` owns prompts, output formatting, evaluators, and verification; `rote-specialist`
+State ownership is explicit: `play` owns invocation classification, live onboarding probes, prompts,
+output formatting, evaluators, and verification; `rote-specialist`
 states (`explore_execute`, `crystallize`, `author_release`, publication, `management_list`) are
 delegated through typed `play.handoff/v1` packets and validated `play.handoff-receipt/v1` receipts;
 `flow-runtime` owns `use_run`, `saved_inspect`, `publication_credentials`, and
@@ -213,19 +239,19 @@ different controller versions cannot be mixed accidentally.
 
 Baseline recorded on 2026-08-06 on an Apple Silicon Mac with Python 3.14.5,
 `python-statemachine` 3.2.0, bundle
-`075d74eb5bb153998598caac21e0acb68fc08754dd3e2b1156f154c9877dba6e`, and 10,000
+`73e642bd7c6693a0d61d043327102990dbc7b662d535108e58fc56b3d3eaa548`, and 10,000
 iterations:
 
 | Metric | Time |
 |---|---:|
-| One-time bundle compile | 106.62 ms |
-| Warm transition median | 0.462 ms |
-| Warm transition p95 | 0.741 ms |
-| Warm transition max | 6.29 ms |
+| One-time bundle compile | 121.36 ms |
+| Warm invocation transition median | 0.512 ms |
+| Warm invocation transition p95 | 0.743 ms |
+| Warm invocation transition max | 5.97 ms |
 
-The earlier 57-state bundle measured a 0.447 ms median and 0.723 ms p95 on the same date. The
-59-state publication-safety bundle therefore adds no meaningful controller-path latency; public
-credential inspection and the canonical smoke run are separately timed external I/O gates.
+The preceding 59-state publication-safety bundle measured a 0.462 ms median and 0.741 ms p95 on the
+same date. The 66-state onboarding bundle keeps p95 effectively flat; live `whoami`, registry
+inspection, public-card fetches, and setup are separately timed external I/O actions.
 
 Treat these numbers as a development baseline, not a cross-machine guarantee. Future performance
 changes should record the command, iteration count, bundle SHA, Python version, and machine class.
@@ -237,7 +263,8 @@ controller references, Python runtime, harness activation tools, and the `justfi
 configure and verify the Play-first experience. `scripts/bin/package-plugin --check` prevents those
 installed files from drifting from this repository's source of truth.
 
-Rote is a prerequisite. Install and complete its guided setup first:
+The Rote skill provider is a prerequisite so Play can hand missing local installation to the
+guided `rote-setup` specialist:
 
 ```bash
 # Codex
@@ -249,10 +276,10 @@ claude plugin marketplace add modiqo/rote-skills
 claude plugin install rote-onboard@rote-skills
 ```
 
-Restart the harness and invoke `$rote-setup` in Codex or `/rote-setup` in Claude Code. Play checks
-that the `rote` executable is present, an identity is authenticated, and `rote play` is available;
-it stops with the applicable setup commands when any precondition is missing. It never installs or
-authenticates Rote without permission.
+After Play is installed, an empty `$play` or `/play` probes the local binary and identity. If either
+is missing, Play invokes `rote-setup`; that specialist asks before downloaded installer code, login,
+credentials, or optional onboarding. Ordinary Play requests retain the stricter full preflight.
+Public Play URIs can still show their read-only public card before the CLI exists.
 
 Install Play from its public marketplace after Rote setup:
 
@@ -732,8 +759,9 @@ harness roots, including installation, verification, idempotency, rollback, and 
 
 The foundation is Python-only. Commands under `scripts/bin/` and harness entrypoints under
 `scripts/harness/` are thin executables; reusable command, private-store, birth-certificate,
-registry, search, inventory, digest, elicitation, typed specialist handoff, typed controller runtime,
-public credential/smoke validation, and machine-validation logic lives in `scripts/lib/play/`. References and tests are
+registry, search, inventory, digest, templated elicitation, typed greeting/URI onboarding, typed
+specialist handoff, typed controller runtime, public credential/smoke validation, and
+machine-validation logic lives in `scripts/lib/play/`. References and tests are
 grouped by controller, awareness, Explore, publication, integration, and harness use case.
 
 For isolated testing, override the discovered roots or reversible state location:

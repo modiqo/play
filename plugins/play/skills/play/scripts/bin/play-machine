@@ -80,7 +80,10 @@ def main() -> int:
             for index in range(args.iterations):
                 cursor = runtime.initial_cursor(run_id=f"benchmark-{index}", task_key="benchmark")
                 event = event_from_dict(
-                    {"id": "conversation", "payload": {"reason": "benchmark"}}
+                    {
+                        "id": "ordinary_play_invocation",
+                        "payload": {"onboarding": {"classify_ns": 1}},
+                    }
                 )
                 durations.append(runtime.step(cursor, event).timing.step_ns)
             payload = {

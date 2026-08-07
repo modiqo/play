@@ -17,6 +17,13 @@
     "shaping": {"glyph": "◇", "message": "Turning a good result into a reusable Play…"}
   },
   "states": {
+    "invoke": {"orb": "solving", "label": "Reading the Play invocation…"},
+    "onboarding_probe": {"orb": "searching", "label": "Checking for Rote on this machine…"},
+    "onboarding_identity": {"orb": "connecting", "label": "Checking the signed-in Rote identity…"},
+    "onboarding_welcome": {"orb": "listening", "label": "Welcoming you to Play…"},
+    "onboarding_setup": {"orb": "connecting", "label": "Connecting the guided Rote setup…"},
+    "onboarding_card_fetch": {"orb": "searching", "label": "Reading the public Play card…"},
+    "onboarding_card_present": {"orb": "working", "label": "Preparing the Play card and setup paths…"},
     "qualify": {"orb": "solving", "label": "Understanding the request…"},
     "awareness_collect": {"orb": "searching", "label": "Checking what changed in Plays…"},
     "awareness_present": {"orb": "working", "label": "Opening your Play inbox…"},

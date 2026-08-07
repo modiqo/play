@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import string
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -207,6 +208,25 @@ def validate_bundle(root: Path) -> ValidationSummary:
         question = prompt.get("question")
         check(isinstance(question, str) and question.strip().endswith("?"),
               f"prompt {name}: question must be a non-empty question ending in ?")
+        template_fields = prompt.get("template_fields", [])
+        check(
+            isinstance(template_fields, list)
+            and all(isinstance(field, str) and field for field in template_fields),
+            f"prompt {name}: template_fields must be non-empty strings",
+        )
+        placeholders = (
+            [
+                field_name
+                for _, field_name, _, _ in string.Formatter().parse(question)
+                if field_name is not None
+            ]
+            if isinstance(question, str)
+            else []
+        )
+        check(
+            set(placeholders) == set(template_fields) if isinstance(template_fields, list) else False,
+            f"prompt {name}: question placeholders must match template_fields exactly",
+        )
         selection = prompt.get("selection")
         check(selection in {"single", "multiple", "text"},
               f"prompt {name}: selection must be single, multiple, or text")
@@ -327,6 +347,78 @@ def validate_bundle(root: Path) -> ValidationSummary:
     check(actions.get("run_registry_play", {}).get("command") == "rote play run <inspection.exact_reference> <approved-parameters> --yes", "Use mode must invoke the approved exact Play")
     check(actions.get("format_run_output", {}).get("command") == "scripts/bin/play-run-output --stdin --json", "Use output must invoke the reusable detailed formatter")
     check(actions.get("inspect_saved_play", {}).get("command") == "rote play inspect <publication.canonical_reference> --json", "saved Play readback must invoke rote play inspect --json")
+    check(initial == "invoke", "the typed invocation classifier must be the initial state")
+    check(
+        actions.get("classify_play_invocation", {}).get("command")
+        == "scripts/bin/play-onboarding classify --stdin --json",
+        "Play invocation aliases and URIs must use the deterministic classifier",
+    )
+    check(
+        _target(states, "invoke", "empty_play_invocation") == "onboarding_probe",
+        "an empty Play invocation must enter live onboarding",
+    )
+    check(
+        _target(states, "invoke", "play_uri_invocation") == "onboarding_probe",
+        "a canonical Play URI must enter live onboarding",
+    )
+    check(
+        _target(states, "invoke", "ordinary_play_invocation") == "qualify",
+        "ordinary requests must preserve normal Play qualification",
+    )
+    check(
+        actions.get("probe_rote_for_onboarding", {}).get("command")
+        == "scripts/bin/play-onboarding probe --json",
+        "onboarding must probe the live Rote binary before invoking it",
+    )
+    check(
+        _target(states, "onboarding_probe", "rote_available") == "onboarding_identity"
+        and _target(states, "onboarding_probe", "rote_available", 1) == "use_inspect",
+        "installed Rote must route greeting to identity and URI to first-class inspection",
+    )
+    check(
+        _target(states, "onboarding_probe", "rote_missing") == "onboarding_setup"
+        and _target(states, "onboarding_probe", "rote_missing", 1)
+        == "onboarding_card_fetch",
+        "missing Rote must route greeting to setup and URI to its public card",
+    )
+    check(
+        actions.get("inspect_onboarding_identity", {}).get("command")
+        == "scripts/bin/play-onboarding identity --stdin --json",
+        "the greeting identity must come from the typed whoami reader",
+    )
+    check(
+        _target(states, "onboarding_identity", "onboarding_identity_setup_required")
+        == "onboarding_setup",
+        "an installed but unauthenticated Rote must enter setup",
+    )
+    check(
+        _target(states, "onboarding_setup", "rote_setup_completed") == "onboarding_probe",
+        "completed setup must be independently reprobed",
+    )
+    setup_policy = " ".join(actions.get("handoff_rote_setup", {}).get("command_policy", []))
+    check(
+        "Invoke the rote-setup skill" in setup_policy
+        and "Do not run an installer" in setup_policy
+        and "improvised curl installer" in setup_policy,
+        "Play onboarding must preserve rote-setup ownership and installer approval",
+    )
+    card_policy = " ".join(
+        actions.get("fetch_onboarding_play_card", {}).get("command_policy", [])
+    )
+    check(
+        actions.get("fetch_onboarding_play_card", {}).get("command")
+        == "scripts/bin/play-onboarding card --stdin --json"
+        and "only canonical HTTPS play.modiqo.ai" in card_policy
+        and "never execute an install or run action" in card_policy,
+        "the no-Rote URI fallback must be a bounded read-only card fetch",
+    )
+    welcome_prompt = prompts.get("welcome_play_request", {})
+    check(
+        welcome_prompt.get("question")
+        == "How are you, {onboarding.email_handle}? What can I help you with?"
+        and welcome_prompt.get("template_fields") == ["onboarding.email_handle"],
+        "the warm greeting must bind the typed whoami email handle",
+    )
     check(actions.get("search_authorized_plays", {}).get("command") == "scripts/bin/play-search <request.intent> --json", "Play discovery must invoke the unified local and registry search")
     check(_target(states, "qualify", "play_awareness_request") == "awareness_collect", "an awareness request must enter the digest path")
     check(actions.get("collect_awareness_digest", {}).get("effect") == "local-write", "awareness collection may write only remembered local state")
@@ -458,6 +550,7 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "judge_policy",
         "output_policy",
         "output",
+        "onboarding",
         "adapter_discovery",
         "handoff",
         "auth_repair",

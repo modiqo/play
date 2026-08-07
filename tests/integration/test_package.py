@@ -13,6 +13,7 @@ class PluginPackageTest(unittest.TestCase):
         self.assertTrue((TARGET / "scripts/harness/play-profile").is_file())
         self.assertTrue((TARGET / "scripts/harness/start-harness").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-preflight").is_file())
+        self.assertTrue((TARGET / "scripts/bin/play-onboarding").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-presentation").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-publication").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-publication-gate").is_file())

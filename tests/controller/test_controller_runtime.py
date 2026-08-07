@@ -25,11 +25,22 @@ class ControllerRuntimeTest(unittest.TestCase):
         cls.runtime = ControllerRuntime(ROOT)
 
     def cursor(self):
+        cursor = self.runtime.initial_cursor(run_id="run-1", task_key="task-1")
+        return self.runtime.step(
+            cursor,
+            ControllerEvent(
+                id=EventId("ordinary_play_invocation"),
+                payload={"onboarding": {"classify_ns": 1}},
+                guards={},
+            ),
+        ).cursor
+
+    def initial_cursor(self):
         return self.runtime.initial_cursor(run_id="run-1", task_key="task-1")
 
     def test_compiles_the_authoritative_bundle(self) -> None:
-        self.assertEqual("qualify", self.runtime.bundle.initial)
-        self.assertEqual(59, len(self.runtime.bundle.states))
+        self.assertEqual("invoke", self.runtime.bundle.initial)
+        self.assertEqual(66, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -46,7 +57,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             ),
         )
         self.assertEqual("exited", result.cursor.state)
-        self.assertEqual(1, result.cursor.transition_seq)
+        self.assertEqual(2, result.cursor.transition_seq)
         self.assertEqual("record_non_outcome_exit", result.transition.mutation)
         self.assertIsNone(result.transition.guard)
         self.assertGreater(result.timing.step_ns, 0)
@@ -86,6 +97,18 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         self.assertEqual("classify", result.cursor.state)
         self.assertEqual("search_is_complete", result.transition.guard)
+
+    def test_empty_invocation_enters_typed_onboarding_probe(self) -> None:
+        result = self.runtime.step(
+            self.initial_cursor(),
+            ControllerEvent(
+                id=EventId("empty_play_invocation"),
+                payload={"onboarding": {"intent": "greeting", "classify_ns": 10}},
+                guards={},
+            ),
+        )
+        self.assertEqual("onboarding_probe", result.cursor.state)
+        self.assertEqual("start_greeting_onboarding", result.transition.mutation)
 
     def test_guard_fallback_is_fail_closed_and_deterministic(self) -> None:
         cursor = self.cursor()
@@ -250,7 +273,7 @@ class ControllerRuntimeTest(unittest.TestCase):
     def test_rejects_unknown_event(self) -> None:
         with self.assertRaisesRegex(ControllerRuntimeError, "does not accept event"):
             self.runtime.step(
-                self.cursor(),
+                self.initial_cursor(),
                 ControllerEvent(EventId("invented"), payload={}, guards={}),
             )
 
