@@ -24,11 +24,11 @@ class SearchError(CommandError):
 def search_both(query: str, limit: int) -> tuple[dict, list]:
     fetch_limit = max(50, limit * 10)
     commands = {
-        "local": ["rote", "flow", "search", query, "--limit", str(fetch_limit), "--json"],
+        "local": ["rote", "play", "search", query, "--limit", str(fetch_limit), "--json"],
         "registry": [
             "rote",
             "registry",
-            "flow",
+            "play",
             "search",
             query,
             "--limit",
@@ -187,9 +187,9 @@ def merge_results(
         else:
             path = sorted(hit["local_paths"])[0]
             uri = Path(path).expanduser().resolve(strict=False).as_uri()
-            run_command = shlex.join(["rote", "flow", "run", path])
+            run_command = shlex.join(["rote", "play", "run", path])
             inspect_command = ""
-            hint_kind = "local-flow-gap"
+            hint_kind = "local-play"
             exact_reference = None
             local_availability = "local_only"
             execution_resolution = "publish_required"

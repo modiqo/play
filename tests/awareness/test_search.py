@@ -112,21 +112,34 @@ class SearchTest(unittest.TestCase):
             "local report",
         )
         self.assertIsNone(results[0]["reference"])
-        self.assertEqual("local-flow-gap", results[0]["hint_kind"])
+        self.assertEqual("local-play", results[0]["hint_kind"])
         self.assertEqual("publish_required", results[0]["execution_resolution"])
         self.assertTrue(results[0]["uri"].startswith("file://"))
+        self.assertEqual(
+            f"rote play run {flow_root / 'alpha' / 'local-report' / 'main.ts'}",
+            results[0]["run_command"],
+        )
 
     def test_local_and_registry_searches_start_in_parallel(self):
         barrier = threading.Barrier(2)
+        commands = []
 
         def fake_run(command, **_kwargs):
+            commands.append(command)
             barrier.wait(timeout=2)
-            return {"flows": []} if command[1:3] == ["flow", "search"] else []
+            return {"flows": []} if command[1:3] == ["play", "search"] else []
 
         with mock.patch.object(PLAY_SEARCH, "run_json", side_effect=fake_run):
             local, registry = PLAY_SEARCH.search_both("hello", 5)
         self.assertEqual({"flows": []}, local)
         self.assertEqual([], registry)
+        self.assertIn(
+            ["rote", "play", "search", "hello", "--limit", "50", "--json"], commands
+        )
+        self.assertIn(
+            ["rote", "registry", "play", "search", "hello", "--limit", "50", "--json"],
+            commands,
+        )
 
     def test_play_choices_are_exact_and_exclude_local_only_flows(self):
         choices = PLAY_SEARCH.build_play_choices(

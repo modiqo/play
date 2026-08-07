@@ -61,3 +61,4 @@
 | P-0055 | play | conclusion | open | references/publish/lifecycle.md | A saved public Play may complete only after canonical inspection and det |
 | P-0056 | play | conclusion | open | references/controller/machine.yaml | A Play save run must block when author_release reports prior registry pu |
 | P-0057 | play | conclusion | open | references/publish/lifecycle.md | Before save consent, Play must resolve the claimed profile handle and au |
+| P-0058 | play | conclusion | open | SKILL.md | Play must use rote play for local discovery, inspection, execution, and  |

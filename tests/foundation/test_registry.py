@@ -41,6 +41,9 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(["alpha", "beta"], list(grouped))
         self.assertEqual("alpha-play", grouped["alpha"][0]["name"])
         self.assertEqual(2, run_json.call_count)
+        self.assertTrue(
+            all(call.args[:3] == ("registry", "play", "list") for call in run_json.call_args_list)
+        )
 
     @patch("play.registry.run_rote_json")
     def test_play_inspect_normalizes_metrics_and_parameter_defaults(self, run_json) -> None:
@@ -103,6 +106,7 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual("Alice Example", flow["creator_name"])
         self.assertEqual(8, flow["download_count"])
         self.assertNotIn("run_count", flow)
+        self.assertEqual(("registry", "play", "info"), run_json.call_args.args[:3])
 
     @patch("play.registry.run_rote_json")
     def test_nonzero_play_not_found_is_typed_for_search_recovery(self, run_json) -> None:

@@ -1,8 +1,8 @@
 # Play Search
 
 Use the bundled `scripts/bin/play-search <query> --json` for outcome discovery and
-`scripts/bin/play-search <query>` for a user-facing search request. `rote play` currently exposes no
-search command, so the wrapper narrowly fills that capability gap.
+`scripts/bin/play-search <query>` for a user-facing search request. The wrapper combines the local
+and authorized registry Play search surfaces into one deterministic result set.
 
 ## Normalize before searching
 
@@ -19,8 +19,8 @@ description to either query parser.
 
 Start these read-only searches concurrently:
 
-- Local: `rote flow search <normalized-query> --limit <expanded-limit> --json`
-- Authorized registry: `rote registry flow search <normalized-query> --limit <expanded-limit> --json`
+- Local: `rote play search <normalized-query> --limit <expanded-limit> --json`
+- Authorized registry: `rote registry play search <normalized-query> --limit <expanded-limit> --json`
 
 Capture successful stderr so endpoint warnings do not contaminate structured output. If either
 search fails or returns malformed JSON, return an incomplete search failure rather than silently
@@ -42,8 +42,8 @@ For registry-addressable results, emit:
 - local availability and whether a pull/install is expected;
 - next command: `rote play inspect <owner>/<name>@<version> --json`.
 
-For a local-only Flow, emit its `file://` URI and label its `rote flow run` hint as a capability gap.
-Do not pretend a local path is accepted by `rote play run`.
+For a local-only Play, emit its `file://` URI and a `rote play run <path>` hint. Keep it out of
+registry-addressable choices until publication provides a canonical reference.
 
 ## Present choices
 

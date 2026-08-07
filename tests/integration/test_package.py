@@ -36,6 +36,27 @@ class PluginPackageTest(unittest.TestCase):
         self.assertFalse((TARGET / "scripts/lib/play/package.py").exists())
         self.assertTrue((ROOT / "scripts/bin/package-plugin").is_file())
 
+    def test_active_sources_have_no_legacy_flow_commands(self) -> None:
+        files = [ROOT / "README.md", ROOT / "SKILL.md"]
+        for directory in (ROOT / "references", ROOT / "scripts", TARGET):
+            files.extend(path for path in directory.rglob("*") if path.is_file())
+        legacy_patterns = (
+            "rote flow",
+            "rote registry flow",
+            '"rote", "flow"',
+            '"registry", "flow"',
+        )
+        matches = []
+        for path in files:
+            try:
+                text = path.read_text()
+            except UnicodeDecodeError:
+                continue
+            for pattern in legacy_patterns:
+                if pattern in text:
+                    matches.append(f"{path.relative_to(ROOT)}: {pattern}")
+        self.assertEqual([], matches)
+
 
 if __name__ == "__main__":
     unittest.main()

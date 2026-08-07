@@ -134,7 +134,7 @@
         "uri": {"type": "string", "minLength": 1},
         "run_command": {"type": "string", "minLength": 1},
         "inspect_command": {"type": "string"},
-        "hint_kind": {"enum": ["play", "local-flow-gap"]},
+        "hint_kind": {"enum": ["play", "local-play"]},
         "local_availability": {"enum": ["found", "not_found", "local_only"]},
         "execution_resolution": {"enum": ["inspect_required", "pull_expected", "publish_required"]},
         "selection_description": {"type": "string", "minLength": 1}

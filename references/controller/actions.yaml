@@ -384,7 +384,7 @@ actions:
       - Use --yes only after approve_play_run returns play_run_approved for this exact inspection digest, reference, and displayed parameters.
       - A run command in the original request, an Awareness selection, or a search selection never substitutes for post-inspection approval.
       - If the inspection changes or parameters change, discard approval and return to use_inspect.
-      - Never replace this command with registry pull plus flow run, even when the Play is already local.
+      - Never replace this command with a manual `rote registry play pull` plus a local-path `rote play run`, even when the Play is already local.
       - Never request summary output. Preserve the complete primary payload, response and artifact references, effects, and any full-output reference returned by Rote.
       - Prefer Rote's human presentation for steps-with-presentation Plays; accept JSON or structured responses only when they retain the full primary result.
       - A compact Play summary cannot prove full detail and must not emit play_run_ready.
@@ -706,7 +706,7 @@ actions:
     input_required: [publication.canonical_reference, publication.visibility, play.version]
     command: rote play inspect <publication.canonical_reference> --json
     command_policy:
-      - Never replace first-class Play inspection with registry flow info.
+      - Never replace first-class Play inspection with `rote registry play info`.
       - Return the inspected title, description, and registry content hash for the final verified publication readout.
     events:
       saved_play_inspected: [publication.canonical_reference, publication.visibility, publication.title, publication.description, publication.content_hash, play.version, publication.inspect_ref]

@@ -283,17 +283,16 @@ inspect → disclose → approve → rote play run → verify outcome → receip
 
 Treat `rote play` as the first-class command surface for every Play operation it supports. Use
 `rote play run <reference> [parameters]` for execution and `rote play inspect <reference> --json`
-for inspection. Enter `rote flow` or `rote registry flow` only for a capability that `rote play`
-does not expose, such as current search, listing, authoring, or publication gaps. A failed
-`rote play` command is not a capability gap and never authorizes a lower-level fallback.
-Keep every lower-level use scoped to that missing operation and return to `rote play` as soon as a
-canonical Play reference exists. Explore may use Flow tooling only while no first-class Play
-operation can represent the unfinished candidate.
+for inspection. Use `rote play` for local discovery and authoring, and `rote registry play` for
+registry distribution and registry-scoped discovery. Do not use the legacy Flow command aliases.
+A failed `rote play` command is not a capability gap and never authorizes a lower-level fallback.
+Explore may manipulate an unfinished Flow artifact only through the current `rote play` authoring
+surface.
 
 `rote play run` already verifies, installs, converges adapters and credentials, checks dependencies
 and Flow validity, and runs the exact prepared Flow. Do not reproduce its internals with
-`rote registry flow pull`, `rote flow run`, adapter setup, or manual preflight—even when the Play
-is already local.
+a manual `rote registry play pull`, adapter setup, or manual preflight—even when the Play is already
+local.
 
 Before every run, invoke `scripts/bin/play-inspect <reference> --json`. This reusable wrapper uses
 `rote play inspect <reference> --json` and performs no pull, installation, repair, authentication,

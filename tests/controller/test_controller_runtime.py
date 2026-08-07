@@ -416,7 +416,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                     "publication": {
                         "canonical_reference": "chetanconikee/posthog-dau-new@0.0.1"
                     },
-                    "reason": "registry flow published before birth_capture",
+                    "reason": "registry Play published before birth_capture",
                     "evidence_refs": ["registry:posthog-dau-new@0.0.1"],
                 },
                 guards={},

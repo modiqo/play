@@ -63,7 +63,7 @@ def _validate_flow(slug: str, flow: object) -> dict:
 
 def _load_organization_flows(slug: str) -> tuple[str, list[dict]]:
     payload = run_rote_json(
-        "registry", "flow", "list", "--org", slug, "--json", error_type=RegistryReadError
+        "registry", "play", "list", "--org", slug, "--json", error_type=RegistryReadError
     )
     if not isinstance(payload, list):
         raise RegistryReadError(f"Play list for {slug} is not a JSON array")
@@ -174,7 +174,7 @@ def inspect_play(reference: str) -> dict[str, Any]:
 
 
 def load_registry_flow_info(reference: str) -> dict[str, Any]:
-    """Return display metadata and archive totals from ``registry flow info``.
+    """Return display metadata and archive totals from ``registry play info``.
 
     This read does not require Play execution authentication.  It is therefore
     suitable for awareness surfaces, but it deliberately does not imply that a
@@ -185,7 +185,7 @@ def load_registry_flow_info(reference: str) -> dict[str, Any]:
     if not separator or not owner or not requested_name:
         raise RegistryReadError(f"invalid Play reference {reference!r}")
     payload = run_rote_json(
-        "registry", "flow", "info", reference, "--json", error_type=RegistryReadError
+        "registry", "play", "info", reference, "--json", error_type=RegistryReadError
     )
     skill = payload.get("skill") if isinstance(payload, dict) else None
     version = payload.get("version") if isinstance(payload, dict) else None

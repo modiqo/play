@@ -36,7 +36,7 @@ already knows the authorized scope may repeat `--org <slug>` to bypass discovery
 assertion from the host, not permission to read an unauthorized organization.
 
 Public registry metadata reads are bounded (`--inspection-budget 100` by default). Read authorized
-public candidates with `rote registry flow info`, rank the successfully read candidates by released
+public candidates with `rote registry play info`, rank the successfully read candidates by released
 version lifetime downloads, and show at most 10 by default. When candidates are omitted or a read
 fails, label the result as an inspected sample and return candidate, inspected, and omitted counts;
 never call it exhaustive.
@@ -53,12 +53,12 @@ an exact Use choice until a later inspect succeeds.
   `latest_version_created_at`; `updated_at` alone may be a metadata edit and is not sufficient.
 - Do not treat a visibility-only metadata edit as a revision.
 - Include private Plays only from organizations authorized for the current identity.
-- Enrich authorized public candidates with `rote registry flow info <reference> --json`; use its
+- Enrich authorized public candidates with `rote registry play info <reference> --json`; use its
   released version, visibility, author provenance, download count, and install count. This awareness
   read does not imply local installation or run eligibility; inspect a selected card before Use.
 - Describe public results as trending only when the metric is windowed usage. Lifetime totals must
   be labeled most downloaded and must name their coverage scope.
-- Registry flow list/info currently expose no run count. Report run metrics as unavailable and use
+- Registry Play list/info currently expose no run count. Report run metrics as unavailable and use
   lifetime downloads for ranking until a canonical run metric exists.
 - The current registry has no canonical global public enumeration. Label the default ranking
   `authorized_organizations` and report global public ranking as unavailable. Never imply that a

@@ -322,7 +322,7 @@ def _journey(stats: dict[str, Any], commands: list[dict[str, Any]], dependencies
 def capture_birth(workspace_selector: str, flow_selector: str, *, home: Path | None = None) -> dict[str, Any]:
     home = home or default_home()
     try:
-        flow = _require_dict(run_rote_json("flow", "info", flow_selector, "--json"), "Flow info")
+        flow = _require_dict(run_rote_json("play", "info", flow_selector, "--json"), "Flow info")
     except CommandError as error:
         raise BirthError(str(error)) from error
     if flow.get("status") != "released":
@@ -371,7 +371,7 @@ def capture_birth(workspace_selector: str, flow_selector: str, *, home: Path | N
         },
         "journey": _journey(stats, commands, dependencies),
         "sources": {
-            "flow": "rote-flow-info-json",
+            "flow": "rote-play-info-json",
             "stats": "rote-workspace-stats-json",
             "trace": trace_method,
         },
@@ -486,7 +486,7 @@ def _registry_release(reference: str) -> tuple[str, str, str | None]:
         raise BirthError("Play reference must be owner/name or owner/name@version")
     try:
         payload = _require_dict(
-            run_rote_json("registry", "flow", "info", base, "--json"), "registry Flow info"
+            run_rote_json("registry", "play", "info", base, "--json"), "registry Play info"
         )
     except CommandError as error:
         raise BirthError(str(error)) from error

@@ -559,7 +559,7 @@ invitations, and sharing use the organization/list surface rather than hidden lo
 Release and publication are deliberately separate specialist handoffs. `rote-flow-authoring` must
 stop after an explicitly unpublished local release. Play then captures the immutable birth object,
 and only a fresh `rote-registry` handoff may publish that exact artifact while echoing the captured
-birth SHA. If a broad registry-flow request publishes early, the machine emits
+birth SHA. If a broad registry publication request publishes early, the machine emits
 `publication_boundary_violated` and blocks instead of treating a registry summary as completion or
 offering a retrospective certificate.
 
@@ -635,7 +635,7 @@ scripts/bin/play-digest --org modiqo --days 7 --json
 “What’s new” is intentionally framed like an inbox. It groups new and revised Plays by organization
 and shows each Play’s title, publication author when provenance supplies one, short description,
 visibility, timestamp, and canonical reference. It then shows the top 10 public Plays in authorized
-organizations ranked by lifetime downloads. Registry flow info does not currently expose run counts,
+organizations ranked by lifetime downloads. Registry Play info does not currently expose run counts,
 so the UI labels downloads explicitly and never calls them runs or trending activity.
 
 Selecting a card enters read-only inspection before execution approval. Publication authors are
@@ -691,8 +691,9 @@ The question command maps the same prompt and event contract to Codex `request_u
 and Kimi `askquestion`, or a numbered Markdown fallback. `play-inspect` normalizes the complete
 `rote play inspect <reference> --json` result into a stable disclosure. After approval, the
 controller performs exactly one `rote play run <exact-reference> <approved-parameters> --yes`.
-It uses `rote flow` or `rote registry flow` only where `rote play` has no equivalent capability and
-never decomposes a failed Play operation into a pull-plus-Flow-run fallback.
+It uses `rote play` for local Play operations and `rote registry play` for registry distribution and
+registry-scoped discovery. It never uses legacy Flow command aliases or decomposes a failed Play
+operation into a manual pull-plus-run fallback.
 
 ### Detailed run output
 

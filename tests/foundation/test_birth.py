@@ -107,7 +107,7 @@ class BirthTest(unittest.TestCase):
         ]
 
     def capture_side_effect(self, *arguments: str, **kwargs):
-        if arguments[:2] == ("flow", "info"):
+        if arguments[:2] == ("play", "info"):
             return self.flow_info()
         if arguments[:2] == ("workspace", "stats"):
             return self.stats()
@@ -155,7 +155,7 @@ class BirthTest(unittest.TestCase):
     @patch("play.birth.run_rote_json")
     def test_future_trace_json_is_preferred(self, run_rote_json) -> None:
         def side_effect(*arguments: str, **kwargs):
-            if arguments[:2] == ("flow", "info"):
+            if arguments[:2] == ("play", "info"):
                 return self.flow_info()
             if arguments[:2] == ("workspace", "stats"):
                 return self.stats()
@@ -172,7 +172,7 @@ class BirthTest(unittest.TestCase):
     @patch("play.birth.run_rote_json")
     def test_non_capability_trace_error_does_not_silently_fallback(self, run_rote_json) -> None:
         def side_effect(*arguments: str, **kwargs):
-            if arguments[:2] == ("flow", "info"):
+            if arguments[:2] == ("play", "info"):
                 return self.flow_info()
             if arguments[:2] == ("workspace", "stats"):
                 return self.stats()

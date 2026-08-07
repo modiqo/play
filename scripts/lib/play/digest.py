@@ -320,7 +320,7 @@ def build_digest(
             "run_metrics": {
                 "status": "unavailable",
                 "reason": (
-                    "registry flow list/info expose lifetime download and install totals, "
+                    "registry Play list/info expose lifetime download and install totals, "
                     "but no run count"
                 ),
             },
