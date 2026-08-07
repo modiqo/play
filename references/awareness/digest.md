@@ -12,6 +12,11 @@ Use `scripts/bin/play-digest --remember --days <n> --json` for an explicit user 
 explicit time window, authorized organization results, section-level capability status, and a
 declared public ranking metric and scope.
 
+The digest and any inferred awareness invocation must reuse
+`play.public_trends.fetch_authorized_public_stats`; integrations that already have exact public
+references may call `scripts/bin/play-public-trends --play <owner/name[@version]> --json` directly.
+Do not create a second stats-fetching path.
+
 Remembered mode stores only the authorized-scope contract, stable `awareness_sha`, and successful
 UTC checkpoint in `~/.rote/play/digest-state.json` with user-only file permissions. The scope key
 includes organization slugs, initial window length, and inspection limits. It stores no digest
@@ -35,11 +40,14 @@ required organization discovery timeout fails closed instead of freezing the har
 already knows the authorized scope may repeat `--org <slug>` to bypass discovery; this is a scope
 assertion from the host, not permission to read an unauthorized organization.
 
-Public registry metadata reads are bounded (`--inspection-budget 100` by default). Read authorized
-public candidates with `rote registry play info`, rank the successfully read candidates by released
-version lifetime downloads, and show at most 10 by default. When candidates are omitted or a read
-fails, label the result as an inspected sample and return candidate, inspected, and omitted counts;
-never call it exhaustive.
+Public statistics reads are bounded (`--inspection-budget 100` by default). Enumerate authorized
+public candidates, then fetch their exact public `https://play.modiqo.ai/<owner>/<play>.json` cards
+in parallel with no redirects, cookies, or credentials. Validate card identity and public
+visibility before accepting `stats.downloads` and `stats.installs`. Group results by the card's
+declared owner kind (`org`, `user`, or `unknown`), rank the successfully read candidates by lifetime
+downloads, and show at most 10 by default. Record worker count, per-card latency, and total fetch
+latency. When candidates are omitted or a read fails, label the result as an inspected sample and
+return candidate, fetched, and omitted counts; never call it exhaustive.
 
 New and revised cards use a separate registry metadata budget (100 by default) to retrieve released
 version, lifetime totals, and `version.metadata.provenance.author`. Treat that author as publication
@@ -53,9 +61,10 @@ an exact Use choice until a later inspect succeeds.
   `latest_version_created_at`; `updated_at` alone may be a metadata edit and is not sufficient.
 - Do not treat a visibility-only metadata edit as a revision.
 - Include private Plays only from organizations authorized for the current identity.
-- Enrich authorized public candidates with `rote registry play info <reference> --json`; use its
-  released version, visibility, author provenance, download count, and install count. This awareness
-  read does not imply local installation or run eligibility; inspect a selected card before Use.
+- Enrich new and revised cards with `rote registry play info <reference> --json` for released
+  version and author provenance. Read public download and install counters only from the public Play
+  card. Neither awareness read implies local installation or run eligibility; inspect a selected
+  card before Use.
 - Describe public results as trending only when the metric is windowed usage. Lifetime totals must
   be labeled most downloaded and must name their coverage scope.
 - Registry Play list/info currently expose no run count. Report run metrics as unavailable and use
@@ -69,7 +78,8 @@ an exact Use choice until a later inspect succeeds.
 
 Present `# What’s new in Plays` as an inbox. Group New and Revised cards by organization; show title,
 publication author or “Creator unavailable”, a short description, visibility, timestamp, and
-canonical reference. Follow with the top 10 public Plays by the explicitly named metric and then
+canonical reference. Follow with the top 10 public Plays, grouped by organization or user and
+showing both lifetime downloads and installs, by the explicitly named ranking metric, and then
 Your impact. Each actionable card must carry the canonical reference, owner, visibility, version
 when known, and displayed parameters in structured output even when compact prose omits defaults.
 

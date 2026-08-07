@@ -179,6 +179,38 @@ class DigestTest(unittest.TestCase):
         self.assertEqual("unavailable", contract["global_status"])
         self.assertEqual(1, contract["omitted_count"])
 
+    def test_public_stats_are_grouped_by_owner_and_show_both_counters(self) -> None:
+        digest = build_digest(
+            [Organization("modiqo", "Modiqo")],
+            {"modiqo": []},
+            [
+                (
+                    "modiqo",
+                    {
+                        "name": "hello",
+                        "visibility": "public",
+                        "exact_reference": "modiqo/hello@0.1.0",
+                        "owner_kind": "org",
+                        "download_count": 7,
+                        "install_count": 2,
+                    },
+                )
+            ],
+            start=self.start,
+            end=self.end,
+            public_limit=10,
+            ranking_fetch_elapsed_ms=15.25,
+            ranking_fetch_workers=4,
+        )
+        self.assertEqual("modiqo", digest["public_groups"][0]["owner"])
+        self.assertEqual("org", digest["public_groups"][0]["owner_kind"])
+        self.assertEqual("modiqo/hello", digest["public_top"][0]["base_reference"])
+        self.assertEqual("parallel", digest["ranking"]["fetch"]["mode"])
+        self.assertEqual(15.25, digest["ranking"]["fetch"]["elapsed_ms"])
+        rendered = render_markdown(digest)
+        self.assertIn("### modiqo (org)", rendered)
+        self.assertIn("7 downloads · 2 installs", rendered)
+
     def test_awareness_sha_is_stable_across_windows_but_changes_with_source_state(self) -> None:
         grouped = {
             "alpha": [

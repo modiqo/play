@@ -247,6 +247,8 @@ actions:
     owner: play
     effect: none
     input_required: [request.original]
+    command_policy:
+      - Classify explicit or inferred requests for what is new, popular public Plays, or trending Plays as play_awareness_request; the digest owns truthful metric labels and must not call cumulative totals a time-window trend.
     events:
       outcome_request: [request.intent, request.requested_outcome, modality_policy]
       exact_play_request: [request.intent, request.requested_outcome, request.parameters, match.reference, modality_policy]
@@ -265,6 +267,9 @@ actions:
     effect: local-write
     input_required: [awareness.window_days]
     command: scripts/bin/play-digest --remember --days <awareness.window_days> --json
+    command_policy:
+      - Reuse the parallel public-card statistics collector embedded by play-digest for both explicit aliases and inferred awareness intent.
+      - Fetch only bounded public cards, group accepted statistics by declared organization or user owner kind, and retain fetch latency without treating lifetime counters as run analytics.
     events:
       awareness_ready: [awareness.complete, awareness.digest_ref, awareness.play_choices, evidence_refs]
       awareness_unchanged: [awareness.complete, awareness.digest_ref, awareness.play_choices, evidence_refs]

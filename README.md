@@ -630,13 +630,18 @@ scripts/bin/play-digest --remember --days 1 --json
 scripts/bin/play-digest --since 2026-08-03T00:00:00Z --json
 scripts/bin/play-digest --checkpoint host-checkpoint.json --json
 scripts/bin/play-digest --org modiqo --days 7 --json
+scripts/bin/play-public-trends --play modiqo/hello@0.1.0 --json
+scripts/bin/play-public-trends --org modiqo --workers 8 --json
 ```
 
 “What’s new” is intentionally framed like an inbox. It groups new and revised Plays by organization
 and shows each Play’s title, publication author when provenance supplies one, short description,
 visibility, timestamp, and canonical reference. It then shows the top 10 public Plays in authorized
-organizations ranked by lifetime downloads. Registry Play info does not currently expose run counts,
-so the UI labels downloads explicitly and never calls them runs or trending activity.
+organizations ranked by lifetime downloads. Public JSON cards are fetched concurrently, grouped by
+their declared organization or user owner kind, and show both lifetime downloads and installs.
+Registry and public cards do not currently expose run counts or windowed counter changes, so the UI
+never calls cumulative totals runs or trending activity. The reusable report records per-card and
+batch fetch latency.
 
 Selecting a card enters read-only inspection before execution approval. Publication authors are
 display metadata; Play does not equate an author string with the current signed-in identity. Ranking
@@ -674,6 +679,7 @@ request presents both views as structured choices supported by the active harnes
 For diagnostics or integrations, the same reusable building blocks are available directly:
 
 ```bash
+scripts/bin/play-public-trends --play modiqo/hello@0.1.0 --json
 scripts/bin/play-search recent emails --json
 scripts/bin/play-inspect warsaw-rust/posthog-dau-report@0.0.3 --json
 scripts/bin/play-run-output --stdin --json

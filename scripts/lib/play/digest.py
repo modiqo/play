@@ -18,12 +18,11 @@ from .digest_state import (
     scope_key,
     stable_sha,
 )
+from .public_trends import fetch_authorized_public_stats
 from .registry import (
     RegistryReadError,
-    InspectionBatch,
     Organization,
     inspect_references,
-    load_authorized_public_flow_infos,
     load_authorized_flows,
     load_registry_flow_infos,
     load_organizations,
@@ -108,7 +107,7 @@ def rank_public(
         if not isinstance(downloads, int) or downloads < 0:
             continue
         parameters = flow.get("default_parameters")
-        base_reference = flow.get("reference") or f"{slug}/{flow['name']}"
+        base_reference = flow.get("base_reference") or flow.get("reference") or f"{slug}/{flow['name']}"
         version = flow.get("version")
         exact_reference = flow.get("exact_reference") or (
             f"{base_reference}@{version}" if version else base_reference
@@ -122,6 +121,7 @@ def rank_public(
                 "description": flow.get("description") or "",
                 "creator_name": flow.get("creator_name"),
                 "creator_status": flow.get("creator_status", "unavailable"),
+                "owner_kind": flow.get("owner_kind", "unknown"),
                 "visibility": "public",
                 "version": flow.get("version"),
                 "download_count": downloads,
@@ -211,6 +211,8 @@ def build_digest(
     ranking_errors: list[str] | None = None,
     ranking_candidate_count: int | None = None,
     ranking_omitted_count: int = 0,
+    ranking_fetch_elapsed_ms: float | None = None,
+    ranking_fetch_workers: int | None = None,
     update_inspections: dict[str, dict[str, Any]] | None = None,
     update_metadata: dict[str, dict[str, Any]] | None = None,
     update_metadata_errors: list[str] | None = None,
@@ -252,6 +254,14 @@ def build_digest(
         candidate_count=ranking_candidate_count,
         omitted_count=ranking_omitted_count,
     )
+    ranking["fetch"] = {
+        "mode": "parallel",
+        "elapsed_ms": ranking_fetch_elapsed_ms,
+        "workers": ranking_fetch_workers,
+    }
+    grouped_public: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for item in public_top:
+        grouped_public.setdefault((item["owner"], item["owner_kind"]), []).append(item)
     return {
         "schema": SCHEMA,
         "complete": True,
@@ -261,7 +271,12 @@ def build_digest(
             "end": end.astimezone(timezone.utc).isoformat(),
             "timezone": "UTC",
         },
-        "sources": ["authorized_registry", "registry_flow_info", "play_inspect"],
+        "sources": [
+            "authorized_registry",
+            "public_play_card",
+            "registry_flow_info",
+            "play_inspect",
+        ],
         "organizations": [
             {"slug": org.slug, "display_name": org.display_name} for org in organizations
         ],
@@ -271,6 +286,10 @@ def build_digest(
             "revised_complete": revision_complete,
         },
         "public_top": public_top,
+        "public_groups": [
+            {"owner": owner, "owner_kind": owner_kind, "plays": plays}
+            for (owner, owner_kind), plays in sorted(grouped_public.items())
+        ],
         "ranking": ranking,
         "capabilities": {
             "organization_updates": {
@@ -305,6 +324,7 @@ def build_digest(
             "public_ranking": {
                 "status": "available" if ranking["complete"] else "partial",
                 "scope": ranking["scope"],
+                "stats_source": "public_play_card",
             },
             "global_public_ranking": {
                 "status": ranking["global_status"],
@@ -385,17 +405,18 @@ def render_markdown(digest: dict[str, Any]) -> str:
         lines.append("Coverage is partial because one or more public Plays could not be read.")
     lines.append("")
     if digest["public_top"]:
-        for item in digest["public_top"]:
-            creator = item.get("creator_name") or "Creator unavailable"
-            description = " ".join((item.get("description") or "No description provided.").split())
-            if len(description) > 180:
-                description = description[:177].rstrip() + "…"
-            lines.append(
-                f"- **{item['name']}** · by {creator} · {item['owner']} · "
-                f"{item['download_count']} downloads"
-            )
-            lines.append(f"  {description}")
-            lines.append(f"  `{item['reference']}`")
+        for group in digest["public_groups"]:
+            lines.extend([f"### {group['owner']} ({group['owner_kind']})", ""])
+            for item in group["plays"]:
+                description = " ".join((item.get("description") or "No description provided.").split())
+                if len(description) > 180:
+                    description = description[:177].rstrip() + "…"
+                lines.append(
+                    f"- **{item['name']}** · {item['download_count']} downloads · "
+                    f"{item['install_count']} installs"
+                )
+                lines.append(f"  {description}")
+                lines.append(f"  `{item['reference']}`")
     else:
         lines.append(f"— Unavailable: {ranking.get('reason', 'no eligible public Plays')}")
     stats = digest["personal_stats"]
@@ -448,14 +469,14 @@ def collect_digest(
         limit=update_inspection_budget,
     )
     update_inspections = {flow["reference"]: flow for _, flow in update_batch.flows}
-    inspected: InspectionBatch = load_authorized_public_flow_infos(
+    inspected = fetch_authorized_public_stats(
         grouped,
         limit=inspection_budget,
     )
     return build_digest(
         resolved_organizations,
         grouped,
-        inspected.flows,
+        [(play["owner"], play) for play in inspected.plays],
         start=start,
         end=resolved_end,
         public_limit=public_limit,
@@ -463,6 +484,8 @@ def collect_digest(
         ranking_errors=inspected.errors,
         ranking_candidate_count=inspected.candidate_count,
         ranking_omitted_count=inspected.omitted_count,
+        ranking_fetch_elapsed_ms=inspected.elapsed_ms,
+        ranking_fetch_workers=inspected.workers,
         update_inspections=update_inspections,
         update_metadata=update_metadata,
         update_metadata_errors=metadata_batch.errors,
@@ -527,6 +550,8 @@ def main() -> int:
         parser.error("--remember/--state cannot be combined with --since or --checkpoint")
     state_path = args.state or DEFAULT_STATE_PATH
     remembered: tuple[str, dict[str, Any]] | None = None
+    key: str | None = None
+    previous: dict[str, Any] | None = None
     try:
         organizations = None
         since = args.since
@@ -563,6 +588,7 @@ def main() -> int:
             organizations=organizations,
         )
         if remember:
+            assert key is not None
             digest["memory"] = {
                 "schema": "play.digest-memory-result/v1",
                 "scope_key": key,
