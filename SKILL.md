@@ -96,8 +96,9 @@ never suppress primary output, errors, approvals, effects, references, or receip
 Present returned `presentations` and the projected human prompt directly. They are already compiled
 for the current state. Do not locate or invoke a second presentation script during a normal run.
 
-Immediately before invoking the projected `rote-flow-run` specialist, present `use_run` once. After execution, preserve
-the complete primary payload exactly as received and pass it directly to verification with its
+The runtime's universal Play runner executes the approved canonical URI or exact reference once.
+Do not invoke `rote-flow-run`, rediscover the Play, resolve a local path, or perform a second capture
+run. After execution, preserve the complete primary payload exactly as received and pass it directly to verification with its
 declared source, format, manifest, truncation flag, and full-output reference. The harness owns
 presentation; Play must not wrap, summarize, convert, or decorate the result. Compact summaries are
 incomplete results.
@@ -113,12 +114,12 @@ for authoring and maintenance only, never an execution prerequisite.
 An adequate local Play follows:
 
 ```text
-inspect → disclose → bind run handoff → rote-flow-run → detailed output → verify → receipt
+inspect → disclose → bind run handoff → universal Play runner → detailed output → verify → receipt
 ```
 
 An adequate remote Play inserts `approve → pull/install` between disclosure and execution. Use
 `scripts/bin/play-inspect <reference> --json` for read-only inspection. If inspection proves the
-exact Play is already local, continue directly to the projected `rote-flow-run` handoff. If it reports install,
+exact Play is already local, continue directly to the universal Play runner. If it reports install,
 replacement, repair, or unknown local state, present the structured approval prompt and run only
 after the approval binds the exact reference, parameters, and disclosure SHA.
 
@@ -128,8 +129,9 @@ retry contract. If `rote play run` returns a recoverable adapter-authentication 
 repair approval, hand the packet and its SHA to `rote-adapter-config`, validate its receipt, inspect
 again, and retry the exact Play. Play must not recreate the adapter configuration process.
 
-`rote-flow-run` owns installation, convergence, dependencies, credentials, and execution. Never
-decompose it into registry pull, adapter setup, or lower-level commands. A failed `rote play` command is not a capability gap and never authorizes a legacy or manual fallback.
+`rote play run` owns installation, convergence, dependencies, credentials, and execution behind the
+universal runner. Never decompose it into registry pull, adapter setup, local-path execution, or
+lower-level commands. A failed `rote play` command is not a capability gap and never authorizes a legacy or manual fallback.
 
 Present the resolved version, visibility, description, parameters, local status, dependencies,
 credentials by name, operations, declared writes, blockers, and uncertainty. Generic adapter

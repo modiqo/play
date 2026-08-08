@@ -44,7 +44,7 @@ class MachineConformanceTest(unittest.TestCase):
             name: action_executor(name, action) for name, action in ACTIONS.items()
         }
         self.assertNotIn(None, executors.values())
-        self.assertEqual("specialist", executors["run_registry_play"])
+        self.assertEqual("runtime", executors["run_registry_play"])
         self.assertEqual("runtime", executors["inspect_saved_play"])
         for action in ACTIONS.values():
             command = action.get("command")
@@ -456,9 +456,11 @@ class MachineConformanceTest(unittest.TestCase):
             "scripts/bin/play-inspect <match.reference> --json",
             ACTIONS["inspect_registry_play"]["command"],
         )
-        self.assertEqual("delegated", ACTIONS["run_registry_play"]["kind"])
-        self.assertEqual("rote-flow-run", ACTIONS["run_registry_play"]["specialist"])
-        self.assertNotIn("command", ACTIONS["run_registry_play"])
+        self.assertEqual("deterministic", ACTIONS["run_registry_play"]["kind"])
+        self.assertEqual(
+            "scripts/bin/play-run --stdin --json",
+            ACTIONS["run_registry_play"]["command"],
+        )
         self.assertIn(
             "A failed `rote play` command is not a capability gap",
             SKILL_TEXT.replace("\n", " "),
@@ -586,6 +588,10 @@ class MachineConformanceTest(unittest.TestCase):
         policy = " ".join(ACTIONS["run_registry_play"]["command_policy"])
         self.assertIn("Never request summary output", policy)
         self.assertIn("compact Play summary cannot prove full detail", policy)
+        self.assertIn("exactly one rote play run", policy)
+        self.assertEqual(
+            "verify_play_output", MACHINE["states"]["use_verify"]["entry"]["action"]
+        )
         self.assertEqual("detailed", CONTEXT["$defs"]["outputPolicy"]["properties"]["mode"]["const"])
 
     def test_explore_requires_a_callable_rote_specialist_and_typed_receipt(self) -> None:

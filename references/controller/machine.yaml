@@ -334,7 +334,7 @@ states:
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_run:
-    owner: rote-specialist
+    owner: play
     checkpoint: both
     requires: [match.reference, inspection.exact_reference, inspection.disclosure_sha256]
     entry: {action: run_registry_play}
@@ -387,7 +387,7 @@ states:
   use_verify:
     owner: play
     checkpoint: after
-    entry: {action: verify_outcome}
+    entry: {action: verify_play_output}
     "on":
       outcome_verified: [{target: use_receipt, mutate: record_verification}]
       play_drifted: [{target: repair_offer, mutate: record_failed_receipt}]

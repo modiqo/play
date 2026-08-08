@@ -297,7 +297,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("ordinary_play_invocation", yielded.trace[0].event)
 
     @patch("play.runtime_actions.subprocess.run")
-    def test_run_hello_reaches_exact_specialist_without_model_or_search(self, run) -> None:
+    def test_run_hello_executes_and_receipts_without_model_or_search(self, run) -> None:
         disclosure = {
             "schema": "play.run-disclosure/v1",
             "complete": True,
@@ -369,6 +369,40 @@ class ControllerRuntimeTest(unittest.TestCase):
                     }
                 ),
             ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "schema": "play.run-result/v1",
+                        "ok": True,
+                        "event": "play_run_ready",
+                        "play": {"version": "0.1.0"},
+                        "resolution": {
+                            "local_state": "exact_ready",
+                            "pull_performed": False,
+                        },
+                        "result_ref": "sha256:" + "d" * 64,
+                        "response_refs": [],
+                        "artifact_refs": [],
+                        "effects": [],
+                        "output": {
+                            "mode": "detailed",
+                            "detail": "full",
+                            "source": "rote_human_presentation",
+                            "format": "text",
+                            "primary": "hello result",
+                            "manifest": {
+                                "response_refs": [],
+                                "artifact_refs": [],
+                                "effects": [],
+                            },
+                            "truncated": False,
+                            "full_output_ref": None,
+                        },
+                    }
+                ),
+            ),
         ]
         session = self.runtime.initial_session(
             run_id="hello-fast-path",
@@ -378,9 +412,8 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         yielded = advance_until_yield(self.runtime, session, root=ROOT)
 
-        self.assertEqual("use_run", yielded.projection["state"]["id"])
-        self.assertEqual("specialist", yielded.projection["state"]["boundary"])
-        self.assertEqual("rote-flow-run", yielded.projection["instruction"]["specialist"])
+        self.assertEqual("receipt", yielded.projection["state"]["id"])
+        self.assertEqual("terminal", yielded.projection["state"]["boundary"])
         self.assertEqual(
             [
                 "classify_play_invocation",
@@ -388,11 +421,15 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "inspect_registry_play",
                 "route_inspected_play",
                 "prepare_play_run_handoff",
+                "run_registry_play",
+                "verify_play_output",
+                "build_receipt",
             ],
             [item.action for item in yielded.trace],
         )
         self.assertNotIn("qualify_request", str(yielded.projection))
         self.assertNotIn("search_authorized_plays", str(yielded.projection))
+        self.assertEqual("hello result", yielded.presentations[-1])
 
     @patch("play.runtime_actions.subprocess.run")
     def test_activation_only_reaches_first_use_affordances_without_model(self, run) -> None:
@@ -788,6 +825,38 @@ class ControllerRuntimeTest(unittest.TestCase):
                     }
                 ),
             ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "event": "play_run_ready",
+                        "play": {"version": "0.1.0"},
+                        "resolution": {
+                            "local_state": "exact_ready",
+                            "pull_performed": False,
+                        },
+                        "result_ref": "sha256:" + "d" * 64,
+                        "response_refs": [],
+                        "artifact_refs": [],
+                        "effects": [],
+                        "output": {
+                            "mode": "detailed",
+                            "detail": "full",
+                            "source": "rote_human_presentation",
+                            "format": "text",
+                            "primary": "hello result",
+                            "manifest": {
+                                "response_refs": [],
+                                "artifact_refs": [],
+                                "effects": [],
+                            },
+                            "truncated": False,
+                            "full_output_ref": None,
+                        },
+                    }
+                ),
+            ),
         ]
         session = self.runtime.initial_session(
             run_id="session-1", task_key="task-1", request_original="Run Hello"
@@ -806,17 +875,20 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         yielded = advance_until_yield(self.runtime, projected, root=ROOT)
 
-        self.assertEqual("use_run", yielded.projection["state"]["id"])
-        self.assertEqual("specialist", yielded.projection["state"]["boundary"])
-        self.assertEqual("rote-flow-run", yielded.projection["instruction"]["specialist"])
+        self.assertEqual("receipt", yielded.projection["state"]["id"])
+        self.assertEqual("terminal", yielded.projection["state"]["boundary"])
         self.assertEqual("inspect_registry_play", yielded.trace[0].action)
         self.assertEqual("play_inspected", yielded.trace[0].event)
         self.assertEqual("route_inspected_play", yielded.trace[1].action)
         self.assertEqual("local_play_ready", yielded.trace[1].event)
         self.assertEqual("prepare_play_run_handoff", yielded.trace[2].action)
         self.assertEqual("play_run_handoff_ready", yielded.trace[2].event)
-        self.assertEqual(1, len(yielded.presentations))
+        self.assertEqual("run_registry_play", yielded.trace[3].action)
+        self.assertEqual("verify_play_output", yielded.trace[4].action)
+        self.assertEqual("build_receipt", yielded.trace[5].action)
+        self.assertEqual(2, len(yielded.presentations))
         self.assertIn("#", yielded.presentations[0])
+        self.assertEqual("hello result", yielded.presentations[1])
 
     @patch("play.runtime_actions.subprocess.run")
     def test_deterministic_match_presents_remote_choices_before_pull_consent(self, run) -> None:

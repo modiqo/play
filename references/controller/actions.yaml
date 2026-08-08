@@ -466,14 +466,15 @@ actions:
       play_reference_unresolved: [reason]
 
   run_registry_play:
-    kind: delegated
-    owner: rote-specialist
-    specialist: rote-flow-run
+    kind: deterministic
+    owner: play
     effect: mixed
-    input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, request.original, request.parameters, effect_policy, output_policy, auth_repair.original_packet, auth_repair.original_packet_sha256]
+    input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, inspection.local_change, request.parameters, output_policy, auth_repair.original_packet, auth_repair.original_packet_sha256]
+    command: scripts/bin/play-run --stdin --json
     command_policy:
-      - Invoke the rote-flow-run skill with the prepared, exact Play-run packet; do not reconstruct the execution process in the harness.
-      - Use the packet's approval after local readiness is proven, or after approve_play_run binds a remote pull to the exact inspection digest, reference, and displayed parameters.
+      - Execute exactly one rote play run using the approved canonical URI when present, otherwise the inspected exact registry reference.
+      - Never run info, search, list, a local path, or a second capture run; the prior inspection and prepared packet are the complete execution contract.
+      - Use --yes only after local readiness is proven, or after approve_play_run binds a remote pull to the exact inspection digest, reference, and displayed parameters.
       - Never pull, install, replace, or repair a remote Play without the post-inspection approval.
       - If the inspection changes or parameters change, discard approval and return to use_inspect.
       - Never replace this handoff with a manual `rote registry play pull` plus a local-path `rote play run`, even when the Play is already local.
@@ -485,6 +486,19 @@ actions:
       play_run_ready: [play.version, resolution.local_state, resolution.pull_performed, result_ref, response_refs, artifact_refs, effects, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
       play_drifted: [reason, evidence_refs]
       play_auth_repair_required: [auth_repair.source, auth_repair.owner, auth_repair.recoverable, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.evidence_refs]
+
+  verify_play_output:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [request.requested_outcome, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
+    command_policy:
+      - Accept only a detailed, full, non-truncated Play result with a non-empty primary output.
+      - Hash the unchanged primary output as verification evidence; do not interpret, summarize, or reformat it.
+    events:
+      outcome_verified: [postconditions, evidence_refs]
+      outcome_not_verified: [failed_postconditions, evidence_refs]
+      play_drifted: [reason, evidence_refs]
 
   verify_outcome:
     kind: evaluator

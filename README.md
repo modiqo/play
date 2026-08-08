@@ -238,8 +238,9 @@ State ownership is explicit: `play` owns invocation classification, live onboard
 output formatting, evaluators, and verification; `rote-specialist`
 states (`explore_execute`, `crystallize`, `author_release`, publication, `management_list`) are
 delegated through typed `play.handoff/v1` packets and validated `play.handoff-receipt/v1` receipts;
-`flow-runtime` owns `use_run`, `saved_inspect`, `publication_credentials`, and
-`publication_smoke` via first-class Rote inspection/execution surfaces.
+`play` owns `use_run` through the universal deterministic Play runner; `flow-runtime` owns
+`saved_inspect`, `publication_credentials`, and `publication_smoke` via first-class Rote
+inspection/execution surfaces.
 Guards (for example `search_is_complete`, `route_within_policy`, `exploration_budget_remaining`,
 `exact_published_version_is_indexed`) are declared in `actions.yaml`, and
 `tests/controller/test_machine_conformance.py` fails when the machine, actions, prompts, or the
@@ -770,6 +771,7 @@ For diagnostics or integrations, the same reusable building blocks are available
 scripts/bin/play-public-trends --play modiqo/hello@0.1.0 --json
 scripts/bin/play-search recent emails --json
 scripts/bin/play-inspect warsaw-rust/posthog-dau-report@0.0.3 --json
+scripts/bin/play-run --stdin --json
 scripts/bin/play-run-output --stdin --json
 scripts/bin/play-inventory --json
 scripts/bin/play-handoff prepare --stdin --json
@@ -784,7 +786,11 @@ scripts/bin/play-question approve_play_run --harness kimi
 The question command maps the same prompt and event contract to Codex `request_user_input`, Claude
 and Kimi `askquestion`, or a numbered Markdown fallback. `play-inspect` normalizes the complete
 `rote play inspect <reference> --json` result into a stable disclosure. After approval, the
-controller performs exactly one `rote play run <exact-reference> <approved-parameters> --yes`.
+controller passes the bound inspection and approval packet to `play-run`. That universal runner
+performs exactly one `rote play run <canonical-uri-or-exact-reference> <approved-parameters> --yes`
+and emits the typed controller event. It does not delegate execution to a prose skill, rediscover
+the Play, resolve a local path, replay the command to capture output, or ask the harness to construct
+a receipt.
 It uses `rote play` for local Play operations and `rote registry play` for registry distribution and
 registry-scoped discovery. It never uses legacy Flow command aliases or decomposes a failed Play
 operation into a manual pull-plus-run fallback.
