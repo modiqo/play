@@ -14,6 +14,7 @@ from typing import Any, Mapping, NewType
 from statemachine.io import create_machine_class_from_definition
 
 from .machine import MachineValidationError, validate_bundle
+from .executors import action_executor
 from .runtime_context import (
     RuntimeContextError,
     apply_event,
@@ -367,7 +368,12 @@ class ControllerRuntime:
         elif state.action is not None:
             action = self.bundle.actions[state.action]
             kind = str(action["kind"])
-            boundary = f"{kind}_action"
+            executor = action_executor(state.action, action)
+            if executor is None:
+                raise ControllerRuntimeError(
+                    f"action {state.action} has no closed executor contract"
+                )
+            boundary = executor
             specialist = action.get("specialist")
             specialist_from = action.get("specialist_from")
             if specialist_from is not None:
@@ -384,6 +390,7 @@ class ControllerRuntime:
                 "type": "action",
                 "id": state.action,
                 "kind": kind,
+                "executor": executor,
                 "owner": action["owner"],
                 "effect": action["effect"],
                 **({"specialist": specialist} if isinstance(specialist, str) else {}),
@@ -413,7 +420,7 @@ class ControllerRuntime:
             }
         elif state.prompt is not None:
             prompt = self.bundle.prompts[state.prompt]
-            boundary = "prompt"
+            boundary = "human"
             instruction = {
                 "type": "prompt",
                 "id": state.prompt,
@@ -424,15 +431,18 @@ class ControllerRuntime:
                 f"non-terminal state {cursor.state!r} has no instruction"
             )
 
-        accepted_events = {
-            str(event): {
-                "required_payload": list(
-                    self.bundle.event_requirements.get((state.id, event), ())
-                ),
+        accepted_events = {}
+        for event, branches in state.events.items():
+            required_payload = self.bundle.event_requirements.get((state.id, event), ())
+            accepted_events[str(event)] = {
+                "required_payload": list(required_payload),
                 "guards": [str(branch.guard) for branch in branches if branch.guard],
+                "event_template": {
+                    "id": str(event),
+                    "payload": _event_payload_template(required_payload, context),
+                    "guards": {},
+                },
             }
-            for event, branches in state.events.items()
-        }
         return StateProjection(
             schema="play.runtime-projection/v1",
             bundle_sha256=self.bundle.sha256,
@@ -656,6 +666,22 @@ def _select_context(
                 target = target.setdefault(part, {})
             target[parts[-1]] = current
     return selected
+
+
+def _event_payload_template(
+    required: tuple[str, ...], context: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """Bind known event fields and expose null only for boundary-owned values."""
+
+    payload: dict[str, Any] = {}
+    for path in required:
+        value = _path_value(context, path) if context is not None else None
+        target = payload
+        parts = path.split(".")
+        for part in parts[:-1]:
+            target = target.setdefault(part, {})
+        target[parts[-1]] = value
+    return payload
 
 
 def _event_requirements(

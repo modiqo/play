@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.machine import validate_bundle
 from play.handoff import capability_policy
+from play.executors import action_executor
 
 
 CONTROLLER = ROOT / "references" / "controller"
@@ -38,6 +39,18 @@ def transition(state: str, event: str, guards: dict[str, bool] | None = None) ->
 
 
 class MachineConformanceTest(unittest.TestCase):
+    def test_every_action_has_one_closed_executor(self) -> None:
+        executors = {
+            name: action_executor(name, action) for name, action in ACTIONS.items()
+        }
+        self.assertNotIn(None, executors.values())
+        self.assertEqual("specialist", executors["run_registry_play"])
+        self.assertEqual("runtime", executors["inspect_saved_play"])
+        for action in ACTIONS.values():
+            command = action.get("command")
+            if command is not None:
+                self.assertTrue(command.startswith("scripts/bin/"), command)
+
     def test_declared_path_fixtures(self) -> None:
         for fixture in FIXTURES["cases"]:
             with self.subTest(fixture=fixture["name"]):
@@ -442,10 +455,9 @@ class MachineConformanceTest(unittest.TestCase):
             "scripts/bin/play-inspect <match.reference> --json",
             ACTIONS["inspect_registry_play"]["command"],
         )
-        self.assertEqual(
-            "rote play run <inspection.exact_reference> <approved-parameters> --yes",
-            ACTIONS["run_registry_play"]["command"],
-        )
+        self.assertEqual("delegated", ACTIONS["run_registry_play"]["kind"])
+        self.assertEqual("rote-flow-run", ACTIONS["run_registry_play"]["specialist"])
+        self.assertNotIn("command", ACTIONS["run_registry_play"])
         self.assertIn(
             "A failed `rote play` command is not a capability gap",
             SKILL_TEXT.replace("\n", " "),

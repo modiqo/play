@@ -23,6 +23,7 @@ from .controller import (
 )
 from .inspection import render_markdown as render_inspection_markdown
 from .digest import render_markdown as render_digest_markdown
+from .executors import RUNTIME_COMMANDLESS_ACTIONS
 from .search import render_markdown as render_search_markdown
 
 
@@ -44,16 +45,6 @@ _SELECTOR_ACTIONS = {
     "classify_adequacy",
     "route_inspected_play",
 }
-_COMMANDLESS_ACTIONS = {
-    "present_awareness_digest",
-    "present_search_results",
-    "build_receipt",
-    "dispatch_route",
-    "classify_adequacy",
-    "route_inspected_play",
-}
-
-
 @dataclass(frozen=True)
 class DeterministicTrace:
     state: str
@@ -133,12 +124,10 @@ def _is_executable(
 ) -> bool:
     if not isinstance(instruction, Mapping):
         return False
-    if instruction.get("type") != "action" or instruction.get("kind") != "deterministic":
-        return False
-    if instruction.get("owner") != "play" or instruction.get("effect") == "mixed":
+    if instruction.get("type") != "action" or instruction.get("executor") != "runtime":
         return False
     command = instruction.get("command")
-    if command is None and instruction.get("id") not in _COMMANDLESS_ACTIONS:
+    if command is None and instruction.get("id") not in RUNTIME_COMMANDLESS_ACTIONS:
         return False
     if command is not None and (
         not isinstance(command, str) or not command.startswith("scripts/bin/")
@@ -249,6 +238,11 @@ def _commandless_result(
         }
     if action_id == "present_awareness_digest":
         return {}
+    if action_id == "present_play_management":
+        management = context.get("management")
+        if not isinstance(management, Mapping):
+            raise ControllerRuntimeError("management presentation context is malformed")
+        return {"management": dict(management)}
     if action_id == "build_receipt":
         primary = _path_value(context, "output.primary")
         output_format = _path_value(context, "output.format")
@@ -426,6 +420,25 @@ def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, An
         }
         derived["evidence_refs"] = [digest_ref]
         derived["presentation_markdown"] = render_digest_markdown(dict(raw))
+    elif event_id == "saved_play_inspected":
+        identity = raw.get("identity")
+        if not isinstance(identity, Mapping):
+            raise ControllerRuntimeError("saved Play inspection identity is missing")
+        exact_reference = raw.get("exact_reference")
+        disclosure_sha256 = raw.get("disclosure_sha256")
+        if not isinstance(exact_reference, str) or not exact_reference:
+            raise ControllerRuntimeError("saved Play exact reference is missing")
+        if not isinstance(disclosure_sha256, str) or not disclosure_sha256:
+            raise ControllerRuntimeError("saved Play inspection digest is missing")
+        canonical_reference = exact_reference.rsplit("@", 1)[0]
+        derived["publication"] = {
+            "canonical_reference": canonical_reference,
+            "title": identity.get("name"),
+            "description": identity.get("description"),
+            "content_hash": identity.get("content_hash"),
+            "inspect_ref": f"sha256:{disclosure_sha256}",
+        }
+        derived["play"] = {"version": identity.get("version")}
     return derived
 
 

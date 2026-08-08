@@ -63,7 +63,8 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         self.assertEqual("play.runtime-projection/v1", projection["schema"])
         self.assertEqual("invoke", projection["state"]["id"])
-        self.assertEqual("deterministic_action", projection["state"]["boundary"])
+        self.assertEqual("runtime", projection["state"]["boundary"])
+        self.assertEqual("runtime", projection["instruction"]["executor"])
         self.assertEqual("classify_play_invocation", projection["instruction"]["id"])
         self.assertIn("ordinary_play_invocation", projection["accepted_events"])
         self.assertNotIn("qualify_request", str(projection))
@@ -80,7 +81,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         self.assertEqual("play.runtime-advance/v1", result["schema"])
         self.assertEqual("qualify", result["projection"]["state"]["id"])
-        self.assertEqual("evaluator_action", result["projection"]["state"]["boundary"])
+        self.assertEqual("model", result["projection"]["state"]["boundary"])
         self.assertEqual("qualify_request", result["projection"]["instruction"]["id"])
         self.assertIn(
             "outcome_request",
@@ -131,6 +132,39 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual(
             "rote-using-adapters", projection["instruction"]["specialist"]
         )
+
+    def test_prompt_event_template_prebinds_controller_evidence(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-template",
+            task_key="task-template",
+            request_original="Run remote Hello",
+        )
+        context = dict(session.context)
+        context["state"] = "use_offer"
+        context["inspection"] = dict(context["inspection"])
+        context["inspection"].update(
+            {
+                "exact_reference": "modiqo/hello@0.1.0",
+                "disclosure_sha256": "d" * 64,
+            }
+        )
+        context["request"] = dict(context["request"])
+        context["request"]["parameters"] = {"region": "us"}
+
+        projection = self.runtime.project(
+            replace(session.cursor, state=StateId("use_offer")), context
+        ).as_dict()
+        template = projection["accepted_events"]["play_run_approved"]["event_template"]
+
+        self.assertEqual("human", projection["state"]["boundary"])
+        self.assertEqual("play_run_approved", template["id"])
+        self.assertIsNone(template["payload"]["prompt_version"])
+        self.assertEqual(
+            "modiqo/hello@0.1.0",
+            template["payload"]["inspection"]["exact_reference"],
+        )
+        self.assertEqual("d" * 64, template["payload"]["inspection"]["disclosure_sha256"])
+        self.assertEqual({"region": "us"}, template["payload"]["request"]["parameters"])
 
     def test_session_initializes_complete_valid_context(self) -> None:
         session = self.runtime.initial_session(
@@ -257,7 +291,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         yielded = advance_until_yield(self.runtime, session, root=ROOT)
 
         self.assertEqual("qualify", yielded.projection["state"]["id"])
-        self.assertEqual("evaluator_action", yielded.projection["state"]["boundary"])
+        self.assertEqual("model", yielded.projection["state"]["boundary"])
         self.assertEqual(1, len(yielded.trace))
         self.assertEqual("classify_play_invocation", yielded.trace[0].action)
         self.assertEqual("ordinary_play_invocation", yielded.trace[0].event)
@@ -295,7 +329,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         yielded = advance_until_yield(self.runtime, projected, root=ROOT)
 
         self.assertEqual("search_offer", yielded.projection["state"]["id"])
-        self.assertEqual("prompt", yielded.projection["state"]["boundary"])
+        self.assertEqual("human", yielded.projection["state"]["boundary"])
         self.assertEqual("present_search_results", yielded.trace[0].action)
         self.assertEqual("search_presented", yielded.trace[0].event)
         self.assertEqual(1, len(yielded.presentations))
@@ -572,7 +606,8 @@ class ControllerRuntimeTest(unittest.TestCase):
         yielded = advance_until_yield(self.runtime, projected, root=ROOT)
 
         self.assertEqual("use_run", yielded.projection["state"]["id"])
-        self.assertEqual("deterministic_action", yielded.projection["state"]["boundary"])
+        self.assertEqual("specialist", yielded.projection["state"]["boundary"])
+        self.assertEqual("rote-flow-run", yielded.projection["instruction"]["specialist"])
         self.assertEqual("inspect_registry_play", yielded.trace[0].action)
         self.assertEqual("play_inspected", yielded.trace[0].event)
         self.assertEqual("route_inspected_play", yielded.trace[1].action)
@@ -669,7 +704,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         yielded = advance_until_yield(self.runtime, projected, root=ROOT)
 
         self.assertEqual("search_offer", yielded.projection["state"]["id"])
-        self.assertEqual("prompt", yielded.projection["state"]["boundary"])
+        self.assertEqual("human", yielded.projection["state"]["boundary"])
         self.assertEqual(
             ["classify_adequacy", "present_search_results"],
             [item.action for item in yielded.trace],
@@ -714,7 +749,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         yielded = advance_until_yield(self.runtime, projected, root=ROOT)
 
         self.assertEqual("awareness_offer", yielded.projection["state"]["id"])
-        self.assertEqual("prompt", yielded.projection["state"]["boundary"])
+        self.assertEqual("human", yielded.projection["state"]["boundary"])
         self.assertEqual(
             ["collect_awareness_digest", "present_awareness_digest"],
             [item.action for item in yielded.trace],

@@ -464,16 +464,17 @@ actions:
       play_reference_unresolved: [reason]
 
   run_registry_play:
-    kind: deterministic
-    owner: flow-runtime
+    kind: delegated
+    owner: rote-specialist
+    specialist: rote-flow-run
     effect: mixed
     input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, request.original, request.parameters, effect_policy, output_policy, auth_repair.original_packet, auth_repair.original_packet_sha256]
-    command: rote play run <inspection.exact_reference> <approved-parameters> --yes
     command_policy:
-      - Use --yes after local readiness is proven, or after approve_play_run binds a remote pull to the exact inspection digest, reference, and displayed parameters.
+      - Invoke the rote-flow-run skill with the prepared, exact Play-run packet; do not reconstruct the execution process in the harness.
+      - Use the packet's approval after local readiness is proven, or after approve_play_run binds a remote pull to the exact inspection digest, reference, and displayed parameters.
       - Never pull, install, replace, or repair a remote Play without the post-inspection approval.
       - If the inspection changes or parameters change, discard approval and return to use_inspect.
-      - Never replace this command with a manual `rote registry play pull` plus a local-path `rote play run`, even when the Play is already local.
+      - Never replace this handoff with a manual `rote registry play pull` plus a local-path `rote play run`, even when the Play is already local.
       - Never request summary output. Preserve the complete primary payload, response and artifact references, effects, and any full-output reference returned by Rote.
       - Prefer Rote's human presentation for steps-with-presentation Plays; accept JSON or structured responses only when they retain the full primary result.
       - A compact Play summary cannot prove full detail and must not emit play_run_ready.
@@ -541,10 +542,14 @@ actions:
       exploration_welcome_presented: [exploration.welcome_status, exploration.human_name, exploration.identity_status, exploration.identity_source, exploration.identity_ref, exploration.welcome_markdown, exploration.welcome_ref, exploration.resolve_ns, presentation.markdown]
 
   prepare_exploration:
-    kind: deterministic
-    owner: play
+    kind: delegated
+    owner: rote-specialist
+    specialist: rote-workspace
     effect: local-write
     input_required: [consent.explore, request.requested_outcome]
+    command_policy:
+      - Create the bounded Rote workspace and baseline for this approved outcome, then return only the typed exploration_ready event.
+      - Do not execute the outcome yet; route selection and specialist preparation remain controller-owned later states.
     events:
       exploration_ready: [execution.workspace, execution.budget, evidence.baseline]
 
@@ -807,19 +812,23 @@ actions:
       birth_bound: [birth.sha256, birth.exact_reference, birth.registry_content_hash, birth.binding_ref]
 
   index_playcard:
-    kind: deterministic
-    owner: play
+    kind: delegated
+    owner: rote-specialist
+    specialist: rote-registry
     effect: local-write
     input_required: [publication.canonical_reference, play.version]
+    command_policy:
+      - Refresh the local Play index for the exact published version and return its typed index reference.
+      - Do not inspect, execute, modify, or republish the Play in this state.
     events:
       play_indexed: [publication.canonical_reference, play.version, index_ref]
 
   inspect_saved_play:
     kind: deterministic
-    owner: flow-runtime
+    owner: play
     effect: read
     input_required: [publication.canonical_reference, publication.visibility, play.version]
-    command: rote play inspect <publication.canonical_reference> --json
+    command: scripts/bin/play-inspect <publication.canonical_reference> --json
     command_policy:
       - Never replace first-class Play inspection with `rote registry play info`.
       - Return the inspected title, description, and registry content hash for the final verified publication readout.

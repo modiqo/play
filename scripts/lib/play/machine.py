@@ -11,6 +11,8 @@ from typing import Any
 
 import yaml
 
+from .executors import action_executor
+
 
 class MachineValidationError(RuntimeError):
     def __init__(self, errors: list[str]):
@@ -250,6 +252,7 @@ def validate_bundle(
                 "rote-registry",
                 "rote-flow-crystallization",
                 "rote-flow-authoring",
+                "rote-flow-run",
                 "rote-org",
             }
             if isinstance(specialist, str):
@@ -334,6 +337,17 @@ def validate_bundle(
             root_name = required.split(".", 1)[0]
             check(root_name in context_roots,
                   f"action {name}: input root {root_name!r} is absent from durable context")
+        executor = action_executor(name, action)
+        check(
+            executor is not None,
+            f"action {name}: has no closed executor; deterministic commands must use scripts/bin, commandless actions need a runtime handler, and external work must be delegated",
+        )
+        if executor == "specialist":
+            check(
+                isinstance(action.get("specialist"), str)
+                or action.get("specialist_from") == "execution.owner",
+                f"action {name}: specialist executor is not exactly bound",
+            )
 
     reachable = {initial}
     queue = deque([initial])
@@ -412,8 +426,13 @@ def validate_bundle(
     check(_target(states, "use_prepare", "play_run_handoff_ready") == "use_run", "only a prepared run handoff may enter execution")
     check(states.get("use_run", {}).get("entry", {}).get("action") == "run_registry_play", "Use mode must be owned by run_registry_play")
     check(actions.get("inspect_registry_play", {}).get("command") == "scripts/bin/play-inspect <match.reference> --json", "Use inspection must invoke the reusable first-class wrapper")
-    check(actions.get("run_registry_play", {}).get("command") == "rote play run <inspection.exact_reference> <approved-parameters> --yes", "Use mode must invoke the approved exact Play")
-    check(actions.get("inspect_saved_play", {}).get("command") == "rote play inspect <publication.canonical_reference> --json", "saved Play readback must invoke rote play inspect --json")
+    check(
+        actions.get("run_registry_play", {}).get("kind") == "delegated"
+        and actions.get("run_registry_play", {}).get("specialist") == "rote-flow-run"
+        and "command" not in actions.get("run_registry_play", {}),
+        "Use mode must hand the prepared exact Play to rote-flow-run",
+    )
+    check(actions.get("inspect_saved_play", {}).get("command") == "scripts/bin/play-inspect <publication.canonical_reference> --json", "saved Play readback must invoke the reusable first-class wrapper")
     check(initial == "invoke", "the typed invocation classifier must be the initial state")
     check(
         actions.get("classify_play_invocation", {}).get("command")

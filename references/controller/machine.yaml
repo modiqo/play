@@ -334,7 +334,7 @@ states:
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_run:
-    owner: flow-runtime
+    owner: rote-specialist
     checkpoint: both
     requires: [match.reference, inspection.exact_reference, inspection.disclosure_sha256]
     entry: {action: run_registry_play}
@@ -449,7 +449,7 @@ states:
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   explore_prepare:
-    owner: play
+    owner: rote-specialist
     checkpoint: both
     requires: [consent.explore]
     entry: {action: prepare_exploration}
@@ -724,7 +724,7 @@ states:
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   index:
-    owner: play
+    owner: rote-specialist
     checkpoint: both
     requires: [publication.canonical_reference]
     entry: {action: index_playcard}
@@ -735,7 +735,7 @@ states:
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   saved_inspect:
-    owner: flow-runtime
+    owner: play
     checkpoint: both
     requires: [publication.canonical_reference, publication.visibility, play.version]
     entry: {action: inspect_saved_play}
