@@ -55,7 +55,6 @@
     "use_auth_repair_handoff": {"orb": "connecting", "label": "Connecting the Play authentication repair specialist…"},
     "use_auth_repair_execute": {"orb": "weaving", "label": "Coordinating the Play authentication repair…"},
     "use_auth_repair_receipt": {"orb": "solving", "label": "Checking the Play authentication repair receipt…"},
-    "use_output": {"orb": "solving", "label": "Formatting the complete Play result…"},
     "use_verify": {"orb": "solving", "label": "Verifying the Play outcome…"},
     "use_receipt": {"orb": "working", "label": "Building the verified receipt…"},
     "onboarding_activation_present": {"orb": "working", "label": "Explaining what your first verified Play achieved…"},

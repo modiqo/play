@@ -68,7 +68,7 @@ class RuntimeYield:
     session: RuntimeSession
     projection: Mapping[str, Any]
     trace: tuple[DeterministicTrace, ...]
-    presentations: tuple[str, ...]
+    presentations: tuple[Any, ...]
 
 
 def advance_until_yield(
@@ -81,7 +81,7 @@ def advance_until_yield(
     """Execute eligible deterministic Play actions until human/model work is required."""
 
     trace: list[DeterministicTrace] = []
-    presentations: list[str] = []
+    presentations: list[Any] = []
     current = session
     for _ in range(max_actions):
         projection = runtime.project_session(current).as_dict()
@@ -158,7 +158,7 @@ def _execute_instruction(
     projection: Mapping[str, Any],
     context: Mapping[str, Any],
     root: Path,
-) -> tuple[ControllerEvent, str | None]:
+) -> tuple[ControllerEvent, Any | None]:
     command = instruction.get("command")
     recoverable_event: str | None = None
     if command is None:
@@ -184,14 +184,22 @@ def _execute_instruction(
                 timeout=120,
             )
         except (OSError, subprocess.TimeoutExpired) as error:
-            return _blocked_action_event(instruction, str(error)), None
-        raw = _parse_action_output(instruction, completed.stdout)
-        recoverable_event = _failure_result_event(str(instruction["id"]), raw)
+            reason = str(error)
+            return _blocked_action_event(instruction, reason), reason
+        if completed.returncode != 0:
+            raw = {}
+            if completed.stdout.strip():
+                try:
+                    raw = _parse_action_output(instruction, completed.stdout)
+                except ControllerRuntimeError:
+                    raw = {}
+            recoverable_event = _failure_result_event(str(instruction["id"]), raw)
+        else:
+            raw = _parse_action_output(instruction, completed.stdout)
         if completed.returncode != 0 and recoverable_event is None:
             reason = (completed.stderr or completed.stdout).strip()
-            return _blocked_action_event(
-                instruction, reason or f"{instruction['id']} failed"
-            ), None
+            reason = reason or f"{instruction['id']} failed"
+            return _blocked_action_event(instruction, reason), reason
 
     event_id = recoverable_event or _select_event(str(instruction["id"]), raw, projection)
     raw = _derive_result_fields(event_id, raw)
@@ -242,12 +250,31 @@ def _commandless_result(
     if action_id == "present_awareness_digest":
         return {}
     if action_id == "build_receipt":
+        primary = _path_value(context, "output.primary")
+        output_format = _path_value(context, "output.format")
+        output_source = _path_value(context, "output.source")
+        if primary is None or not isinstance(output_format, str) or not output_format:
+            raise ControllerRuntimeError("receipt output is incomplete")
+        if not isinstance(output_source, str) or not output_source:
+            raise ControllerRuntimeError("receipt output source is incomplete")
+        if isinstance(primary, str):
+            primary_bytes_value = primary.encode("utf-8")
+        else:
+            try:
+                primary_bytes_value = json.dumps(
+                    primary, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+                ).encode("utf-8")
+            except (TypeError, ValueError) as error:
+                raise ControllerRuntimeError(
+                    "receipt primary output is not JSON-serializable"
+                ) from error
+        primary_sha256 = hashlib.sha256(primary_bytes_value).hexdigest()
         receipt_source = {
             "reference": _path_value(context, "match.reference"),
             "verification": _path_value(context, "evidence.verification"),
-            "presentation_sha256": _path_value(
-                context, "output.presentation_sha256"
-            ),
+            "primary_sha256": primary_sha256,
+            "format": output_format,
+            "source": output_source,
         }
         if not all(
             isinstance(value, str) and value for value in receipt_source.values()
@@ -257,11 +284,10 @@ def _commandless_result(
         return {
             "receipt_ref": "sha256:" + hashlib.sha256(canonical.encode()).hexdigest(),
             "output": {
-                "presentation_markdown": _path_value(
-                    context, "output.presentation_markdown"
-                ),
-                "presentation_sha256": receipt_source["presentation_sha256"],
+                "presentation_sha256": primary_sha256,
+                "primary_bytes": len(primary_bytes_value),
             },
+            "presentation": primary,
         }
     if action_id == "dispatch_route":
         modalities = _path_value(context, "route.modalities")
@@ -539,7 +565,7 @@ def _set_path(payload: dict[str, Any], path: str, value: Any) -> None:
     current[parts[-1]] = value
 
 
-def _presentation(raw: Mapping[str, Any]) -> str | None:
+def _presentation(raw: Mapping[str, Any]) -> Any | None:
     for key in ("presentation_markdown", "welcome_markdown", "orientation_markdown"):
         value = raw.get(key)
         if isinstance(value, str) and value:
@@ -549,4 +575,4 @@ def _presentation(raw: Mapping[str, Any]) -> str | None:
         markdown = presentation.get("markdown")
         if isinstance(markdown, str) and markdown:
             return markdown
-    return None
+    return presentation
