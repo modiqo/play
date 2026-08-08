@@ -61,8 +61,9 @@ personalization is unavailable, Play uses the neutral `friend` fallback instead 
 ## The Play state machine
 
 Play is driven by one declarative machine, [`references/controller/machine.yaml`](references/controller/machine.yaml)
-(`play.machine/v1`). The controller re-reads it on every activation, executes exactly one declared
-prompt or entry action per state, and accepts only events declared by
+(`play.machine/v1`). The typed runtime loads and validates the bundle once per invocation, returns
+only the compact current-state projection, executes eligible deterministic actions until a model,
+user, effect, or specialist boundary, and accepts only events declared by
 [`actions.yaml`](references/controller/actions.yaml) and [`prompts.yaml`](references/controller/prompts.yaml).
 It never jumps states from conversational intuition. Initial state: `invoke`. Terminals:
 `receipt`, `completed`, `exited`, `blocked`. Any action failure emits `action_blocked` and lands in
@@ -236,25 +237,32 @@ thinking-orbs presentation mapping drift.
 
 ### Typed controller runtime
 
-The first executable-controller slice lives in
+The executable controller lives in
 [`scripts/lib/play/controller.py`](scripts/lib/play/controller.py). It compiles the authoritative
 Play YAML into [`python-statemachine`](https://python-statemachine.readthedocs.io/) 3.2, while
 retaining Play's existing machine, action, prompt, context, and handoff contracts as the source of
-truth. The runtime provides typed cursors and events, ordered guard evaluation, event-payload
-validation, bundle-SHA binding, terminal enforcement, declared mutation selection, and per-step
-timing.
+truth. The runtime provides typed cursors and events, context-schema validation, bundle-SHA binding,
+derived guards, mutation semantics, checkpointed `play.context/v1`, terminal enforcement, and
+per-step timing. [`runtime_actions.py`](scripts/lib/play/runtime_actions.py) executes safe
+deterministic commands without shell interpolation and loops until the next evaluator, prompt,
+effect, specialist, unsupported action, or terminal boundary.
 
-This is currently a transition kernel, not a replacement for the complete Play controller. It
-returns the exact declared mutation but does not yet apply mutation semantics to `play.context/v1`,
-dispatch entry actions, or checkpoint context. Those responsibilities remain model/harness-owned
-until their typed Python registries are implemented and replay-tested. Keeping this boundary
-explicit prevents a partial runtime from silently changing controller behavior.
+The automatic runner owns 28 of the machine's 35 deterministic action states. The seven
+intentional yields are host/specialist effects or actions whose missing typed renderer or workspace
+owner makes automatic execution unsafe.
+
+The complete context travels between stateless CLI calls as a compressed opaque session token. It
+is never written to an improvised controller journal, and the model sees only the current action's
+minimum input, command policy, and accepted typed events. New mutations and deterministic adapters
+remain fail-closed: unsupported work is projected back to the harness instead of being guessed.
 
 Install the locked development/runtime dependencies and inspect the compiled bundle:
 
 ```bash
 uv sync
 uv run scripts/bin/play-machine describe --json
+printf '%s' '{"run_id":"demo","task_key":"demo","request":{"original":"Review this repository"}}' \
+  | uv run scripts/bin/play-machine run-until-yield --stdin --json
 ```
 
 Measure controller-only latency with:
@@ -262,29 +270,31 @@ Measure controller-only latency with:
 ```bash
 just benchmark-controller
 just benchmark-controller 10000
+just benchmark-runtime
 ```
 
-The benchmark compiles the bundle once, then repeatedly executes the `qualify → exited` transition
-with a new typed cursor. It excludes model inference, user interaction, external commands, network
-I/O, and mutation application. Every JSON result includes the exact bundle SHA so measurements from
-different controller versions cannot be mixed accidentally.
+The controller benchmark compiles once and repeatedly executes a warm transition. The runtime
+benchmark measures the complete deterministic `invoke → qualify` loop, including context creation,
+schema checks, the lexical subprocess action, checkpointing, token encoding, and current-state
+projection. Every result includes the exact bundle SHA.
 
-Baseline recorded on 2026-08-07 on an Apple Silicon Mac with Python 3.14.5,
-`python-statemachine` 3.2.0, bundle
-`62622ae43bc3ffceebe859743ee900b3f1e8a6ca565feab340812d39121b41f2`, and 10,000
-iterations:
+Baseline recorded on 2026-08-07 on an Apple Silicon Mac with Python 3.14.5 and
+`python-statemachine` 3.2.0:
 
 | Metric | Time |
 |---|---:|
-| One-time bundle compile | 144.41 ms |
-| Warm invocation transition median | 0.582 ms |
-| Warm invocation transition p95 | 0.812 ms |
-| Warm invocation transition max | 6.39 ms |
+| One-time bundle compile | 74.8–76.7 ms |
+| Warm transition median | 0.569 ms |
+| Warm transition p95 | 0.773 ms |
+| Full invoke-to-evaluator median | 49.0 ms |
+| Qualifier projection | 2,024 bytes |
+| Opaque session token | 2,592 bytes |
 
-The 74-state first-use bundle remains sub-millisecond at p95 in this sample. The preceding 67-state
-typed-certificate bundle, before the enforced release/publication boundary, measured a 0.517 ms
-median and 0.741 ms p95 on 2026-08-06. The benchmark intentionally reports observed latency rather
-than attributing run-to-run variance to individual transitions. A single live
+The 74-state bundle remains sub-millisecond at p95 for warm transitions. Loading validated
+documents once instead of rereading the controller YAML during compilation reduced the observed
+cold compile baseline by roughly half. The 12.9 KB activation skill is also about 63% smaller than
+the former 34.9 KB model-owned controller manual, and normal runs no longer require the model to
+read the 30 KB machine. A single live
 `explore-welcome` sample on the same machine resolved the signed-in Rote identity and rendered the
 welcome in 1.624 seconds; almost all of that is the external `rote whoami` call. Registry inspection,
 public-card fetches, and setup are likewise separately timed external I/O actions. Every certificate
@@ -357,7 +367,9 @@ claude plugin install rote-onboard@rote-skills
 
 After Play is installed, an empty `$play` or `/play` probes the local binary and identity. If either
 is missing, Play invokes `rote-setup`; that specialist asks before downloaded installer code, login,
-credentials, or optional onboarding. Ordinary Play requests retain the stricter full preflight.
+credentials, or optional onboarding. Ordinary requests are lexically classified and qualified
+first; only Play-bound evaluator events run the full preflight, so excluded conversation and
+repository work do not pay the identity/capability probe.
 Public Play URIs can still show their read-only public card before the CLI exists.
 
 Install Play from its public marketplace after Rote setup:
@@ -856,6 +868,7 @@ just package-check
 just ui-check
 just test
 just benchmark-controller
+just benchmark-runtime
 ```
 
 The tests exercise the declarative Play machine and the complete activation lifecycle in temporary

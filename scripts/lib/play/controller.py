@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+import base64
+import zlib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping, NewType
@@ -12,6 +14,14 @@ from typing import Any, Mapping, NewType
 from statemachine.io import create_machine_class_from_definition
 
 from .machine import MachineValidationError, validate_bundle
+from .runtime_context import (
+    RuntimeContextError,
+    apply_event,
+    initial_context,
+    validate_context,
+    validate_mutation_contract,
+    validate_required,
+)
 
 
 StateId = NewType("StateId", str)
@@ -35,6 +45,11 @@ class TransitionSpec:
 class StateSpec:
     id: StateId
     terminal: bool
+    owner: str
+    checkpoint: str | None
+    requires: tuple[str, ...]
+    action: str | None
+    prompt: str | None
     events: Mapping[EventId, tuple[TransitionSpec, ...]]
 
 
@@ -87,6 +102,59 @@ class StepResult:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class StateProjection:
+    schema: str
+    bundle_sha256: str
+    state: Mapping[str, Any]
+    instruction: Mapping[str, Any] | None
+    accepted_events: Mapping[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class AdvanceResult:
+    schema: str
+    step: StepResult
+    projection: StateProjection
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "step": self.step.as_dict(),
+            "projection": self.projection.as_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class RuntimeSession:
+    schema: str
+    cursor: ControllerCursor
+    context: Mapping[str, Any]
+    preflight_ready: bool
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class SessionAdvanceResult:
+    schema: str
+    session: RuntimeSession
+    step: StepResult
+    projection: StateProjection
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "session": self.session.as_dict(),
+            "step": self.step.as_dict(),
+            "projection": self.projection.as_dict(),
+        }
+
+
 @dataclass
 class RuntimeModel:
     """Typed domain model used by python-statemachine to store current state."""
@@ -101,25 +169,35 @@ class ControllerBundle:
     terminals: frozenset[StateId]
     guards: frozenset[GuardId]
     states: Mapping[StateId, StateSpec]
+    actions: Mapping[str, Mapping[str, Any]]
+    prompts: Mapping[str, Mapping[str, Any]]
+    context_schema: Mapping[str, Any]
     event_requirements: Mapping[tuple[StateId, EventId], tuple[str, ...]]
     sha256: str
 
     @classmethod
     def load(cls, root: Path) -> ControllerBundle:
-        try:
-            validate_bundle(root)
-        except MachineValidationError as error:
-            raise ControllerRuntimeError("; ".join(error.errors)) from error
-
         controller = root / "references" / "controller"
         documents = {
             "machine": _load_yaml(controller / "machine.yaml"),
             "actions": _load_yaml(controller / "actions.yaml"),
             "prompts": _load_yaml(controller / "prompts.yaml"),
+            "machine_schema": _load_json(controller / "machine.schema.json"),
+            "context_schema": _load_json(controller / "context.schema.json"),
+            "handoff_schema": _load_json(controller / "handoff.schema.json"),
         }
+        try:
+            validate_bundle(root, documents=documents)
+        except MachineValidationError as error:
+            raise ControllerRuntimeError("; ".join(error.errors)) from error
+
         machine = documents["machine"]
         actions_document = documents["actions"]
         prompts_document = documents["prompts"]
+        try:
+            validate_mutation_contract(actions_document["mutations"])
+        except RuntimeContextError as error:
+            raise ControllerRuntimeError(str(error)) from error
         terminals = frozenset(StateId(value) for value in machine["terminal"])
         states: dict[StateId, StateSpec] = {}
         guards: set[GuardId] = set()
@@ -144,6 +222,11 @@ class ControllerBundle:
             states[state_id] = StateSpec(
                 id=state_id,
                 terminal=state_id in terminals,
+                owner=str(raw_state.get("owner", "")),
+                checkpoint=raw_state.get("checkpoint"),
+                requires=tuple(raw_state.get("requires", ())),
+                action=(raw_state.get("entry") or {}).get("action"),
+                prompt=raw_state.get("prompt"),
                 events=events,
             )
             requirements.update(
@@ -162,6 +245,9 @@ class ControllerBundle:
             terminals=terminals,
             guards=frozenset(guards),
             states=states,
+            actions=actions_document["actions"],
+            prompts=prompts_document["prompts"],
+            context_schema=documents["context_schema"],
             event_requirements=requirements,
             sha256=hashlib.sha256(canonical.encode()).hexdigest(),
         )
@@ -187,6 +273,28 @@ class ControllerRuntime:
             state=self.bundle.initial,
             transition_seq=0,
             last_event=None,
+        )
+
+    def initial_session(
+        self, *, run_id: str, task_key: str, request_original: str
+    ) -> RuntimeSession:
+        cursor = self.initial_cursor(run_id=run_id, task_key=task_key)
+        context = initial_context(
+            run_id=run_id,
+            task_key=task_key,
+            machine_version=self.bundle.sha256,
+            request_original=request_original,
+        )
+        try:
+            validate_context(context, self.bundle.context_schema)
+            validate_required(context, self.bundle.states[cursor.state].requires)
+        except RuntimeContextError as error:
+            raise ControllerRuntimeError(str(error)) from error
+        return RuntimeSession(
+            schema="play.runtime-session/v1",
+            cursor=cursor,
+            context=context,
+            preflight_ready=False,
         )
 
     def step(self, cursor: ControllerCursor, event: ControllerEvent) -> StepResult:
@@ -243,6 +351,172 @@ class ControllerRuntime:
             timing=timing,
         )
 
+    def project(
+        self,
+        cursor: ControllerCursor,
+        context: Mapping[str, Any] | None = None,
+    ) -> StateProjection:
+        """Return only the executable contract for the cursor's current state."""
+
+        self._validate_cursor(cursor)
+        state = self.bundle.states[cursor.state]
+        instruction: dict[str, Any] | None
+        if state.terminal:
+            boundary = "terminal"
+            instruction = None
+        elif state.action is not None:
+            action = self.bundle.actions[state.action]
+            kind = str(action["kind"])
+            boundary = f"{kind}_action"
+            instruction = {
+                "type": "action",
+                "id": state.action,
+                "kind": kind,
+                "owner": action["owner"],
+                "effect": action["effect"],
+                "input_required": list(action.get("input_required", ())),
+                **({"command": action["command"]} if action.get("command") else {}),
+                **(
+                    {"command_policy": list(action["command_policy"])}
+                    if action.get("command_policy")
+                    else {}
+                ),
+                **(
+                    {"input": _select_context(context, action.get("input_required", ())) }
+                    if context is not None
+                    else {}
+                ),
+                **(
+                    {
+                        "preflight_required_for_events": [
+                            str(event)
+                            for event in state.events
+                            if event not in {"conversation", "play_excluded", "action_blocked"}
+                        ]
+                    }
+                    if state.id == StateId("qualify")
+                    else {}
+                ),
+            }
+        elif state.prompt is not None:
+            prompt = self.bundle.prompts[state.prompt]
+            boundary = "prompt"
+            instruction = {
+                "type": "prompt",
+                "id": state.prompt,
+                **dict(prompt),
+            }
+        else:
+            raise ControllerRuntimeError(
+                f"non-terminal state {cursor.state!r} has no instruction"
+            )
+
+        accepted_events = {
+            str(event): {
+                "required_payload": list(
+                    self.bundle.event_requirements.get((state.id, event), ())
+                ),
+                "guards": [str(branch.guard) for branch in branches if branch.guard],
+            }
+            for event, branches in state.events.items()
+        }
+        return StateProjection(
+            schema="play.runtime-projection/v1",
+            bundle_sha256=self.bundle.sha256,
+            state={
+                "id": str(state.id),
+                "terminal": state.terminal,
+                "owner": state.owner,
+                "checkpoint": state.checkpoint,
+                "requires": list(state.requires),
+                "boundary": boundary,
+            },
+            instruction=instruction,
+            accepted_events=accepted_events,
+        )
+
+    def advance(
+        self, cursor: ControllerCursor, event: ControllerEvent
+    ) -> AdvanceResult:
+        step = self.step(cursor, event)
+        return AdvanceResult(
+            schema="play.runtime-advance/v1",
+            step=step,
+            projection=self.project(step.cursor),
+        )
+
+    def project_session(self, session: RuntimeSession) -> StateProjection:
+        self._validate_session(session)
+        return self.project(session.cursor, session.context)
+
+    def advance_session(
+        self, session: RuntimeSession, event: ControllerEvent
+    ) -> SessionAdvanceResult:
+        self._validate_session(session)
+        if (
+            session.cursor.state == StateId("qualify")
+            and event.id not in {EventId("conversation"), EventId("play_excluded"), EventId("action_blocked")}
+            and not session.preflight_ready
+        ):
+            raise ControllerRuntimeError(
+                "a ready Play preflight is required after qualification"
+            )
+        event = _derive_session_guards(session, event)
+        step = self.step(session.cursor, event)
+        try:
+            context = apply_event(
+                session.context,
+                event_id=str(event.id),
+                payload=event.payload,
+                state=str(step.cursor.state),
+                transition_seq=step.cursor.transition_seq,
+                mutation=str(step.transition.mutation),
+            )
+            validate_required(context, self.bundle.states[step.cursor.state].requires)
+            validate_context(context, self.bundle.context_schema)
+        except RuntimeContextError as error:
+            raise ControllerRuntimeError(str(error)) from error
+        next_session = RuntimeSession(
+            schema=session.schema,
+            cursor=step.cursor,
+            context=context,
+            preflight_ready=session.preflight_ready,
+        )
+        return SessionAdvanceResult(
+            schema="play.runtime-session-advance/v1",
+            session=next_session,
+            step=step,
+            projection=self.project_session(next_session),
+        )
+
+    def _validate_session(self, session: RuntimeSession) -> None:
+        if session.schema != "play.runtime-session/v1":
+            raise ControllerRuntimeError(f"unsupported session schema {session.schema!r}")
+        self._validate_cursor(session.cursor)
+        if session.context.get("machine_version") != self.bundle.sha256:
+            raise ControllerRuntimeError("session context belongs to a different controller bundle")
+        if session.context.get("run_id") != session.cursor.run_id:
+            raise ControllerRuntimeError("session context run_id differs from cursor")
+        if session.context.get("task_key") != session.cursor.task_key:
+            raise ControllerRuntimeError("session context task_key differs from cursor")
+        if session.context.get("state") != session.cursor.state:
+            raise ControllerRuntimeError("session context state differs from cursor")
+        if session.context.get("transition_seq") != session.cursor.transition_seq:
+            raise ControllerRuntimeError("session context transition_seq differs from cursor")
+
+    def confirm_preflight(
+        self, session: RuntimeSession, payload: Mapping[str, Any]
+    ) -> RuntimeSession:
+        self._validate_session(session)
+        if payload.get("schema") != "play.preflight/v1" or payload.get("ready") is not True:
+            raise ControllerRuntimeError("Play preflight is not ready")
+        return RuntimeSession(
+            schema=session.schema,
+            cursor=session.cursor,
+            context=session.context,
+            preflight_ready=True,
+        )
+
     def _validate_cursor(self, cursor: ControllerCursor) -> None:
         if cursor.schema != "play.runtime-cursor/v1":
             raise ControllerRuntimeError(f"unsupported cursor schema {cursor.schema!r}")
@@ -292,6 +566,44 @@ def event_from_dict(payload: Mapping[str, Any]) -> ControllerEvent:
     )
 
 
+def session_from_dict(payload: Mapping[str, Any]) -> RuntimeSession:
+    cursor = payload.get("cursor")
+    context = payload.get("context")
+    if not isinstance(cursor, Mapping) or not isinstance(context, Mapping):
+        raise ControllerRuntimeError("session requires cursor and context objects")
+    return RuntimeSession(
+        schema=_required_string(payload, "schema"),
+        cursor=cursor_from_dict(cursor),
+        context=dict(context),
+        preflight_ready=payload.get("preflight_ready") is True,
+    )
+
+
+def encode_session(session: RuntimeSession) -> str:
+    raw = json.dumps(session.as_dict(), sort_keys=True, separators=(",", ":")).encode()
+    compressed = zlib.compress(raw, level=9)
+    body = base64.urlsafe_b64encode(compressed).decode().rstrip("=")
+    digest = hashlib.sha256(raw).hexdigest()
+    return f"v1.{body}.{digest}"
+
+
+def decode_session(token: str) -> RuntimeSession:
+    try:
+        version, body, expected_digest = token.split(".", 2)
+        if version != "v1":
+            raise ValueError("unsupported token version")
+        padded = body + "=" * (-len(body) % 4)
+        raw = zlib.decompress(base64.urlsafe_b64decode(padded))
+        if hashlib.sha256(raw).hexdigest() != expected_digest:
+            raise ValueError("digest mismatch")
+        payload = json.loads(raw)
+    except (ValueError, zlib.error, json.JSONDecodeError) as error:
+        raise ControllerRuntimeError(f"invalid runtime session token: {error}") from error
+    if not isinstance(payload, Mapping):
+        raise ControllerRuntimeError("invalid runtime session token: payload is not an object")
+    return session_from_dict(payload)
+
+
 def _load_yaml(path: Path) -> dict[str, Any]:
     import yaml
 
@@ -302,6 +614,35 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ControllerRuntimeError(f"{path} must contain an object")
     return payload
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ControllerRuntimeError(f"cannot load {path}: {error}") from error
+    if not isinstance(payload, dict):
+        raise ControllerRuntimeError(f"{path} must contain an object")
+    return payload
+
+
+def _select_context(
+    context: Mapping[str, Any], paths: tuple[str, ...] | list[str]
+) -> dict[str, Any]:
+    selected: dict[str, Any] = {}
+    for path in paths:
+        current: Any = context
+        for part in path.split("."):
+            if not isinstance(current, Mapping) or part not in current:
+                break
+            current = current[part]
+        else:
+            target = selected
+            parts = path.split(".")
+            for part in parts[:-1]:
+                target = target.setdefault(part, {})
+            target[parts[-1]] = current
+    return selected
 
 
 def _event_requirements(
@@ -410,6 +751,46 @@ def _resolve_guard_values(event: ControllerEvent) -> dict[GuardId, bool]:
         owner_resolution == "choice_required"
     )
     return values
+
+
+def _derive_session_guards(
+    session: RuntimeSession, event: ControllerEvent
+) -> ControllerEvent:
+    """Resolve guards that are deterministic from harness-owned session context."""
+
+    values = dict(event.guards)
+    context = session.context
+    onboarding_intent = _path_value(context, "onboarding.intent")
+    values[GuardId("onboarding_is_greeting")] = onboarding_intent == "greeting"
+    values[GuardId("onboarding_is_play_uri")] = onboarding_intent == "play_uri"
+    values[GuardId("use_is_onboarding_starter")] = (
+        _path_value(context, "onboarding.starter_status") == "selected"
+    )
+    values[GuardId("search_is_complete")] = (
+        _path_value(event.payload, "search.complete") is True
+    )
+    values[GuardId("search_only_requested")] = (
+        _path_value(context, "last_event.id") == "play_search_request"
+    )
+    values[GuardId("explore_is_approved")] = (
+        _path_value(context, "consent.explore") == "approved"
+    )
+    allowed = _path_value(context, "modality_policy.allowed")
+    modalities = _path_value(event.payload, "route.modalities")
+    if isinstance(allowed, list) and isinstance(modalities, list):
+        values[GuardId("route_within_policy")] = set(modalities) <= set(allowed)
+    attempts = _path_value(context, "execution.attempts")
+    budget = _path_value(context, "execution.budget")
+    if isinstance(attempts, int) and isinstance(budget, int):
+        values[GuardId("exploration_budget_remaining")] = attempts < budget
+    values[GuardId("outcome_is_verified")] = event.id == EventId("outcome_verified")
+    values[GuardId("save_choice_private")] = event.id == EventId("save_private")
+    values[GuardId("save_choice_public")] = event.id == EventId("save_public")
+    return ControllerEvent(
+        id=event.id,
+        payload=event.payload,
+        guards=values,
+    )
 
 
 def _validate_event_payload(payload: Mapping[str, Any], required: tuple[str, ...]) -> None:

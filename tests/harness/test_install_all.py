@@ -101,7 +101,7 @@ class InstallAllTest(unittest.TestCase):
 
         self.run_installer("install", "--copy")
         installed = install_home / "skill"
-        self.assertEqual("0.1.9", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.2.0", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():

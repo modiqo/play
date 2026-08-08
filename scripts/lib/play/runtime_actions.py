@@ -1,0 +1,499 @@
+"""Deterministic action execution for Play's advance-until-yield loop."""
+
+from __future__ import annotations
+
+import json
+import hashlib
+import os
+import re
+import shlex
+import subprocess
+import time
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from .controller import (
+    ControllerEvent,
+    ControllerRuntime,
+    ControllerRuntimeError,
+    EventId,
+    RuntimeSession,
+)
+from .inspection import render_markdown as render_inspection_markdown
+from .digest import render_markdown as render_digest_markdown
+from .search import render_markdown as render_search_markdown
+
+
+_PLACEHOLDER = re.compile(r"<([a-z][a-z0-9_.-]*)>")
+_SELECTOR_ACTIONS = {
+    "classify_play_invocation",
+    "probe_rote_for_onboarding",
+    "inspect_onboarding_identity",
+    "inspect_onboarding_experience",
+    "inspect_registry_play",
+    "collect_awareness_digest",
+    "prepare_specialist_handoff",
+    "validate_specialist_receipt",
+    "prepare_auth_repair_handoff",
+    "validate_auth_repair_receipt",
+    "resolve_public_owner",
+    "inspect_publication_credentials",
+    "dispatch_route",
+}
+_COMMANDLESS_ACTIONS = {
+    "present_awareness_digest",
+    "present_search_results",
+    "build_receipt",
+    "dispatch_route",
+}
+
+
+@dataclass(frozen=True)
+class DeterministicTrace:
+    state: str
+    action: str
+    event: str
+    elapsed_ns: int
+
+
+@dataclass(frozen=True)
+class RuntimeYield:
+    schema: str
+    session: RuntimeSession
+    projection: Mapping[str, Any]
+    trace: tuple[DeterministicTrace, ...]
+    presentations: tuple[str, ...]
+
+
+def advance_until_yield(
+    runtime: ControllerRuntime,
+    session: RuntimeSession,
+    *,
+    root: Path,
+    max_actions: int = 32,
+) -> RuntimeYield:
+    """Execute eligible deterministic Play actions until human/model work is required."""
+
+    trace: list[DeterministicTrace] = []
+    presentations: list[str] = []
+    current = session
+    for _ in range(max_actions):
+        projection = runtime.project_session(current).as_dict()
+        instruction = projection.get("instruction")
+        if not _is_executable(instruction, projection):
+            return RuntimeYield(
+                schema="play.runtime-yield/v1",
+                session=current,
+                projection=projection,
+                trace=tuple(trace),
+                presentations=tuple(presentations),
+            )
+        assert isinstance(instruction, Mapping)
+        started = time.perf_counter_ns()
+        event, presentation = _execute_instruction(
+            instruction,
+            projection=projection,
+            context=current.context,
+            root=root,
+        )
+        result = runtime.advance_session(current, event)
+        trace.append(
+            DeterministicTrace(
+                state=str(current.cursor.state),
+                action=str(instruction["id"]),
+                event=str(event.id),
+                elapsed_ns=time.perf_counter_ns() - started,
+            )
+        )
+        if presentation is not None:
+            presentations.append(presentation)
+        current = result.session
+    projection = runtime.project_session(current).as_dict()
+    if not _is_executable(projection.get("instruction"), projection):
+        return RuntimeYield(
+            schema="play.runtime-yield/v1",
+            session=current,
+            projection=projection,
+            trace=tuple(trace),
+            presentations=tuple(presentations),
+        )
+    raise ControllerRuntimeError(
+        f"deterministic action limit {max_actions} reached without a yield boundary"
+    )
+
+
+def _is_executable(
+    instruction: object, projection: Mapping[str, Any]
+) -> bool:
+    if not isinstance(instruction, Mapping):
+        return False
+    if instruction.get("type") != "action" or instruction.get("kind") != "deterministic":
+        return False
+    if instruction.get("owner") != "play" or instruction.get("effect") == "mixed":
+        return False
+    command = instruction.get("command")
+    if command is None and instruction.get("id") not in _COMMANDLESS_ACTIONS:
+        return False
+    if command is not None and (
+        not isinstance(command, str) or not command.startswith("scripts/bin/")
+    ):
+        return False
+    success_events = [
+        event
+        for event in projection.get("accepted_events", {})
+        if event != "action_blocked"
+    ]
+    return len(success_events) == 1 or instruction.get("id") in _SELECTOR_ACTIONS
+
+
+def _execute_instruction(
+    instruction: Mapping[str, Any],
+    *,
+    projection: Mapping[str, Any],
+    context: Mapping[str, Any],
+    root: Path,
+) -> tuple[ControllerEvent, str | None]:
+    command = instruction.get("command")
+    recoverable_event: str | None = None
+    if command is None:
+        raw = _commandless_result(str(instruction["id"]), context)
+    else:
+        argv = _render_command(str(command), context, root)
+        environment = os.environ.copy()
+        environment.setdefault("ROTE_FLOW_PROGRESS", "0")
+        environment.setdefault("ROTE_NO_HINTS", "1")
+        try:
+            completed = subprocess.run(
+                argv,
+                cwd=root,
+                env=environment,
+                input=(
+                    json.dumps(instruction.get("input", {}))
+                    if "--stdin" in argv
+                    else None
+                ),
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=120,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            return _blocked_action_event(instruction, str(error)), None
+        raw = _parse_action_output(instruction, completed.stdout)
+        recoverable_event = _failure_result_event(str(instruction["id"]), raw)
+        if completed.returncode != 0 and recoverable_event is None:
+            reason = (completed.stderr or completed.stdout).strip()
+            return _blocked_action_event(
+                instruction, reason or f"{instruction['id']} failed"
+            ), None
+
+    event_id = recoverable_event or _select_event(str(instruction["id"]), raw, projection)
+    raw = _derive_result_fields(event_id, raw)
+    required = projection["accepted_events"][event_id]["required_payload"]
+    payload = _build_payload(required, raw, context)
+    presentation = _presentation(raw)
+    if (
+        instruction.get("id") == "inspect_registry_play"
+        and event_id in {"play_inspected", "play_not_runnable"}
+    ):
+        presentation = render_inspection_markdown(raw)
+    return ControllerEvent(id=EventId(event_id), payload=payload, guards={}), presentation
+
+
+def _blocked_action_event(
+    instruction: Mapping[str, Any], reason: str
+) -> ControllerEvent:
+    return ControllerEvent(
+        id=EventId("action_blocked"),
+        payload={
+            "reason": reason,
+            "recoverable": False,
+            "owner": str(instruction.get("owner", "play")),
+            "evidence_refs": [],
+        },
+        guards={},
+    )
+
+
+def _commandless_result(
+    action_id: str, context: Mapping[str, Any]
+) -> dict[str, Any]:
+    if action_id == "present_search_results":
+        request = context.get("request")
+        search = context.get("search")
+        if not isinstance(request, Mapping) or not isinstance(search, Mapping):
+            raise ControllerRuntimeError("search presentation context is malformed")
+        original = request.get("intent") or request.get("original")
+        normalized = search.get("query")
+        results = search.get("results")
+        if not isinstance(original, str) or not isinstance(normalized, str) or not isinstance(results, list):
+            raise ControllerRuntimeError("search presentation context is incomplete")
+        return {
+            "presentation_markdown": render_search_markdown(
+                original, normalized, results
+            )
+        }
+    if action_id == "present_awareness_digest":
+        return {}
+    if action_id == "build_receipt":
+        receipt_source = {
+            "reference": _path_value(context, "match.reference"),
+            "verification": _path_value(context, "evidence.verification"),
+            "presentation_sha256": _path_value(
+                context, "output.presentation_sha256"
+            ),
+        }
+        if not all(
+            isinstance(value, str) and value for value in receipt_source.values()
+        ):
+            raise ControllerRuntimeError("receipt context is incomplete")
+        canonical = json.dumps(receipt_source, sort_keys=True, separators=(",", ":"))
+        return {
+            "receipt_ref": "sha256:" + hashlib.sha256(canonical.encode()).hexdigest(),
+            "output": {
+                "presentation_markdown": _path_value(
+                    context, "output.presentation_markdown"
+                ),
+                "presentation_sha256": receipt_source["presentation_sha256"],
+            },
+        }
+    if action_id == "dispatch_route":
+        modalities = _path_value(context, "route.modalities")
+        event = (
+            "adapter_discovery_required"
+            if isinstance(modalities, list) and "call" in modalities
+            else "direct_handoff_ready"
+        )
+        return {"event": event}
+    raise ControllerRuntimeError(f"no deterministic renderer for {action_id}")
+
+
+def _parse_action_output(
+    instruction: Mapping[str, Any], stdout: str
+) -> dict[str, Any]:
+    try:
+        raw = json.loads(stdout)
+    except json.JSONDecodeError as error:
+        raise ControllerRuntimeError(
+            f"deterministic action {instruction['id']} returned invalid JSON: {error}"
+        ) from error
+    if not isinstance(raw, dict):
+        raise ControllerRuntimeError(
+            f"deterministic action {instruction['id']} returned a non-object"
+        )
+    return raw
+
+
+def _failure_result_event(action_id: str, raw: Mapping[str, Any]) -> str | None:
+    if action_id == "inspect_registry_play":
+        error = raw.get("error")
+        if isinstance(error, Mapping) and error.get("kind") == "play_not_found":
+            return "play_reference_unresolved"
+    return None
+
+
+def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, Any]:
+    derived = dict(raw)
+    if event_id == "empty_play_invocation":
+        derived["onboarding"] = {"intent": "greeting"}
+    elif event_id == "play_uri_invocation":
+        play_uri = raw.get("play_uri")
+        derived["onboarding"] = {"intent": "play_uri", "play_uri": play_uri}
+        derived["match"] = {"reference": play_uri}
+    elif event_id == "play_reference_unresolved":
+        error = raw.get("error")
+        if isinstance(error, Mapping):
+            derived["reason"] = error.get("message")
+    elif event_id in {"awareness_ready", "awareness_unchanged"}:
+        canonical = json.dumps(raw, sort_keys=True, separators=(",", ":"))
+        digest_ref = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+        updates = raw.get("org_updates")
+        choices = []
+        if isinstance(updates, Mapping):
+            items = [
+                *(
+                    updates.get("new", [])
+                    if isinstance(updates.get("new"), list)
+                    else []
+                ),
+                *(
+                    updates.get("revised", [])
+                    if isinstance(updates.get("revised"), list)
+                    else []
+                ),
+            ]
+            for item in items:
+                if not isinstance(item, Mapping) or item.get("actionable") is not True:
+                    continue
+                reference = item.get("reference")
+                name = item.get("name")
+                owner = item.get("owner")
+                if not all(isinstance(value, str) and value for value in (reference, name, owner)):
+                    continue
+                choices.append(
+                    {
+                        "reference": reference,
+                        "label": f"{name} — {owner}",
+                        "description": str(item.get("description") or "Inspect this Play."),
+                        "parameters": {},
+                    }
+                )
+        derived["awareness"] = {
+            "complete": raw.get("complete") is True,
+            "digest_ref": digest_ref,
+            "play_choices": choices,
+        }
+        derived["evidence_refs"] = [digest_ref]
+        derived["presentation_markdown"] = render_digest_markdown(dict(raw))
+    return derived
+
+
+def _render_command(command: str, context: Mapping[str, Any], root: Path) -> list[str]:
+    rendered: list[str] = []
+    for token in shlex.split(command):
+        def replace(match: re.Match[str]) -> str:
+            value = _path_value(context, match.group(1))
+            if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+                raise ControllerRuntimeError(
+                    f"cannot render deterministic command field {match.group(1)}"
+                )
+            return str(value)
+
+        rendered.append(_PLACEHOLDER.sub(replace, token))
+    executable = Path(rendered[0])
+    if not executable.is_absolute():
+        executable = (root / executable).resolve()
+    try:
+        executable.relative_to(root.resolve())
+    except ValueError as error:
+        raise ControllerRuntimeError("deterministic action escaped the Play root") from error
+    rendered[0] = str(executable)
+    return rendered
+
+
+def _select_event(
+    action_id: str, raw: Mapping[str, Any], projection: Mapping[str, Any]
+) -> str:
+    accepted = projection.get("accepted_events", {})
+    declared = raw.get("event")
+    if isinstance(declared, str) and declared in accepted:
+        return declared
+    if action_id == "classify_play_invocation":
+        return {
+            "greeting": "empty_play_invocation",
+            "play_uri": "play_uri_invocation",
+            "ordinary": "ordinary_play_invocation",
+        }.get(str(raw.get("invocation_kind")), "action_blocked")
+    if action_id == "probe_rote_for_onboarding":
+        return "rote_available" if raw.get("rote_status") == "installed" else "rote_missing"
+    if action_id == "inspect_onboarding_identity":
+        return (
+            "onboarding_identity_ready"
+            if raw.get("identity_status") == "authenticated"
+            else "onboarding_identity_setup_required"
+        )
+    if action_id == "inspect_onboarding_experience":
+        return (
+            "onboarding_returning"
+            if raw.get("experience_status") == "returning"
+            else "onboarding_first_use"
+        )
+    if action_id == "inspect_registry_play":
+        preflight = raw.get("preflight")
+        return (
+            "play_inspected"
+            if isinstance(preflight, Mapping) and preflight.get("run_eligible") is True
+            else "play_not_runnable"
+        )
+    if action_id == "collect_awareness_digest":
+        memory = raw.get("memory")
+        return (
+            "awareness_unchanged"
+            if isinstance(memory, Mapping) and memory.get("status") == "unchanged"
+            else "awareness_ready"
+        )
+    if action_id == "resolve_public_owner":
+        publication = raw.get("publication")
+        return (
+            "public_owner_context_unavailable"
+            if isinstance(publication, Mapping)
+            and publication.get("owner_resolution") == "unavailable"
+            else "public_owner_context_ready"
+        )
+    if action_id == "inspect_publication_credentials":
+        validation = raw.get("publication_validation")
+        return (
+            "associated_credentials_verified"
+            if isinstance(validation, Mapping)
+            and validation.get("credential_status") == "verified"
+            else "associated_credentials_invalid"
+        )
+    success = [event for event in accepted if event != "action_blocked"]
+    if len(success) == 1:
+        return success[0]
+    raise ControllerRuntimeError(
+        f"deterministic action {action_id} needs an explicit result selector"
+    )
+
+
+def _build_payload(
+    required: list[str], raw: Mapping[str, Any], context: Mapping[str, Any]
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for path in required:
+        value = _result_value(raw, context, path)
+        if value is _MISSING:
+            raise ControllerRuntimeError(
+                f"deterministic action result is missing required field {path}"
+            )
+        _set_path(payload, path, value)
+    return payload
+
+
+_MISSING = object()
+
+
+def _result_value(
+    raw: Mapping[str, Any], context: Mapping[str, Any], path: str
+) -> Any:
+    value = _path_value(raw, path, _MISSING)
+    if value is not _MISSING:
+        return value
+    for candidate in (path.replace(".", "_"), path.rsplit(".", 1)[-1]):
+        if candidate in raw:
+            return raw[candidate]
+    return _path_value(context, path, _MISSING)
+
+
+def _path_value(
+    payload: Mapping[str, Any], path: str, default: Any = None
+) -> Any:
+    current: Any = payload
+    for part in path.split("."):
+        if not isinstance(current, Mapping) or part not in current:
+            return default
+        current = current[part]
+    return current
+
+
+def _set_path(payload: dict[str, Any], path: str, value: Any) -> None:
+    current = payload
+    parts = path.split(".")
+    for part in parts[:-1]:
+        current = current.setdefault(part, {})
+    current[parts[-1]] = value
+
+
+def _presentation(raw: Mapping[str, Any]) -> str | None:
+    for key in ("presentation_markdown", "welcome_markdown", "orientation_markdown"):
+        value = raw.get(key)
+        if isinstance(value, str) and value:
+            return value
+    presentation = raw.get("presentation")
+    if isinstance(presentation, Mapping):
+        markdown = presentation.get("markdown")
+        if isinstance(markdown, str) and markdown:
+            return markdown
+    return None

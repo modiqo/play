@@ -59,14 +59,46 @@ def _target(states: dict, state: str, event: str, branch: int = 0) -> str | None
         return None
 
 
-def validate_bundle(root: Path) -> ValidationSummary:
+def validate_bundle(
+    root: Path,
+    *,
+    documents: dict[str, dict[str, Any]] | None = None,
+) -> ValidationSummary:
     controller = root / "references" / "controller"
-    machine = _load_yaml(controller / "machine.yaml")
-    actions_doc = _load_yaml(controller / "actions.yaml")
-    prompts_doc = _load_yaml(controller / "prompts.yaml")
-    machine_schema = _load_json(controller / "machine.schema.json")
-    context_schema = _load_json(controller / "context.schema.json")
-    handoff_schema = _load_json(controller / "handoff.schema.json")
+    if documents is None:
+        machine = _load_yaml(controller / "machine.yaml")
+        actions_doc = _load_yaml(controller / "actions.yaml")
+        prompts_doc = _load_yaml(controller / "prompts.yaml")
+    else:
+        try:
+            machine = documents["machine"]
+            actions_doc = documents["actions"]
+            prompts_doc = documents["prompts"]
+        except KeyError as error:
+            raise MachineValidationError(
+                [f"controller documents are missing {error.args[0]!r}"]
+            ) from error
+    machine_schema = (
+        documents.get("machine_schema")
+        if documents is not None
+        else _load_json(controller / "machine.schema.json")
+    )
+    context_schema = (
+        documents.get("context_schema")
+        if documents is not None
+        else _load_json(controller / "context.schema.json")
+    )
+    handoff_schema = (
+        documents.get("handoff_schema")
+        if documents is not None
+        else _load_json(controller / "handoff.schema.json")
+    )
+    if not isinstance(machine_schema, dict):
+        raise MachineValidationError(["machine schema document is missing or invalid"])
+    if not isinstance(context_schema, dict):
+        raise MachineValidationError(["context schema document is missing or invalid"])
+    if not isinstance(handoff_schema, dict):
+        raise MachineValidationError(["controller schema documents are missing or invalid"])
     errors: list[str] = []
 
     def check(condition: bool, message: str) -> None:

@@ -7,6 +7,8 @@ import argparse
 import json
 import statistics
 import sys
+import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -18,8 +20,12 @@ from play.controller import (
     ControllerRuntime,
     ControllerRuntimeError,
     cursor_from_dict,
+    decode_session,
+    encode_session,
     event_from_dict,
+    session_from_dict,
 )
+from play.runtime_actions import advance_until_yield
 
 
 def _read_object() -> dict[str, Any]:
@@ -45,13 +51,47 @@ def main() -> int:
     describe = subparsers.add_parser("describe")
     describe.add_argument("--json", action="store_true", dest="as_json")
 
+    start = subparsers.add_parser("start")
+    start.add_argument("--run-id", required=True)
+    start.add_argument("--task-key", required=True)
+    start.add_argument("--json", action="store_true", dest="as_json")
+
+    project = subparsers.add_parser("project")
+    project.add_argument("--stdin", action="store_true", required=True)
+    project.add_argument("--json", action="store_true", dest="as_json")
+
+    session_start = subparsers.add_parser("session-start")
+    session_start.add_argument("--stdin", action="store_true", required=True)
+    session_start.add_argument("--json", action="store_true", dest="as_json")
+
+    session_project = subparsers.add_parser("session-project")
+    session_project.add_argument("--stdin", action="store_true", required=True)
+    session_project.add_argument("--json", action="store_true", dest="as_json")
+
+    session_advance = subparsers.add_parser("session-advance")
+    session_advance.add_argument("--stdin", action="store_true", required=True)
+    session_advance.add_argument("--json", action="store_true", dest="as_json")
+
+    run_until_yield = subparsers.add_parser("run-until-yield")
+    run_until_yield.add_argument("--stdin", action="store_true", required=True)
+    run_until_yield.add_argument("--json", action="store_true", dest="as_json")
+    run_until_yield.add_argument("--max-actions", type=int, default=32)
+
     step = subparsers.add_parser("step")
     step.add_argument("--stdin", action="store_true", required=True)
     step.add_argument("--json", action="store_true", dest="as_json")
 
+    advance = subparsers.add_parser("advance")
+    advance.add_argument("--stdin", action="store_true", required=True)
+    advance.add_argument("--json", action="store_true", dest="as_json")
+
     benchmark = subparsers.add_parser("benchmark")
     benchmark.add_argument("--iterations", type=int, default=1000)
     benchmark.add_argument("--json", action="store_true", dest="as_json")
+
+    runtime_benchmark = subparsers.add_parser("benchmark-runtime")
+    runtime_benchmark.add_argument("--iterations", type=int, default=20)
+    runtime_benchmark.add_argument("--json", action="store_true", dest="as_json")
 
     args = parser.parse_args()
     try:
@@ -64,6 +104,113 @@ def main() -> int:
                 "terminals": sorted(runtime.bundle.terminals),
                 "compile_ns": runtime.compile_ns,
             }
+        elif args.command == "start":
+            cursor = runtime.initial_cursor(run_id=args.run_id, task_key=args.task_key)
+            payload = {
+                "schema": "play.runtime-start/v1",
+                "cursor": asdict(cursor),
+                "projection": runtime.project(cursor).as_dict(),
+            }
+        elif args.command == "project":
+            request = _read_object()
+            cursor_payload = request.get("cursor", request)
+            if not isinstance(cursor_payload, dict):
+                raise ControllerRuntimeError("stdin requires a cursor object")
+            payload = runtime.project(cursor_from_dict(cursor_payload)).as_dict()
+        elif args.command == "session-start":
+            request = _read_object()
+            run_id = request.get("run_id")
+            task_key = request.get("task_key")
+            original = request.get("request", {}).get("original") if isinstance(request.get("request"), dict) else None
+            if not isinstance(run_id, str) or not run_id:
+                raise ControllerRuntimeError("stdin requires a non-empty run_id")
+            if not isinstance(task_key, str) or not task_key:
+                raise ControllerRuntimeError("stdin requires a non-empty task_key")
+            if not isinstance(original, str) or not original:
+                raise ControllerRuntimeError(
+                    "stdin requires a non-empty request.original"
+                )
+            session = runtime.initial_session(
+                run_id=run_id,
+                task_key=task_key,
+                request_original=original,
+            )
+            payload = {
+                "schema": "play.runtime-session-start/v1",
+                "session_token": encode_session(session),
+                "projection": runtime.project_session(session).as_dict(),
+            }
+        elif args.command == "session-project":
+            request = _read_object()
+            session_token = request.get("session_token")
+            if not isinstance(session_token, str) or not session_token:
+                raise ControllerRuntimeError("stdin requires a session_token")
+            payload = runtime.project_session(decode_session(session_token)).as_dict()
+        elif args.command == "session-advance":
+            request = _read_object()
+            session_token = request.get("session_token")
+            event_payload = request.get("event")
+            if not isinstance(session_token, str) or not session_token:
+                raise ControllerRuntimeError("stdin requires a session_token")
+            if not isinstance(event_payload, dict):
+                raise ControllerRuntimeError("stdin requires an event object")
+            result = runtime.advance_session(
+                decode_session(session_token), event_from_dict(event_payload)
+            )
+            payload = {
+                "schema": result.schema,
+                "session_token": encode_session(result.session),
+                "step": result.step.as_dict(),
+                "projection": result.projection.as_dict(),
+            }
+        elif args.command == "run-until-yield":
+            request = _read_object()
+            session_token = request.get("session_token")
+            if isinstance(session_token, str) and session_token:
+                session = decode_session(session_token)
+            else:
+                run_id = request.get("run_id")
+                task_key = request.get("task_key")
+                request_record = request.get("request")
+                original = request_record.get("original") if isinstance(request_record, dict) else None
+                if not isinstance(run_id, str) or not run_id:
+                    raise ControllerRuntimeError("stdin requires a non-empty run_id")
+                if not isinstance(task_key, str) or not task_key:
+                    raise ControllerRuntimeError("stdin requires a non-empty task_key")
+                if not isinstance(original, str) or not original:
+                    raise ControllerRuntimeError("stdin requires a non-empty request.original")
+                session = runtime.initial_session(
+                    run_id=run_id,
+                    task_key=task_key,
+                    request_original=original,
+                )
+            event_payload = request.get("event")
+            if event_payload is not None:
+                if not isinstance(event_payload, dict):
+                    raise ControllerRuntimeError("event must be an object")
+                event = event_from_dict(event_payload)
+                if (
+                    session.cursor.state == "qualify"
+                    and event.id not in {"conversation", "play_excluded", "action_blocked"}
+                ):
+                    preflight = request.get("preflight")
+                    if not isinstance(preflight, dict):
+                        raise ControllerRuntimeError("a Play preflight object is required")
+                    session = runtime.confirm_preflight(session, preflight)
+                session = runtime.advance_session(session, event).session
+            yielded = advance_until_yield(
+                runtime,
+                session,
+                root=ROOT,
+                max_actions=args.max_actions,
+            )
+            payload = {
+                "schema": yielded.schema,
+                "session_token": encode_session(yielded.session),
+                "projection": yielded.projection,
+                "trace": [asdict(item) for item in yielded.trace],
+                "presentations": list(yielded.presentations),
+            }
         elif args.command == "step":
             request = _read_object()
             cursor_payload = request.get("cursor")
@@ -73,7 +220,16 @@ def main() -> int:
             payload = runtime.step(
                 cursor_from_dict(cursor_payload), event_from_dict(event_payload)
             ).as_dict()
-        else:
+        elif args.command == "advance":
+            request = _read_object()
+            cursor_payload = request.get("cursor")
+            event_payload = request.get("event")
+            if not isinstance(cursor_payload, dict) or not isinstance(event_payload, dict):
+                raise ControllerRuntimeError("stdin requires cursor and event objects")
+            payload = runtime.advance(
+                cursor_from_dict(cursor_payload), event_from_dict(event_payload)
+            ).as_dict()
+        elif args.command == "benchmark":
             if args.iterations < 1:
                 raise ControllerRuntimeError("iterations must be at least 1")
             durations = []
@@ -97,6 +253,38 @@ def main() -> int:
                     "p95": _percentile(durations, 0.95),
                     "max": max(durations),
                 },
+            }
+        else:
+            if args.iterations < 1:
+                raise ControllerRuntimeError("iterations must be at least 1")
+            durations = []
+            projection_bytes = []
+            token_bytes = []
+            for index in range(args.iterations):
+                started = time.perf_counter_ns()
+                session = runtime.initial_session(
+                    run_id=f"runtime-benchmark-{index}",
+                    task_key="runtime-benchmark",
+                    request_original="Review this repository implementation",
+                )
+                yielded = advance_until_yield(runtime, session, root=ROOT)
+                durations.append(time.perf_counter_ns() - started)
+                projection_bytes.append(
+                    len(json.dumps(yielded.projection, separators=(",", ":")).encode())
+                )
+                token_bytes.append(len(encode_session(yielded.session).encode()))
+            payload = {
+                "schema": "play.runtime-loop-benchmark/v1",
+                "bundle_sha256": runtime.bundle.sha256,
+                "iterations": args.iterations,
+                "compile_ns": runtime.compile_ns,
+                "run_until_yield_ns": {
+                    "median": int(statistics.median(durations)),
+                    "p95": _percentile(durations, 0.95),
+                    "max": max(durations),
+                },
+                "projection_bytes": int(statistics.median(projection_bytes)),
+                "session_token_bytes": int(statistics.median(token_bytes)),
             }
     except ControllerRuntimeError as error:
         parser.exit(1, f"play-machine: {error}\n")

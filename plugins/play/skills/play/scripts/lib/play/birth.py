@@ -694,6 +694,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "binding_ref": references[0] if len(references) == 1 else None,
                 "record": record,
                 "bindings": bindings,
+                "presentation_markdown": _render_record(sha, record, index),
             }
     except (BirthError, PrivateStoreError) as error:
         print(f"play-birth: {error}", file=sys.stderr)

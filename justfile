@@ -1,7 +1,7 @@
 check: package-check
     scripts/bin/validate-machine
     uv run scripts/bin/play-machine describe --json
-    uv run pyright scripts/lib/play/controller.py scripts/lib/play/elicitation.py scripts/lib/play/onboarding.py scripts/lib/play/public_owner.py scripts/lib/play/public_trends.py scripts/lib/play/run_output.py scripts/lib/play/publication.py scripts/lib/play/publication_gate.py scripts/lib/play/certificate.py scripts/bin/play-machine scripts/bin/play-onboarding scripts/bin/play-public-trends scripts/bin/play-public-owner scripts/bin/play-run-output scripts/bin/play-publication scripts/bin/play-publication-gate scripts/bin/play-certificate scripts/harness/install-all tests/controller/test_controller_runtime.py tests/awareness/test_public_trends.py tests/foundation/test_elicitation.py tests/foundation/test_onboarding.py tests/foundation/test_public_owner.py tests/foundation/test_run_output.py tests/foundation/test_publication.py tests/foundation/test_publication_gate.py tests/foundation/test_certificate.py tests/harness/test_install_all.py
+    uv run pyright scripts/lib/play/controller.py scripts/lib/play/runtime_context.py scripts/lib/play/runtime_actions.py scripts/lib/play/elicitation.py scripts/lib/play/onboarding.py scripts/lib/play/public_owner.py scripts/lib/play/public_trends.py scripts/lib/play/run_output.py scripts/lib/play/publication.py scripts/lib/play/publication_gate.py scripts/lib/play/certificate.py scripts/bin/play-machine scripts/bin/play-onboarding scripts/bin/play-public-trends scripts/bin/play-public-owner scripts/bin/play-run-output scripts/bin/play-publication scripts/bin/play-publication-gate scripts/bin/play-certificate scripts/harness/install-all tests/controller/test_controller_runtime.py tests/awareness/test_public_trends.py tests/foundation/test_elicitation.py tests/foundation/test_onboarding.py tests/foundation/test_public_owner.py tests/foundation/test_run_output.py tests/foundation/test_publication.py tests/foundation/test_publication_gate.py tests/foundation/test_certificate.py tests/harness/test_install_all.py
     scripts/bin/play-question choose_creator_path --harness codex --check
     scripts/bin/play-question choose_creator_path --harness claude --check
     scripts/bin/play-question choose_creator_path --harness kimi --check
@@ -54,6 +54,10 @@ test: check
 # Measure warm typed-controller transition latency without model or external I/O.
 benchmark-controller iterations="1000":
     uv run scripts/bin/play-machine benchmark --iterations {{iterations}} --json
+
+# Measure the complete deterministic invoke-to-evaluator loop and compact yield size.
+benchmark-runtime iterations="20":
+    uv run scripts/bin/play-machine benchmark-runtime --iterations {{iterations}} --json
 
 # Detect every supported local harness, install Play, and converge Rote handoffs.
 install:

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import sys
 import unittest
+from unittest.mock import patch
 from dataclasses import replace
 from pathlib import Path
 
@@ -16,7 +18,11 @@ from play.controller import (
     EventId,
     GuardId,
     StateId,
+    decode_session,
+    encode_session,
 )
+from play.runtime_actions import advance_until_yield
+from play.runtime_context import RuntimeContextError, validate_mutation_contract
 
 
 class ControllerRuntimeTest(unittest.TestCase):
@@ -46,6 +52,606 @@ class ControllerRuntimeTest(unittest.TestCase):
             self.runtime.bundle.terminals,
         )
         self.assertGreater(self.runtime.compile_ns, 0)
+
+    def test_runtime_context_fails_closed_when_mutation_contract_changes(self) -> None:
+        with self.assertRaisesRegex(RuntimeContextError, "mutations changed"):
+            validate_mutation_contract(["invented_mutation"])
+
+    def test_projects_only_the_current_state_contract(self) -> None:
+        projection = self.runtime.project(self.initial_cursor()).as_dict()
+
+        self.assertEqual("play.runtime-projection/v1", projection["schema"])
+        self.assertEqual("invoke", projection["state"]["id"])
+        self.assertEqual("deterministic_action", projection["state"]["boundary"])
+        self.assertEqual("classify_play_invocation", projection["instruction"]["id"])
+        self.assertIn("ordinary_play_invocation", projection["accepted_events"])
+        self.assertNotIn("qualify_request", str(projection))
+
+    def test_advance_returns_the_next_compact_instruction(self) -> None:
+        result = self.runtime.advance(
+            self.initial_cursor(),
+            ControllerEvent(
+                id=EventId("ordinary_play_invocation"),
+                payload={"onboarding": {"classify_ns": 1}},
+                guards={},
+            ),
+        ).as_dict()
+
+        self.assertEqual("play.runtime-advance/v1", result["schema"])
+        self.assertEqual("qualify", result["projection"]["state"]["id"])
+        self.assertEqual("evaluator_action", result["projection"]["state"]["boundary"])
+        self.assertEqual("qualify_request", result["projection"]["instruction"]["id"])
+        self.assertIn(
+            "outcome_request",
+            result["projection"]["instruction"]["preflight_required_for_events"],
+        )
+        self.assertNotIn(
+            "conversation",
+            result["projection"]["instruction"]["preflight_required_for_events"],
+        )
+
+    def test_terminal_projection_has_no_instruction(self) -> None:
+        terminal = self.runtime.step(
+            self.cursor(),
+            ControllerEvent(
+                id=EventId("conversation"),
+                payload={"reason": "ordinary repository work"},
+                guards={},
+            ),
+        ).cursor
+
+        projection = self.runtime.project(terminal).as_dict()
+        self.assertEqual("terminal", projection["state"]["boundary"])
+        self.assertIsNone(projection["instruction"])
+        self.assertEqual({}, projection["accepted_events"])
+
+    def test_session_initializes_complete_valid_context(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1",
+            task_key="task-1",
+            request_original="Find a Play for release notes",
+        )
+
+        self.assertEqual("play.context/v1", session.context["schema"])
+        self.assertEqual("invoke", session.context["state"])
+        self.assertEqual("detailed", session.context["output_policy"]["mode"])
+        self.assertEqual("unknown", session.context["candidate"]["publication_status"])
+        projection = self.runtime.project_session(session).as_dict()
+        self.assertEqual(
+            {"request": {"original": "Find a Play for release notes"}},
+            projection["instruction"]["input"],
+        )
+
+    def test_session_advance_applies_event_and_checkpoints_context(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="Repository work"
+        )
+        advanced = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("ordinary_play_invocation"),
+                payload={"onboarding": {"classify_ns": 42}},
+                guards={},
+            ),
+        )
+
+        self.assertEqual("qualify", advanced.session.context["state"])
+        self.assertEqual(1, advanced.session.context["transition_seq"])
+        self.assertEqual(42, advanced.session.context["onboarding"]["classify_ns"])
+        self.assertEqual("ordinary_play_invocation", advanced.session.context["last_event"]["id"])
+        self.assertIsNotNone(advanced.projection.instruction)
+        assert advanced.projection.instruction is not None
+        self.assertEqual(
+            {"request": {"original": "Repository work"}},
+            advanced.projection.instruction["input"],
+        )
+
+    def test_session_token_round_trips_without_exposing_full_context(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="Repository work"
+        )
+        token = encode_session(session)
+
+        self.assertLess(len(token), 5000)
+        self.assertNotIn("Repository work", token)
+        restored = decode_session(token)
+        self.assertEqual(session, restored)
+
+    def test_session_token_rejects_corruption(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="Repository work"
+        )
+        token = encode_session(session)
+        corrupted = token[:-1] + ("0" if token[-1] != "0" else "1")
+
+        with self.assertRaisesRegex(ControllerRuntimeError, "invalid runtime session token"):
+            decode_session(corrupted)
+
+    def test_session_requires_ready_preflight_only_for_play_trajectory(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="Find release notes"
+        )
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("ordinary_play_invocation"),
+                payload={"onboarding": {"classify_ns": 1}},
+                guards={},
+            ),
+        ).session
+        event = ControllerEvent(
+            id=EventId("outcome_request"),
+            payload={
+                "request": {"intent": "release notes", "requested_outcome": "notes"},
+                "modality_policy": session.context["modality_policy"],
+            },
+            guards={},
+        )
+
+        with self.assertRaisesRegex(ControllerRuntimeError, "ready Play preflight"):
+            self.runtime.advance_session(session, event)
+
+        ready = self.runtime.confirm_preflight(
+            session, {"schema": "play.preflight/v1", "ready": True}
+        )
+        advanced = self.runtime.advance_session(ready, event)
+        self.assertEqual("search", advanced.session.cursor.state)
+
+    def test_session_exit_does_not_require_preflight(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="Repository work"
+        )
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("ordinary_play_invocation"),
+                payload={"onboarding": {"classify_ns": 1}},
+                guards={},
+            ),
+        ).session
+
+        exited = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("conversation"),
+                payload={"reason": "repository work"},
+                guards={},
+            ),
+        )
+        self.assertEqual("exited", exited.session.cursor.state)
+
+    def test_advance_until_yield_executes_lexical_invocation_without_model(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1",
+            task_key="task-1",
+            request_original="Refactor the repository controller",
+        )
+
+        yielded = advance_until_yield(self.runtime, session, root=ROOT)
+
+        self.assertEqual("qualify", yielded.projection["state"]["id"])
+        self.assertEqual("evaluator_action", yielded.projection["state"]["boundary"])
+        self.assertEqual(1, len(yielded.trace))
+        self.assertEqual("classify_play_invocation", yielded.trace[0].action)
+        self.assertEqual("ordinary_play_invocation", yielded.trace[0].event)
+
+    def test_advance_until_yield_accepts_boundary_on_action_limit(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="Repository work"
+        )
+
+        yielded = advance_until_yield(self.runtime, session, root=ROOT, max_actions=1)
+
+        self.assertEqual("qualify", yielded.projection["state"]["id"])
+
+    def test_advance_until_yield_auto_presents_context_backed_results(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="Search Plays"
+        )
+        context = dict(session.context)
+        context["state"] = "search_present"
+        context["search"] = {
+            "complete": True,
+            "query": "release notes",
+            "sources": ["local", "registry"],
+            "result_refs": [],
+            "results": [],
+            "play_choices": [],
+        }
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("search_present")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("search_offer", yielded.projection["state"]["id"])
+        self.assertEqual("prompt", yielded.projection["state"]["boundary"])
+        self.assertEqual("present_search_results", yielded.trace[0].action)
+        self.assertEqual("search_presented", yielded.trace[0].event)
+        self.assertEqual(1, len(yielded.presentations))
+        self.assertIn("Search: `release notes`", yielded.presentations[0])
+
+    def test_session_applies_consent_mutation_before_explore(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="Explore a result"
+        )
+        context = dict(session.context)
+        context["state"] = "explore_offer"
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("explore_offer")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        advanced = self.runtime.advance_session(
+            projected,
+            ControllerEvent(
+                id=EventId("explore_approved"),
+                payload={"prompt_version": "1", "selected_at": "2026-08-07T00:00:00Z"},
+                guards={},
+            ),
+        )
+
+        self.assertEqual("explore_welcome", advanced.session.cursor.state)
+        self.assertEqual("approved", advanced.session.context["consent"]["explore"])
+        self.assertEqual("explore", advanced.session.context["mode"])
+
+    def test_session_maps_onboarding_starter_into_use_reference(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="$play"
+        )
+        context = dict(session.context)
+        context["state"] = "onboarding_first_offer"
+        context["onboarding"] = dict(context["onboarding"])
+        context["onboarding"]["orientation_status"] = "recorded"
+        context["onboarding"]["starter_reference"] = "modiqo/hello@0.1.0"
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("onboarding_first_offer")),
+            context=context,
+            preflight_ready=False,
+        )
+
+        advanced = self.runtime.advance_session(
+            projected,
+            ControllerEvent(
+                id=EventId("onboarding_starter_selected"),
+                payload={
+                    "prompt_version": "1",
+                    "selected_at": "2026-08-07T00:00:00Z",
+                    "onboarding": {"starter_reference": "modiqo/hello@0.1.0"},
+                },
+                guards={},
+            ),
+        )
+
+        self.assertEqual("use_inspect", advanced.session.cursor.state)
+        self.assertEqual("modiqo/hello@0.1.0", advanced.session.context["match"]["reference"])
+        self.assertEqual("selected", advanced.session.context["onboarding"]["starter_status"])
+
+    def test_session_derives_onboarding_guards_from_context(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="$play"
+        )
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("empty_play_invocation"),
+                payload={"onboarding": {"intent": "greeting", "classify_ns": 1}},
+                guards={},
+            ),
+        ).session
+
+        advanced = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("rote_available"),
+                payload={
+                    "onboarding": {
+                        "rote_status": "installed",
+                        "rote_command": "/tmp/rote",
+                        "rote_off_path": False,
+                        "probe_ns": 1,
+                    }
+                },
+                guards={GuardId("onboarding_is_play_uri"): True},
+            ),
+        )
+
+        self.assertEqual("onboarding_identity", advanced.session.cursor.state)
+
+    def test_session_binds_uri_before_onboarding_probe_routes_to_inspection(self) -> None:
+        uri = "https://play.modiqo.ai/modiqo/hello"
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original=uri
+        )
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("play_uri_invocation"),
+                payload={
+                    "onboarding": {"intent": "play_uri", "play_uri": uri, "classify_ns": 1},
+                    "match": {"reference": uri},
+                },
+                guards={},
+            ),
+        ).session
+        advanced = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("rote_available"),
+                payload={
+                    "onboarding": {
+                        "rote_status": "installed",
+                        "rote_command": "/tmp/rote",
+                        "rote_off_path": False,
+                        "probe_ns": 1,
+                    }
+                },
+                guards={},
+            ),
+        )
+
+        self.assertEqual("use_inspect", advanced.session.cursor.state)
+        self.assertEqual(uri, advanced.session.context["match"]["reference"])
+
+    def test_advance_until_yield_builds_a_content_bound_receipt(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="Run a Play"
+        )
+        context = dict(session.context)
+        context["state"] = "use_receipt"
+        context["match"] = dict(context["match"])
+        context["match"]["reference"] = "modiqo/hello@0.1.0"
+        context["evidence"] = dict(context["evidence"])
+        context["evidence"]["verification"] = "verify:1"
+        context["output"] = dict(context["output"])
+        context["output"]["presentation_markdown"] = "# Hello"
+        context["output"]["presentation_sha256"] = "a" * 64
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("use_receipt")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("receipt", yielded.projection["state"]["id"])
+        self.assertEqual("terminal", yielded.projection["state"]["boundary"])
+        self.assertEqual("build_receipt", yielded.trace[0].action)
+        self.assertTrue(yielded.session.context["receipt_ref"].startswith("sha256:"))
+
+    @patch("play.runtime_actions.subprocess.run")
+    def test_advance_until_yield_auto_inspects_before_approval(self, run) -> None:
+        run.return_value.returncode = 0
+        run.return_value.stderr = ""
+        run.return_value.stdout = json.dumps(
+            {
+                "schema": "play.run-disclosure/v1",
+                "complete": True,
+                "exact_reference": "modiqo/hello@0.1.0",
+                "description": "Hello",
+                "local_change": "none",
+                "dependencies": {"adapter_checks": []},
+                "operations": [],
+                "effects": {"summary": "No declared writes."},
+                "blockers": [],
+                "disclosure_sha256": "a" * 64,
+                "identity": {
+                    "name": "hello",
+                    "description": "Hello",
+                    "visibility": "public",
+                },
+                "parameters": [],
+                "preflight": {
+                    "run_eligible": True,
+                    "play_local_state": "exact_ready",
+                    "decision": "ready",
+                    "blockers": [],
+                },
+                "approval": {"notice": "Nothing has run."},
+            }
+        )
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="Run Hello"
+        )
+        context = dict(session.context)
+        context["state"] = "use_inspect"
+        context["mode"] = "use"
+        context["match"] = dict(context["match"])
+        context["match"]["reference"] = "modiqo/hello"
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("use_inspect")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("use_offer", yielded.projection["state"]["id"])
+        self.assertEqual("prompt", yielded.projection["state"]["boundary"])
+        self.assertEqual("inspect_registry_play", yielded.trace[0].action)
+        self.assertEqual("play_inspected", yielded.trace[0].event)
+        self.assertEqual(1, len(yielded.presentations))
+        self.assertIn("#", yielded.presentations[0])
+
+    @patch("play.runtime_actions.subprocess.run")
+    def test_advance_until_yield_collects_and_presents_awareness(self, run) -> None:
+        run.return_value.returncode = 0
+        run.return_value.stderr = ""
+        run.return_value.stdout = json.dumps(
+            {
+                "complete": True,
+                "window": {"start": "2026-08-06", "end": "2026-08-07"},
+                "organizations": [],
+                "org_updates": {"new": [], "revised": [], "revised_complete": True},
+                "public_top": [],
+                "public_groups": [],
+                "ranking": {
+                    "label": "Authorized public Plays by lifetime downloads",
+                    "complete": True,
+                },
+                "personal_stats": {"reason": "verified run counts unavailable"},
+                "memory": {"status": "changed"},
+            }
+        )
+        session = self.runtime.initial_session(
+            run_id="session-1", task_key="task-1", request_original="What's new?"
+        )
+        context = dict(session.context)
+        context["state"] = "awareness_collect"
+        context["mode"] = "awareness"
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("awareness_collect")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("awareness_offer", yielded.projection["state"]["id"])
+        self.assertEqual("prompt", yielded.projection["state"]["boundary"])
+        self.assertEqual(
+            ["collect_awareness_digest", "present_awareness_digest"],
+            [item.action for item in yielded.trace],
+        )
+        self.assertEqual(1, len(yielded.presentations))
+        self.assertIn("What’s new in Plays", yielded.presentations[0])
+
+    def test_session_completes_the_use_contract_without_model_owned_context(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-use", task_key="task-use", request_original="Run Hello"
+        )
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("ordinary_play_invocation"),
+                payload={"onboarding": {"classify_ns": 1}},
+                guards={},
+            ),
+        ).session
+        session = self.runtime.confirm_preflight(
+            session, {"schema": "play.preflight/v1", "ready": True}
+        )
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("exact_play_request"),
+                payload={
+                    "request": {
+                        "intent": "run hello",
+                        "requested_outcome": "hello result",
+                        "parameters": {},
+                    },
+                    "match": {"reference": "modiqo/hello"},
+                    "modality_policy": session.context["modality_policy"],
+                },
+                guards={},
+            ),
+        ).session
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("play_inspected"),
+                payload={
+                    "inspection": {
+                        "complete": True,
+                        "exact_reference": "modiqo/hello@0.1.0",
+                        "description": "Hello",
+                        "local_change": "none",
+                        "dependencies": {},
+                        "operations": [],
+                        "effects": {},
+                        "disclosure_sha256": "a" * 64,
+                    }
+                },
+                guards={},
+            ),
+        ).session
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("play_run_approved"),
+                payload={
+                    "prompt_version": "1",
+                    "selected_at": "2026-08-07T00:00:00Z",
+                    "inspection": {
+                        "exact_reference": "modiqo/hello@0.1.0",
+                        "disclosure_sha256": "a" * 64,
+                    },
+                    "request": {"parameters": {}},
+                },
+                guards={},
+            ),
+        ).session
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("play_run_ready"),
+                payload={
+                    "play": {"version": "0.1.0"},
+                    "resolution": {"local_state": "exact_ready", "pull_performed": False},
+                    "result_ref": "result:1",
+                    "response_refs": ["response:1"],
+                    "artifact_refs": [],
+                    "effects": ["read"],
+                    "output": {
+                        "mode": "detailed",
+                        "detail": "full",
+                        "source": "rote_human_presentation",
+                        "format": "markdown",
+                        "primary": "# Hello",
+                        "manifest": {
+                            "response_refs": ["response:1"],
+                            "artifact_refs": [],
+                            "effects": ["read"],
+                        },
+                        "truncated": False,
+                        "full_output_ref": None,
+                    },
+                },
+                guards={},
+            ),
+        ).session
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("detailed_output_ready"),
+                payload={
+                    "output": {
+                        "presentation_markdown": "# Hello",
+                        "presentation_sha256": "b" * 64,
+                        "inline_bytes": 7,
+                        "primary_bytes": 7,
+                        "format_ns": 1,
+                        "truncated": False,
+                        "full_output_ref": None,
+                    }
+                },
+                guards={},
+            ),
+        ).session
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("outcome_verified"),
+                payload={"postconditions": ["hello returned"], "evidence_refs": ["verify:1"]},
+                guards={},
+            ),
+        ).session
+
+        yielded = advance_until_yield(self.runtime, session, root=ROOT)
+
+        self.assertEqual("receipt", yielded.projection["state"]["id"])
+        self.assertEqual("verify:1", yielded.session.context["evidence"]["verification"])
+        self.assertTrue(yielded.session.context["receipt_ref"].startswith("sha256:"))
 
     def test_executes_an_unconditional_transition(self) -> None:
         result = self.runtime.step(

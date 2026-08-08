@@ -6,8 +6,9 @@ import argparse
 import json
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
-from typing import Sequence
+from typing import Any, Sequence
 
 
 SCHEMA = "play.preflight/v1"
@@ -61,8 +62,11 @@ def inspect(harness: str) -> dict[str, object]:
             ]
         )
     else:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            identity_future = executor.submit(run, [executable, "whoami"])
+            capability_future = executor.submit(run, [executable, "play", "--help"])
         try:
-            identity = run([executable, "whoami"])
+            identity = identity_future.result()
             identity_text = (identity.stdout or identity.stderr).strip()
             authenticated = identity.returncode == 0 and bool(identity_text)
         except (OSError, subprocess.TimeoutExpired) as error:
@@ -77,7 +81,7 @@ def inspect(harness: str) -> dict[str, object]:
         )
 
         try:
-            capability = run([executable, "play", "--help"])
+            capability = capability_future.result()
             capability_text = (capability.stdout or capability.stderr).strip()
             has_play = capability.returncode == 0 and "rote play" in capability_text.lower()
         except (OSError, subprocess.TimeoutExpired) as error:
@@ -104,7 +108,7 @@ def inspect(harness: str) -> dict[str, object]:
     }
 
 
-def render(payload: dict[str, object]) -> str:
+def render(payload: dict[str, Any]) -> str:
     if payload["ready"]:
         return "Play prerequisite ready: Rote is installed, authenticated, and supports Plays."
     lines = ["Play needs Rote setup before it can continue:"]
