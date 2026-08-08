@@ -457,6 +457,15 @@ def validate_bundle(
         "ordinary requests must preserve normal Play qualification",
     )
     check(
+        _target(states, "invoke", "outcome_play_invocation") == "search",
+        "unambiguous outcomes must bypass model qualification",
+    )
+    check(
+        _target(states, "use_decide", "play_parameter_required")
+        == "use_parameter_offer",
+        "missing required Play parameters must reach typed elicitation",
+    )
+    check(
         actions.get("probe_rote_for_onboarding", {}).get("command")
         == "scripts/bin/play-onboarding probe --json",
         "onboarding must probe the live Rote binary before invoking it",

@@ -302,7 +302,7 @@ Baseline recorded on 2026-08-07 on an Apple Silicon Mac with Python 3.14.5 and
 | Qualifier projection | 2,024 bytes |
 | Opaque continuation ID | 24 bytes |
 
-The 80-state bundle remains sub-millisecond at p95 for warm transitions. Search adequacy and local
+The 81-state bundle remains sub-millisecond at p95 for warm transitions. Search adequacy and local
 versus remote routing are deterministic: adequate results are ordered local, private organization,
 then public hub; selected search payloads are pruned before the next continuation is stored.
 Loading validated
@@ -791,6 +791,9 @@ performs exactly one `rote play run <canonical-uri-or-exact-reference> <approved
 and emits the typed controller event. It does not delegate execution to a prose skill, rediscover
 the Play, resolve a local path, replay the command to capture output, or ask the harness to construct
 a receipt.
+Unambiguous outcome verbs route directly from invocation to parallel Play search without a model
+qualification or harness preflight round trip. Canonical URIs accept explicit `key=value`
+parameters; inspection deterministically elicits any remaining required values before pull consent.
 It uses `rote play` for local Play operations and `rote registry play` for registry distribution and
 registry-scoped discovery. It never uses legacy Flow command aliases or decomposes a failed Play
 operation into a manual pull-plus-run fallback.

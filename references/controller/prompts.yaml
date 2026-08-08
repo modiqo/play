@@ -116,6 +116,14 @@ prompts:
       play_run_approved: [prompt_version, selected_at, inspection.exact_reference, inspection.disclosure_sha256, request.parameters]
       play_run_declined: [prompt_version, selected_at]
 
+  supply_play_parameter:
+    question: What value should I use for {parameter_input.label}?
+    template_fields: [parameter_input.label]
+    selection: text
+    input: {id: value, label: Parameter value, event: play_parameter_supplied}
+    events:
+      play_parameter_supplied: [prompt_version, selected_at, parameter_input.name, parameter_input.value]
+
   explore_or_exit:
     question: >
       I couldn't find a Play that adequately covers this. Would you like me to explore with rote

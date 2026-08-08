@@ -12,6 +12,7 @@ states:
     "on":
       empty_play_invocation: [{target: onboarding_probe, mutate: start_greeting_onboarding}]
       play_uri_invocation: [{target: onboarding_probe, mutate: start_uri_onboarding}]
+      outcome_play_invocation: [{target: search, mutate: set_request_contract}]
       ordinary_play_invocation: [{target: qualify, mutate: record_ordinary_invocation}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -311,9 +312,18 @@ states:
     requires: [inspection.complete, inspection.local_change, inspection.exact_reference, inspection.disclosure_sha256]
     entry: {action: route_inspected_play}
     "on":
+      play_parameter_required: [{target: use_parameter_offer, mutate: record_parameter_request}]
       local_play_ready: [{target: use_prepare, mutate: approve_inspected_run}]
       remote_pull_required: [{target: use_offer, mutate: record_play_inspection}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  use_parameter_offer:
+    owner: play
+    checkpoint: after
+    requires: [parameter_input.name, parameter_input.label, parameter_input.type]
+    prompt: supply_play_parameter
+    "on":
+      play_parameter_supplied: [{target: use_decide, mutate: record_parameter_value}]
 
   use_offer:
     owner: play

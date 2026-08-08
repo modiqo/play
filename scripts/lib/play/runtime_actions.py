@@ -336,6 +336,32 @@ def _commandless_result(
             "confidence": float(candidate.get("coverage", 0.0)),
         }
     if action_id == "route_inspected_play":
+        inspection_parameters = _path_value(context, "inspection.parameters")
+        supplied_parameters = _path_value(context, "request.parameters")
+        if not isinstance(inspection_parameters, list) or not isinstance(
+            supplied_parameters, Mapping
+        ):
+            raise ControllerRuntimeError("Play parameter context is malformed")
+        for parameter in inspection_parameters:
+            if not isinstance(parameter, Mapping):
+                raise ControllerRuntimeError("Play parameter declaration is malformed")
+            name = parameter.get("name")
+            if not isinstance(name, str) or not name:
+                raise ControllerRuntimeError("Play parameter name is missing")
+            if (
+                parameter.get("required") is True
+                and parameter.get("has_default") is not True
+                and name not in supplied_parameters
+            ):
+                return {
+                    "event": "play_parameter_required",
+                    "parameter_input": {
+                        "name": name,
+                        "label": str(parameter.get("label") or name),
+                        "type": str(parameter.get("type") or "string"),
+                        "description": str(parameter.get("description") or ""),
+                    },
+                }
         local_change = _path_value(context, "inspection.local_change")
         return {
             "event": (
@@ -406,11 +432,31 @@ def _failure_result_event(action_id: str, raw: Mapping[str, Any]) -> str | None:
 def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, Any]:
     derived = dict(raw)
     if event_id == "empty_play_invocation":
-        derived["onboarding"] = {"intent": "greeting"}
+        derived["onboarding"] = {
+            "intent": "greeting",
+            "classify_ns": raw.get("classify_ns"),
+        }
     elif event_id == "play_uri_invocation":
         play_uri = raw.get("play_uri")
-        derived["onboarding"] = {"intent": "play_uri", "play_uri": play_uri}
+        derived["onboarding"] = {
+            "intent": "play_uri",
+            "play_uri": play_uri,
+            "classify_ns": raw.get("classify_ns"),
+        }
         derived["match"] = {"reference": play_uri}
+        derived["request"] = {"parameters": dict(raw.get("parameters", {}))}
+    elif event_id == "outcome_play_invocation":
+        intent = raw.get("intent")
+        derived["onboarding"] = {"classify_ns": raw.get("classify_ns")}
+        derived["request"] = {"intent": intent, "requested_outcome": intent}
+        derived["modality_policy"] = {
+            "mode": "auto",
+            "allowed": ["call", "shell", "drive"],
+            "forbidden": [],
+            "widening_requires_approval": True,
+        }
+    elif event_id == "ordinary_play_invocation":
+        derived["onboarding"] = {"classify_ns": raw.get("classify_ns")}
     elif event_id == "play_reference_unresolved":
         error = raw.get("error")
         if isinstance(error, Mapping):
@@ -512,6 +558,7 @@ def _select_event(
         return {
             "greeting": "empty_play_invocation",
             "play_uri": "play_uri_invocation",
+            "outcome": "outcome_play_invocation",
             "ordinary": "ordinary_play_invocation",
         }.get(str(raw.get("invocation_kind")), "action_blocked")
     if action_id == "probe_rote_for_onboarding":

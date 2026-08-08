@@ -15,7 +15,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "fd53662267cc89e0d2332b037a5f0c8a66da5e143f2ef50b7f189a0f65843e8d"
+SUPPORTED_MUTATION_SET_SHA256 = "d6e307be9095615d7e83a0e63eef28e523d3d6922ca57dcbe67c7b0718b155b2"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -65,12 +65,20 @@ def initial_context(
             "complete": False,
             "exact_reference": None,
             "description": "",
+            "parameters": [],
             "local_change": None,
             "dependencies": {},
             "operations": [],
             "effects": {},
             "blockers": [],
             "disclosure_sha256": None,
+        },
+        "parameter_input": {
+            "name": None,
+            "label": None,
+            "type": None,
+            "description": None,
+            "value": None,
         },
         "resolution": {
             "local_state": "unknown",
@@ -433,7 +441,22 @@ def _apply_mutation_semantics(
     elif mutation == "enter_onboarding_uri_use":
         reference = context["match"].get("reference")
         if isinstance(reference, str) and reference:
-            _bind_direct_play_request(context, reference)
+            _bind_direct_play_request(
+                context, reference, parameters=context["request"]["parameters"]
+            )
+    elif mutation == "record_parameter_request":
+        parameter = payload.get("parameter_input")
+        if isinstance(parameter, Mapping):
+            context["parameter_input"].update(copy.deepcopy(dict(parameter)))
+            context["parameter_input"]["value"] = None
+    elif mutation == "record_parameter_value":
+        parameter = payload.get("parameter_input")
+        if isinstance(parameter, Mapping):
+            name = parameter.get("name")
+            value = parameter.get("value")
+            if isinstance(name, str) and name and isinstance(value, str) and value:
+                context["request"]["parameters"][name] = value
+                context["parameter_input"]["value"] = value
     elif mutation == "approve_adapt_explore":
         reference = _path_value(payload, "match.reference")
         if isinstance(reference, str) and reference:
@@ -462,14 +485,16 @@ def _apply_mutation_semantics(
         context["execution"]["attempts"] += 1
 
 
-def _bind_direct_play_request(context: dict[str, Any], reference: str) -> None:
+def _bind_direct_play_request(
+    context: dict[str, Any], reference: str, *, parameters: Mapping[str, Any] | None = None
+) -> None:
     """Complete the request contract for a lexically exact Play selection."""
 
     context["request"]["intent"] = f"run {reference}"
     context["request"]["requested_outcome"] = (
         f"Run {reference} and return its complete output."
     )
-    context["request"]["parameters"] = {}
+    context["request"]["parameters"] = copy.deepcopy(dict(parameters or {}))
 
 
 def _set_existing_path(context: dict[str, Any], path: str, value: Any) -> None:

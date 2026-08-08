@@ -47,7 +47,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(80, len(self.runtime.bundle.states))
+        self.assertEqual(81, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -295,6 +295,211 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual(1, len(yielded.trace))
         self.assertEqual("classify_play_invocation", yielded.trace[0].action)
         self.assertEqual("ordinary_play_invocation", yielded.trace[0].event)
+
+    @patch("play.runtime_actions.subprocess.run")
+    def test_retrieve_outcome_reaches_remote_choice_without_model_or_preflight(
+        self, run
+    ) -> None:
+        candidate = {
+            "name": "retrieve-rideshare-receipts",
+            "description": "Retrieve rideshare receipts",
+            "reference": "modiqo/retrieve-rideshare-receipts@0.1.0",
+            "exact_reference": "modiqo/retrieve-rideshare-receipts@0.1.0",
+            "version": "0.1.0",
+            "status": "approved",
+            "sources": ["remote_public"],
+            "score": 1.0,
+            "coverage": 1.0,
+            "match_classification": "full",
+            "primary_scope": "remote_public",
+            "uri": "https://play.modiqo.ai/modiqo/retrieve-rideshare-receipts@0.1.0",
+            "run_command": "unused",
+            "inspect_command": "unused",
+            "hint_kind": "play",
+            "local_availability": "not_found",
+            "execution_resolution": "pull_required",
+            "selection_description": "Remote public match; pulling requires approval.",
+        }
+        run.side_effect = [
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "invocation_kind": "outcome",
+                        "intent": "retrieve rideshare receipts",
+                        "classify_ns": 1,
+                    }
+                ),
+            ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "complete": True,
+                        "query": "retrieve rideshare receipts",
+                        "sources": ["local", "remote_private", "remote_public"],
+                        "result_refs": [candidate["reference"]],
+                        "results": [candidate],
+                        "play_choices": [
+                            {
+                                "reference": candidate["reference"],
+                                "label": "retrieve-rideshare-receipts — public",
+                                "description": candidate["selection_description"],
+                                "parameters": {},
+                            }
+                        ],
+                    }
+                ),
+            ),
+        ]
+        session = self.runtime.initial_session(
+            run_id="rideshare-fast-path",
+            task_key="rideshare-fast-path",
+            request_original="retrieve rideshare receipts",
+        )
+
+        yielded = advance_until_yield(self.runtime, session, root=ROOT)
+
+        self.assertEqual("search_offer", yielded.projection["state"]["id"])
+        self.assertEqual("human", yielded.projection["state"]["boundary"])
+        self.assertEqual(
+            [
+                "classify_play_invocation",
+                "search_authorized_plays",
+                "classify_adequacy",
+                "present_search_results",
+            ],
+            [item.action for item in yielded.trace],
+        )
+        self.assertNotIn("qualify_request", str(yielded.projection))
+
+    @patch("play.runtime_actions.subprocess.run")
+    def test_uri_collects_missing_required_parameters_before_pull_consent(
+        self, run
+    ) -> None:
+        uri = "https://play.modiqo.ai/modiqo/retrieve-rideshare-receipts"
+        disclosure = {
+            "complete": True,
+            "exact_reference": "modiqo/retrieve-rideshare-receipts@0.1.0",
+            "description": "Retrieve rideshare receipts",
+            "identity": {
+                "name": "retrieve-rideshare-receipts",
+                "description": "Retrieve rideshare receipts",
+                "visibility": "public",
+            },
+            "parameters": [
+                {
+                    "name": "start_date",
+                    "label": "Start date",
+                    "type": "string",
+                    "required": True,
+                    "description": "Inclusive YYYY-MM-DD date",
+                    "has_default": False,
+                    "default": None,
+                },
+                {
+                    "name": "end_date",
+                    "label": "End date",
+                    "type": "string",
+                    "required": True,
+                    "description": "Inclusive YYYY-MM-DD date",
+                    "has_default": False,
+                    "default": None,
+                },
+            ],
+            "local_change": "install",
+            "dependencies": {"adapter_checks": []},
+            "operations": [],
+            "effects": {"summary": "No declared writes."},
+            "blockers": [],
+            "disclosure_sha256": "a" * 64,
+            "preflight": {
+                "run_eligible": True,
+                "play_local_state": "missing",
+                "decision": "install_required",
+                "blockers": [],
+            },
+            "approval": {"notice": "Nothing has run."},
+        }
+        run.side_effect = [
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "invocation_kind": "play_uri",
+                        "play_uri": uri,
+                        "parameters": {},
+                        "classify_ns": 1,
+                    }
+                ),
+            ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {"rote_status": "installed", "rote_command": "/usr/bin/rote"}
+                ),
+            ),
+            SimpleNamespace(returncode=0, stderr="", stdout=json.dumps(disclosure)),
+        ]
+        session = self.runtime.initial_session(
+            run_id="rideshare-parameters",
+            task_key="rideshare-parameters",
+            request_original=uri,
+        )
+
+        first = advance_until_yield(self.runtime, session, root=ROOT)
+        self.assertEqual("use_parameter_offer", first.projection["state"]["id"])
+        self.assertEqual("start_date", first.session.context["parameter_input"]["name"])
+        self.assertEqual(
+            "What value should I use for Start date?",
+            first.projection["instruction"]["question"],
+        )
+        self.assertNotIn("template_fields", first.projection["instruction"])
+
+        supplied_start = self.runtime.advance_session(
+            first.session,
+            ControllerEvent(
+                id=EventId("play_parameter_supplied"),
+                payload={
+                    "prompt_version": "supply_play_parameter",
+                    "selected_at": "2026-08-08T00:00:00Z",
+                    "parameter_input": {
+                        "name": "start_date",
+                        "value": "2026-07-01",
+                    },
+                },
+                guards={},
+            ),
+        ).session
+        second = advance_until_yield(self.runtime, supplied_start, root=ROOT)
+        self.assertEqual("use_parameter_offer", second.projection["state"]["id"])
+        self.assertEqual("end_date", second.session.context["parameter_input"]["name"])
+
+        supplied_end = self.runtime.advance_session(
+            second.session,
+            ControllerEvent(
+                id=EventId("play_parameter_supplied"),
+                payload={
+                    "prompt_version": "supply_play_parameter",
+                    "selected_at": "2026-08-08T00:00:01Z",
+                    "parameter_input": {
+                        "name": "end_date",
+                        "value": "2026-07-31",
+                    },
+                },
+                guards={},
+            ),
+        ).session
+        consent = advance_until_yield(self.runtime, supplied_end, root=ROOT)
+        self.assertEqual("use_offer", consent.projection["state"]["id"])
+        self.assertEqual(
+            {"start_date": "2026-07-01", "end_date": "2026-07-31"},
+            consent.session.context["request"]["parameters"],
+        )
 
     @patch("play.runtime_actions.subprocess.run")
     def test_run_hello_executes_and_receipts_without_model_or_search(self, run) -> None:
@@ -675,6 +880,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 payload={
                     "onboarding": {"intent": "play_uri", "play_uri": uri, "classify_ns": 1},
                     "match": {"reference": uri},
+                    "request": {"parameters": {}},
                 },
                 guards={},
             ),
@@ -1070,6 +1276,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                         "complete": True,
                         "exact_reference": "modiqo/hello@0.1.0",
                         "description": "Hello",
+                        "parameters": [],
                         "local_change": "none",
                         "dependencies": {},
                         "operations": [],

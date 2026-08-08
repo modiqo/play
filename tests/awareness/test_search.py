@@ -58,16 +58,15 @@ class SearchTest(unittest.TestCase):
         ]
         results = PLAY_SEARCH.merge_results(local, registry, flow_root, 10, "live service status")
         self.assertEqual(1, len(results))
-        local_path = str(flow_root / "warsaw-rust" / "hello" / "main.ts")
-        self.assertEqual(local_path, results[0]["reference"])
+        self.assertEqual("warsaw-rust/hello", results[0]["reference"])
         self.assertEqual("0.1.0", results[0]["version"])
         self.assertEqual(["local", "remote_private"], results[0]["sources"])
         self.assertEqual(
-            pathlib.Path(local_path).resolve(strict=False).as_uri(), results[0]["uri"]
+            "https://play.modiqo.ai/warsaw-rust/hello", results[0]["uri"]
         )
-        self.assertEqual(f"rote play run {local_path}", results[0]["run_command"])
+        self.assertEqual("rote play run warsaw-rust/hello", results[0]["run_command"])
         self.assertEqual(
-            f"rote play inspect {local_path} --json",
+            "rote play inspect warsaw-rust/hello --json",
             results[0]["inspect_command"],
         )
         self.assertEqual("found", results[0]["local_availability"])
@@ -96,7 +95,36 @@ class SearchTest(unittest.TestCase):
         self.assertEqual("remote_private", results[0]["primary_scope"])
         self.assertIn("pulling requires your approval", results[0]["selection_description"])
 
-    def test_local_only_canonical_path_is_not_claimed_as_registry_runnable(self):
+    def test_unaddressable_private_record_does_not_abort_other_matches(self):
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []},
+            [
+                {
+                    "owner_slug": None,
+                    "skill_name": "retrieve-rideshare-receipts",
+                    "skill_description": "Retrieve rideshare receipts",
+                    "version": "0.0.6",
+                    "storage_path": "organization_hidden/retrieve/0.0.6/item.flow",
+                },
+                {
+                    "owner_slug": "modiqo",
+                    "skill_name": "retrieve-rideshare-receipts",
+                    "skill_description": "Retrieve rideshare receipts",
+                    "version": "0.1.0",
+                    "storage_path": "community_public/retrieve/0.1.0/item.flow",
+                },
+            ],
+            pathlib.Path("/tmp/example-flows"),
+            10,
+            "rideshare receipts",
+        )
+        self.assertEqual(1, len(results))
+        self.assertEqual(
+            "modiqo/retrieve-rideshare-receipts@0.1.0",
+            results[0]["exact_reference"],
+        )
+
+    def test_local_dag_path_is_exposed_only_as_canonical_reference(self):
         flow_root = pathlib.Path("/tmp/example-flows")
         results = PLAY_SEARCH.merge_results(
             {
@@ -115,16 +143,37 @@ class SearchTest(unittest.TestCase):
             "local report",
         )
         self.assertEqual(
-            str(flow_root / "alpha" / "local-report" / "main.ts"),
+            "alpha/local-report",
             results[0]["reference"],
         )
-        self.assertEqual("local-play", results[0]["hint_kind"])
+        self.assertEqual("play", results[0]["hint_kind"])
         self.assertEqual("run_local", results[0]["execution_resolution"])
-        self.assertTrue(results[0]["uri"].startswith("file://"))
         self.assertEqual(
-            f"rote play run {flow_root / 'alpha' / 'local-report' / 'main.ts'}",
+            "https://play.modiqo.ai/alpha/local-report", results[0]["uri"]
+        )
+        self.assertEqual(
+            "rote play run alpha/local-report",
             results[0]["run_command"],
         )
+
+    def test_legacy_local_path_without_owner_is_not_offered_for_execution(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        results = PLAY_SEARCH.merge_results(
+            {
+                "flows": [
+                    {
+                        "name": "legacy-report",
+                        "path": str(flow_root / "legacy-report" / "main.ts"),
+                        "description": "Legacy report",
+                    }
+                ]
+            },
+            [],
+            flow_root,
+            10,
+            "legacy report",
+        )
+        self.assertEqual([], results)
 
     def test_local_and_registry_searches_start_in_parallel(self):
         barrier = threading.Barrier(2)
@@ -161,7 +210,7 @@ class SearchTest(unittest.TestCase):
         local = {
             "flows": [{
                 "name": "local-receipts",
-                "path": str(flow_root / "local-receipts" / "main.ts"),
+                "path": str(flow_root / "local" / "local-receipts" / "main.ts"),
                 "description": description,
                 "score": 0.1,
             }]

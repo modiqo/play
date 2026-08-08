@@ -14,6 +14,7 @@ from typing import Any, Mapping, NewType
 from statemachine.io import create_machine_class_from_definition
 
 from .machine import MachineValidationError, validate_bundle
+from .elicitation import native_payload, parse_question
 from .executors import action_executor
 from .runtime_context import (
     RuntimeContextError,
@@ -421,10 +422,17 @@ class ControllerRuntime:
         elif state.prompt is not None:
             prompt = self.bundle.prompts[state.prompt]
             boundary = "human"
+            question = parse_question(state.prompt, dict(prompt))
+            rendered = native_payload(question, "generic", context or {})
             instruction = {
                 "type": "prompt",
                 "id": state.prompt,
-                **dict(prompt),
+                "question": rendered["question"],
+                "selection": rendered["selection"],
+                "minimum_selected": rendered["minimum_selected"],
+                "choices": rendered["choices"],
+                "input": rendered["input"],
+                "events": dict(prompt.get("events", {})),
             }
         else:
             raise ControllerRuntimeError(

@@ -97,6 +97,32 @@ class InvocationClassificationTest(unittest.TestCase):
                 self.assertEqual("play_uri", result["invocation_kind"])
                 self.assertEqual(URI, result["play_uri"])
 
+    def test_canonical_uri_binds_explicit_parameters_without_model_work(self) -> None:
+        result = classify_invocation(
+            f"{URI} start_date=2026-07-01 end_date=2026-07-31 providers=all"
+        )
+        self.assertEqual("play_uri", result["invocation_kind"])
+        self.assertEqual(URI, result["play_uri"])
+        self.assertEqual(
+            {
+                "start_date": "2026-07-01",
+                "end_date": "2026-07-31",
+                "providers": "all",
+            },
+            result["parameters"],
+        )
+
+    def test_unambiguous_outcome_verbs_bypass_model_qualification(self) -> None:
+        for value in (
+            "retrieve rideshare receipts",
+            "$play fetch recent emails",
+            "Can you help me find expense reports?",
+        ):
+            with self.subTest(value=value):
+                result = classify_invocation(value)
+                self.assertEqual("outcome", result["invocation_kind"])
+                self.assertTrue(result["intent"])
+
     def test_run_hello_binds_the_pinned_uri_without_model_qualification(self) -> None:
         for value in ("run hello", "Run the Hello Play", "$play run hello"):
             with self.subTest(value=value):
@@ -116,7 +142,6 @@ class InvocationClassificationTest(unittest.TestCase):
 
     def test_noncanonical_hosts_and_nonempty_requests_remain_ordinary(self) -> None:
         for value in (
-            "$play find recent emails",
             "/play create a report",
             "https://example.com/chetan/report@1.0.0",
             "file:///etc/passwd",

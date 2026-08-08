@@ -38,6 +38,8 @@ mutations:
   - start_greeting_onboarding
   - start_uri_onboarding
   - record_ordinary_invocation
+  - record_parameter_request
+  - record_parameter_value
   - record_rote_probe
   - enter_onboarding_uri_use
   - record_onboarding_intent_mismatch
@@ -185,11 +187,13 @@ actions:
       - Treat only a trimmed `$play` or `/play` with no arguments as an empty greeting invocation.
       - Treat the harness's exact Play activation-without-a-task boilerplate as the same greeting; never send it to model qualification.
       - Bind `run hello`, `run the Hello Play`, and `$play run hello` directly to the pinned canonical Hello URI without model qualification or search.
-      - Treat a bare or prefixed canonical HTTPS play.modiqo.ai owner/name URI as a Play URI invocation.
-      - Send every other request unchanged to normal Play qualification; never use model inference for these lexical routes.
+      - Treat a bare or prefixed canonical HTTPS play.modiqo.ai owner/name URI, optionally followed by unique key=value parameters, as a Play URI invocation.
+      - Route unambiguous retrieve, fetch, get, find, collect, download, export, list, summarize, check, monitor, calculate, and compare outcomes directly to search.
+      - Send only requests outside these closed lexical routes unchanged to normal Play qualification.
     events:
       empty_play_invocation: [onboarding.intent, onboarding.classify_ns]
-      play_uri_invocation: [onboarding.intent, onboarding.play_uri, match.reference, onboarding.classify_ns]
+      play_uri_invocation: [onboarding.intent, onboarding.play_uri, match.reference, request.parameters, onboarding.classify_ns]
+      outcome_play_invocation: [request.intent, request.requested_outcome, modality_policy, onboarding.classify_ns]
       ordinary_play_invocation: [onboarding.classify_ns]
 
   probe_rote_for_onboarding:
@@ -428,11 +432,13 @@ actions:
     kind: deterministic
     owner: play
     effect: none
-    input_required: [inspection.complete, inspection.local_change, inspection.exact_reference, inspection.disclosure_sha256]
+    input_required: [inspection.complete, inspection.parameters, inspection.local_change, inspection.exact_reference, inspection.disclosure_sha256, request.parameters]
     command_policy:
+      - Request the first missing required parameter before deciding local readiness or pull consent; repeat until the typed parameter contract is complete.
       - Continue immediately when read-only inspection proves the exact Play is already local.
       - Require the structured pull consent prompt for install, replacement, repair, or unknown local state.
     events:
+      play_parameter_required: [parameter_input.name, parameter_input.label, parameter_input.type, parameter_input.description]
       local_play_ready: []
       remote_pull_required: []
 
@@ -461,8 +467,8 @@ actions:
       - An explicit run request selects what to inspect; it is not approval to execute after disclosure.
       - If and only if first-class inspection reports play-not-found, return play_reference_unresolved so the controller can search by the requested name; other inspection failures block.
     events:
-      play_inspected: [inspection.complete, inspection.exact_reference, inspection.description, inspection.local_change, inspection.dependencies, inspection.operations, inspection.effects, inspection.disclosure_sha256]
-      play_not_runnable: [inspection.complete, inspection.exact_reference, inspection.description, inspection.blockers, inspection.dependencies, inspection.operations, inspection.effects, inspection.disclosure_sha256]
+      play_inspected: [inspection.complete, inspection.exact_reference, inspection.description, inspection.parameters, inspection.local_change, inspection.dependencies, inspection.operations, inspection.effects, inspection.disclosure_sha256]
+      play_not_runnable: [inspection.complete, inspection.exact_reference, inspection.description, inspection.parameters, inspection.blockers, inspection.dependencies, inspection.operations, inspection.effects, inspection.disclosure_sha256]
       play_reference_unresolved: [reason]
 
   run_registry_play:

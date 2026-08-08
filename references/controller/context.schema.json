@@ -16,6 +16,7 @@
     "search",
     "match",
     "inspection",
+    "parameter_input",
     "resolution",
     "play",
     "readiness",
@@ -56,6 +57,7 @@
     "search": {"$ref": "#/$defs/search"},
     "match": {"$ref": "#/$defs/match"},
     "inspection": {"$ref": "#/$defs/inspection"},
+    "parameter_input": {"$ref": "#/$defs/parameterInput"},
     "resolution": {"$ref": "#/$defs/resolution"},
     "play": {"$ref": "#/$defs/play"},
     "readiness": {"$ref": "#/$defs/readiness"},
@@ -167,18 +169,31 @@
     },
     "inspection": {
       "type": "object",
-      "required": ["complete", "exact_reference", "description", "local_change", "dependencies", "operations", "effects", "blockers", "disclosure_sha256"],
+      "required": ["complete", "exact_reference", "description", "parameters", "local_change", "dependencies", "operations", "effects", "blockers", "disclosure_sha256"],
       "additionalProperties": false,
       "properties": {
         "complete": {"type": "boolean"},
         "exact_reference": {"$ref": "#/$defs/nullableString"},
         "description": {"type": "string"},
+        "parameters": {"type": "array", "items": {"type": "object"}},
         "local_change": {"type": ["string", "null"], "enum": ["none", "install", "replace_or_repair", "unknown", null]},
         "dependencies": {"type": "object"},
         "operations": {"type": "array", "items": {"type": "object"}},
         "effects": {"type": "object"},
         "blockers": {"$ref": "#/$defs/stringArray"},
         "disclosure_sha256": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "parameterInput": {
+      "type": "object",
+      "required": ["name", "label", "type", "description", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"$ref": "#/$defs/nullableString"},
+        "label": {"$ref": "#/$defs/nullableString"},
+        "type": {"$ref": "#/$defs/nullableString"},
+        "description": {"$ref": "#/$defs/nullableString"},
+        "value": {"$ref": "#/$defs/nullableString"}
       }
     },
     "resolution": {

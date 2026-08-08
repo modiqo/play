@@ -102,6 +102,12 @@ class MachineConformanceTest(unittest.TestCase):
             "onboarding_probe",
             MACHINE["states"]["invoke"]["on"]["empty_play_invocation"][0]["target"],
         )
+        self.assertEqual(
+            "search",
+            MACHINE["states"]["invoke"]["on"]["outcome_play_invocation"][0][
+                "target"
+            ],
+        )
         available = MACHINE["states"]["onboarding_probe"]["on"]["rote_available"]
         missing = MACHINE["states"]["onboarding_probe"]["on"]["rote_missing"]
         self.assertEqual("onboarding_identity", available[0]["target"])
