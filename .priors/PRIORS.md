@@ -37,9 +37,9 @@
 | P-0031 | plugin-creator | conclusion | open | scripts/lib/play/package.py | The marketplace payload is generated from the repository runtime and che |
 | P-0032 | plugin-creator | conclusion | open | scripts/lib/play/preflight.py | Play must fail closed until Rote is on PATH, authenticated, and exposes  |
 | P-0033 | plugin-creator | conclusion | open | scripts/harness/play-profile | Marketplace activation must not create a duplicate Play symlink; it shou |
-| P-0034 | skill-creator | conclusion | open | references/integration/thinking-orbs.json | Every Play machine state has exactly one accessible thinking-orbs presen |
-| P-0035 | skill-creator | conclusion | open | references/integration/thinking-orbs.md | Thinking orbs are an optional host presentation adapter driven only by v |
-| P-0036 | skill-creator | conclusion | open | scripts/lib/play/presentation.py | Play presentation resolves a validated machine state into one play.prese |
+| P-0034 | skill-creator | conclusion | resting | references/integration/thinking-orbs.json | Every Play machine state has exactly one accessible thinking-orbs presen |
+| P-0035 | skill-creator | conclusion | resting | references/integration/thinking-orbs.md | Thinking orbs are an optional host presentation adapter driven only by v |
+| P-0036 | skill-creator | conclusion | resting | scripts/lib/play/presentation.py | Play presentation resolves a validated machine state into one play.prese |
 | P-0037 | skill-creator | conclusion | open | SKILL.md | The Play skill presents orb state and playful copy only at user-visible  |
 | P-0038 | rote-troubleshooting | conclusion | open | scripts/harness/play-profile | Re-running Play profile installation after a Rote or harness refresh mus |
 | P-0039 | rote-troubleshooting | conclusion | open | SKILL.md | In a text-only harness, every visible Play milestone must use the exact  |
@@ -65,3 +65,6 @@
 | P-0059 | skill-creator | conclusion | open | SKILL.md | First-use copy explains that the human supplies domain goals, local rule |
 | P-0060 | skill-creator | conclusion | open | scripts/lib/play/onboarding.py | First-use memory stores only a SHA-256 identity digest, orientation vers |
 | P-0061 | skill-creator | conclusion | open | references/controller/machine.yaml | An authenticated empty Play invocation distinguishes first-use from retu |
+| P-0062 | skill-creator | conclusion | open | install.sh | The public curl bootstrap accepts only HTTPS archive URLs, rejects unsaf |
+| P-0063 | skill-creator | conclusion | open | scripts/harness/install-all | Cross-harness Play installation detects supported local harness commands |
+| P-0064 | skill-creator | conclusion | open | scripts/lib/play/package.py | The self-contained Play payload includes the canonical VERSION, curl boo |

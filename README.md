@@ -297,6 +297,44 @@ The first live pre-save namespace sample ran the profile and organization reads 
 completed in 4.089 seconds. That timing is recorded as `publication.owner_probe_ns`; it is external
 registry I/O and is intentionally separate from the sub-millisecond controller transition numbers.
 
+## Install Play everywhere
+
+If Rote skills are already available to your harnesses, install Play with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/main/install.sh | sh
+```
+
+The installer detects Codex, Claude Code, Kimi, and Cursor commands on the machine. It checks that
+each detected harness can see the Rote skill provider before writing anything, copies the packaged
+Play skill to `~/.local/share/modiqo/play/skill`, links it into every detected harness root, applies
+the reversible Play-first activation profile, and verifies every link. Existing unmanaged paths are
+never replaced. Updates keep the same stable install path so harness links do not drift between
+versions.
+
+The download uses HTTPS, rejects unsafe archive paths and links, and removes its temporary files.
+For a pinned release, set `PLAY_INSTALL_REF` to a tag when invoking the same script. To inspect the
+small bootstrap before running it:
+
+```bash
+curl -fsSLo /tmp/install-play.sh \
+  https://raw.githubusercontent.com/modiqo/play/main/install.sh
+less /tmp/install-play.sh
+sh /tmp/install-play.sh
+```
+
+From a checkout, use the same detection and verification without downloading anything:
+
+```bash
+just package
+just plan
+just install
+just verify-profile
+```
+
+`just install` links the checkout, so edits become live after a harness restart. `just install-copy`
+exercises the durable-copy path used by the curl installer.
+
 ## Install from a marketplace
 
 Play is packaged as one self-contained plugin under `plugins/play`. The package includes the skill,
@@ -359,8 +397,8 @@ just plan
 just install
 ```
 
-`install` discovers every skills root containing rote skills — including `~/.agents/skills` —
-links this Play skill into each, and applies the activation metadata in
+`install` discovers every supported local harness and every skills root containing Rote skills —
+including `~/.agents/skills` — links this Play skill into each, and applies the activation metadata in
 [`agents/openai.yaml`](agents/openai.yaml) (`allow_implicit_invocation: true`) so Play stays
 implicitly invocable and the rote specialists remain model-invocable for chained handoffs. Play's
 structured prompts map to Kimi's `askquestion` control
@@ -451,8 +489,8 @@ just update
 The links make source edits live immediately; a running harness must still be restarted to reload
 the revised skill.
 
-`install` discovers every installed harness skill root containing `rote` or `rote-*`, links this
-Play skill into each root, and makes every Rote skill model-invocable so specialist handoffs can
+`install` detects Codex, Claude Code, Kimi, and Cursor, discovers their skill roots containing
+`rote` or `rote-*`, links this Play skill into each root, and makes every Rote skill model-invocable so specialist handoffs can
 continue without another user command. It snapshots the original Rote activation files so the
 change is reversible. Restart running harnesses after enabling the profile.
 

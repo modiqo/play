@@ -1,7 +1,7 @@
 check: package-check
     scripts/bin/validate-machine
     uv run scripts/bin/play-machine describe --json
-    uv run pyright scripts/lib/play/controller.py scripts/lib/play/elicitation.py scripts/lib/play/onboarding.py scripts/lib/play/public_owner.py scripts/lib/play/public_trends.py scripts/lib/play/run_output.py scripts/lib/play/publication.py scripts/lib/play/publication_gate.py scripts/lib/play/certificate.py scripts/bin/play-machine scripts/bin/play-onboarding scripts/bin/play-public-trends scripts/bin/play-public-owner scripts/bin/play-run-output scripts/bin/play-publication scripts/bin/play-publication-gate scripts/bin/play-certificate tests/controller/test_controller_runtime.py tests/awareness/test_public_trends.py tests/foundation/test_elicitation.py tests/foundation/test_onboarding.py tests/foundation/test_public_owner.py tests/foundation/test_run_output.py tests/foundation/test_publication.py tests/foundation/test_publication_gate.py tests/foundation/test_certificate.py
+    uv run pyright scripts/lib/play/controller.py scripts/lib/play/elicitation.py scripts/lib/play/onboarding.py scripts/lib/play/public_owner.py scripts/lib/play/public_trends.py scripts/lib/play/run_output.py scripts/lib/play/publication.py scripts/lib/play/publication_gate.py scripts/lib/play/certificate.py scripts/bin/play-machine scripts/bin/play-onboarding scripts/bin/play-public-trends scripts/bin/play-public-owner scripts/bin/play-run-output scripts/bin/play-publication scripts/bin/play-publication-gate scripts/bin/play-certificate scripts/harness/install-all tests/controller/test_controller_runtime.py tests/awareness/test_public_trends.py tests/foundation/test_elicitation.py tests/foundation/test_onboarding.py tests/foundation/test_public_owner.py tests/foundation/test_run_output.py tests/foundation/test_publication.py tests/foundation/test_publication_gate.py tests/foundation/test_certificate.py tests/harness/test_install_all.py
     scripts/bin/play-question choose_creator_path --harness codex --check
     scripts/bin/play-question choose_creator_path --harness claude --check
     scripts/bin/play-question choose_creator_path --harness kimi --check
@@ -55,19 +55,23 @@ test: check
 benchmark-controller iterations="1000":
     uv run scripts/bin/play-machine benchmark --iterations {{iterations}} --json
 
-# Activate or safely converge Play-first metadata after harness/Rote skill updates.
+# Detect every supported local harness, install Play, and converge Rote handoffs.
 install:
-    scripts/harness/play-profile install
+    scripts/harness/install-all install
+
+# Exercise the same durable-copy path used by the public curl installer.
+install-copy:
+    PLAY_INSTALL_SOURCE=. ./install.sh
 
 # Confirm source-linked installs are current and valid, then remind the user to restart.
 update:
-    scripts/harness/play-profile install
-    scripts/harness/play-profile verify
+    scripts/harness/install-all install
+    scripts/harness/install-all verify
     @echo "Play source is live through installed symlinks; restart running harnesses to reload it."
 
 # Show the exact roots and rote skills that install would change.
 plan:
-    PLAY_PROFILE_VERBOSE=1 scripts/harness/play-profile plan
+    scripts/harness/install-all plan
 
 # Remove Play and restore every rote skill's original activation metadata.
 uninstall:
@@ -80,7 +84,7 @@ status-roots:
     PLAY_PROFILE_VERBOSE=1 scripts/harness/play-profile status
 
 verify-profile:
-    scripts/harness/play-profile verify
+    scripts/harness/install-all verify
 
 # Start a fresh harness process so it reloads the installed skill profile.
 harness harness="codex":

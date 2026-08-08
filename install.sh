@@ -1,0 +1,74 @@
+#!/bin/sh
+set -eu
+
+umask 077
+
+fail() {
+  printf '%s\n' "play install: $*" >&2
+  exit 1
+}
+
+command -v python3 >/dev/null 2>&1 || fail "python3 is required"
+
+temporary=""
+cleanup() {
+  if [ -n "$temporary" ] && [ -d "$temporary" ]; then
+    rm -rf "$temporary"
+  fi
+}
+trap cleanup EXIT HUP INT TERM
+
+if [ -n "${PLAY_INSTALL_SOURCE:-}" ]; then
+  source_root=$PLAY_INSTALL_SOURCE
+else
+  command -v curl >/dev/null 2>&1 || fail "curl is required"
+  repository=${PLAY_INSTALL_REPOSITORY:-modiqo/play}
+  reference=${PLAY_INSTALL_REF:-main}
+  case "$repository" in
+    *[!A-Za-z0-9._/-]*|/*|*/../*|../*|*/..) fail "invalid PLAY_INSTALL_REPOSITORY" ;;
+  esac
+  case "$reference" in
+    *[!A-Za-z0-9._/-]*|/*|*/../*|../*|*/..) fail "invalid PLAY_INSTALL_REF" ;;
+  esac
+  temporary=$(mktemp -d "${TMPDIR:-/tmp}/play-install.XXXXXX")
+  archive="$temporary/play.tar.gz"
+  source_root="$temporary/source"
+  archive_url=${PLAY_INSTALL_URL:-"https://github.com/$repository/archive/$reference.tar.gz"}
+  case "$archive_url" in
+    https://*) ;;
+    *) fail "PLAY_INSTALL_URL must use https" ;;
+  esac
+  printf '%s\n' "Downloading Play from $repository@$reference..."
+  curl --proto '=https' --tlsv1.2 -fsSL "$archive_url" -o "$archive"
+  mkdir "$source_root"
+  python3 - "$archive" "$source_root" <<'PY'
+import sys
+import tarfile
+from pathlib import Path, PurePosixPath
+
+archive = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+with tarfile.open(archive, "r:gz") as bundle:
+    members = bundle.getmembers()
+    roots = set()
+    safe = []
+    for member in members:
+        parts = PurePosixPath(member.name).parts
+        if not parts or member.name.startswith("/") or ".." in parts:
+            raise SystemExit("play install: archive contains an unsafe path")
+        roots.add(parts[0])
+        if member.issym() or member.islnk() or member.isdev():
+            raise SystemExit("play install: archive contains an unsupported entry")
+        stripped = parts[1:]
+        if not stripped:
+            continue
+        member.name = str(PurePosixPath(*stripped))
+        safe.append(member)
+    if len(roots) != 1:
+        raise SystemExit("play install: archive must contain one repository root")
+    bundle.extractall(destination, members=safe)
+PY
+fi
+
+[ -f "$source_root/scripts/harness/install-all" ] || fail "downloaded Play package is incomplete"
+python3 "$source_root/scripts/harness/install-all" install --copy

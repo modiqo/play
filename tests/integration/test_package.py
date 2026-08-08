@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -9,7 +10,10 @@ from scripts.lib.play.package import ROOT, TARGET, differences, materialize
 class PluginPackageTest(unittest.TestCase):
     def test_payload_contains_runtime_and_just_configuration(self) -> None:
         self.assertTrue((TARGET / "SKILL.md").is_file())
+        self.assertTrue((TARGET / "VERSION").is_file())
+        self.assertTrue((TARGET / "install.sh").is_file())
         self.assertTrue((TARGET / "justfile").is_file())
+        self.assertTrue((TARGET / "scripts/harness/install-all").is_file())
         self.assertTrue((TARGET / "scripts/harness/play-profile").is_file())
         self.assertTrue((TARGET / "scripts/harness/start-harness").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-preflight").is_file())
@@ -35,6 +39,19 @@ class PluginPackageTest(unittest.TestCase):
         self.assertFalse((TARGET / "scripts/bin/package-plugin").exists())
         self.assertFalse((TARGET / "scripts/lib/play/package.py").exists())
         self.assertTrue((ROOT / "scripts/bin/package-plugin").is_file())
+
+    def test_plugin_versions_match_the_packaged_version(self) -> None:
+        expected = (ROOT / "VERSION").read_text().strip()
+        manifests = (
+            ROOT / "plugins/play/package.json",
+            ROOT / "plugins/play/.codex-plugin/plugin.json",
+            ROOT / "plugins/play/.claude-plugin/plugin.json",
+            ROOT / "plugins/play/.kimi-plugin/plugin.json",
+            ROOT / "plugins/play/.cursor-plugin/plugin.json",
+        )
+        self.assertEqual(expected, (TARGET / "VERSION").read_text().strip())
+        for manifest in manifests:
+            self.assertEqual(expected, json.loads(manifest.read_text())["version"])
 
     def test_active_sources_have_no_legacy_flow_commands(self) -> None:
         files = [ROOT / "README.md", ROOT / "SKILL.md"]
