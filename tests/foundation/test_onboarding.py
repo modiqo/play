@@ -104,6 +104,16 @@ class InvocationClassificationTest(unittest.TestCase):
                 self.assertEqual("play_uri", result["invocation_kind"])
                 self.assertEqual(STARTER_PLAY_URI, result["play_uri"])
 
+    def test_activation_without_a_task_enters_onboarding(self) -> None:
+        for value in (
+            'User activated the skill "play". Follow the loaded skill instructions.',
+            'The user has activated the "play" skill.',
+        ):
+            with self.subTest(value=value):
+                result = classify_invocation(value)
+                self.assertEqual("greeting", result["invocation_kind"])
+                self.assertIsNone(result["play_uri"])
+
     def test_noncanonical_hosts_and_nonempty_requests_remain_ordinary(self) -> None:
         for value in (
             "$play find recent emails",
@@ -273,11 +283,11 @@ class FirstUseOrientationTest(unittest.TestCase):
 
     def test_orientation_explains_creation_control_and_return_in_plain_words(self) -> None:
         rendered = render_first_use_orientation("Ada")
-        self.assertIn("Get the result. Keep the method.", rendered)
-        self.assertIn("You are the expert. I am your apprentice.", rendered)
-        self.assertIn("Rote checks and runs Plays on your computer", rendered)
-        self.assertIn("Keep it private, share it with your team, or publish it", rendered)
-        self.assertIn("Nothing runs until you approve it", rendered)
+        self.assertIn("Start small. See what happens. Stay in control.", rendered)
+        self.assertIn("Run Hello", rendered)
+        self.assertIn("no account or credentials", rendered)
+        self.assertIn("You provide the goals, rules, and exceptions", rendered)
+        self.assertIn("Nothing is downloaded or run without", rendered)
 
         result = prepare_first_use_orientation(
             {"onboarding": {"email_handle": "Ada Example"}}

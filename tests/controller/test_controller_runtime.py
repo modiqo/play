@@ -394,6 +394,107 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertNotIn("qualify_request", str(yielded.projection))
         self.assertNotIn("search_authorized_plays", str(yielded.projection))
 
+    @patch("play.runtime_actions.subprocess.run")
+    def test_activation_only_reaches_first_use_affordances_without_model(self, run) -> None:
+        orientation = (
+            "# Hello, friend.\n\n"
+            "**Start small. See what happens. Stay in control.**\n\n"
+            "Run Hello uses public data only and declares no writes."
+        )
+        run.side_effect = [
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "invocation_kind": "greeting",
+                        "play_uri": None,
+                        "classify_ns": 1,
+                    }
+                ),
+            ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "rote_status": "installed",
+                        "rote_command": "/usr/local/bin/rote",
+                        "rote_off_path": False,
+                        "probe_ns": 1,
+                    }
+                ),
+            ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "identity_status": "authenticated",
+                        "email": "friend@example.com",
+                        "email_handle": "friend",
+                        "identity_ref": "sha256:" + "a" * 64,
+                        "whoami_ns": 1,
+                    }
+                ),
+            ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "experience_status": "first_use",
+                        "experience_ref": "sha256:" + "b" * 64,
+                        "orientation_version": 2,
+                        "experience_ns": 1,
+                    }
+                ),
+            ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "orientation_status": "presented",
+                        "orientation_version": 2,
+                        "orientation_markdown": orientation,
+                        "orientation_ref": "sha256:" + "c" * 64,
+                        "starter_reference": "https://play.modiqo.ai/modiqo/hello@0.1.0",
+                        "orientation_ns": 1,
+                        "presentation": {"markdown": orientation},
+                        "presentation_markdown": orientation,
+                    }
+                ),
+            ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "orientation_status": "recorded",
+                        "orientation_version": 2,
+                        "experience_ref": "sha256:" + "b" * 64,
+                        "marker_ns": 1,
+                    }
+                ),
+            ),
+        ]
+        session = self.runtime.initial_session(
+            run_id="activation-onboarding",
+            task_key="activation-onboarding",
+            request_original='User activated the skill "play". Follow the loaded skill instructions.',
+        )
+
+        yielded = advance_until_yield(self.runtime, session, root=ROOT)
+
+        self.assertEqual("onboarding_first_offer", yielded.projection["state"]["id"])
+        self.assertEqual("human", yielded.projection["state"]["boundary"])
+        self.assertEqual("choose_first_use_path", yielded.projection["instruction"]["id"])
+        self.assertEqual("Run Hello", yielded.projection["instruction"]["choices"][0]["label"])
+        self.assertTrue(yielded.projection["instruction"]["choices"][0]["recommended"])
+        self.assertEqual((orientation,), yielded.presentations)
+        self.assertNotIn("qualify_request", str(yielded.projection))
+
     def test_advance_until_yield_accepts_boundary_on_action_limit(self) -> None:
         session = self.runtime.initial_session(
             run_id="session-1", task_key="task-1", request_original="Repository work"

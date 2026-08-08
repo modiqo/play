@@ -92,8 +92,14 @@ class InstallAllTest(unittest.TestCase):
             self.assertTrue(play.is_symlink(), name)
             self.assertEqual(ROOT, play.resolve())
 
+        launcher = self.home / ".local" / "bin" / "play-machine"
+        self.assertTrue(launcher.is_file())
+        self.assertTrue(os.access(launcher, os.X_OK))
+        self.assertIn(str(ROOT / "scripts" / "bin" / "play-machine"), launcher.read_text())
+
         self.run_installer("verify")
         self.uninstall(ROOT)
+        self.assertFalse(launcher.exists())
 
     def test_portable_copy_is_stable_and_idempotent(self) -> None:
         install_home = self.home / "portable"

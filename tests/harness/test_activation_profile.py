@@ -19,6 +19,7 @@ class ActivationProfileTest(unittest.TestCase):
         base = Path(self.temporary.name)
         self.roots = [base / "codex" / "skills", base / "claude" / "skills"]
         self.state = base / "state" / "profile.json"
+        self.launcher = base / "bin" / "play-machine"
         self.originals: dict[Path, bytes] = {}
 
         for index, root in enumerate(self.roots):
@@ -45,6 +46,7 @@ class ActivationProfileTest(unittest.TestCase):
         environment = os.environ.copy()
         environment["PLAY_HARNESS_ROOTS"] = os.pathsep.join(map(str, self.roots))
         environment["PLAY_PROFILE_STATE"] = str(self.state)
+        environment["PLAY_MACHINE_LAUNCHER"] = str(self.launcher)
         if hasattr(self, "source"):
             environment["PLAY_PROFILE_SOURCE"] = str(self.source)
         result = subprocess.run(
@@ -64,6 +66,8 @@ class ActivationProfileTest(unittest.TestCase):
             play = root / "play"
             self.assertTrue(play.is_symlink())
             self.assertEqual(ROOT, play.resolve())
+        self.assertTrue(self.launcher.is_file())
+        self.assertTrue(os.access(self.launcher, os.X_OK))
 
         for skill in (self.roots[0] / "rote", self.roots[1] / "rote-shell"):
             self.assertIn(
@@ -80,6 +84,7 @@ class ActivationProfileTest(unittest.TestCase):
         self.run_profile("uninstall")
 
         self.assertFalse(self.state.exists())
+        self.assertFalse(self.launcher.exists())
         for root in self.roots:
             self.assertFalse((root / "play").exists())
         for path, content in self.originals.items():

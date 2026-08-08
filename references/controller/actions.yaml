@@ -183,6 +183,7 @@ actions:
     command: scripts/bin/play-onboarding classify --stdin --json
     command_policy:
       - Treat only a trimmed `$play` or `/play` with no arguments as an empty greeting invocation.
+      - Treat the harness's exact Play activation-without-a-task boilerplate as the same greeting; never send it to model qualification.
       - Bind `run hello`, `run the Hello Play`, and `$play run hello` directly to the pinned canonical Hello URI without model qualification or search.
       - Treat a bare or prefixed canonical HTTPS play.modiqo.ai owner/name URI as a Play URI invocation.
       - Send every other request unchanged to normal Play qualification; never use model inference for these lexical routes.

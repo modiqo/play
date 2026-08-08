@@ -38,11 +38,12 @@ does, its parameters, adapters and credentials, what this machine must install o
 operations and writes, and any unknown effect semantics. Only the next structured choice can
 authorize the exact inspected version and displayed parameters.
 
-An empty `$play` or `/play` is a warm typed entrypoint. Play live-probes for Rote and reads the
+An empty `$play` or `/play` is a complete warm typed onboarding request, not an empty task. Play
+live-probes for Rote and reads the
 signed-in email with `rote whoami`. A returning user gets the short personal greeting. A first-time
-user sees “Get the result. Keep the method,” learns how Play and Rote work, and is told plainly that
-the human supplies the goals, rules, exceptions, and judgment that the agent cannot know alone.
-They may inspect the pinned Hello Play, describe a goal, see useful Plays, or stop. Missing or
+user sees “Start small. See what happens. Stay in control,” then gets a recommended **Run Hello**
+choice: public data, no account, no credentials, and no declared writes. They may instead describe
+a goal, browse useful Plays, or stop. Missing or
 unauthenticated Rote is handed to the guided `rote-setup` skill. A public Play URI uses first-class
 Rote inspection when available; without Rote, Play reads the URI's bounded public JSON card and
 shows its own inspect and consent-gated install/bootstrap paths without executing them.
@@ -88,7 +89,7 @@ stateDiagram-v2
     onboarding_experience --> onboarding_first_present : first use
     onboarding_first_present --> onboarding_first_record : orientation shown
     onboarding_first_record --> onboarding_first_offer : private marker stored
-    onboarding_first_offer --> use_inspect : Try Hello
+    onboarding_first_offer --> use_inspect : Run Hello
     onboarding_first_offer --> onboarding_need : describe a goal
     onboarding_first_offer --> awareness_collect : see useful Plays
     onboarding_first_offer --> completed : not now
@@ -378,7 +379,9 @@ claude plugin marketplace add modiqo/rote-skills
 claude plugin install rote-onboard@rote-skills
 ```
 
-After Play is installed, an empty `$play` or `/play` probes the local binary and identity. If either
+After Play is installed, the `play-machine` launcher is on `PATH`; harnesses invoke it directly
+without locating the skill directory or its Python environment. An empty `$play` or `/play` probes
+the local binary and identity. If either
 is missing, Play invokes `rote-setup`; that specialist asks before downloaded installer code, login,
 credentials, or optional onboarding. Ordinary requests are lexically classified and qualified
 first; only Play-bound evaluator events run the full preflight, so excluded conversation and
