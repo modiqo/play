@@ -47,7 +47,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(81, len(self.runtime.bundle.states))
+        self.assertEqual(80, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -437,8 +437,9 @@ class ControllerRuntimeTest(unittest.TestCase):
         context["evidence"] = dict(context["evidence"])
         context["evidence"]["verification"] = "verify:1"
         context["output"] = dict(context["output"])
-        context["output"]["presentation_markdown"] = "# Hello"
-        context["output"]["presentation_sha256"] = "a" * 64
+        context["output"]["source"] = "rote_human_presentation"
+        context["output"]["format"] = "markdown"
+        context["output"]["primary"] = "# Hello\n\nunchanged"
         projected = session.__class__(
             schema=session.schema,
             cursor=replace(session.cursor, state=StateId("use_receipt")),
@@ -452,6 +453,57 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("terminal", yielded.projection["state"]["boundary"])
         self.assertEqual("build_receipt", yielded.trace[0].action)
         self.assertTrue(yielded.session.context["receipt_ref"].startswith("sha256:"))
+        self.assertEqual(("# Hello\n\nunchanged",), yielded.presentations)
+        self.assertEqual(
+            len("# Hello\n\nunchanged".encode()),
+            yielded.session.context["output"]["primary_bytes"],
+        )
+
+    def test_receipt_returns_structured_primary_to_the_harness_unchanged(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-json", task_key="task-json", request_original="Run a Play"
+        )
+        primary = {"z": 1, "rows": [{"name": "hello", "ok": True}]}
+        context = dict(session.context)
+        context["state"] = "use_receipt"
+        context["match"] = dict(context["match"])
+        context["match"]["reference"] = "modiqo/hello@0.1.0"
+        context["evidence"] = dict(context["evidence"])
+        context["evidence"]["verification"] = "verify:json"
+        context["output"] = dict(context["output"])
+        context["output"]["source"] = "structured_responses"
+        context["output"]["format"] = "json"
+        context["output"]["primary"] = primary
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("use_receipt")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual((primary,), yielded.presentations)
+        self.assertEqual(primary, yielded.session.context["output"]["primary"])
+
+    @patch("play.runtime_actions.subprocess.run")
+    def test_failed_deterministic_command_surfaces_stderr_without_json_debugging(
+        self, run
+    ) -> None:
+        run.return_value.returncode = 1
+        run.return_value.stdout = ""
+        run.return_value.stderr = "requested outcome is missing"
+        session = self.runtime.initial_session(
+            run_id="session-failure",
+            task_key="task-failure",
+            request_original="$play",
+        )
+
+        yielded = advance_until_yield(self.runtime, session, root=ROOT)
+
+        self.assertEqual("blocked", yielded.projection["state"]["id"])
+        self.assertEqual(("requested outcome is missing",), yielded.presentations)
+        self.assertEqual("action_blocked", yielded.trace[0].event)
 
     @patch("play.runtime_actions.subprocess.run")
     def test_advance_until_yield_auto_inspects_and_routes_local_play(self, run) -> None:
@@ -773,24 +825,6 @@ class ControllerRuntimeTest(unittest.TestCase):
         session = self.runtime.advance_session(
             session,
             ControllerEvent(
-                id=EventId("detailed_output_ready"),
-                payload={
-                    "output": {
-                        "presentation_markdown": "# Hello",
-                        "presentation_sha256": "b" * 64,
-                        "inline_bytes": 7,
-                        "primary_bytes": 7,
-                        "format_ns": 1,
-                        "truncated": False,
-                        "full_output_ref": None,
-                    }
-                },
-                guards={},
-            ),
-        ).session
-        session = self.runtime.advance_session(
-            session,
-            ControllerEvent(
                 id=EventId("outcome_verified"),
                 payload={"postconditions": ["hello returned"], "evidence_refs": ["verify:1"]},
                 guards={},
@@ -899,9 +933,9 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("blocked", result.cursor.state)
         self.assertEqual("record_incomplete_search", result.transition.mutation)
 
-    def test_complete_run_output_is_required_before_verification(self) -> None:
+    def test_complete_run_output_passes_unchanged_to_verification(self) -> None:
         run_cursor = replace(self.cursor(), state=StateId("use_run"))
-        output_cursor = self.runtime.step(
+        verify_cursor = self.runtime.step(
             run_cursor,
             ControllerEvent(
                 id=EventId("play_run_ready"),
@@ -926,26 +960,6 @@ class ControllerRuntimeTest(unittest.TestCase):
                         "truncated": False,
                         "full_output_ref": None,
                     },
-                },
-                guards={},
-            ),
-        ).cursor
-        self.assertEqual("use_output", output_cursor.state)
-
-        verify_cursor = self.runtime.step(
-            output_cursor,
-            ControllerEvent(
-                id=EventId("detailed_output_ready"),
-                payload={
-                    "output": {
-                        "presentation_markdown": "# Play result\n\n# Result",
-                        "presentation_sha256": "a" * 64,
-                        "inline_bytes": 23,
-                        "primary_bytes": 8,
-                        "format_ns": 100,
-                        "truncated": False,
-                        "full_output_ref": None,
-                    }
                 },
                 guards={},
             ),

@@ -128,15 +128,13 @@ stateDiagram-v2
     use_offer --> use_prepare : pull approved
     use_offer --> completed : declined
     use_prepare --> use_run : exact run handoff bound
-    use_run --> use_output : run ready
+    use_run --> use_verify : unchanged run output ready
     use_run --> use_auth_repair_offer : recoverable adapter auth
     use_auth_repair_offer --> use_auth_repair_handoff : approved
     use_auth_repair_handoff --> use_auth_repair_execute
     use_auth_repair_execute --> use_auth_repair_receipt
     use_auth_repair_receipt --> use_inspect : validated repair
     use_run --> repair_offer : drifted / failed
-    use_output --> use_verify : detailed output ready
-    use_output --> repair_offer : incomplete / summary only
     use_verify --> use_receipt : outcome verified
     use_verify --> repair_offer : not verified
     use_receipt --> receipt : normal Play
@@ -787,29 +785,15 @@ It uses `rote play` for local Play operations and `rote registry play` for regis
 registry-scoped discovery. It never uses legacy Flow command aliases or decomposes a failed Play
 operation into a manual pull-plus-run fallback.
 
-### Detailed run output
+### Unchanged run output
 
-Successful Use-mode execution passes through `use_output` before verification. The run contract
-requires detailed mode, full detail, a complete primary payload, and a manifest of response
-references, artifact references, and effects. `scripts/bin/play-run-output` then applies stable
-presentation rules:
+Successful Use-mode execution passes the complete primary payload directly from `use_run` to
+`use_verify`. Play retains the declared source, format, manifest, truncation flag, and full-output
+reference but does not render or convert the payload. The harness owns presentation.
 
-- Human Markdown is preserved rather than summarized.
-- Flat JSON records become a Markdown table; other JSON is sorted and pretty-printed.
-- Plain text is kept verbatim in a fenced block.
-- Run metadata follows the primary result in a separate **Run details** section.
-- Inline overflow is allowed only when the complete output has an artifact reference; the displayed
-  preview points to that preserved result.
-
-Compact or summary-only output cannot reach `use_verify`, `use_receipt`, or the terminal receipt.
-It enters the declared repair gate instead. This matters for legacy Rote DAGs: if the runtime cannot
-provide a human/JSON presentation or complete structured responses, Play reports the output as
-incomplete instead of presenting the compact run summary as the user's result.
-
-Every formatted result includes `format_ns`, `primary_bytes`, `inline_bytes`, and a stable
-`presentation_sha256`. For example, formatting a two-row JSON result into a 294-byte Markdown
-presentation took 55,375 ns (0.055 ms) on the baseline machine. This is an observed per-run value,
-not a cross-machine performance guarantee.
+After verification, the receipt computes integrity and byte-count metadata over the unchanged
+primary value and returns that same value to the harness. Compact or summary-only output cannot be
+verified as a complete result; truncated output requires a full-output reference.
 
 After a new Play is released, Play captures its owner-private birth object. After publication, it
 binds the object to the registry content hash, indexes the Play, reads the canonical registry entry

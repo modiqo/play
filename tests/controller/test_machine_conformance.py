@@ -550,18 +550,10 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["use_prepare"]["on"]["play_run_handoff_ready"][0]["target"],
         )
 
-    def test_detailed_output_dominates_use_verification_and_receipt(self) -> None:
-        self.assertEqual(
-            "use_output",
-            MACHINE["states"]["use_run"]["on"]["play_run_ready"][0]["target"],
-        )
+    def test_successful_output_passes_directly_to_verification(self) -> None:
         self.assertEqual(
             "use_verify",
-            MACHINE["states"]["use_output"]["on"]["detailed_output_ready"][0]["target"],
-        )
-        self.assertEqual(
-            "repair_offer",
-            MACHINE["states"]["use_output"]["on"]["action_blocked"][0]["target"],
+            MACHINE["states"]["use_run"]["on"]["play_run_ready"][0]["target"],
         )
         incoming = {
             state_name
@@ -570,11 +562,12 @@ class MachineConformanceTest(unittest.TestCase):
             for branch in branches
             if branch["target"] == "use_verify"
         }
-        self.assertEqual({"use_output"}, incoming)
-        self.assertEqual(
-            "scripts/bin/play-run-output --stdin --json",
-            ACTIONS["format_run_output"]["command"],
-        )
+        self.assertEqual({"use_run"}, incoming)
+        self.assertNotIn("format_run_output", ACTIONS)
+        self.assertNotIn("use_output", MACHINE["states"])
+        receipt_policy = " ".join(ACTIONS["build_receipt"]["command_policy"])
+        self.assertIn("Preserve output.primary exactly as received", receipt_policy)
+        self.assertIn("never wrap, summarize, convert, or decorate it", receipt_policy)
 
     def test_run_output_policy_forbids_summary_results(self) -> None:
         policy = " ".join(ACTIONS["run_registry_play"]["command_policy"])

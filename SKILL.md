@@ -92,8 +92,10 @@ with the listening fallback. For terminals, use the terminal fallback as the fir
 actual outcome.
 
 Immediately before `rote play run`, present `use_run` once. After execution, preserve
-the complete detailed primary payload and route it through the projected `use_output` action before
-verification. Compact summaries are incomplete results.
+the complete primary payload exactly as received and pass it directly to verification with its
+declared source, format, manifest, truncation flag, and full-output reference. The harness owns
+presentation; Play must not wrap, summarize, convert, or decorate the result. Compact summaries are
+incomplete results.
 
 ## Load only branch guidance returned by the trajectory
 

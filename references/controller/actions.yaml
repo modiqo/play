@@ -103,7 +103,6 @@ mutations:
   - record_use_auth_repair_required
   - record_run_dismissal
   - record_controller_run
-  - record_formatted_output
   - record_incomplete_output
   - record_verification
   - attach_receipt
@@ -484,25 +483,14 @@ actions:
       play_drifted: [reason, evidence_refs]
       play_auth_repair_required: [auth_repair.source, auth_repair.owner, auth_repair.recoverable, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.evidence_refs]
 
-  format_run_output:
-    kind: deterministic
-    owner: play
-    effect: none
-    input_required: [match.reference, play.version, output_policy.max_inline_bytes, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
-    command: scripts/bin/play-run-output --stdin --json
-    command_policy:
-      - Preserve Markdown exactly, render flat JSON records as a Markdown table, and pretty-print other JSON or text without summarizing it.
-      - Reject summary-only or compact-summary sources; verification cannot begin without a complete primary result.
-      - If inline output exceeds output_policy.max_inline_bytes, require a full_output_ref and render a bounded preview that links to the complete result.
-      - Record formatting latency without including it in the presentation digest.
-    events:
-      detailed_output_ready: [output.presentation_markdown, output.presentation_sha256, output.inline_bytes, output.primary_bytes, output.format_ns, output.truncated, output.full_output_ref]
-
   verify_outcome:
     kind: evaluator
     owner: play
     effect: none
-    input_required: [request.requested_outcome, evidence]
+    input_required: [request.requested_outcome, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref, evidence]
+    command_policy:
+      - Verify the unchanged primary output in its declared format; do not reformat, summarize, or reconstruct it.
+      - A detailed full output may be verified directly. A summary-only result, or a truncated result without full_output_ref, must emit outcome_not_verified.
     events_by_state:
       use_verify:
         outcome_verified: [postconditions, evidence_refs]
@@ -516,9 +504,12 @@ actions:
     kind: deterministic
     owner: play
     effect: none
-    input_required: [match.reference, evidence.verification, output.presentation_markdown, output.presentation_sha256]
+    input_required: [match.reference, evidence.verification, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
+    command_policy:
+      - Preserve output.primary exactly as received and return it to the harness with its declared format.
+      - Compute integrity metadata over the unchanged primary value; never wrap, summarize, convert, or decorate it.
     events:
-      receipt_ready: [receipt_ref, output.presentation_markdown, output.presentation_sha256]
+      receipt_ready: [receipt_ref, output.presentation_sha256, output.primary_bytes]
 
   present_first_play_activation:
     kind: deterministic

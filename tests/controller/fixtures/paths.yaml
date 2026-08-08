@@ -43,8 +43,7 @@ cases:
       - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_approved, target: use_prepare}
       - {state: use_prepare, event: play_run_handoff_ready, target: use_run}
-      - {state: use_run, event: play_run_ready, target: use_output}
-      - {state: use_output, event: detailed_output_ready, target: use_verify}
+      - {state: use_run, event: play_run_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - state: use_receipt
         event: receipt_ready
@@ -53,7 +52,7 @@ cases:
       - {state: onboarding_activation_present, event: onboarding_activation_presented, target: onboarding_activation_offer}
       - {state: onboarding_activation_offer, event: onboarding_finished, target: receipt}
     terminal: receipt
-    includes_once: [use_inspect, use_offer, use_run, use_output, use_verify, use_receipt, onboarding_activation_present, onboarding_activation_offer]
+    includes_once: [use_inspect, use_offer, use_run, use_verify, use_receipt, onboarding_activation_present, onboarding_activation_offer]
 
   - name: Play URI uses first-class inspection when Rote is installed
     steps:
@@ -124,8 +123,7 @@ cases:
       - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_approved, target: use_prepare}
       - {state: use_prepare, event: play_run_handoff_ready, target: use_run}
-      - {state: use_run, event: play_run_ready, target: use_output}
-      - {state: use_output, event: detailed_output_ready, target: use_verify}
+      - {state: use_run, event: play_run_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
     terminal: receipt
@@ -153,8 +151,7 @@ cases:
       - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_approved, target: use_prepare}
       - {state: use_prepare, event: play_run_handoff_ready, target: use_run}
-      - {state: use_run, event: play_run_ready, target: use_output}
-      - {state: use_output, event: detailed_output_ready, target: use_verify}
+      - {state: use_run, event: play_run_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
     terminal: receipt
@@ -547,7 +544,7 @@ cases:
 
   - name: incomplete run output cannot reach verification
     steps:
-      - {state: use_output, event: action_blocked, target: repair_offer}
+      - {state: use_run, event: action_blocked, target: repair_offer}
       - {state: repair_offer, event: ordinary_execution_selected, target: exited}
     terminal: exited
     excludes: [use_verify, use_receipt, receipt]
@@ -573,8 +570,7 @@ cases:
       - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_approved, target: use_prepare}
       - {state: use_prepare, event: play_run_handoff_ready, target: use_run}
-      - {state: use_run, event: play_run_ready, target: use_output}
-      - {state: use_output, event: detailed_output_ready, target: use_verify}
+      - {state: use_run, event: play_run_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
     terminal: receipt

@@ -390,12 +390,6 @@ def validate_bundle(
         "index": ("saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
         "saved_inspect": ("publication_credentials", "publication_smoke", "birth_present"),
         "publication_credentials": ("publication_smoke",),
-        "use_output": (
-            "use_verify",
-            "use_receipt",
-            "onboarding_activation_present",
-            "onboarding_activation_offer",
-        ),
     }
     for dominator, governed in rules.items():
         for state in governed:
@@ -417,10 +411,8 @@ def validate_bundle(
     check(states.get("use_prepare", {}).get("entry", {}).get("action") == "prepare_play_run_handoff", "Play execution must bind a typed run handoff")
     check(_target(states, "use_prepare", "play_run_handoff_ready") == "use_run", "only a prepared run handoff may enter execution")
     check(states.get("use_run", {}).get("entry", {}).get("action") == "run_registry_play", "Use mode must be owned by run_registry_play")
-    check(states.get("use_output", {}).get("entry", {}).get("action") == "format_run_output", "Use output must be normalized by the deterministic formatter")
     check(actions.get("inspect_registry_play", {}).get("command") == "scripts/bin/play-inspect <match.reference> --json", "Use inspection must invoke the reusable first-class wrapper")
     check(actions.get("run_registry_play", {}).get("command") == "rote play run <inspection.exact_reference> <approved-parameters> --yes", "Use mode must invoke the approved exact Play")
-    check(actions.get("format_run_output", {}).get("command") == "scripts/bin/play-run-output --stdin --json", "Use output must invoke the reusable detailed formatter")
     check(actions.get("inspect_saved_play", {}).get("command") == "rote play inspect <publication.canonical_reference> --json", "saved Play readback must invoke rote play inspect --json")
     check(initial == "invoke", "the typed invocation classifier must be the initial state")
     check(
@@ -638,10 +630,14 @@ def validate_bundle(
     )
     check(predecessors["use_run"] == {"use_prepare"}, "execution may follow only a prepared run handoff")
     check("use_inspect" in dominators["use_run"], "inspection must dominate execution")
-    check(_target(states, "use_run", "play_run_ready") == "use_output", "successful execution must enter detailed output formatting")
-    check(_target(states, "use_output", "detailed_output_ready") == "use_verify", "only detailed output may enter verification")
-    check(_target(states, "use_output", "action_blocked") == "repair_offer", "incomplete output must enter repair instead of verification")
-    check(predecessors["use_verify"] == {"use_output"}, "Use verification may follow only complete detailed output")
+    check(_target(states, "use_run", "play_run_ready") == "use_verify", "successful execution must pass unchanged output directly to verification")
+    check(predecessors["use_verify"] == {"use_run"}, "Use verification may follow only successful Play execution")
+    receipt_policy = " ".join(actions.get("build_receipt", {}).get("command_policy", []))
+    check(
+        "Preserve output.primary exactly as received" in receipt_policy
+        and "never wrap, summarize, convert, or decorate it" in receipt_policy,
+        "Use receipts must preserve the Play output for harness-owned presentation",
+    )
     check(
         predecessors["explore_welcome"]
         == {"creator_classify", "creator_offer", "explore_offer", "repair_offer"},

@@ -339,7 +339,7 @@ states:
     requires: [match.reference, inspection.exact_reference, inspection.disclosure_sha256]
     entry: {action: run_registry_play}
     "on":
-      play_run_ready: [{target: use_output, mutate: record_controller_run}]
+      play_run_ready: [{target: use_verify, mutate: record_controller_run}]
       play_drifted: [{target: repair_offer, mutate: record_failed_receipt}]
       play_auth_repair_required: [{target: use_auth_repair_offer, mutate: record_use_auth_repair_required}]
       action_blocked: [{target: repair_offer, mutate: record_failed_receipt}]
@@ -383,15 +383,6 @@ states:
       specialist_auth_repair_failed: [{target: blocked, mutate: record_auth_repair_failure}]
       auth_repair_receipt_invalid: [{target: blocked, mutate: record_invalid_auth_repair_receipt}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  use_output:
-    owner: play
-    checkpoint: both
-    requires: [match.reference, play.version, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated]
-    entry: {action: format_run_output}
-    "on":
-      detailed_output_ready: [{target: use_verify, mutate: record_formatted_output}]
-      action_blocked: [{target: repair_offer, mutate: record_incomplete_output}]
 
   use_verify:
     owner: play
