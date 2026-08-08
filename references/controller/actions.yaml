@@ -383,12 +383,12 @@ actions:
     owner: play
     effect: read
     input_required: [request.intent, modality_policy]
-    command: scripts/bin/play-search <request.intent> --json
+    command: scripts/bin/play-search <request.intent> --limit 5 --json
     command_policy:
-      - Normalize once, then search local and authorized registry indexes concurrently.
-      - Deduplicate aliases and versions by canonical Play reference and return URI and run hints.
-      - Use registry or Flow search only because rote play currently exposes no search command.
-      - If rote play gains search support, prefer it and retire the lower-level gap route.
+      - Normalize once, derive one bounded outcome query, then search local and authorized registry indexes concurrently.
+      - Partition authorized registry matches into private organizations and the public hub.
+      - Rank adequate matches local first, remote private second, and remote public third.
+      - Deduplicate aliases and versions by canonical Play reference and return bounded execution metadata.
     events:
       search_ready: [search.complete, search.query, search.sources, search.result_refs, search.results, search.play_choices]
 
@@ -405,15 +405,27 @@ actions:
       search_presented: [search.query, search.sources, search.result_refs, search.results, search.play_choices]
 
   classify_adequacy:
-    kind: evaluator
+    kind: deterministic
     owner: play
     effect: none
-    input_required: [request.requested_outcome, search.result_refs, modality_policy]
+    input_required: [request.requested_outcome, search.results, modality_policy]
     events:
       full_match: [match.reference, match.covered, match.uncovered, confidence]
       partial_match: [match.reference, match.covered, match.uncovered, confidence]
       uncertain_match: [match.reference, match.covered, match.uncovered, confidence]
       no_match: [match.covered, match.uncovered, confidence]
+
+  route_inspected_play:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [inspection.complete, inspection.local_change, inspection.exact_reference, inspection.disclosure_sha256]
+    command_policy:
+      - Continue immediately when read-only inspection proves the exact Play is already local.
+      - Require the structured pull consent prompt for install, replacement, repair, or unknown local state.
+    events:
+      local_play_ready: []
+      remote_pull_required: []
 
   inspect_registry_play:
     kind: deterministic
@@ -439,8 +451,8 @@ actions:
     input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, request.original, request.parameters, effect_policy, output_policy]
     command: rote play run <inspection.exact_reference> <approved-parameters> --yes
     command_policy:
-      - Use --yes only after approve_play_run returns play_run_approved for this exact inspection digest, reference, and displayed parameters.
-      - A run command in the original request, an Awareness selection, or a search selection never substitutes for post-inspection approval.
+      - Use --yes after local readiness is proven, or after approve_play_run binds a remote pull to the exact inspection digest, reference, and displayed parameters.
+      - Never pull, install, replace, or repair a remote Play without the post-inspection approval.
       - If the inspection changes or parameters change, discard approval and return to use_inspect.
       - Never replace this command with a manual `rote registry play pull` plus a local-path `rote play run`, even when the Play is already local.
       - Never request summary output. Preserve the complete primary payload, response and artifact references, effects, and any full-output reference returned by Rote.

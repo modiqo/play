@@ -91,7 +91,7 @@ copy only the message, or call the fallback animated. For prompts, prefix the st
 with the listening fallback. For terminals, use the terminal fallback as the first line of the
 actual outcome.
 
-Immediately before an approved `rote play run`, present `use_run` once. After execution, preserve
+Immediately before `rote play run`, present `use_run` once. After execution, preserve
 the complete detailed primary payload and route it through the projected `use_output` action before
 verification. Compact summaries are incomplete results.
 
@@ -115,17 +115,17 @@ policy from `actions.yaml` or the exact structured prompt from `prompts.yaml`.
 
 ## Preserve the Use contract
 
-An adequate authorized Play follows:
+An adequate local Play follows:
 
 ```text
-inspect → disclose → approve → rote play run → detailed output → verify → receipt
+inspect → disclose → rote play run → detailed output → verify → receipt
 ```
 
-Use `scripts/bin/play-inspect <reference> --json` for read-only inspection and
-`rote play run <exact-reference> <approved-parameters> --yes` only after the exact post-inspection
-approval event. A request containing “run,” a URI, a search selection, or displayed parameters
-selects what to inspect; it is never execution approval. If reference, parameters, or disclosure
-SHA changes, inspect and ask again.
+An adequate remote Play inserts `approve → pull/install` between disclosure and execution. Use
+`scripts/bin/play-inspect <reference> --json` for read-only inspection. If inspection proves the
+exact Play is already local, continue directly to `rote play run`. If it reports install,
+replacement, repair, or unknown local state, present the structured approval prompt and run only
+after the approval binds the exact reference, parameters, and disclosure SHA.
 
 `rote play run` owns installation, convergence, dependencies, credentials, and execution. Never
 decompose it into registry pull, adapter setup, or lower-level commands. A failed `rote play` command is not a capability gap and never authorizes a legacy or manual fallback.
@@ -136,10 +136,11 @@ operations do not prove read-only behavior. Never pipe input to automate a selec
 
 ## Preserve Awareness and onboarding
 
-Search both local and authorized registry indexes only through `scripts/bin/play-search`; require a
-complete two-source response, normalized canonical references, and deduplicated versions. A result
-selection authorizes inspection only. An authorized organization-only result may require a local
-pull during an approved run.
+Search local, every private authorized organization, and the authorized public hub only through
+`scripts/bin/play-search`; require a complete scope-partitioned response, normalized canonical
+references, and deduplicated versions. Outcome discovery ranks adequate matches local first,
+private remote second, and public remote third. Local matches proceed after read-only inspection;
+remote matches require explicit pull consent.
 
 Digest requests use `scripts/bin/play-digest --remember`; its local cache stores only scope, SHA,
 and UTC checkpoint. When unchanged, say only “Nothing new since your last Play check.” Otherwise

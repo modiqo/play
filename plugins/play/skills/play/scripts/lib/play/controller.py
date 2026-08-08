@@ -772,6 +772,11 @@ def _derive_session_guards(
     values[GuardId("search_only_requested")] = (
         _path_value(context, "last_event.id") == "play_search_request"
     )
+    values[GuardId("match_satisfies_constraints")] = (
+        event.id == EventId("full_match")
+        and isinstance(_path_value(event.payload, "match.reference"), str)
+        and _path_value(event.payload, "match.uncovered") == []
+    )
     values[GuardId("explore_is_approved")] = (
         _path_value(context, "consent.explore") == "approved"
     )

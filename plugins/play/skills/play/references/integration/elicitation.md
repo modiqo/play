@@ -23,7 +23,8 @@ Ask for one number for single-select or comma-separated numbers for multi-select
 declared event and payload.
 
 Skip redundant elicitation when the user's explicit request already supplies the exact declared
-event, reference, parameters, or creator intent, except for `approve_play_run`. A request containing
-“run” selects the candidate and parameters to inspect; it never supplies post-inspection approval.
+event, reference, parameters, or creator intent. After inspection, an exact local Play proceeds
+without a pull prompt. `approve_play_run` is mandatory when inspection reports that a remote Play
+must be installed, replaced, or repaired; the original request never supplies that pull consent.
 Always show the inspection disclosure before asking that question. Never skip authentication,
-effect, modality widening, execution, or publication visibility gates.
+effect, modality widening, remote pull, or publication visibility gates.

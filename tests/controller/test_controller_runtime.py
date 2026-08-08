@@ -46,7 +46,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(74, len(self.runtime.bundle.states))
+        self.assertEqual(75, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -427,7 +427,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertTrue(yielded.session.context["receipt_ref"].startswith("sha256:"))
 
     @patch("play.runtime_actions.subprocess.run")
-    def test_advance_until_yield_auto_inspects_before_approval(self, run) -> None:
+    def test_advance_until_yield_auto_inspects_and_routes_local_play(self, run) -> None:
         run.return_value.returncode = 0
         run.return_value.stderr = ""
         run.return_value.stdout = json.dumps(
@@ -474,12 +474,103 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         yielded = advance_until_yield(self.runtime, projected, root=ROOT)
 
-        self.assertEqual("use_offer", yielded.projection["state"]["id"])
-        self.assertEqual("prompt", yielded.projection["state"]["boundary"])
+        self.assertEqual("use_run", yielded.projection["state"]["id"])
+        self.assertEqual("deterministic_action", yielded.projection["state"]["boundary"])
         self.assertEqual("inspect_registry_play", yielded.trace[0].action)
         self.assertEqual("play_inspected", yielded.trace[0].event)
+        self.assertEqual("route_inspected_play", yielded.trace[1].action)
+        self.assertEqual("local_play_ready", yielded.trace[1].event)
         self.assertEqual(1, len(yielded.presentations))
         self.assertIn("#", yielded.presentations[0])
+
+    @patch("play.runtime_actions.subprocess.run")
+    def test_deterministic_match_routes_remote_to_pull_consent_and_prunes_token(self, run) -> None:
+        run.return_value.returncode = 0
+        run.return_value.stderr = ""
+        run.return_value.stdout = json.dumps(
+            {
+                "complete": True,
+                "exact_reference": "modiqo/retrieve-rideshare-receipts@0.0.5",
+                "description": "Retrieve rideshare receipts",
+                "local_change": "install",
+                "dependencies": {"adapter_checks": []},
+                "operations": [],
+                "effects": {"summary": "No declared writes."},
+                "blockers": [],
+                "disclosure_sha256": "b" * 64,
+                "identity": {
+                    "name": "retrieve-rideshare-receipts",
+                    "description": "Retrieve rideshare receipts",
+                    "visibility": "private",
+                },
+                "parameters": [],
+                "preflight": {
+                    "run_eligible": True,
+                    "play_local_state": "missing",
+                    "decision": "install_required",
+                    "blockers": [],
+                },
+                "approval": {"notice": "Nothing has been pulled or run."},
+            }
+        )
+        session = self.runtime.initial_session(
+            run_id="session-search",
+            task_key="task-search",
+            request_original="fetch rideshare receipts for July 2026",
+        )
+        context = dict(session.context)
+        context["state"] = "classify"
+        context["mode"] = "use"
+        context["request"] = dict(context["request"])
+        context["request"]["intent"] = "fetch rideshare receipts for july 2026"
+        context["request"]["requested_outcome"] = "rideshare receipts"
+        candidate = {
+            "name": "retrieve-rideshare-receipts",
+            "description": "Retrieve rideshare receipts" + " safely" * 50,
+            "reference": "modiqo/retrieve-rideshare-receipts@0.0.5",
+            "exact_reference": "modiqo/retrieve-rideshare-receipts@0.0.5",
+            "version": "0.0.5",
+            "status": "approved",
+            "sources": ["remote_private", "remote_public"],
+            "score": 1.0,
+            "coverage": 1.0,
+            "match_classification": "full",
+            "primary_scope": "remote_private",
+            "uri": "https://play.modiqo.ai/modiqo/retrieve-rideshare-receipts@0.0.5",
+            "run_command": "rote play run modiqo/retrieve-rideshare-receipts@0.0.5",
+            "inspect_command": "rote play inspect modiqo/retrieve-rideshare-receipts@0.0.5 --json",
+            "hint_kind": "play",
+            "local_availability": "not_found",
+            "execution_resolution": "pull_required",
+            "selection_description": "Remote private match; pulling requires approval.",
+        }
+        context["search"] = {
+            "complete": True,
+            "query": context["request"]["intent"],
+            "sources": ["local", "remote_private", "remote_public"],
+            "result_refs": [candidate["reference"]],
+            "results": [candidate] * 5,
+            "play_choices": [],
+        }
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("classify")),
+            context=context,
+            preflight_ready=True,
+        )
+        token_before = len(encode_session(projected))
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("use_offer", yielded.projection["state"]["id"])
+        self.assertEqual("prompt", yielded.projection["state"]["boundary"])
+        self.assertEqual(
+            ["classify_adequacy", "inspect_registry_play", "route_inspected_play"],
+            [item.action for item in yielded.trace],
+        )
+        self.assertEqual([], yielded.session.context["search"]["results"])
+        self.assertEqual([], yielded.session.context["search"]["play_choices"])
+        self.assertLess(len(encode_session(yielded.session)), token_before)
 
     @patch("play.runtime_actions.subprocess.run")
     def test_advance_until_yield_collects_and_presents_awareness(self, run) -> None:
@@ -578,16 +669,8 @@ class ControllerRuntimeTest(unittest.TestCase):
         session = self.runtime.advance_session(
             session,
             ControllerEvent(
-                id=EventId("play_run_approved"),
-                payload={
-                    "prompt_version": "1",
-                    "selected_at": "2026-08-07T00:00:00Z",
-                    "inspection": {
-                        "exact_reference": "modiqo/hello@0.1.0",
-                        "disclosure_sha256": "a" * 64,
-                    },
-                    "request": {"parameters": {}},
-                },
+                id=EventId("local_play_ready"),
+                payload={},
                 guards={},
             ),
         ).session

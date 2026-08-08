@@ -39,7 +39,8 @@ cases:
   - name: first-use Hello preserves inspection approval detail verification and activation
     steps:
       - {state: onboarding_first_offer, event: onboarding_starter_selected, target: use_inspect}
-      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_inspect, event: play_inspected, target: use_decide}
+      - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_approved, target: use_run}
       - {state: use_run, event: play_run_ready, target: use_output}
       - {state: use_output, event: detailed_output_ready, target: use_verify}
@@ -60,7 +61,8 @@ cases:
         event: rote_available
         guards: {onboarding_is_greeting: false, onboarding_is_play_uri: true}
         target: use_inspect
-      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_inspect, event: play_inspected, target: use_decide}
+      - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_declined, target: completed}
     terminal: completed
     excludes: [onboarding_identity, onboarding_card_fetch, onboarding_setup, use_run]
@@ -108,7 +110,8 @@ cases:
         target: search_present
       - {state: search_present, event: search_presented, target: search_offer}
       - {state: search_offer, event: search_play_selected, target: use_inspect}
-      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_inspect, event: play_inspected, target: use_decide}
+      - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_declined, target: completed}
     terminal: completed
     excludes: [classify, use_run, explore_offer]
@@ -116,7 +119,8 @@ cases:
   - name: exact Play reference is inspected and approved before first-class execution
     steps:
       - {state: qualify, event: exact_play_request, target: use_inspect}
-      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_inspect, event: play_inspected, target: use_decide}
+      - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_approved, target: use_run}
       - {state: use_run, event: play_run_ready, target: use_output}
       - {state: use_output, event: detailed_output_ready, target: use_verify}
@@ -143,7 +147,8 @@ cases:
         event: full_match
         guards: {match_satisfies_constraints: true}
         target: use_inspect
-      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_inspect, event: play_inspected, target: use_decide}
+      - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_approved, target: use_run}
       - {state: use_run, event: play_run_ready, target: use_output}
       - {state: use_output, event: detailed_output_ready, target: use_verify}
@@ -558,7 +563,8 @@ cases:
       - {state: awareness_collect, event: awareness_ready, target: awareness_present}
       - {state: awareness_present, event: awareness_presented, target: awareness_offer}
       - {state: awareness_offer, event: awareness_play_selected, target: use_inspect}
-      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_inspect, event: play_inspected, target: use_decide}
+      - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_approved, target: use_run}
       - {state: use_run, event: play_run_ready, target: use_output}
       - {state: use_output, event: detailed_output_ready, target: use_verify}
@@ -600,5 +606,6 @@ cases:
     steps:
       - {state: creator_classify, event: creator_match_ready, target: creator_offer}
       - {state: creator_offer, event: creator_use_selected, target: use_inspect}
-      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_inspect, event: play_inspected, target: use_decide}
+      - {state: use_decide, event: remote_pull_required, target: use_offer}
     terminal: use_offer

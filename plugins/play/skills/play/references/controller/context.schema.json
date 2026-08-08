@@ -116,7 +116,7 @@
     },
     "searchResult": {
       "type": "object",
-      "required": ["name", "description", "reference", "exact_reference", "version", "status", "sources", "score", "uri", "run_command", "inspect_command", "hint_kind", "local_availability", "execution_resolution", "selection_description"],
+      "required": ["name", "description", "reference", "exact_reference", "version", "status", "sources", "score", "coverage", "match_classification", "primary_scope", "uri", "run_command", "inspect_command", "hint_kind", "local_availability", "execution_resolution", "selection_description"],
       "additionalProperties": false,
       "properties": {
         "name": {"type": "string"},
@@ -128,15 +128,18 @@
         "sources": {
           "type": "array",
           "uniqueItems": true,
-          "items": {"enum": ["local", "registry"]}
+          "items": {"enum": ["local", "remote_private", "remote_public"]}
         },
         "score": {"type": "number", "minimum": 0},
+        "coverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "match_classification": {"enum": ["full", "partial", "uncertain"]},
+        "primary_scope": {"enum": ["local", "remote_private", "remote_public"]},
         "uri": {"type": "string", "minLength": 1},
         "run_command": {"type": "string", "minLength": 1},
         "inspect_command": {"type": "string"},
         "hint_kind": {"enum": ["play", "local-play"]},
         "local_availability": {"enum": ["found", "not_found", "local_only"]},
-        "execution_resolution": {"enum": ["inspect_required", "pull_expected", "publish_required"]},
+        "execution_resolution": {"enum": ["run_local", "pull_required"]},
         "selection_description": {"type": "string", "minLength": 1}
       }
     },

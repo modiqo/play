@@ -389,6 +389,14 @@ def _apply_mutation_semantics(
     for path, value in _CONSTANT_PATCHES.get(mutation, {}).items():
         _set_existing_path(context, path, value)
 
+    if mutation in {"enter_use", "enter_search_use"}:
+        # Search result descriptions and choices are presentation data. Once a match is
+        # selected they must not inflate every subsequent opaque session token.
+        selected = _path_value(payload, "match.reference")
+        context["search"]["results"] = []
+        context["search"]["play_choices"] = []
+        context["search"]["result_refs"] = [selected] if isinstance(selected, str) else []
+
     if mutation == "enter_onboarding_starter_use":
         starter = _path_value(payload, "onboarding.starter_reference")
         if isinstance(starter, str) and starter:

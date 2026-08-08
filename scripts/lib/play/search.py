@@ -15,34 +15,119 @@ from .render import json_text
 
 
 SCHEMA = "play.search/v1"
+MAX_DESCRIPTION_CHARS = 480
+_DISCOVERY_STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "can",
+    "fetch",
+    "find",
+    "for",
+    "from",
+    "get",
+    "help",
+    "in",
+    "me",
+    "month",
+    "my",
+    "of",
+    "please",
+    "retrieve",
+    "the",
+    "to",
+    "want",
+    "you",
+}
+_MONTHS = {
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept",
+    "oct", "nov", "dec",
+}
 
 
 class SearchError(CommandError):
     pass
 
 
+def discovery_queries(query: str) -> list[str]:
+    """Return bounded broad-to-specific queries without model inference."""
+
+    tokens = query.split()
+    stable = [
+        token
+        for token in tokens
+        if token not in _DISCOVERY_STOP_WORDS
+        and token not in _MONTHS
+        and not token.isdecimal()
+    ]
+    broad = " ".join(stable)
+    return list(dict.fromkeys(candidate for candidate in (query, broad) if candidate))
+
+
 def search_both(query: str, limit: int) -> tuple[dict, list]:
     fetch_limit = max(50, limit * 10)
-    commands = {
-        "local": ["rote", "play", "search", query, "--limit", str(fetch_limit), "--json"],
-        "registry": [
-            "rote",
-            "registry",
-            "play",
-            "search",
-            query,
-            "--limit",
-            str(fetch_limit),
-            "--json",
-        ],
-    }
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    queries = discovery_queries(query)
+    commands = {}
+    for index, candidate in enumerate(queries):
+        commands[("local", index)] = [
+            "rote", "play", "search", candidate, "--limit", str(fetch_limit), "--json"
+        ]
+        commands[("registry", index)] = [
+            "rote", "registry", "play", "search", candidate,
+            "--limit", str(fetch_limit), "--json",
+        ]
+    with ThreadPoolExecutor(max_workers=len(commands)) as executor:
         pending = {
-            source: executor.submit(run_json, command, error_type=SearchError)
-            for source, command in commands.items()
+            key: executor.submit(run_json, command, error_type=SearchError)
+            for key, command in commands.items()
         }
-        results = {source: future.result() for source, future in pending.items()}
-    return results["local"], results["registry"]
+        results = {key: future.result() for key, future in pending.items()}
+
+    local_flows = []
+    seen_paths = set()
+    registry_items = []
+    seen_registry = set()
+    for index in range(len(queries)):
+        local = results[("local", index)]
+        flows = local.get("flows") if isinstance(local, dict) else None
+        if not isinstance(flows, list):
+            raise SearchError("local search result has no flows array")
+        for item in flows:
+            key = item.get("path") if isinstance(item, dict) else None
+            if key not in seen_paths:
+                seen_paths.add(key)
+                local_flows.append(item)
+        registry = results[("registry", index)]
+        if not isinstance(registry, list):
+            raise SearchError("registry search result is not an array")
+        for item in registry:
+            key = (
+                item.get("owner_slug"), item.get("skill_name"), item.get("version"),
+                item.get("storage_path"),
+            ) if isinstance(item, dict) else None
+            if key not in seen_registry:
+                seen_registry.add(key)
+                registry_items.append(item)
+    return {"flows": local_flows}, registry_items
+
+
+def registry_scope(item: dict) -> str:
+    visibility = item.get("visibility")
+    storage_path = item.get("storage_path")
+    if visibility == "public" or (
+        isinstance(storage_path, str) and storage_path.startswith("community_")
+    ):
+        return "remote_public"
+    return "remote_private"
+
+
+def bounded_description(value: object) -> str:
+    description = value if isinstance(value, str) else ""
+    if len(description) <= MAX_DESCRIPTION_CHARS:
+        return description
+    return description[: MAX_DESCRIPTION_CHARS - 1].rstrip() + "…"
 
 
 def fingerprint(name: str, description: str) -> str:
@@ -65,6 +150,11 @@ def local_reference(path_value: str, flow_root: Path) -> str | None:
     return None
 
 
+def preferred_local_path(paths: set[str], flow_root: Path) -> str:
+    canonical = [path for path in paths if local_reference(path, flow_root)]
+    return sorted(canonical or paths)[0]
+
+
 def new_hit(name: str, description: str, reference: str | None) -> dict:
     return {
         "name": name,
@@ -76,6 +166,7 @@ def new_hit(name: str, description: str, reference: str | None) -> dict:
         "local_paths": set(),
         "source_ranks": {},
         "source_scores": {},
+        "versions_by_scope": {},
     }
 
 
@@ -103,15 +194,19 @@ def merge_results(
         if not isinstance(owner, str) or not isinstance(name, str):
             raise SearchError("registry search item lacks owner_slug or skill_name")
         reference = f"{owner}/{name}"
-        description = item.get("skill_description") or ""
+        description = bounded_description(item.get("skill_description"))
         hit = canonical.setdefault(reference, new_hit(name, description, reference))
-        hit["sources"].add("registry")
-        hit["source_ranks"]["registry"] = min(rank, hit["source_ranks"].get("registry", rank))
+        scope = registry_scope(item)
+        hit["sources"].add(scope)
+        hit["source_ranks"][scope] = min(rank, hit["source_ranks"].get(scope, rank))
         if isinstance(item.get("rank"), (int, float)):
-            hit["source_scores"]["registry"] = max(
-                float(item["rank"]), hit["source_scores"].get("registry", float("-inf"))
+            hit["source_scores"][scope] = max(
+                float(item["rank"]), hit["source_scores"].get(scope, float("-inf"))
             )
         version = item.get("version")
+        current_scope_version = hit["versions_by_scope"].get(scope)
+        if semantic_version_key(version) > semantic_version_key(current_scope_version):
+            hit["versions_by_scope"][scope] = version
         if semantic_version_key(version) > semantic_version_key(hit["version"]):
             hit["version"] = version
             hit["status"] = item.get("status")
@@ -123,7 +218,7 @@ def merge_results(
         path_value = item.get("path")
         if not isinstance(name, str) or not isinstance(path_value, str):
             raise SearchError("local search item lacks name or path")
-        description = item.get("description") or ""
+        description = bounded_description(item.get("description"))
         reference = local_reference(path_value, flow_root)
         if reference:
             hit = canonical.setdefault(reference, new_hit(name, description, reference))
@@ -152,7 +247,7 @@ def merge_results(
         elif len(matches) == 1:
             hit = canonical[matches[0]]
         else:
-            hit = new_hit(item["name"], item.get("description") or "", None)
+            hit = new_hit(item["name"], bounded_description(item.get("description")), None)
             local_only.append(hit)
         hit["sources"].add("local")
         hit["local_paths"].add(item["path"])
@@ -163,46 +258,72 @@ def merge_results(
             )
 
     hits = [*canonical.values(), *local_only]
-    query_tokens = set(normalized_query.split())
+    discovery = discovery_queries(normalized_query)
+    semantic_query = discovery[-1] if discovery else normalized_query
+    query_tokens = set(semantic_query.split())
     for hit in hits:
         searchable = set(normalize_query(f"{hit['name']} {hit['description']}").split())
         coverage = len(query_tokens & searchable) / len(query_tokens) if query_tokens else 0.0
         rank_fusion = sum(1.0 / (60 + rank) for rank in hit["source_ranks"].values())
         hit["combined_score"] = coverage + rank_fusion
-    hits.sort(key=lambda hit: (-hit["combined_score"], hit["name"].casefold(), hit["reference"] or ""))
+        hit["coverage"] = coverage
+        hit["match_classification"] = (
+            "full" if coverage >= 0.75 else "partial" if coverage >= 0.34 else "uncertain"
+        )
+        hit["primary_scope"] = (
+            "local" if "local" in hit["sources"]
+            else "remote_private" if "remote_private" in hit["sources"]
+            else "remote_public"
+        )
+    class_priority = {"full": 0, "partial": 1, "uncertain": 2}
+    scope_priority = {"local": 0, "remote_private": 1, "remote_public": 2}
+    hits.sort(key=lambda hit: (
+        class_priority[hit["match_classification"]],
+        scope_priority[hit["primary_scope"]],
+        -hit["combined_score"],
+        hit["name"].casefold(),
+        hit["reference"] or "",
+    ))
 
     output = []
     for hit in hits[:limit]:
         reference = hit["reference"]
-        if reference and "registry" in hit["sources"]:
-            exact_reference = f"{reference}@{hit['version']}" if hit["version"] else reference
+        primary_scope = hit["primary_scope"]
+        if primary_scope == "local":
+            path = preferred_local_path(hit["local_paths"], flow_root)
+            exact_reference = path
+            uri = Path(path).expanduser().resolve(strict=False).as_uri()
+            run_command = shlex.join(["rote", "play", "run", path])
+            inspect_command = shlex.join(["rote", "play", "inspect", path, "--json"])
+            hint_kind = "local-play"
+            local_availability = "found" if reference else "local_only"
+            execution_resolution = "run_local"
+            candidate_reference = path
+        elif reference:
+            selected_version = hit["versions_by_scope"].get(primary_scope) or hit["version"]
+            exact_reference = f"{reference}@{selected_version}" if selected_version else reference
             uri = f"https://play.modiqo.ai/{exact_reference}"
             run_command = shlex.join(["rote", "play", "run", exact_reference])
             inspect_command = shlex.join(["rote", "play", "inspect", exact_reference, "--json"])
             hint_kind = "play"
             local_availability = "found" if "local" in hit["sources"] else "not_found"
-            execution_resolution = (
-                "inspect_required" if local_availability == "found" else "pull_expected"
-            )
+            execution_resolution = "pull_required"
+            candidate_reference = exact_reference
         else:
-            path = sorted(hit["local_paths"])[0]
-            uri = Path(path).expanduser().resolve(strict=False).as_uri()
-            run_command = shlex.join(["rote", "play", "run", path])
-            inspect_command = ""
-            hint_kind = "local-play"
-            exact_reference = None
-            local_availability = "local_only"
-            execution_resolution = "publish_required"
+            raise SearchError("search result has neither a local path nor registry reference")
         output.append(
             {
                 "name": hit["name"],
                 "description": hit["description"],
-                "reference": reference if "registry" in hit["sources"] else None,
+                "reference": candidate_reference,
                 "exact_reference": exact_reference,
                 "version": hit["version"],
                 "status": hit["status"],
                 "sources": sorted(hit["sources"]),
                 "score": round(hit["combined_score"], 8),
+                "coverage": round(hit["coverage"], 8),
+                "match_classification": hit["match_classification"],
+                "primary_scope": primary_scope,
                 "uri": uri,
                 "run_command": run_command,
                 "inspect_command": inspect_command,
@@ -210,14 +331,9 @@ def merge_results(
                 "local_availability": local_availability,
                 "execution_resolution": execution_resolution,
                 "selection_description": (
-                    f"{hit['description']} Available in an authorized organization; "
-                    "a local pull/install is expected and will require approval."
-                    if execution_resolution == "pull_expected"
-                    else (
-                        f"{hit['description']} Inspect dependencies and effects before approval."
-                        if execution_resolution == "inspect_required"
-                        else f"{hit['description']} Publish this local Flow to make it a runnable Play."
-                    )
+                    f"{hit['description']} Already local; inspect and run without a pull prompt."
+                    if execution_resolution == "run_local"
+                    else f"{hit['description']} Remote {primary_scope.removeprefix('remote_').replace('_', ' ')} match; pulling requires your approval."
                 ),
             }
         )
@@ -239,35 +355,33 @@ def render_markdown(original: str, normalized: str, results: list[dict]) -> str:
                 f"{index}. **{result['name']}** · {source}{version} · score {result['score']:.8f}",
                 f"   URI: {result['uri']}",
                 (
-                    "   Local: not found; pull/install expected after approval."
-                    if result["execution_resolution"] == "pull_expected"
-                    else (
-                        "   Local: found; inspection will verify the exact installed version."
-                        if result["execution_resolution"] == "inspect_required"
-                        else "   Local-only Flow: no authorized registry Play was found."
-                    )
+                    "   Local: found; the outcome route runs it immediately after read-only inspection."
+                    if result["execution_resolution"] == "run_local"
+                    else "   Remote: not local; pull/install requires approval."
                 ),
             ]
         )
-        if result["hint_kind"] == "play":
-            lines.append(f"   Next: inspect with `{result['inspect_command']}`")
-            lines.append("   Running still requires a separate approval after inspection.")
-        else:
-            lines.append("   Publish it to obtain a first-class Play reference.")
+        lines.append(f"   Next: inspect with `{result['inspect_command']}`")
+        if result["execution_resolution"] == "pull_required":
+            lines.append("   Pulling and running requires a separate approval after inspection.")
     return "\n".join(lines)
 
 
 def build_play_choices(results: list[dict]) -> list[dict]:
-    """Return harness-ready choices for registry Plays only."""
+    """Return harness-ready choices for all runnable Plays."""
     choices = []
     for result in results:
-        exact_reference = result.get("exact_reference")
-        if not isinstance(exact_reference, str) or not exact_reference:
+        reference = result.get("reference")
+        if not isinstance(reference, str) or not reference:
             continue
-        owner = exact_reference.split("/", 1)[0]
+        owner = (
+            result.get("primary_scope", "local").replace("remote_", "")
+            if result.get("primary_scope") != "local"
+            else "local"
+        )
         choices.append(
             {
-                "reference": exact_reference,
+                "reference": reference,
                 "label": f"{result['name']} — {owner}",
                 "description": result["selection_description"],
                 "parameters": {},
@@ -303,7 +417,7 @@ def main() -> int:
         "query": original,
         "normalized_query": normalized,
         "complete": True,
-        "sources": ["local", "authorized_registry"],
+        "sources": ["local", "remote_private", "remote_public"],
         "result_refs": [result["reference"] for result in results if result["reference"]],
         "results": results,
         "play_choices": build_play_choices(results),

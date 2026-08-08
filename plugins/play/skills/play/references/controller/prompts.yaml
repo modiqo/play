@@ -107,10 +107,10 @@ prompts:
       search_dismissed: [prompt_version, selected_at]
 
   approve_play_run:
-    question: Run this inspected Play with the displayed parameters and disclosed setup and effects?
+    question: Pull or repair this remote Play as disclosed, then run it with the displayed parameters and effects?
     selection: single
     choices:
-      - {id: run, label: Approve and run, description: "Let rote install or replace the exact Play and dependencies if needed, then execute it with the displayed parameters.", event: play_run_approved}
+      - {id: run, label: Pull and run, description: "Authorize rote to install, replace, or repair the exact remote Play and dependencies, then execute it with the displayed parameters.", event: play_run_approved}
       - {id: cancel, label: Not now, description: "Stop without installing, repairing, authenticating, or running anything.", event: play_run_declined}
     events:
       play_run_approved: [prompt_version, selected_at, inspection.exact_reference, inspection.disclosure_sha256, request.parameters]

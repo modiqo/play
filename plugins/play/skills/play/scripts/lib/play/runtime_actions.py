@@ -41,12 +41,16 @@ _SELECTOR_ACTIONS = {
     "resolve_public_owner",
     "inspect_publication_credentials",
     "dispatch_route",
+    "classify_adequacy",
+    "route_inspected_play",
 }
 _COMMANDLESS_ACTIONS = {
     "present_awareness_digest",
     "present_search_results",
     "build_receipt",
     "dispatch_route",
+    "classify_adequacy",
+    "route_inspected_play",
 }
 
 
@@ -267,6 +271,51 @@ def _commandless_result(
             else "direct_handoff_ready"
         )
         return {"event": event}
+    if action_id == "classify_adequacy":
+        search = context.get("search")
+        request = context.get("request")
+        if not isinstance(search, Mapping) or not isinstance(request, Mapping):
+            raise ControllerRuntimeError("adequacy context is malformed")
+        results = search.get("results")
+        if not isinstance(results, list):
+            raise ControllerRuntimeError("adequacy results are malformed")
+        outcome = request.get("requested_outcome") or request.get("intent") or "requested outcome"
+        if not results:
+            return {
+                "event": "no_match",
+                "match": {"covered": [], "uncovered": [str(outcome)]},
+                "confidence": 1.0,
+            }
+        candidate = results[0]
+        if not isinstance(candidate, Mapping):
+            raise ControllerRuntimeError("adequacy candidate is malformed")
+        classification = candidate.get("match_classification")
+        reference = candidate.get("reference")
+        if classification not in {"full", "partial", "uncertain"} or not isinstance(reference, str):
+            raise ControllerRuntimeError("adequacy candidate is incomplete")
+        event = {
+            "full": "full_match",
+            "partial": "partial_match",
+            "uncertain": "uncertain_match",
+        }[classification]
+        covered = [str(candidate.get("name") or reference)]
+        uncovered = [] if classification == "full" else [str(outcome)]
+        return {
+            "event": event,
+            "match": {
+                "reference": reference,
+                "covered": covered,
+                "uncovered": uncovered,
+            },
+            "confidence": float(candidate.get("coverage", 0.0)),
+        }
+    if action_id == "route_inspected_play":
+        local_change = _path_value(context, "inspection.local_change")
+        return {
+            "event": (
+                "local_play_ready" if local_change == "none" else "remote_pull_required"
+            )
+        }
     raise ControllerRuntimeError(f"no deterministic renderer for {action_id}")
 
 

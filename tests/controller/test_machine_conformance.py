@@ -453,9 +453,10 @@ class MachineConformanceTest(unittest.TestCase):
 
     def test_unified_search_is_actionable(self) -> None:
         self.assertEqual(
-            "scripts/bin/play-search <request.intent> --json",
+            "scripts/bin/play-search <request.intent> --limit 5 --json",
             ACTIONS["search_authorized_plays"]["command"],
         )
+        self.assertEqual("deterministic", ACTIONS["classify_adequacy"]["kind"])
 
     def test_awareness_writes_only_local_memory_until_inspected_approval(self) -> None:
         self.assertEqual(
@@ -522,9 +523,16 @@ class MachineConformanceTest(unittest.TestCase):
             self.assertEqual("text", prompt["selection"])
             self.assertIn(prompt["input"]["event"], prompt["events"])
 
-    def test_every_run_path_is_inspected_and_approved(self) -> None:
+    def test_every_run_path_is_inspected_and_remote_pulls_are_approved(self) -> None:
         self.assertEqual(
-            "use_offer", MACHINE["states"]["use_inspect"]["on"]["play_inspected"][0]["target"]
+            "use_decide", MACHINE["states"]["use_inspect"]["on"]["play_inspected"][0]["target"]
+        )
+        self.assertEqual(
+            "use_run", MACHINE["states"]["use_decide"]["on"]["local_play_ready"][0]["target"]
+        )
+        self.assertEqual(
+            "use_offer",
+            MACHINE["states"]["use_decide"]["on"]["remote_pull_required"][0]["target"],
         )
         self.assertEqual(
             "use_run", MACHINE["states"]["use_offer"]["on"]["play_run_approved"][0]["target"]
@@ -536,7 +544,7 @@ class MachineConformanceTest(unittest.TestCase):
             for branch in branches
             if branch["target"] == "use_run"
         }
-        self.assertEqual({"use_offer"}, incoming)
+        self.assertEqual({"use_decide", "use_offer"}, incoming)
 
     def test_detailed_output_dominates_use_verification_and_receipt(self) -> None:
         self.assertEqual(

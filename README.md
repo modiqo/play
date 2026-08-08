@@ -119,10 +119,12 @@ stateDiagram-v2
     classify --> explore_offer : partial / uncertain / no match
 
     %% ── Use (existing Play) ──
-    use_inspect --> use_offer : inspected
+    use_inspect --> use_decide : inspected
     use_inspect --> completed : not runnable
     use_inspect --> search : reference unresolved
-    use_offer --> use_run : approved
+    use_decide --> use_run : exact local Play
+    use_decide --> use_offer : remote pull required
+    use_offer --> use_run : pull approved
     use_offer --> completed : declined
     use_run --> use_output : run ready
     use_run --> repair_offer : drifted / failed
@@ -283,14 +285,17 @@ Baseline recorded on 2026-08-07 on an Apple Silicon Mac with Python 3.14.5 and
 
 | Metric | Time |
 |---|---:|
-| One-time bundle compile | 74.8–76.7 ms |
-| Warm transition median | 0.569 ms |
-| Warm transition p95 | 0.773 ms |
-| Full invoke-to-evaluator median | 49.0 ms |
+| One-time bundle compile | 76.0–81.8 ms |
+| Warm transition median | 0.581 ms |
+| Warm transition p95 | 0.784 ms |
+| Full invoke-to-evaluator median | 53.6 ms |
 | Qualifier projection | 2,024 bytes |
-| Opaque session token | 2,592 bytes |
+| Opaque session token | 2,594 bytes |
 
-The 74-state bundle remains sub-millisecond at p95 for warm transitions. Loading validated
+The 75-state bundle remains sub-millisecond at p95 for warm transitions. Search adequacy and local
+versus remote routing are deterministic: adequate results are ordered local, private organization,
+then public hub; selected search payloads are pruned before the next opaque token is emitted.
+Loading validated
 documents once instead of rereading the controller YAML during compilation reduced the observed
 cold compile baseline by roughly half. The 12.9 KB activation skill is also about 63% smaller than
 the former 34.9 KB model-owned controller manual, and normal runs no longer require the model to

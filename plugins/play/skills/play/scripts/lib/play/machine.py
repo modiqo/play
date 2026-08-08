@@ -386,7 +386,11 @@ def validate_bundle(
     check(_target(states, "search_present", "search_presented") == "search_offer", "presented search results must offer read-only inspection")
     check(_target(states, "classify", "full_match") == "use_inspect", "an adequate discovered Play must enter read-only inspection")
     check(states.get("use_inspect", {}).get("entry", {}).get("action") == "inspect_registry_play", "Use must start with reusable Play inspection")
-    check(states.get("use_offer", {}).get("prompt") == "approve_play_run", "Use must ask for post-inspection execution approval")
+    check(_target(states, "use_inspect", "play_inspected") == "use_decide", "inspection must route by local readiness")
+    check(states.get("use_decide", {}).get("entry", {}).get("action") == "route_inspected_play", "local readiness must be resolved deterministically")
+    check(_target(states, "use_decide", "local_play_ready") == "use_run", "an exact local Play must execute without a pull prompt")
+    check(_target(states, "use_decide", "remote_pull_required") == "use_offer", "a remote Play must reach pull consent")
+    check(states.get("use_offer", {}).get("prompt") == "approve_play_run", "remote Use must ask for pull and execution approval")
     check(states.get("use_run", {}).get("entry", {}).get("action") == "run_registry_play", "Use mode must be owned by run_registry_play")
     check(states.get("use_output", {}).get("entry", {}).get("action") == "format_run_output", "Use output must be normalized by the deterministic formatter")
     check(actions.get("inspect_registry_play", {}).get("command") == "scripts/bin/play-inspect <match.reference> --json", "Use inspection must invoke the reusable first-class wrapper")
@@ -515,7 +519,7 @@ def validate_bundle(
         and first_choices.get("done", {}).get("event") == "onboarding_dismissed",
         "first use must recommend inspection of Hello while preserving a clear dismissal",
     )
-    check(actions.get("search_authorized_plays", {}).get("command") == "scripts/bin/play-search <request.intent> --json", "Play discovery must invoke the unified local and registry search")
+    check(actions.get("search_authorized_plays", {}).get("command") == "scripts/bin/play-search <request.intent> --limit 5 --json", "Play discovery must invoke the bounded local and registry search")
     check(_target(states, "qualify", "play_awareness_request") == "awareness_collect", "an awareness request must enter the digest path")
     check(actions.get("collect_awareness_digest", {}).get("effect") == "local-write", "awareness collection may write only remembered local state")
     check(actions.get("collect_awareness_digest", {}).get("command") == "scripts/bin/play-digest --remember --days <awareness.window_days> --json", "awareness must invoke the remembered digest command")
@@ -599,7 +603,10 @@ def validate_bundle(
     )
     for forbidden in ("use_preflight", "use_resolve"):
         check(forbidden not in states, f"{forbidden} must stay inside the rote play run controller")
-    check(predecessors["use_run"] == {"use_offer"}, "execution may follow only post-inspection approval")
+    check(
+        predecessors["use_run"] == {"use_decide", "use_offer"},
+        "execution may follow only local readiness or remote pull approval",
+    )
     check("use_inspect" in dominators["use_run"], "inspection must dominate execution")
     check(_target(states, "use_run", "play_run_ready") == "use_output", "successful execution must enter detailed output formatting")
     check(_target(states, "use_output", "detailed_output_ready") == "use_verify", "only detailed output may enter verification")

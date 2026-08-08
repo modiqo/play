@@ -58,19 +58,21 @@ class SearchTest(unittest.TestCase):
         ]
         results = PLAY_SEARCH.merge_results(local, registry, flow_root, 10, "live service status")
         self.assertEqual(1, len(results))
-        self.assertEqual("warsaw-rust/hello", results[0]["reference"])
+        local_path = str(flow_root / "warsaw-rust" / "hello" / "main.ts")
+        self.assertEqual(local_path, results[0]["reference"])
         self.assertEqual("0.1.0", results[0]["version"])
-        self.assertEqual(["local", "registry"], results[0]["sources"])
+        self.assertEqual(["local", "remote_private"], results[0]["sources"])
         self.assertEqual(
-            "https://play.modiqo.ai/warsaw-rust/hello@0.1.0", results[0]["uri"]
+            pathlib.Path(local_path).resolve(strict=False).as_uri(), results[0]["uri"]
         )
-        self.assertEqual("rote play run warsaw-rust/hello@0.1.0", results[0]["run_command"])
+        self.assertEqual(f"rote play run {local_path}", results[0]["run_command"])
         self.assertEqual(
-            "rote play inspect warsaw-rust/hello@0.1.0 --json",
+            f"rote play inspect {local_path} --json",
             results[0]["inspect_command"],
         )
         self.assertEqual("found", results[0]["local_availability"])
-        self.assertEqual("inspect_required", results[0]["execution_resolution"])
+        self.assertEqual("run_local", results[0]["execution_resolution"])
+        self.assertEqual("local", results[0]["primary_scope"])
 
     def test_registry_only_result_discloses_expected_pull_before_selection(self):
         results = PLAY_SEARCH.merge_results(
@@ -90,8 +92,9 @@ class SearchTest(unittest.TestCase):
             "recent email",
         )
         self.assertEqual("not_found", results[0]["local_availability"])
-        self.assertEqual("pull_expected", results[0]["execution_resolution"])
-        self.assertIn("local pull/install is expected", results[0]["selection_description"])
+        self.assertEqual("pull_required", results[0]["execution_resolution"])
+        self.assertEqual("remote_private", results[0]["primary_scope"])
+        self.assertIn("pulling requires your approval", results[0]["selection_description"])
 
     def test_local_only_canonical_path_is_not_claimed_as_registry_runnable(self):
         flow_root = pathlib.Path("/tmp/example-flows")
@@ -111,9 +114,12 @@ class SearchTest(unittest.TestCase):
             10,
             "local report",
         )
-        self.assertIsNone(results[0]["reference"])
+        self.assertEqual(
+            str(flow_root / "alpha" / "local-report" / "main.ts"),
+            results[0]["reference"],
+        )
         self.assertEqual("local-play", results[0]["hint_kind"])
-        self.assertEqual("publish_required", results[0]["execution_resolution"])
+        self.assertEqual("run_local", results[0]["execution_resolution"])
         self.assertTrue(results[0]["uri"].startswith("file://"))
         self.assertEqual(
             f"rote play run {flow_root / 'alpha' / 'local-report' / 'main.ts'}",
@@ -141,18 +147,67 @@ class SearchTest(unittest.TestCase):
             commands,
         )
 
-    def test_play_choices_are_exact_and_exclude_local_only_flows(self):
+    def test_request_values_are_removed_for_parallel_discovery(self):
+        self.assertEqual(
+            ["fetch rideshare receipts for month of july 2026", "rideshare receipts"],
+            PLAY_SEARCH.discovery_queries(
+                "fetch rideshare receipts for month of july 2026"
+            ),
+        )
+
+    def test_scope_priority_is_local_then_private_then_public(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        description = "Retrieve rideshare receipts"
+        local = {
+            "flows": [{
+                "name": "local-receipts",
+                "path": str(flow_root / "local-receipts" / "main.ts"),
+                "description": description,
+                "score": 0.1,
+            }]
+        }
+        registry = [
+            {
+                "owner_slug": "public-hub",
+                "skill_name": "public-receipts",
+                "skill_description": description,
+                "version": "2.0.0",
+                "rank": 10.0,
+                "status": "approved",
+                "storage_path": "community_123/public-receipts/2.0.0/flow",
+            },
+            {
+                "owner_slug": "private-org",
+                "skill_name": "private-receipts",
+                "skill_description": description,
+                "version": "1.0.0",
+                "rank": 1.0,
+                "status": "approved",
+                "storage_path": "organization_123/private-receipts/1.0.0/flow",
+            },
+        ]
+        results = PLAY_SEARCH.merge_results(
+            local, registry, flow_root, 10, "rideshare receipts"
+        )
+        self.assertEqual(
+            ["local", "remote_private", "remote_public"],
+            [result["primary_scope"] for result in results],
+        )
+
+    def test_play_choices_include_local_and_remote_runnable_plays(self):
         choices = PLAY_SEARCH.build_play_choices(
             [
                 {
                     "name": "mail",
-                    "exact_reference": "alpha/mail@1.0.0",
+                    "reference": "alpha/mail@1.0.0",
+                    "primary_scope": "remote_private",
                     "selection_description": "Inspect mail.",
                 },
                 {
                     "name": "local",
-                    "exact_reference": None,
-                    "selection_description": "Publish local.",
+                    "reference": "/tmp/local/main.ts",
+                    "primary_scope": "local",
+                    "selection_description": "Run local.",
                 },
             ]
         )
@@ -160,10 +215,16 @@ class SearchTest(unittest.TestCase):
             [
                 {
                     "reference": "alpha/mail@1.0.0",
-                    "label": "mail — alpha",
+                    "label": "mail — private",
                     "description": "Inspect mail.",
                     "parameters": {},
-                }
+                },
+                {
+                    "reference": "/tmp/local/main.ts",
+                    "label": "local — local",
+                    "description": "Run local.",
+                    "parameters": {},
+                },
             ],
             choices,
         )
@@ -179,13 +240,13 @@ class SearchTest(unittest.TestCase):
                 "run_command": "rote play run warsaw-rust/hello@0.1.0",
                 "inspect_command": "rote play inspect warsaw-rust/hello@0.1.0 --json",
                 "hint_kind": "play",
-                "execution_resolution": "inspect_required",
+                "execution_resolution": "run_local",
             }
         ]
         output = PLAY_SEARCH.render_markdown("hello?", "hello", results)
         self.assertIn("URI: https://play.modiqo.ai/warsaw-rust/hello@0.1.0", output)
         self.assertIn("Next: inspect with `rote play inspect", output)
-        self.assertIn("requires a separate approval", output)
+        self.assertIn("runs it immediately", output)
 
 
 if __name__ == "__main__":

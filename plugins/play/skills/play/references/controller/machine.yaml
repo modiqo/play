@@ -279,8 +279,8 @@ states:
 
   classify:
     owner: play
-    checkpoint: after
-    requires: [search.complete, search.result_refs]
+    checkpoint: both
+    requires: [search.complete, search.results]
     entry: {action: classify_adequacy}
     "on":
       full_match:
@@ -297,9 +297,19 @@ states:
     requires: [match.reference]
     entry: {action: inspect_registry_play}
     "on":
-      play_inspected: [{target: use_offer, mutate: record_play_inspection}]
+      play_inspected: [{target: use_decide, mutate: record_play_inspection}]
       play_not_runnable: [{target: completed, mutate: record_unrunnable_inspection}]
       play_reference_unresolved: [{target: search, mutate: recover_unresolved_reference}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  use_decide:
+    owner: play
+    checkpoint: both
+    requires: [inspection.complete, inspection.local_change, inspection.exact_reference, inspection.disclosure_sha256]
+    entry: {action: route_inspected_play}
+    "on":
+      local_play_ready: [{target: use_run, mutate: approve_inspected_run}]
+      remote_pull_required: [{target: use_offer, mutate: record_play_inspection}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_offer:
