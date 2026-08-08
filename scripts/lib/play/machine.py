@@ -336,7 +336,12 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "index": ("saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
         "saved_inspect": ("publication_credentials", "publication_smoke", "birth_present"),
         "publication_credentials": ("publication_smoke",),
-        "use_output": ("use_verify", "use_receipt"),
+        "use_output": (
+            "use_verify",
+            "use_receipt",
+            "onboarding_activation_present",
+            "onboarding_activation_offer",
+        ),
     }
     for dominator, governed in rules.items():
         for state in governed:
@@ -401,6 +406,46 @@ def validate_bundle(root: Path) -> ValidationSummary:
         "an installed but unauthenticated Rote must enter setup",
     )
     check(
+        _target(states, "onboarding_identity", "onboarding_identity_ready")
+        == "onboarding_experience"
+        and _target(states, "onboarding_experience", "onboarding_first_use")
+        == "onboarding_first_present"
+        and _target(states, "onboarding_experience", "onboarding_returning")
+        == "onboarding_welcome",
+        "authenticated greetings must split typed first-use and returning paths",
+    )
+    check(
+        actions.get("inspect_onboarding_experience", {}).get("command")
+        == "scripts/bin/play-onboarding experience --stdin --json"
+        and actions.get("remember_first_use_orientation", {}).get("effect")
+        == "local-write"
+        and _target(
+            states, "onboarding_first_record", "onboarding_first_use_recorded"
+        )
+        == "onboarding_first_offer",
+        "first-use orientation must be presented before its private marker is written",
+    )
+    check(
+        states.get("onboarding_first_offer", {}).get("prompt")
+        == "choose_first_use_path"
+        and _target(
+            states, "onboarding_first_offer", "onboarding_starter_selected"
+        )
+        == "use_inspect"
+        and _target(
+            states, "onboarding_first_offer", "onboarding_awareness_selected"
+        )
+        == "awareness_collect",
+        "first use must offer the pinned inspected starter, a goal, awareness, or dismissal",
+    )
+    check(
+        _target(states, "use_receipt", "receipt_ready")
+        == "onboarding_activation_present"
+        and states.get("onboarding_activation_offer", {}).get("prompt")
+        == "choose_onboarding_next",
+        "a verified starter receipt must explain activation before the next choice",
+    )
+    check(
         _target(states, "onboarding_setup", "rote_setup_completed") == "onboarding_probe",
         "completed setup must be independently reprobed",
     )
@@ -427,6 +472,16 @@ def validate_bundle(root: Path) -> ValidationSummary:
         == "How are you, {onboarding.email_handle}? What can I help you with?"
         and welcome_prompt.get("template_fields") == ["onboarding.email_handle"],
         "the warm greeting must bind the typed whoami email handle",
+    )
+    first_prompt = prompts.get("choose_first_use_path", {})
+    first_choices = {
+        choice.get("id"): choice for choice in first_prompt.get("choices", [])
+    }
+    check(
+        first_prompt.get("question") == "What would you like to do first?"
+        and first_choices.get("hello", {}).get("recommended") is True
+        and first_choices.get("done", {}).get("event") == "onboarding_dismissed",
+        "first use must recommend inspection of Hello while preserving a clear dismissal",
     )
     check(actions.get("search_authorized_plays", {}).get("command") == "scripts/bin/play-search <request.intent> --json", "Play discovery must invoke the unified local and registry search")
     check(_target(states, "qualify", "play_awareness_request") == "awareness_collect", "an awareness request must enter the digest path")
@@ -617,7 +672,11 @@ def validate_bundle(root: Path) -> ValidationSummary:
         and _target(states, "public_publish", "play_published", 1) == "blocked",
         "publication receipts must match the captured birth before binding",
     )
-    check(edges["use_receipt"] == {"receipt", "blocked"}, "Use receipt must terminate without publication or indexing")
+    check(
+        edges["use_receipt"]
+        == {"onboarding_activation_present", "receipt", "blocked"},
+        "Use receipt may explain first activation but must not publish or index",
+    )
     check(_target(states, "save_offer", "save_skipped") == "completed", "Skip must complete without publication or indexing")
     for field in (
         "mode",

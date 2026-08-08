@@ -13,6 +13,7 @@ route_owners:
 guards:
   - onboarding_is_greeting
   - onboarding_is_play_uri
+  - use_is_onboarding_starter
   - search_is_complete
   - search_only_requested
   - match_satisfies_constraints
@@ -40,6 +41,14 @@ mutations:
   - enter_onboarding_uri_use
   - record_onboarding_intent_mismatch
   - record_onboarding_identity
+  - record_onboarding_experience
+  - record_first_use_orientation
+  - record_first_use_marker
+  - enter_onboarding_starter_use
+  - enter_onboarding_goal
+  - enter_onboarding_awareness
+  - record_onboarding_dismissal
+  - record_onboarding_need
   - record_welcome_request
   - record_rote_setup
   - record_rote_setup_pause
@@ -95,6 +104,9 @@ mutations:
   - record_incomplete_output
   - record_verification
   - attach_receipt
+  - attach_onboarding_starter_receipt
+  - record_onboarding_activation
+  - finish_onboarding_activation
   - approve_repair_explore
   - record_ordinary_exit
   - approve_explore
@@ -200,6 +212,47 @@ actions:
     events:
       onboarding_identity_ready: [onboarding.identity_status, onboarding.email, onboarding.email_handle, onboarding.identity_ref, onboarding.whoami_ns]
       onboarding_identity_setup_required: [onboarding.identity_status, onboarding.email, onboarding.email_handle, onboarding.identity_ref, onboarding.whoami_ns]
+
+  inspect_onboarding_experience:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [onboarding.identity_status, onboarding.email]
+    command: scripts/bin/play-onboarding experience --stdin --json
+    command_policy:
+      - Read only the declared owner-private onboarding marker at ~/.rote/play/onboarding-state.json.
+      - Key the marker by a SHA-256 digest of the authenticated email; never store the email, raw whoami output, prompts, credentials, or controller context.
+      - Treat the current orientation version as returning and an absent identity entry as first use; fail closed on malformed state.
+    events:
+      onboarding_first_use: [onboarding.experience_status, onboarding.experience_ref, onboarding.orientation_version, onboarding.experience_ns]
+      onboarding_returning: [onboarding.experience_status, onboarding.experience_ref, onboarding.orientation_version, onboarding.experience_ns]
+
+  present_first_use_orientation:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [onboarding.experience_status, onboarding.email_handle]
+    command: scripts/bin/play-onboarding present-first --stdin --json
+    command_policy:
+      - Use short, concrete language to explain what a Play is, what Rote does, how a Play is created, why the human is the domain expert, and what can be kept private, shared with a team, or published.
+      - State that the agent brings broad knowledge and tool use while the human supplies goals, local rules, exceptions, and standards that the agent cannot know on its own.
+      - State that Rote shows requirements and effects before execution, credentials stay local, nothing runs without approval, and only work the human chooses to save becomes a Play.
+      - Present the orientation exactly once before offering the starter, goal, awareness, or dismissal choices.
+    events:
+      onboarding_first_use_presented: [onboarding.orientation_status, onboarding.orientation_version, onboarding.orientation_markdown, onboarding.orientation_ref, onboarding.starter_reference, onboarding.orientation_ns, presentation.markdown]
+
+  remember_first_use_orientation:
+    kind: deterministic
+    owner: play
+    effect: local-write
+    input_required: [onboarding.email, onboarding.orientation_status, onboarding.orientation_ref]
+    command: scripts/bin/play-onboarding mark-first --stdin --json
+    command_policy:
+      - Run only after the orientation presentation event succeeds.
+      - Store only the hashed identity key, orientation version, and UTC presentation time in the declared owner-private onboarding store with user-only permissions.
+      - Mark orientation presentation independently from first verified Play activation so declining the starter does not cause the full introduction to repeat forever.
+    events:
+      onboarding_first_use_recorded: [onboarding.orientation_status, onboarding.orientation_version, onboarding.experience_ref, onboarding.marker_ns]
 
   handoff_rote_setup:
     kind: delegated
@@ -433,6 +486,19 @@ actions:
     events:
       receipt_ready: [receipt_ref, output.presentation_markdown, output.presentation_sha256]
 
+  present_first_play_activation:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [onboarding.starter_status, onboarding.email_handle, receipt_ref]
+    command: scripts/bin/play-onboarding present-activation --stdin --json
+    command_policy:
+      - Run only after the pinned starter traverses inspect, approval, detailed output, verification, and receipt.
+      - Explain in plain language that the user approved a checked method, Rote ran it locally, and the verified result can lead to another Play or a newly preserved method.
+      - Do not hide, repeat, or summarize away the complete primary result shown before this presentation.
+    events:
+      onboarding_activation_presented: [onboarding.activation_status, onboarding.activation_markdown, onboarding.activation_ref, onboarding.activation_ns, presentation.markdown]
+
   present_exploration_welcome:
     kind: deterministic
     owner: play
@@ -444,7 +510,8 @@ actions:
       - Retain only the safe email handle and a digest of identity output; never retain or display the full email, raw whoami output, or credentials.
       - If identity is unavailable, use the neutral word friend and continue; never invent a personal name or block an already approved exploration only because personalization failed.
       - Present the exact explore_welcome thinking-orb fallback first, then presentation.markdown exactly once before creating the exploration workspace.
-      - Honor the human as the domain expert, frame the agent as their apprentice, invite watching and steering, and explain that learned expertise can become rote memory.
+      - Honor the human as the domain expert, frame the agent as their apprentice, invite watching and steering, and explain that local rules, exceptions, and standards come from human experience.
+      - Say a verified repeatable method can become a private, team, or public Play only when the human chooses; never imply that raw conversation or unchosen knowledge becomes memory.
     events:
       exploration_welcome_presented: [exploration.welcome_status, exploration.human_name, exploration.identity_status, exploration.identity_source, exploration.identity_ref, exploration.welcome_markdown, exploration.welcome_ref, exploration.resolve_ns, presentation.markdown]
 

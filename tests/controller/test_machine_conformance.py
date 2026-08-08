@@ -108,12 +108,42 @@ class MachineConformanceTest(unittest.TestCase):
                 "target"
             ],
         )
+        self.assertEqual(
+            "onboarding_experience",
+            MACHINE["states"]["onboarding_identity"]["on"][
+                "onboarding_identity_ready"
+            ][0]["target"],
+        )
+        self.assertEqual(
+            "onboarding_first_present",
+            MACHINE["states"]["onboarding_experience"]["on"][
+                "onboarding_first_use"
+            ][0]["target"],
+        )
+        self.assertEqual(
+            "onboarding_welcome",
+            MACHINE["states"]["onboarding_experience"]["on"][
+                "onboarding_returning"
+            ][0]["target"],
+        )
         setup_policy = " ".join(ACTIONS["handoff_rote_setup"]["command_policy"])
         self.assertIn("Invoke the rote-setup skill", setup_policy)
         self.assertIn("Do not run an installer", setup_policy)
         prompt = PROMPTS["welcome_play_request"]
         self.assertEqual(["onboarding.email_handle"], prompt["template_fields"])
         self.assertIn("{onboarding.email_handle}", prompt["question"])
+        first_prompt = PROMPTS["choose_first_use_path"]
+        self.assertEqual("Try Hello", first_prompt["choices"][0]["label"])
+        self.assertTrue(first_prompt["choices"][0]["recommended"])
+        self.assertEqual(
+            "use_inspect",
+            MACHINE["states"]["onboarding_first_offer"]["on"][
+                "onboarding_starter_selected"
+            ][0]["target"],
+        )
+        self.assertEqual(
+            "local-write", ACTIONS["remember_first_use_orientation"]["effect"]
+        )
 
     def test_play_uri_uses_inspect_or_bounded_public_card(self) -> None:
         available = MACHINE["states"]["onboarding_probe"]["on"]["rote_available"]
@@ -139,6 +169,11 @@ class MachineConformanceTest(unittest.TestCase):
             "play_uri",
             "setup_status",
             "card",
+            "experience_status",
+            "orientation_status",
+            "starter_reference",
+            "starter_status",
+            "activation_status",
         ):
             self.assertIn(field, onboarding["required"])
 

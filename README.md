@@ -38,16 +38,24 @@ does, its parameters, adapters and credentials, what this machine must install o
 operations and writes, and any unknown effect semantics. Only the next structured choice can
 authorize the exact inspected version and displayed parameters.
 
-An empty `$play` or `/play` is a warm typed entrypoint. Play live-probes for Rote, reads the signed-in
-email with `rote whoami`, and asks “How are you, `<email handle>`? What can I help you with?” Missing
-or unauthenticated Rote is handed to the guided `rote-setup` skill. A public Play URI uses first-class
+An empty `$play` or `/play` is a warm typed entrypoint. Play live-probes for Rote and reads the
+signed-in email with `rote whoami`. A returning user gets the short personal greeting. A first-time
+user sees “Get the result. Keep the method,” learns how Play and Rote work, and is told plainly that
+the human supplies the goals, rules, exceptions, and judgment that the agent cannot know alone.
+They may inspect the pinned Hello Play, describe a goal, see useful Plays, or stop. Missing or
+unauthenticated Rote is handed to the guided `rote-setup` skill. A public Play URI uses first-class
 Rote inspection when available; without Rote, Play reads the URI's bounded public JSON card and
 shows its own inspect and consent-gated install/bootstrap paths without executing them.
 
+First-use memory is owner-private and deliberately small. `~/.rote/play/onboarding-state.json`
+stores only a hash of the authenticated email, the orientation version, and the time it was shown.
+It stores no email, prompt, result, credential, raw identity output, or controller context.
+
 When Explore begins, Play resolves the signed-in human's email handle without retaining raw identity
 output and welcomes them as the domain expert, with the agent as their apprentice. The welcome
-explicitly invites the human to watch, question, and steer the work so their expertise can become
-shared rote memory. It appears once after Explore consent and before any workspace is created; if
+invites the human to watch, question, and steer the work. A verified repeatable method can become a
+private, team, or public Play only when the human chooses. It appears once after Explore consent
+and before any workspace is created; if
 personalization is unavailable, Play uses the neutral `friend` fallback instead of inventing a name.
 
 ## The Play state machine
@@ -73,8 +81,17 @@ stateDiagram-v2
     onboarding_probe --> onboarding_setup : greeting + Rote missing
     onboarding_probe --> use_inspect : URI + Rote installed
     onboarding_probe --> onboarding_card_fetch : URI + Rote missing
-    onboarding_identity --> onboarding_welcome : authenticated email
+    onboarding_identity --> onboarding_experience : authenticated email
     onboarding_identity --> onboarding_setup : login/setup required
+    onboarding_experience --> onboarding_welcome : returning user
+    onboarding_experience --> onboarding_first_present : first use
+    onboarding_first_present --> onboarding_first_record : orientation shown
+    onboarding_first_record --> onboarding_first_offer : private marker stored
+    onboarding_first_offer --> use_inspect : Try Hello
+    onboarding_first_offer --> onboarding_need : describe a goal
+    onboarding_first_offer --> awareness_collect : see useful Plays
+    onboarding_first_offer --> completed : not now
+    onboarding_need --> invoke : goal described
     onboarding_setup --> onboarding_probe : setup completed; reprobe
     onboarding_setup --> blocked : paused / unavailable
     onboarding_welcome --> invoke : user describes need
@@ -112,7 +129,12 @@ stateDiagram-v2
     use_output --> repair_offer : incomplete / summary only
     use_verify --> use_receipt : outcome verified
     use_verify --> repair_offer : not verified
-    use_receipt --> receipt
+    use_receipt --> receipt : normal Play
+    use_receipt --> onboarding_activation_present : verified first Hello
+    onboarding_activation_present --> onboarding_activation_offer
+    onboarding_activation_offer --> onboarding_need : use Play for my task
+    onboarding_activation_offer --> awareness_collect : see useful Plays
+    onboarding_activation_offer --> receipt : finish
     repair_offer --> explore_welcome : repair approved
     repair_offer --> exited : continue normally
 
@@ -247,22 +269,22 @@ with a new typed cursor. It excludes model inference, user interaction, external
 I/O, and mutation application. Every JSON result includes the exact bundle SHA so measurements from
 different controller versions cannot be mixed accidentally.
 
-Baseline recorded on 2026-08-06 on an Apple Silicon Mac with Python 3.14.5,
+Baseline recorded on 2026-08-07 on an Apple Silicon Mac with Python 3.14.5,
 `python-statemachine` 3.2.0, bundle
-`d09293286a8120ebb1259bac766d348decb793651999a16416b8751543765756`, and 10,000
+`62622ae43bc3ffceebe859743ee900b3f1e8a6ca565feab340812d39121b41f2`, and 10,000
 iterations:
 
 | Metric | Time |
 |---|---:|
-| One-time bundle compile | 136.79 ms |
-| Warm invocation transition median | 0.556 ms |
-| Warm invocation transition p95 | 0.911 ms |
-| Warm invocation transition max | 5.78 ms |
+| One-time bundle compile | 144.41 ms |
+| Warm invocation transition median | 0.582 ms |
+| Warm invocation transition p95 | 0.812 ms |
+| Warm invocation transition max | 6.39 ms |
 
-The preceding 67-state typed-certificate bundle, before the enforced release/publication boundary,
-measured a 0.517 ms median and 0.741 ms p95 on the same date. The boundary-enforced bundle remains
-sub-millisecond at p95 in this sample; the benchmark intentionally reports observed latency rather
-than attributing run-to-run variance to the two added transitions. A single live
+The 74-state first-use bundle remains sub-millisecond at p95 in this sample. The preceding 67-state
+typed-certificate bundle, before the enforced release/publication boundary, measured a 0.517 ms
+median and 0.741 ms p95 on 2026-08-06. The benchmark intentionally reports observed latency rather
+than attributing run-to-run variance to individual transitions. A single live
 `explore-welcome` sample on the same machine resolved the signed-in Rote identity and rendered the
 welcome in 1.624 seconds; almost all of that is the external `rote whoami` call. Registry inspection,
 public-card fetches, and setup are likewise separately timed external I/O actions. Every certificate

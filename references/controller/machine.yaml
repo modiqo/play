@@ -37,9 +37,55 @@ states:
     requires: [onboarding.rote_status, onboarding.rote_command]
     entry: {action: inspect_onboarding_identity}
     "on":
-      onboarding_identity_ready: [{target: onboarding_welcome, mutate: record_onboarding_identity}]
+      onboarding_identity_ready: [{target: onboarding_experience, mutate: record_onboarding_identity}]
       onboarding_identity_setup_required: [{target: onboarding_setup, mutate: record_onboarding_identity}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_experience:
+    owner: play
+    checkpoint: both
+    requires: [onboarding.identity_status, onboarding.email]
+    entry: {action: inspect_onboarding_experience}
+    "on":
+      onboarding_first_use: [{target: onboarding_first_present, mutate: record_onboarding_experience}]
+      onboarding_returning: [{target: onboarding_welcome, mutate: record_onboarding_experience}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_first_present:
+    owner: play
+    checkpoint: both
+    requires: [onboarding.experience_status, onboarding.email_handle]
+    entry: {action: present_first_use_orientation}
+    "on":
+      onboarding_first_use_presented: [{target: onboarding_first_record, mutate: record_first_use_orientation}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_first_record:
+    owner: play
+    checkpoint: both
+    requires: [onboarding.email, onboarding.orientation_status, onboarding.orientation_ref]
+    entry: {action: remember_first_use_orientation}
+    "on":
+      onboarding_first_use_recorded: [{target: onboarding_first_offer, mutate: record_first_use_marker}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_first_offer:
+    owner: play
+    checkpoint: after
+    requires: [onboarding.orientation_status, onboarding.starter_reference]
+    prompt: choose_first_use_path
+    "on":
+      onboarding_starter_selected: [{target: use_inspect, mutate: enter_onboarding_starter_use}]
+      onboarding_goal_selected: [{target: onboarding_need, mutate: enter_onboarding_goal}]
+      onboarding_awareness_selected: [{target: awareness_collect, mutate: enter_onboarding_awareness}]
+      onboarding_dismissed: [{target: completed, mutate: record_onboarding_dismissal}]
+
+  onboarding_need:
+    owner: play
+    checkpoint: after
+    prompt: describe_onboarding_need
+    "on":
+      onboarding_need_described: [{target: invoke, mutate: record_onboarding_need}]
 
   onboarding_welcome:
     owner: play
@@ -299,8 +345,29 @@ states:
     checkpoint: after
     entry: {action: build_receipt}
     "on":
-      receipt_ready: [{target: receipt, mutate: attach_receipt}]
+      receipt_ready:
+        - {guard: use_is_onboarding_starter, target: onboarding_activation_present, mutate: attach_onboarding_starter_receipt}
+        - {target: receipt, mutate: attach_receipt}
       action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_activation_present:
+    owner: play
+    checkpoint: both
+    requires: [onboarding.starter_status, onboarding.email_handle, receipt_ref]
+    entry: {action: present_first_play_activation}
+    "on":
+      onboarding_activation_presented: [{target: onboarding_activation_offer, mutate: record_onboarding_activation}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_activation_offer:
+    owner: play
+    checkpoint: after
+    requires: [onboarding.activation_status, receipt_ref]
+    prompt: choose_onboarding_next
+    "on":
+      onboarding_goal_selected: [{target: onboarding_need, mutate: enter_onboarding_goal}]
+      onboarding_awareness_selected: [{target: awareness_collect, mutate: enter_onboarding_awareness}]
+      onboarding_finished: [{target: receipt, mutate: finish_onboarding_activation}]
 
   repair_offer:
     owner: play

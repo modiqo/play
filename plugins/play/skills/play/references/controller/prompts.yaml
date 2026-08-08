@@ -9,6 +9,39 @@ prompts:
     events:
       welcome_request_described: [prompt_version, selected_at, request.original]
 
+  choose_first_use_path:
+    question: What would you like to do first?
+    selection: single
+    choices:
+      - {id: hello, label: Try Hello, description: Inspect the pinned starter Play, then decide whether to run it., event: onboarding_starter_selected, recommended: true}
+      - {id: goal, label: Tell me your goal, description: Describe the result you want so I can find a Play or help work out a new one., event: onboarding_goal_selected}
+      - {id: useful, label: See useful Plays, description: Open the Play inbox and browse public Plays with clearly labeled download and install counts., event: onboarding_awareness_selected}
+      - {id: done, label: Not now, description: Finish the introduction without inspecting or running anything., event: onboarding_dismissed}
+    events:
+      onboarding_starter_selected: [prompt_version, selected_at, onboarding.starter_reference]
+      onboarding_goal_selected: [prompt_version, selected_at]
+      onboarding_awareness_selected: [prompt_version, selected_at]
+      onboarding_dismissed: [prompt_version, selected_at]
+
+  describe_onboarding_need:
+    question: What result would you like to get?
+    selection: text
+    input: {id: request, label: What you need, event: onboarding_need_described}
+    events:
+      onboarding_need_described: [prompt_version, selected_at, request.original]
+
+  choose_onboarding_next:
+    question: What would you like to do next?
+    selection: single
+    choices:
+      - {id: goal, label: Use Play for my task, description: Describe the result you want so I can find a Play or help work out a new one., event: onboarding_goal_selected, recommended: true}
+      - {id: useful, label: See useful Plays, description: Open the Play inbox and browse public Plays with clearly labeled download and install counts., event: onboarding_awareness_selected}
+      - {id: done, label: Finish, description: Keep the verified receipt and stop here., event: onboarding_finished}
+    events:
+      onboarding_goal_selected: [prompt_version, selected_at]
+      onboarding_awareness_selected: [prompt_version, selected_at]
+      onboarding_finished: [prompt_version, selected_at, receipt_ref]
+
   select_awareness_action:
     question: What would you like to do from What’s new?
     selection: single

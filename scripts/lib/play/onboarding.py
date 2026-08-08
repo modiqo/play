@@ -12,10 +12,12 @@ import subprocess
 import sys
 import time
 from collections.abc import Mapping, Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from .private_store import PrivateStoreError, atomic_write_json, load_json, locked_store
 from .render import json_text
 
 
@@ -23,6 +25,10 @@ SCHEMA = "play.onboarding/v1"
 CARD_SCHEMA = "rote.play.v1"
 PLAY_HOST = "play.modiqo.ai"
 MAX_CARD_BYTES = 200_000
+ONBOARDING_STATE_SCHEMA = "play.onboarding-state/v1"
+ONBOARDING_ORIENTATION_VERSION = 1
+DEFAULT_ONBOARDING_STATE_PATH = Path.home() / ".rote" / "play" / "onboarding-state.json"
+STARTER_PLAY_REFERENCE = "modiqo/hello@0.1.0"
 _PLAY_PREFIX = re.compile(r"^(?:\$play|/play)(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL)
 _SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _NAME_VERSION = re.compile(
@@ -213,6 +219,170 @@ def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _onboarding_identity_key(email: object) -> str:
+    normalized = _string(email, "onboarding.email").lower()
+    return hashlib.sha256(normalized.encode()).hexdigest()
+
+
+def _load_onboarding_state(path: Path) -> dict[str, Any]:
+    try:
+        state = load_json(path)
+    except FileNotFoundError:
+        return {"schema": ONBOARDING_STATE_SCHEMA, "identities": {}}
+    except PrivateStoreError as error:
+        raise OnboardingError(str(error)) from error
+    if (
+        not isinstance(state, dict)
+        or state.get("schema") != ONBOARDING_STATE_SCHEMA
+        or not isinstance(state.get("identities"), dict)
+    ):
+        raise OnboardingError(f"onboarding state must use {ONBOARDING_STATE_SCHEMA}")
+    return state
+
+
+def check_onboarding_experience(
+    payload: Mapping[str, Any],
+    *,
+    state_path: Path = DEFAULT_ONBOARDING_STATE_PATH,
+) -> dict[str, Any]:
+    """Classify an authenticated identity without storing its email address."""
+
+    started = time.perf_counter_ns()
+    onboarding = _object(payload.get("onboarding"), "onboarding")
+    identity_key = _onboarding_identity_key(onboarding.get("email"))
+    state = _load_onboarding_state(state_path)
+    entry = state["identities"].get(identity_key)
+    returning = (
+        isinstance(entry, dict)
+        and entry.get("orientation_version") == ONBOARDING_ORIENTATION_VERSION
+        and isinstance(entry.get("shown_at"), str)
+    )
+    return {
+        "schema": SCHEMA,
+        "kind": "experience",
+        "ok": True,
+        "experience_status": "returning" if returning else "first_use",
+        "experience_ref": f"sha256:{identity_key}",
+        "orientation_version": ONBOARDING_ORIENTATION_VERSION,
+        "experience_ns": time.perf_counter_ns() - started,
+    }
+
+
+def render_first_use_orientation(human_name: str) -> str:
+    """Explain the human/agent/Rote bargain in short, concrete language."""
+
+    return "\n".join(
+        [
+            f"# Hello, {human_name}.",
+            "",
+            "**Get the result. Keep the method.**",
+            "",
+            "A Play is a job that has been worked out, checked, and saved. Rote checks and runs Plays on your computer.",
+            "",
+            "If a Play already exists, we can use it. If none fits, we work out the job together.",
+            "",
+            "I bring broad knowledge and the ability to search, use tools, and test steps. You bring the knowledge of your work: its goals, rules, exceptions, and standards. You are the expert. I am your apprentice.",
+            "",
+            "You can watch the work, correct me, and decide what happens. When the result is right, Rote can save the successful method as a new Play.",
+            "",
+            "Keep it private, share it with your team, or publish it so other people can solve the same problem without starting over. You decide what is saved and who may use it.",
+            "",
+            "Before anything runs, Rote shows what the Play needs and what it may change. Your credentials stay local. Nothing runs until you approve it.",
+            "",
+            "You get the result now. If you save the Play, you also keep a checked method that you can run again, improve, or share.",
+        ]
+    )
+
+
+def prepare_first_use_orientation(payload: Mapping[str, Any]) -> dict[str, Any]:
+    started = time.perf_counter_ns()
+    onboarding = _object(payload.get("onboarding"), "onboarding")
+    human_name = _safe_human_name(onboarding.get("email_handle")) or "friend"
+    markdown = render_first_use_orientation(human_name)
+    presentation_ref = f"sha256:{hashlib.sha256(markdown.encode()).hexdigest()}"
+    return {
+        "schema": SCHEMA,
+        "kind": "first_use_orientation",
+        "ok": True,
+        "orientation_status": "presented",
+        "orientation_version": ONBOARDING_ORIENTATION_VERSION,
+        "orientation_markdown": markdown,
+        "orientation_ref": presentation_ref,
+        "starter_reference": STARTER_PLAY_REFERENCE,
+        "orientation_ns": time.perf_counter_ns() - started,
+        "presentation_markdown": markdown,
+        "presentation_ref": presentation_ref,
+    }
+
+
+def remember_first_use_orientation(
+    payload: Mapping[str, Any],
+    *,
+    state_path: Path = DEFAULT_ONBOARDING_STATE_PATH,
+) -> dict[str, Any]:
+    """Remember only a hashed identity, version, and timestamp after presentation."""
+
+    started = time.perf_counter_ns()
+    onboarding = _object(payload.get("onboarding"), "onboarding")
+    if onboarding.get("orientation_status") != "presented":
+        raise OnboardingError("first-use orientation must be presented before it is remembered")
+    identity_key = _onboarding_identity_key(onboarding.get("email"))
+    try:
+        with locked_store(state_path.parent):
+            state = _load_onboarding_state(state_path)
+            state["identities"][identity_key] = {
+                "orientation_version": ONBOARDING_ORIENTATION_VERSION,
+                "shown_at": datetime.now(timezone.utc).isoformat(),
+            }
+            atomic_write_json(state_path, state)
+    except PrivateStoreError as error:
+        raise OnboardingError(str(error)) from error
+    return {
+        "schema": SCHEMA,
+        "kind": "first_use_marker",
+        "ok": True,
+        "orientation_status": "recorded",
+        "orientation_version": ONBOARDING_ORIENTATION_VERSION,
+        "experience_ref": f"sha256:{identity_key}",
+        "marker_ns": time.perf_counter_ns() - started,
+    }
+
+
+def render_first_play_activation(human_name: str) -> str:
+    return "\n".join(
+        [
+            f"# Your first Play is complete, {human_name}.",
+            "",
+            "You approved the Play, Rote ran it on this computer, and the full result above was checked.",
+            "",
+            "That is the basic pattern: ask for a result, inspect the method, approve the work, and keep what succeeds when you want to use it again.",
+            "",
+            "Your experience does not have to disappear when the task ends. A Play lets you keep what worked and pass it on when you choose.",
+        ]
+    )
+
+
+def prepare_first_play_activation(payload: Mapping[str, Any]) -> dict[str, Any]:
+    started = time.perf_counter_ns()
+    onboarding = _object(payload.get("onboarding"), "onboarding")
+    if onboarding.get("starter_status") != "completed":
+        raise OnboardingError("first Play activation requires a completed starter Play")
+    human_name = _safe_human_name(onboarding.get("email_handle")) or "friend"
+    markdown = render_first_play_activation(human_name)
+    presentation_ref = f"sha256:{hashlib.sha256(markdown.encode()).hexdigest()}"
+    return {
+        "schema": SCHEMA,
+        "kind": "first_play_activation",
+        "ok": True,
+        "activation_status": "presented",
+        "activation_markdown": markdown,
+        "activation_ref": presentation_ref,
+        "activation_ns": time.perf_counter_ns() - started,
+        "presentation_markdown": markdown,
+        "presentation_ref": presentation_ref,
+    }
+
+
 def _safe_human_name(value: object) -> str | None:
     if not isinstance(value, str):
         return None
@@ -225,10 +395,11 @@ def render_exploration_welcome(human_name: str) -> str:
     """Render the stable human-as-expert exploration welcome."""
 
     return (
-        f"Welcome to this exploration, where you, {human_name}, are the domain expert and I, "
-        "your agent, am the apprentice. I bring broad expertise, but you can ask me to watch, "
-        "question, and follow your steering through this task so your expertise becomes our "
-        "rote memory. Buckle up—Rote can help us through this."
+        f"Welcome, {human_name}. You are the expert in this work. I bring broad knowledge and "
+        "the ability to search, use tools, and test steps, but I cannot know the local rules, "
+        "exceptions, and standards that experience has taught you. I am your apprentice: ask "
+        "me to watch, question, and follow your steering. If we find a repeatable method that "
+        "works, Rote can save it as a Play for you, your team, or the community—only when you choose."
     )
 
 
@@ -524,7 +695,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "mode",
-        choices=("classify", "probe", "identity", "explore-welcome", "card", "present-card"),
+        choices=(
+            "classify",
+            "probe",
+            "identity",
+            "experience",
+            "present-first",
+            "mark-first",
+            "present-activation",
+            "explore-welcome",
+            "card",
+            "present-card",
+        ),
     )
     parser.add_argument("--stdin", action="store_true")
     parser.add_argument("--json", action="store_true", dest="as_json")
@@ -540,6 +722,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 result = classify_payload(payload)
             elif args.mode == "identity":
                 result = inspect_identity(payload)
+            elif args.mode == "experience":
+                result = check_onboarding_experience(payload)
+            elif args.mode == "present-first":
+                result = prepare_first_use_orientation(payload)
+            elif args.mode == "mark-first":
+                result = remember_first_use_orientation(payload)
+            elif args.mode == "present-activation":
+                result = prepare_first_play_activation(payload)
             elif args.mode == "explore-welcome":
                 result = prepare_exploration_welcome(payload)
             elif args.mode == "card":

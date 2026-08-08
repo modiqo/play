@@ -20,6 +20,12 @@ check: package-check
     scripts/bin/play-question welcome_play_request --harness codex --context-json '{"onboarding":{"email_handle":"friend"}}' --check
     scripts/bin/play-question welcome_play_request --harness claude --context-json '{"onboarding":{"email_handle":"friend"}}' --check
     scripts/bin/play-question welcome_play_request --harness kimi --context-json '{"onboarding":{"email_handle":"friend"}}' --check
+    scripts/bin/play-question choose_first_use_path --harness codex --check
+    scripts/bin/play-question choose_first_use_path --harness claude --check
+    scripts/bin/play-question choose_first_use_path --harness kimi --check
+    scripts/bin/play-question choose_onboarding_next --harness codex --check
+    scripts/bin/play-question choose_onboarding_next --harness claude --check
+    scripts/bin/play-question choose_onboarding_next --harness kimi --check
     typos README.md SKILL.md agents references scripts tests justfile
 
 # Generate the self-contained marketplace skill from this repository's source of truth.

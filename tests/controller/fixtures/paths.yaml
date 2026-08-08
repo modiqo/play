@@ -8,12 +8,13 @@ cases:
         event: rote_available
         guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
         target: onboarding_identity
-      - {state: onboarding_identity, event: onboarding_identity_ready, target: onboarding_welcome}
+      - {state: onboarding_identity, event: onboarding_identity_ready, target: onboarding_experience}
+      - {state: onboarding_experience, event: onboarding_returning, target: onboarding_welcome}
       - {state: onboarding_welcome, event: welcome_request_described, target: invoke}
       - {state: invoke, event: ordinary_play_invocation, target: qualify}
       - {state: qualify, event: conversation, target: exited}
     terminal: exited
-    includes_once: [onboarding_probe, onboarding_identity, onboarding_welcome]
+    includes_once: [onboarding_probe, onboarding_identity, onboarding_experience, onboarding_welcome]
 
   - name: empty Play invocation hands missing Rote to setup then reprobes
     steps:
@@ -27,12 +28,30 @@ cases:
         event: rote_available
         guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
         target: onboarding_identity
-      - {state: onboarding_identity, event: onboarding_identity_ready, target: onboarding_welcome}
-      - {state: onboarding_welcome, event: welcome_request_described, target: invoke}
-      - {state: invoke, event: ordinary_play_invocation, target: qualify}
-      - {state: qualify, event: conversation, target: exited}
-    terminal: exited
-    includes_once: [onboarding_setup, onboarding_identity, onboarding_welcome]
+      - {state: onboarding_identity, event: onboarding_identity_ready, target: onboarding_experience}
+      - {state: onboarding_experience, event: onboarding_first_use, target: onboarding_first_present}
+      - {state: onboarding_first_present, event: onboarding_first_use_presented, target: onboarding_first_record}
+      - {state: onboarding_first_record, event: onboarding_first_use_recorded, target: onboarding_first_offer}
+      - {state: onboarding_first_offer, event: onboarding_dismissed, target: completed}
+    terminal: completed
+    includes_once: [onboarding_setup, onboarding_identity, onboarding_experience, onboarding_first_present, onboarding_first_record, onboarding_first_offer]
+
+  - name: first-use Hello preserves inspection approval detail verification and activation
+    steps:
+      - {state: onboarding_first_offer, event: onboarding_starter_selected, target: use_inspect}
+      - {state: use_inspect, event: play_inspected, target: use_offer}
+      - {state: use_offer, event: play_run_approved, target: use_run}
+      - {state: use_run, event: play_run_ready, target: use_output}
+      - {state: use_output, event: detailed_output_ready, target: use_verify}
+      - {state: use_verify, event: outcome_verified, target: use_receipt}
+      - state: use_receipt
+        event: receipt_ready
+        guards: {use_is_onboarding_starter: true}
+        target: onboarding_activation_present
+      - {state: onboarding_activation_present, event: onboarding_activation_presented, target: onboarding_activation_offer}
+      - {state: onboarding_activation_offer, event: onboarding_finished, target: receipt}
+    terminal: receipt
+    includes_once: [use_inspect, use_offer, use_run, use_output, use_verify, use_receipt, onboarding_activation_present, onboarding_activation_offer]
 
   - name: Play URI uses first-class inspection when Rote is installed
     steps:

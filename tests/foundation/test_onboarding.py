@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -11,14 +12,20 @@ sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.onboarding import (
     OnboardingError,
+    STARTER_PLAY_REFERENCE,
     canonical_play_uri,
+    check_onboarding_experience,
     classify_invocation,
     inspect_identity,
     normalize_card,
     prepare_exploration_welcome,
+    prepare_first_play_activation,
+    prepare_first_use_orientation,
     probe_rote,
+    remember_first_use_orientation,
     render_card,
     render_exploration_welcome,
+    render_first_use_orientation,
 )
 
 
@@ -176,9 +183,9 @@ class ExplorationWelcomeTest(unittest.TestCase):
         exploration = result["exploration"]
         self.assertEqual("chetan", exploration["human_name"])
         self.assertEqual("onboarding_email_handle", exploration["identity_source"])
-        self.assertIn("you, chetan, are the domain expert", result["presentation_markdown"])
-        self.assertIn("your agent, am the apprentice", result["presentation_markdown"])
-        self.assertIn("rote memory", result["presentation_markdown"])
+        self.assertIn("You are the expert in this work", result["presentation_markdown"])
+        self.assertIn("I am your apprentice", result["presentation_markdown"])
+        self.assertIn("your team, or the community", result["presentation_markdown"])
 
     @patch("play.onboarding.inspect_identity")
     @patch("play.onboarding.probe_rote")
@@ -209,7 +216,7 @@ class ExplorationWelcomeTest(unittest.TestCase):
         self.assertIsNone(exploration["human_name"])
         self.assertEqual("unavailable", exploration["identity_status"])
         self.assertEqual("neutral_fallback", exploration["identity_source"])
-        self.assertIn("you, friend, are the domain expert", result["presentation_markdown"])
+        self.assertIn("Welcome, friend", result["presentation_markdown"])
 
     @patch("play.onboarding.inspect_identity", side_effect=OnboardingError("probe timed out"))
     @patch(
@@ -228,10 +235,60 @@ class ExplorationWelcomeTest(unittest.TestCase):
 
     def test_renderer_has_the_human_expert_apprentice_contract(self) -> None:
         rendered = render_exploration_welcome("Ada")
-        self.assertIn("you, Ada, are the domain expert", rendered)
-        self.assertIn("I, your agent, am the apprentice", rendered)
-        self.assertIn("watch, question, and follow your steering", rendered)
-        self.assertIn("Buckle up—Rote", rendered)
+        self.assertIn("Welcome, Ada", rendered)
+        self.assertIn("You are the expert in this work", rendered)
+        self.assertIn("I am your apprentice", rendered)
+        self.assertIn("only when you choose", rendered)
+
+
+class FirstUseOrientationTest(unittest.TestCase):
+    def test_first_use_is_remembered_by_hash_without_storing_email(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "onboarding-state.json"
+            payload = {
+                "onboarding": {
+                    "email": "Ada@Example.com",
+                    "email_handle": "ada",
+                    "orientation_status": "presented",
+                }
+            }
+            first = check_onboarding_experience(payload, state_path=state_path)
+            self.assertEqual("first_use", first["experience_status"])
+
+            recorded = remember_first_use_orientation(payload, state_path=state_path)
+            self.assertEqual("recorded", recorded["orientation_status"])
+            self.assertEqual(0o600, state_path.stat().st_mode & 0o777)
+            self.assertNotIn("ada@example.com", state_path.read_text().lower())
+
+            returning = check_onboarding_experience(payload, state_path=state_path)
+            self.assertEqual("returning", returning["experience_status"])
+            self.assertEqual(first["experience_ref"], returning["experience_ref"])
+
+    def test_orientation_explains_creation_control_and_return_in_plain_words(self) -> None:
+        rendered = render_first_use_orientation("Ada")
+        self.assertIn("Get the result. Keep the method.", rendered)
+        self.assertIn("You are the expert. I am your apprentice.", rendered)
+        self.assertIn("Rote checks and runs Plays on your computer", rendered)
+        self.assertIn("Keep it private, share it with your team, or publish it", rendered)
+        self.assertIn("Nothing runs until you approve it", rendered)
+
+        result = prepare_first_use_orientation(
+            {"onboarding": {"email_handle": "Ada Example"}}
+        )
+        self.assertEqual(STARTER_PLAY_REFERENCE, result["starter_reference"])
+        self.assertEqual("presented", result["orientation_status"])
+        self.assertTrue(str(result["orientation_ref"]).startswith("sha256:"))
+
+    def test_activation_requires_completed_starter_and_keeps_full_result_separate(self) -> None:
+        with self.assertRaisesRegex(OnboardingError, "completed starter"):
+            prepare_first_play_activation(
+                {"onboarding": {"starter_status": "selected", "email_handle": "ada"}}
+            )
+        result = prepare_first_play_activation(
+            {"onboarding": {"starter_status": "completed", "email_handle": "ada"}}
+        )
+        self.assertIn("Your first Play is complete", result["presentation_markdown"])
+        self.assertIn("full result above", result["presentation_markdown"])
 
 
 class PublicCardTest(unittest.TestCase):

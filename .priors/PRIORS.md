@@ -62,3 +62,6 @@
 | P-0056 | play | conclusion | open | references/controller/machine.yaml | A Play save run must block when author_release reports prior registry pu |
 | P-0057 | play | conclusion | open | references/publish/lifecycle.md | Before save consent, Play must resolve the claimed profile handle and au |
 | P-0058 | play | conclusion | open | SKILL.md | Play must use rote play for local discovery, inspection, execution, and  |
+| P-0059 | skill-creator | conclusion | open | SKILL.md | First-use copy explains that the human supplies domain goals, local rule |
+| P-0060 | skill-creator | conclusion | open | scripts/lib/play/onboarding.py | First-use memory stores only a SHA-256 identity digest, orientation vers |
+| P-0061 | skill-creator | conclusion | open | references/controller/machine.yaml | An authenticated empty Play invocation distinguishes first-use from retu |

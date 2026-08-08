@@ -37,9 +37,10 @@ invocable so declared handoffs can chain without requiring another user command.
    searched-source, choice, and evidence lists. Initialize `publication_validation` with credential
    and smoke statuses set to `not_required`, empty adapter contracts and evidence, null references,
    digests, byte counts, and timings, and `isolated_workdir: false`. Initialize `onboarding` with
-   `intent`, Rote, and identity statuses set to `unknown`; setup status `not_required`; null command,
-   email, handle, URI, card, references, and timings; false off-PATH/presented flags; and empty
-   evidence. Initialize `exploration` with welcome status `pending`, identity status and source
+   `intent`, Rote, identity, and experience statuses set to `unknown`; setup status `not_required`;
+   orientation `pending`, starter `not_selected`, activation `pending`; null command, email, handle,
+   URI, card, orientation/starter/activation references, and timings; false off-PATH/presented flags;
+   and empty evidence. Initialize `exploration` with welcome status `pending`, identity status and source
    `unknown`, and null human name, identity reference, welcome Markdown/reference, and timing.
    Initialize birth certificate presentation as false with null certificate reference and timing,
    plus a zeroed trace-learning record whose evidence method is `not_presented` and whose summary
@@ -86,6 +87,9 @@ pre-publication birth had been captured.
 - The on-demand digest store at `~/.rote/play/digest-state.json` is not controller context. It is a
   declared awareness cache containing only scope, SHA, and UTC checkpoint; do not add controller
   fields, digest cards, credentials, or registry payloads to it.
+- The owner-private first-use store at `~/.rote/play/onboarding-state.json` is not controller
+  context. It may contain only a hashed identity, orientation version, and UTC presentation time
+  with user-only permissions.
 - The owner-private birth store at `~/.play/births` is also not controller context. It is an
   explicitly declared content-addressed store for redacted birth objects and URI bindings only.
   Never put pending actions, consent, harness state, credentials, or raw workspace evidence in it.
@@ -175,6 +179,8 @@ pre-publication birth had been captured.
   [references/integration/scheduling.md](references/integration/scheduling.md).
 - Before presenting any finite choice, read
   [references/integration/elicitation.md](references/integration/elicitation.md).
+- Before presenting or changing first-use orientation, read
+  [references/onboarding/first-use.md](references/onboarding/first-use.md).
 - Before invoking a `rote-*` specialist, read
   [references/integration/rote-handoffs.md](references/integration/rote-handoffs.md).
 - Before supplying progress state to a React-capable host UI, read
@@ -190,9 +196,15 @@ Keep this trajectory fully typed and live-probed:
 - A trimmed `$play` or `/play` with no arguments enters `onboarding_probe`. Check PATH first, then
   `~/.local/bin/rote` and `~/.cargo/bin/rote`; do not infer installation from memory or `~/.rote`.
 - When Rote is installed, enter `onboarding_identity` and run exactly one resolved-binary
-  `whoami`. Extract the authenticated email and local-part handle, retain only a digest of raw
-  output, then ask the templated text prompt: “How are you, `<handle>`? What can I help you with?”
-  Route its answer back through `invoke`; do not assume every answer is an outcome request.
+  `whoami`. Extract the authenticated email and local-part handle and retain only a digest of raw
+  output. Check the declared owner-private orientation marker by hashed identity. Returning users
+  receive “How are you, `<handle>`? What can I help you with?” and route their answer through
+  `invoke`.
+- For first use, present the plain-language contract from
+  [references/onboarding/first-use.md](references/onboarding/first-use.md), then remember only its
+  hashed identity, version, and presentation time. Offer pinned Hello inspection, an ordinary goal,
+  useful Plays, or dismissal. Hello still traverses inspect, disclose, approve, detailed output,
+  verify, and receipt before a short activation explanation and next choice.
 - If Rote is absent or `whoami` is not authenticated, invoke the callable `rote-setup` skill. That
   specialist owns sequential live probing, install choices, remote-code approval, login, and
   optional onboarding. Play must not run an installer or login itself. After a successful return,
@@ -254,9 +266,11 @@ Keep Awareness, Use, and Explore distinct:
   preparation. Reuse a verified onboarding email handle or live-probe `rote whoami` through
   `scripts/bin/play-onboarding explore-welcome --stdin --json`. Present the declared thinking-orb
   fallback followed by the returned welcome: honor the named human as the domain expert, frame the
-  agent as their apprentice, invite them to ask the agent to watch and steer, and explain that their
-  expertise can become rote memory. If identity is unavailable, say `friend`; never invent a name
-  or block approved exploration solely because personalization failed.
+  agent as their apprentice, invite them to ask the agent to watch and steer, and explain that the
+  agent cannot know the local rules, exceptions, and standards carried by human experience. Say a
+  verified repeatable method can become a private, team, or public Play only when the human chooses.
+  If identity is unavailable, say `friend`; never invent a name or block approved exploration solely
+  because personalization failed.
 - Recommend CALL for suitable adapters, SHELL for local work, and DRIVE for authenticated browser
   work. Present the recommendation as a milestone; ask only when policy requires a decision.
 
