@@ -168,6 +168,12 @@ First-use identity memory stores only a hashed identity, orientation version, an
 Explore welcome treats the human as domain expert and the agent as apprentice. If identity cannot
 be verified, use `friend`; do not invent a name or block approved exploration.
 
+First use and the post-Hello offer include a typed **Create team space** path. Collect the exact
+lowercase handle, delegate creation and membership reads to `rote-org`, then offer colleague invites
+through the same specialist. Never fabricate organization or invite state. Reuse that invite loop
+after a newly created Play has been verified in **Team** scope. A verified **Community** publication
+may produce paste-ready X and LinkedIn explanations, but Play never posts to social networks.
+
 ## Preserve Explore and handoff boundaries
 
 For absent or inadequate matches, ask whether to Explore with Rote or continue normally. Do not
@@ -196,8 +202,10 @@ Decline or mismatch blocks. Probe hints never synthesize approvals or blockers.
 ## Preserve save and publication boundaries
 
 Save is offered only after a verified candidate and the read-only public-owner probe. Choices are
-Private, Public, or Skip. Private and Public authorize their declared release/publication sequence;
-Skip remains unpublished exploration.
+Team, Community, or Skip. Team and Community authorize their declared release/publication sequence;
+Skip remains unpublished exploration. After verified Team publication, reuse the onboarding invite
+loop so colleagues can review and use the Play. Community is the learn → teach → learn path and
+returns verified public references plus paste-ready sharing copy; social posting is never implied.
 
 Publication is never a terminal milestone. Release and publication are separate specialist
 invocations. `author_release` may return only an unpublished candidate. Capture the owner-private

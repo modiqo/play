@@ -39,6 +39,7 @@
     "awareness",
     "creator",
     "management",
+    "team",
     "publication",
     "publication_validation",
     "receipt_ref",
@@ -83,6 +84,7 @@
     "awareness": {"$ref": "#/$defs/awareness"},
     "creator": {"$ref": "#/$defs/creator"},
     "management": {"$ref": "#/$defs/management"},
+    "team": {"$ref": "#/$defs/team"},
     "publication": {"$ref": "#/$defs/publication"},
     "publication_validation": {"$ref": "#/$defs/publicationValidation"},
     "receipt_ref": {"$ref": "#/$defs/nullableString"},
@@ -639,6 +641,22 @@
         "credential_names": {"$ref": "#/$defs/stringArray"},
         "credential_status": {"type": "string", "minLength": 1},
         "provenance": {"const": "receipt_verified"}
+      }
+    },
+    "team": {
+      "type": "object",
+      "required": ["slug", "name", "status", "members", "invite_email", "invite_role", "invites", "presentation_ref", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "slug": {"type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$"},
+        "name": {"$ref": "#/$defs/nullableString"},
+        "status": {"enum": ["not_started", "creating", "ready", "inviting", "presented", "failed"]},
+        "members": {"type": "array"},
+        "invite_email": {"type": ["string", "null"], "format": "email"},
+        "invite_role": {"enum": ["admin", "developer", "reader"]},
+        "invites": {"type": "array"},
+        "presentation_ref": {"$ref": "#/$defs/nullableString"},
+        "evidence_refs": {"$ref": "#/$defs/stringArray"}
       }
     },
     "publicationValidation": {

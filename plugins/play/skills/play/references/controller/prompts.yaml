@@ -14,11 +14,13 @@ prompts:
     selection: single
     choices:
       - {id: hello, label: Run Hello, description: "Low-risk proof: public data, no account, no credentials, and no declared writes.", event: onboarding_starter_selected, recommended: true}
+      - {id: team, label: Create team space, description: "Claim a team handle, then invite colleagues to review and use shared Plays.", event: onboarding_team_selected}
       - {id: goal, label: Tell me your goal, description: Find an existing Play or work out a checked method together., event: onboarding_goal_selected}
       - {id: useful, label: Browse useful Plays, description: See available Plays before choosing whether to inspect one., event: onboarding_awareness_selected}
       - {id: done, label: Not now, description: Finish the introduction without inspecting or running anything., event: onboarding_dismissed}
     events:
       onboarding_starter_selected: [prompt_version, selected_at, onboarding.starter_reference]
+      onboarding_team_selected: [prompt_version, selected_at]
       onboarding_goal_selected: [prompt_version, selected_at]
       onboarding_awareness_selected: [prompt_version, selected_at]
       onboarding_dismissed: [prompt_version, selected_at]
@@ -35,12 +37,38 @@ prompts:
     selection: single
     choices:
       - {id: goal, label: Use Play for my task, description: Describe the result you want so I can find a Play or help work out a new one., event: onboarding_goal_selected, recommended: true}
+      - {id: team, label: Create team space, description: Claim a team handle and invite colleagues to review and use Plays together., event: onboarding_team_selected}
       - {id: useful, label: See useful Plays, description: Open the Play inbox and browse public Plays with clearly labeled download and install counts., event: onboarding_awareness_selected}
       - {id: done, label: Finish, description: Keep the verified receipt and stop here., event: onboarding_finished}
     events:
       onboarding_goal_selected: [prompt_version, selected_at]
+      onboarding_team_selected: [prompt_version, selected_at]
       onboarding_awareness_selected: [prompt_version, selected_at]
       onboarding_finished: [prompt_version, selected_at, receipt_ref]
+
+  describe_team_handle:
+    question: What lowercase team handle should colleagues recognize?
+    selection: text
+    input: {id: team_handle, label: Team handle, event: team_handle_described}
+    events:
+      team_handle_described: [prompt_version, selected_at, team.slug]
+
+  choose_team_invite:
+    question: Would you like to invite a colleague to review and use Plays in this team?
+    selection: single
+    choices:
+      - {id: invite, label: Invite colleague, description: Invite one colleague as a developer; you can add more after each invite., event: team_invite_selected, recommended: true}
+      - {id: done, label: Continue, description: Finish team onboarding for now; members can be invited later., event: team_onboarding_finished}
+    events:
+      team_invite_selected: [prompt_version, selected_at, team.slug, team.invite_role]
+      team_onboarding_finished: [prompt_version, selected_at, team.slug]
+
+  describe_team_invite:
+    question: Which colleague should join this team as a developer?
+    selection: text
+    input: {id: colleague_email, label: Colleague email, event: team_invite_described}
+    events:
+      team_invite_described: [prompt_version, selected_at, team.slug, team.invite_email, team.invite_role]
 
   select_awareness_action:
     question: What would you like to do from What’s new?
@@ -201,8 +229,8 @@ prompts:
     template_fields: [publication.owner_summary]
     selection: single
     choices:
-      - {id: private, label: Private, description: Publish it to an authorized private organization., event: save_private, recommended: true}
-      - {id: public, label: Public, description: Publish it under a selected public identity or organization, verify associated adapter credential contracts, and run the exact public URI once from an isolated directory before sharing it., event: save_public}
+      - {id: private, label: Team, description: "Publish it to an authorized team so colleagues can review, improve, and use it; offer member invites after verification.", event: save_private, recommended: true}
+      - {id: public, label: Community, description: "Teach the Community what the team learned, verify the exact public Play, then produce paste-ready X and LinkedIn explanations.", event: save_public}
       - {id: skip, label: Skip, description: Keep the verified result but do not publish or index a Play., event: save_skipped}
     events:
       save_private: [prompt_version, selected_at]

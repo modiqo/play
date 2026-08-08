@@ -15,7 +15,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "d6e307be9095615d7e83a0e63eef28e523d3d6922ca57dcbe67c7b0718b155b2"
+SUPPORTED_MUTATION_SET_SHA256 = "03d6a5ce2f21022dabdd9af4559cf3b17d676f8c90fb86aa2c8e91c8ee817421"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -263,6 +263,17 @@ def initial_context(
             "org_summary_ref": None,
             "plays_by_org_ref": None,
         },
+        "team": {
+            "slug": None,
+            "name": None,
+            "status": "not_started",
+            "members": [],
+            "invite_email": None,
+            "invite_role": "developer",
+            "invites": [],
+            "presentation_ref": None,
+            "evidence_refs": [],
+        },
         "publication": {
             "owner": None,
             "owner_resolution": "unknown",
@@ -343,6 +354,12 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     },
     "enter_onboarding_goal": {"mode": "explore"},
     "enter_onboarding_awareness": {"mode": "awareness"},
+    "enter_onboarding_team": {"mode": "manage", "team.status": "not_started"},
+    "record_team_handle": {"team.status": "creating"},
+    "record_team_failure": {"team.status": "failed"},
+    "record_team_invite_request": {"team.status": "inviting"},
+    "record_team_invite_email": {"team.status": "inviting"},
+    "finish_team_onboarding": {"team.status": "ready"},
     "set_request_contract": {"mode": "use"},
     "set_search_request": {"mode": "awareness"},
     "set_awareness_request": {"mode": "awareness"},
@@ -406,6 +423,23 @@ def _apply_mutation_semantics(
         context["search"]["results"] = []
         context["search"]["play_choices"] = []
         context["search"]["result_refs"] = [selected] if isinstance(selected, str) else []
+
+    if mutation == "record_team_space":
+        context["team"]["status"] = "ready"
+
+    if mutation == "record_team_presentation":
+        context["team"]["status"] = "presented"
+
+    if mutation == "record_team_invite":
+        context["team"]["status"] = "ready"
+        context["team"]["invite_email"] = None
+
+    if mutation == "record_private_org":
+        private_org = _path_value(payload, "publication.private_org")
+        if isinstance(private_org, str) and private_org:
+            context["team"]["slug"] = private_org
+            context["team"]["name"] = private_org.replace("-", " ").title()
+            context["team"]["status"] = "ready"
 
     if mutation == "record_unrunnable_inspection":
         selected = context["match"].get("reference")
