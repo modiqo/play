@@ -21,11 +21,13 @@ from play.onboarding import (
     prepare_exploration_welcome,
     prepare_first_play_activation,
     prepare_first_use_orientation,
+    prepare_team_loop,
     probe_rote,
     remember_first_use_orientation,
     render_card,
     render_exploration_welcome,
     render_first_use_orientation,
+    render_team_loop,
 )
 
 
@@ -313,6 +315,10 @@ class FirstUseOrientationTest(unittest.TestCase):
         self.assertIn("no account or credentials", rendered)
         self.assertIn("You provide the goals, rules, and exceptions", rendered)
         self.assertIn("Nothing is downloaded or run without", rendered)
+        self.assertIn("Create a team space", rendered)
+        self.assertIn("learn → teach → learn", rendered)
+        self.assertIn("paste-ready X and LinkedIn", rendered)
+        self.assertIn("never posts them for you", rendered)
 
         result = prepare_first_use_orientation(
             {"onboarding": {"email_handle": "Ada Example"}}
@@ -331,6 +337,28 @@ class FirstUseOrientationTest(unittest.TestCase):
         )
         self.assertIn("Your first Play is complete", result["presentation_markdown"])
         self.assertIn("full result above", result["presentation_markdown"])
+
+    def test_team_loop_is_reusable_and_does_not_claim_external_sharing(self) -> None:
+        rendered = render_team_loop("Ada Labs", "ada-labs")
+        self.assertIn("Team space ready: Ada Labs", rendered)
+        self.assertIn("Team handle: `ada-labs`", rendered)
+        self.assertIn("review, improve, and use Plays together", rendered)
+        self.assertIn("learn in real work → teach", rendered)
+        self.assertIn("paste-ready X and LinkedIn", rendered)
+        self.assertIn("Nothing has been published", rendered)
+
+        result = prepare_team_loop(
+            {
+                "team": {
+                    "slug": "ada-labs",
+                    "name": "Ada Labs",
+                    "status": "ready",
+                    "members": [],
+                }
+            }
+        )
+        self.assertEqual("presented", result["team"]["status"])
+        self.assertTrue(str(result["team"]["presentation_ref"]).startswith("sha256:"))
 
 
 class PublicCardTest(unittest.TestCase):

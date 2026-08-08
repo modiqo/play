@@ -54,6 +54,19 @@ cases:
     terminal: receipt
     includes_once: [use_inspect, use_offer, use_run, use_verify, use_receipt, onboarding_activation_present, onboarding_activation_offer]
 
+  - name: first-use team creation reuses the typed colleague invite loop
+    steps:
+      - {state: onboarding_first_offer, event: onboarding_team_selected, target: onboarding_team_handle}
+      - {state: onboarding_team_handle, event: team_handle_described, target: onboarding_team_create}
+      - {state: onboarding_team_create, event: team_space_ready, target: onboarding_team_present}
+      - {state: onboarding_team_present, event: team_loop_presented, target: team_invite_offer}
+      - {state: team_invite_offer, event: team_invite_selected, target: team_invite_email}
+      - {state: team_invite_email, event: team_invite_described, target: team_invite_execute}
+      - {state: team_invite_execute, event: team_invite_ready, target: team_invite_offer}
+      - {state: team_invite_offer, event: team_onboarding_finished, target: completed}
+    terminal: completed
+    includes_once: [onboarding_team_handle, onboarding_team_create, onboarding_team_present, team_invite_email, team_invite_execute]
+
   - name: Play URI uses first-class inspection when Rote is installed
     steps:
       - {state: invoke, event: play_uri_invocation, target: onboarding_probe}
@@ -316,9 +329,13 @@ cases:
         event: saved_play_inspected
         guards: {saved_public_inspection_matches_publication: false, saved_inspection_matches_publication: true}
         target: birth_present
-      - {state: birth_present, event: birth_certificate_presented, target: completed}
+      - state: birth_present
+        event: birth_certificate_presented
+        guards: {save_choice_private: true}
+        target: team_invite_offer
+      - {state: team_invite_offer, event: team_onboarding_finished, target: completed}
     terminal: completed
-    includes_once: [author_release, birth_capture, private_org, private_publish, birth_bind, index]
+    includes_once: [author_release, birth_capture, private_org, private_publish, birth_bind, index, team_invite_offer]
 
   - name: direct registry publication during release blocks without a retrospective birth
     steps:

@@ -77,9 +77,63 @@ states:
     prompt: choose_first_use_path
     "on":
       onboarding_starter_selected: [{target: use_inspect, mutate: enter_onboarding_starter_use}]
+      onboarding_team_selected: [{target: onboarding_team_handle, mutate: enter_onboarding_team}]
       onboarding_goal_selected: [{target: onboarding_need, mutate: enter_onboarding_goal}]
       onboarding_awareness_selected: [{target: awareness_collect, mutate: enter_onboarding_awareness}]
       onboarding_dismissed: [{target: completed, mutate: record_onboarding_dismissal}]
+
+  onboarding_team_handle:
+    owner: play
+    checkpoint: after
+    prompt: describe_team_handle
+    "on":
+      team_handle_described: [{target: onboarding_team_create, mutate: record_team_handle}]
+
+  onboarding_team_create:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [team.slug]
+    entry: {action: create_team_space}
+    "on":
+      team_space_ready: [{target: onboarding_team_present, mutate: record_team_space}]
+      team_space_failed: [{target: blocked, mutate: record_team_failure}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_team_present:
+    owner: play
+    checkpoint: after
+    requires: [team.slug, team.name, team.status]
+    entry: {action: present_team_loop}
+    "on":
+      team_loop_presented: [{target: team_invite_offer, mutate: record_team_presentation}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  team_invite_offer:
+    owner: play
+    checkpoint: after
+    requires: [team.slug, team.status]
+    prompt: choose_team_invite
+    "on":
+      team_invite_selected: [{target: team_invite_email, mutate: record_team_invite_request}]
+      team_onboarding_finished: [{target: completed, mutate: finish_team_onboarding}]
+
+  team_invite_email:
+    owner: play
+    checkpoint: after
+    requires: [team.slug]
+    prompt: describe_team_invite
+    "on":
+      team_invite_described: [{target: team_invite_execute, mutate: record_team_invite_email}]
+
+  team_invite_execute:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [team.slug, team.invite_email, team.invite_role]
+    entry: {action: invite_team_member}
+    "on":
+      team_invite_ready: [{target: team_invite_offer, mutate: record_team_invite}]
+      team_invite_failed: [{target: blocked, mutate: record_team_failure}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
 
   onboarding_need:
     owner: play
@@ -429,6 +483,7 @@ states:
     requires: [onboarding.activation_status, receipt_ref]
     prompt: choose_onboarding_next
     "on":
+      onboarding_team_selected: [{target: onboarding_team_handle, mutate: enter_onboarding_team}]
       onboarding_goal_selected: [{target: onboarding_need, mutate: enter_onboarding_goal}]
       onboarding_awareness_selected: [{target: awareness_collect, mutate: enter_onboarding_awareness}]
       onboarding_finished: [{target: receipt, mutate: finish_onboarding_activation}]
@@ -782,7 +837,9 @@ states:
     requires: [birth.sha256, birth.flow_fingerprint, birth.exact_reference, birth.registry_content_hash, birth.binding_ref, publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.uri, publication.install_uri, publication.content_hash, publication.inspect_ref, publication_validation.credential_status, publication_validation.smoke_status, play.version, exploration.human_name, onboarding.email_handle]
     entry: {action: present_birth_certificate}
     "on":
-      birth_certificate_presented: [{target: completed, mutate: record_birth_certificate_presentation}]
+      birth_certificate_presented:
+        - {guard: save_choice_private, target: team_invite_offer, mutate: record_birth_certificate_presentation}
+        - {target: completed, mutate: record_birth_certificate_presentation}
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   receipt: {owner: play}

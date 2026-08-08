@@ -722,9 +722,21 @@ def validate_bundle(
         _target(states, "publication_smoke", "public_smoke_verified") == "birth_present",
         "public certificate presentation may follow only a verified canonical smoke run",
     )
+    birth_presented = states.get("birth_present", {}).get("on", {}).get(
+        "birth_certificate_presented", []
+    )
     check(
-        _target(states, "birth_present", "birth_certificate_presented") == "completed",
-        "a saved Play may complete only after its verified birth certificate is presented",
+        isinstance(birth_presented, list)
+        and len(birth_presented) == 2
+        and birth_presented[0].get("guard") == "save_choice_private"
+        and birth_presented[0].get("target") == "team_invite_offer"
+        and birth_presented[1].get("target") == "completed",
+        "a saved Play may offer team invites only after its verified birth certificate",
+    )
+    check(
+        predecessors["team_invite_offer"]
+        == {"onboarding_team_present", "team_invite_execute", "birth_present"},
+        "team invites must follow team creation, another invite, or verified private publication",
     )
     check(
         _target(states, "crystallize", "candidate_ready") == "save_prepare"

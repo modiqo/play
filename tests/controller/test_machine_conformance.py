@@ -155,6 +155,7 @@ class MachineConformanceTest(unittest.TestCase):
         first_prompt = PROMPTS["choose_first_use_path"]
         self.assertEqual("Run Hello", first_prompt["choices"][0]["label"])
         self.assertTrue(first_prompt["choices"][0]["recommended"])
+        self.assertEqual("Create team space", first_prompt["choices"][1]["label"])
         self.assertEqual(
             "use_inspect",
             MACHINE["states"]["onboarding_first_offer"]["on"][
@@ -233,12 +234,46 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertEqual(
             "present_birth_certificate", MACHINE["states"]["birth_present"]["entry"]["action"]
         )
+        birth_presented = MACHINE["states"]["birth_present"]["on"][
+            "birth_certificate_presented"
+        ]
+        self.assertEqual("save_choice_private", birth_presented[0]["guard"])
+        self.assertEqual("team_invite_offer", birth_presented[0]["target"])
+        self.assertEqual("completed", birth_presented[1]["target"])
+
+    def test_team_invite_flow_is_shared_by_onboarding_and_private_creation(self) -> None:
         self.assertEqual(
-            "completed",
-            MACHINE["states"]["birth_present"]["on"]["birth_certificate_presented"][0][
-                "target"
-            ],
+            "onboarding_team_handle",
+            MACHINE["states"]["onboarding_first_offer"]["on"][
+                "onboarding_team_selected"
+            ][0]["target"],
         )
+        self.assertEqual(
+            "onboarding_team_handle",
+            MACHINE["states"]["onboarding_activation_offer"]["on"][
+                "onboarding_team_selected"
+            ][0]["target"],
+        )
+        self.assertEqual("rote-org", ACTIONS["create_team_space"]["specialist"])
+        self.assertEqual("rote-org", ACTIONS["invite_team_member"]["specialist"])
+        self.assertEqual("external-write", ACTIONS["create_team_space"]["effect"])
+        self.assertEqual("external-write", ACTIONS["invite_team_member"]["effect"])
+        self.assertEqual(
+            "team_invite_offer",
+            MACHINE["states"]["onboarding_team_present"]["on"][
+                "team_loop_presented"
+            ][0]["target"],
+        )
+        self.assertEqual(
+            "team_invite_offer",
+            MACHINE["states"]["team_invite_execute"]["on"][
+                "team_invite_ready"
+            ][0]["target"],
+        )
+        save_choices = PROMPTS["private_public_or_skip"]["choices"]
+        self.assertEqual("Team", save_choices[0]["label"])
+        self.assertEqual("Community", save_choices[1]["label"])
+        self.assertIn("X and LinkedIn", save_choices[1]["description"])
 
     def test_birth_certificate_preserves_uris_social_copy_and_trace_learning(self) -> None:
         published = ACTIONS["publish_public"]["events"]["play_published"]

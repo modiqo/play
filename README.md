@@ -29,7 +29,7 @@ Play keeps four decisions separate so each prompt is small and honest:
 | Find something reusable | Search local and authorized organization indexes | Inspect one result or stop |
 | Run a known or vaguely named Play | Resolve the name, inspect it read-only, and show setup/effects | Pull and run, or not now |
 | Solve a one-off task | Search first; if no adequate Play exists, offer Explore | Explore with rote, or continue normally |
-| Preserve successful exploration | Verify it before preparing a candidate | Private, Public, or Skip |
+| Preserve successful exploration | Verify it before preparing a candidate | Team, Community, or Skip |
 | See what’s new | Pull an inbox grouped by organization and compare it with the remembered SHA | Run, search, create, or finish |
 | Revisit how a Play was born | Open the owner-private, redacted birth certificate | Choose an unambiguous name, reference, or birth SHA |
 
@@ -43,7 +43,9 @@ live-probes for Rote and reads the
 signed-in email with `rote whoami`. A returning user gets the short personal greeting. A first-time
 user sees “Start small. See what happens. Stay in control,” then gets a recommended **Run Hello**
 choice: public data, no account, no credentials, and no declared writes. They may instead describe
-a goal, browse useful Plays, or stop. Missing or
+a goal, create a team space, browse useful Plays, or stop. Team setup claims an explicit handle
+through the `rote-org` specialist and offers colleague invites for reviewing and using Plays.
+Missing or
 unauthenticated Rote is handed to the guided `rote-setup` skill. A public Play URI uses first-class
 Rote inspection when available; without Rote, Play reads the URI's bounded public JSON card and
 shows its own inspect and consent-gated install/bootstrap paths without executing them.
@@ -55,7 +57,10 @@ It stores no email, prompt, result, credential, raw identity output, or controll
 When Explore begins, Play resolves the signed-in human's email handle without retaining raw identity
 output and welcomes them as the domain expert, with the agent as their apprentice. The welcome
 invites the human to watch, question, and steer the work. A verified repeatable method can become a
-private, team, or public Play only when the human chooses. It appears once after Explore consent
+personal, Team, or Community Play only when the human chooses. The same invite loop is reused after
+a newly created Team Play is verified. Community publication completes the learn → teach → learn
+loop and returns paste-ready X and LinkedIn explanations; Play never posts them automatically. The
+expert welcome appears once after Explore consent
 and before any workspace is created; if
 personalization is unavailable, Play uses the neutral `friend` fallback instead of inventing a name.
 
@@ -90,9 +95,17 @@ stateDiagram-v2
     onboarding_first_present --> onboarding_first_record : orientation shown
     onboarding_first_record --> onboarding_first_offer : private marker stored
     onboarding_first_offer --> use_inspect : Run Hello
+    onboarding_first_offer --> onboarding_team_handle : create team space
     onboarding_first_offer --> onboarding_need : describe a goal
     onboarding_first_offer --> awareness_collect : see useful Plays
     onboarding_first_offer --> completed : not now
+    onboarding_team_handle --> onboarding_team_create : handle supplied
+    onboarding_team_create --> onboarding_team_present : rote-org confirms team
+    onboarding_team_present --> team_invite_offer : sharing loop explained
+    team_invite_offer --> team_invite_email : invite colleague
+    team_invite_email --> team_invite_execute : email supplied
+    team_invite_execute --> team_invite_offer : rote-org confirms invite
+    team_invite_offer --> completed : finish
     onboarding_need --> invoke : goal described
     onboarding_setup --> onboarding_probe : setup completed; reprobe
     onboarding_setup --> blocked : paused / unavailable
@@ -302,7 +315,7 @@ Baseline recorded on 2026-08-07 on an Apple Silicon Mac with Python 3.14.5 and
 | Qualifier projection | 2,024 bytes |
 | Opaque continuation ID | 24 bytes |
 
-The 81-state bundle remains sub-millisecond at p95 for warm transitions. Search adequacy and local
+The 87-state bundle remains sub-millisecond at p95 for warm transitions. Search adequacy and local
 versus remote routing are deterministic: adequate results are ordered local, private organization,
 then public hub; selected search payloads are pruned before the next continuation is stored.
 Loading validated

@@ -27,7 +27,7 @@ CARD_SCHEMA = "rote.play.v1"
 PLAY_HOST = "play.modiqo.ai"
 MAX_CARD_BYTES = 200_000
 ONBOARDING_STATE_SCHEMA = "play.onboarding-state/v1"
-ONBOARDING_ORIENTATION_VERSION = 2
+ONBOARDING_ORIENTATION_VERSION = 3
 DEFAULT_ONBOARDING_STATE_PATH = Path.home() / ".rote" / "play" / "onboarding-state.json"
 STARTER_PLAY_REFERENCE = "modiqo/hello@0.1.0"
 STARTER_PLAY_URI = "https://play.modiqo.ai/modiqo/hello@0.1.0"
@@ -352,7 +352,11 @@ def render_first_use_orientation(human_name: str) -> str:
             "",
             "You can also tell me a goal, browse useful Plays, or leave. Nothing is downloaded or run without the approval required for that action.",
             "",
-            "If no Play fits later, we can work out the job together. You provide the goals, rules, and exceptions; I help test the method. You decide whether the result stays one-off or becomes a private, team, or public Play.",
+            "Create a team space when the work should outlive one person: claim a recognizable handle, invite colleagues to review and use Plays, and keep sensitive learning inside the team.",
+            "",
+            "The broader loop is **learn → teach → learn**. Your team learns from real work, publishes selected Plays to Community, and learns again from reuse and feedback. A verified Community publication includes paste-ready X and LinkedIn explanations; Play never posts them for you.",
+            "",
+            "If no Play fits later, we can work out the job together. You provide the goals, rules, and exceptions; I help test the method. You decide whether the result stays one-off, goes to your team, or teaches the Community.",
         ]
     )
 
@@ -443,6 +447,44 @@ def prepare_first_play_activation(payload: Mapping[str, Any]) -> dict[str, Any]:
         "activation_ns": time.perf_counter_ns() - started,
         "presentation_markdown": markdown,
         "presentation_ref": presentation_ref,
+    }
+
+
+def render_team_loop(team_name: str, team_slug: str) -> str:
+    """Explain the reusable team-to-community sharing loop without claiming effects."""
+
+    return "\n".join(
+        [
+            f"# Team space ready: {team_name}",
+            "",
+            f"Team handle: `{team_slug}`",
+            "",
+            "Invite colleagues to review, improve, and use Plays together. Team publication keeps the Play inside the authorized organization.",
+            "",
+            "When a verified Play teaches something worth sharing, choose **Community** after creation. Play will publish only with approval, verify the exact public URI, and produce paste-ready X and LinkedIn explanations of what it does.",
+            "",
+            "That creates the loop: **learn in real work → teach the team or Community → learn from reuse and feedback**.",
+            "",
+            "Nothing has been published to Community or posted to social media by this orientation.",
+        ]
+    )
+
+
+def prepare_team_loop(payload: Mapping[str, Any]) -> dict[str, Any]:
+    started = time.perf_counter_ns()
+    team = _object(payload.get("team"), "team")
+    team_slug = _string(team.get("slug"), "team.slug")
+    team_name = _string(team.get("name"), "team.name")
+    markdown = render_team_loop(team_name, team_slug)
+    presentation_ref = f"sha256:{hashlib.sha256(markdown.encode()).hexdigest()}"
+    return {
+        "schema": SCHEMA,
+        "kind": "team_loop",
+        "ok": True,
+        "team": {"status": "presented", "presentation_ref": presentation_ref},
+        "presentation_markdown": markdown,
+        "presentation_ref": presentation_ref,
+        "render_ns": time.perf_counter_ns() - started,
     }
 
 
@@ -766,6 +808,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "present-first",
             "mark-first",
             "present-activation",
+            "present-team",
             "explore-welcome",
             "card",
             "present-card",
@@ -793,6 +836,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 result = remember_first_use_orientation(payload)
             elif args.mode == "present-activation":
                 result = prepare_first_play_activation(payload)
+            elif args.mode == "present-team":
+                result = prepare_team_loop(payload)
             elif args.mode == "explore-welcome":
                 result = prepare_exploration_welcome(payload)
             elif args.mode == "card":

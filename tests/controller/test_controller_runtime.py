@@ -47,7 +47,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(81, len(self.runtime.bundle.states))
+        self.assertEqual(87, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -687,7 +687,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                     {
                         "experience_status": "first_use",
                         "experience_ref": "sha256:" + "b" * 64,
-                        "orientation_version": 2,
+                        "orientation_version": 3,
                         "experience_ns": 1,
                     }
                 ),
@@ -698,7 +698,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 stdout=json.dumps(
                     {
                         "orientation_status": "presented",
-                        "orientation_version": 2,
+                        "orientation_version": 3,
                         "orientation_markdown": orientation,
                         "orientation_ref": "sha256:" + "c" * 64,
                         "starter_reference": "https://play.modiqo.ai/modiqo/hello@0.1.0",
@@ -714,7 +714,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 stdout=json.dumps(
                     {
                         "orientation_status": "recorded",
-                        "orientation_version": 2,
+                        "orientation_version": 3,
                         "experience_ref": "sha256:" + "b" * 64,
                         "marker_ns": 1,
                     }
@@ -836,6 +836,71 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual(starter_uri, advanced.session.context["match"]["reference"])
         self.assertIn(starter_uri, advanced.session.context["request"]["requested_outcome"])
         self.assertEqual("selected", advanced.session.context["onboarding"]["starter_status"])
+
+    def test_team_creation_reaches_specialist_then_reuses_invite_prompt(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="team-onboarding", task_key="team-onboarding", request_original="$play"
+        )
+        context = dict(session.context)
+        context["state"] = "onboarding_first_offer"
+        context["onboarding"] = dict(context["onboarding"])
+        context["onboarding"]["orientation_status"] = "recorded"
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("onboarding_first_offer")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        selected = self.runtime.advance_session(
+            projected,
+            ControllerEvent(
+                id=EventId("onboarding_team_selected"),
+                payload={"prompt_version": "1", "selected_at": "2026-08-08T00:00:00Z"},
+                guards={},
+            ),
+        ).session
+        self.assertEqual("onboarding_team_handle", selected.cursor.state)
+
+        described = self.runtime.advance_session(
+            selected,
+            ControllerEvent(
+                id=EventId("team_handle_described"),
+                payload={
+                    "prompt_version": "1",
+                    "selected_at": "2026-08-08T00:00:01Z",
+                    "team": {"slug": "ada-labs"},
+                },
+                guards={},
+            ),
+        ).session
+        self.assertEqual("onboarding_team_create", described.cursor.state)
+        instruction = self.runtime.project(described.cursor).instruction
+        self.assertIsNotNone(instruction)
+        assert instruction is not None
+        self.assertEqual("rote-org", instruction["specialist"])
+
+        created = self.runtime.advance_session(
+            described,
+            ControllerEvent(
+                id=EventId("team_space_ready"),
+                payload={
+                    "team": {
+                        "slug": "ada-labs",
+                        "name": "Ada Labs",
+                        "status": "ready",
+                        "members": [],
+                        "evidence_refs": ["sha256:" + "a" * 64],
+                    }
+                },
+                guards={},
+            ),
+        ).session
+
+        yielded = advance_until_yield(self.runtime, created, root=ROOT)
+        self.assertEqual("team_invite_offer", yielded.projection["state"]["id"])
+        self.assertEqual("choose_team_invite", yielded.projection["instruction"]["id"])
+        self.assertIn("Team space ready: Ada Labs", yielded.presentations[0])
 
     def test_session_derives_onboarding_guards_from_context(self) -> None:
         session = self.runtime.initial_session(

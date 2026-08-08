@@ -48,6 +48,15 @@ mutations:
   - record_first_use_orientation
   - record_first_use_marker
   - enter_onboarding_starter_use
+  - enter_onboarding_team
+  - record_team_handle
+  - record_team_space
+  - record_team_failure
+  - record_team_presentation
+  - record_team_invite_request
+  - record_team_invite_email
+  - record_team_invite
+  - finish_team_onboarding
   - enter_onboarding_goal
   - enter_onboarding_awareness
   - record_onboarding_dismissal
@@ -263,6 +272,44 @@ actions:
       - Mark orientation presentation independently from first verified Play activation so declining the starter does not cause the full introduction to repeat forever.
     events:
       onboarding_first_use_recorded: [onboarding.orientation_status, onboarding.orientation_version, onboarding.experience_ref, onboarding.marker_ns]
+
+  create_team_space:
+    kind: delegated
+    owner: rote-specialist
+    specialist: rote-org
+    effect: external-write
+    input_required: [team.slug]
+    command_policy:
+      - Invoke rote-org once to create the exact team slug, using a human-readable name derived from that slug, or verify that the authenticated user already administers it.
+      - Return live member state; never invent membership, ownership, quota, or organization readiness.
+    events:
+      team_space_ready: [team.slug, team.name, team.status, team.members, team.evidence_refs]
+      team_space_failed: [team.slug, team.status, reason, evidence_refs]
+
+  invite_team_member:
+    kind: delegated
+    owner: rote-specialist
+    specialist: rote-org
+    effect: external-write
+    input_required: [team.slug, team.invite_email, team.invite_role]
+    command_policy:
+      - Invoke rote-org once to invite the exact email to the exact team with the displayed role.
+      - Return live pending-invite and member state; never claim an invite from prose or cached state.
+    events:
+      team_invite_ready: [team.slug, team.status, team.members, team.invites, team.evidence_refs]
+      team_invite_failed: [team.slug, team.status, reason, evidence_refs]
+
+  present_team_loop:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [team.slug, team.name, team.status, team.members]
+    command: scripts/bin/play-onboarding present-team --stdin --json
+    command_policy:
+      - Explain the shared team-to-community learning loop once, with team review before Community publication and paste-ready X/LinkedIn copy only after verified public publication.
+      - Never claim that a Play was shared, published, or posted by presenting this orientation.
+    events:
+      team_loop_presented: [team.status, team.presentation_ref, presentation.markdown]
 
   handoff_rote_setup:
     kind: delegated
