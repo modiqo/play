@@ -298,15 +298,19 @@ def _commandless_result(
             "partial": "partial_match",
             "uncertain": "uncertain_match",
         }[classification]
+        if classification == "full" and candidate.get("primary_scope") != "local":
+            event = "remote_match_choice_required"
         covered = [str(candidate.get("name") or reference)]
         uncovered = [] if classification == "full" else [str(outcome)]
+        match: dict[str, Any] = {
+            "covered": covered,
+            "uncovered": uncovered,
+        }
+        if event != "remote_match_choice_required":
+            match["reference"] = reference
         return {
             "event": event,
-            "match": {
-                "reference": reference,
-                "covered": covered,
-                "uncovered": uncovered,
-            },
+            "match": match,
             "confidence": float(candidate.get("coverage", 0.0)),
         }
     if action_id == "route_inspected_play":

@@ -286,6 +286,7 @@ states:
       full_match:
         - {guard: match_satisfies_constraints, target: use_inspect, mutate: enter_use}
         - {target: explore_offer, mutate: downgrade_inadequate_match}
+      remote_match_choice_required: [{target: search_present, mutate: record_search_results}]
       partial_match: [{target: explore_offer, mutate: record_partial_match}]
       uncertain_match: [{target: explore_offer, mutate: record_uncertain_match}]
       no_match: [{target: explore_offer, mutate: record_no_match}]
@@ -298,7 +299,9 @@ states:
     entry: {action: inspect_registry_play}
     "on":
       play_inspected: [{target: use_decide, mutate: record_play_inspection}]
-      play_not_runnable: [{target: completed, mutate: record_unrunnable_inspection}]
+      play_not_runnable:
+        - {guard: search_has_remaining_choices, target: search_present, mutate: record_unrunnable_inspection}
+        - {target: explore_offer, mutate: record_unrunnable_inspection}
       play_reference_unresolved: [{target: search, mutate: recover_unresolved_reference}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -308,7 +311,7 @@ states:
     requires: [inspection.complete, inspection.local_change, inspection.exact_reference, inspection.disclosure_sha256]
     entry: {action: route_inspected_play}
     "on":
-      local_play_ready: [{target: use_run, mutate: approve_inspected_run}]
+      local_play_ready: [{target: use_prepare, mutate: approve_inspected_run}]
       remote_pull_required: [{target: use_offer, mutate: record_play_inspection}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -318,8 +321,17 @@ states:
     requires: [inspection.complete, inspection.exact_reference, inspection.disclosure_sha256]
     prompt: approve_play_run
     "on":
-      play_run_approved: [{target: use_run, mutate: approve_inspected_run}]
+      play_run_approved: [{target: use_prepare, mutate: approve_inspected_run}]
       play_run_declined: [{target: completed, mutate: record_run_dismissal}]
+
+  use_prepare:
+    owner: play
+    checkpoint: after
+    requires: [inspection.exact_reference, inspection.disclosure_sha256]
+    entry: {action: prepare_play_run_handoff}
+    "on":
+      play_run_handoff_ready: [{target: use_run, mutate: record_play_run_handoff}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_run:
     owner: flow-runtime
@@ -329,7 +341,48 @@ states:
     "on":
       play_run_ready: [{target: use_output, mutate: record_controller_run}]
       play_drifted: [{target: repair_offer, mutate: record_failed_receipt}]
+      play_auth_repair_required: [{target: use_auth_repair_offer, mutate: record_use_auth_repair_required}]
       action_blocked: [{target: repair_offer, mutate: record_failed_receipt}]
+
+  use_auth_repair_offer:
+    owner: play
+    checkpoint: after
+    requires: [auth_repair.source, auth_repair.status, auth_repair.recoverable, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.evidence_refs, auth_repair.original_packet, auth_repair.original_packet_sha256]
+    prompt: approve_auth_repair
+    "on":
+      auth_repair_approved: [{target: use_auth_repair_handoff, mutate: approve_auth_repair}]
+      auth_repair_declined: [{target: blocked, mutate: decline_auth_repair}]
+
+  use_auth_repair_handoff:
+    owner: play
+    checkpoint: after
+    requires: [auth_repair.source, auth_repair.status, auth_repair.owner, auth_repair.recoverable, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.evidence_refs, auth_repair.original_packet, auth_repair.original_packet_sha256]
+    entry: {action: prepare_auth_repair_handoff}
+    "on":
+      auth_repair_handoff_ready: [{target: use_auth_repair_execute, mutate: record_auth_repair_handoff}]
+      auth_repair_specialist_unavailable: [{target: blocked, mutate: record_auth_repair_unavailable}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  use_auth_repair_execute:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [auth_repair.owner, auth_repair.packet, auth_repair.packet_sha256, auth_repair.original_packet_sha256]
+    entry: {action: execute_auth_repair}
+    "on":
+      auth_repair_ready: [{target: use_auth_repair_receipt, mutate: record_auth_repair_response}]
+      auth_repair_failed: [{target: use_auth_repair_receipt, mutate: record_auth_repair_response}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  use_auth_repair_receipt:
+    owner: play
+    checkpoint: after
+    requires: [auth_repair.packet, auth_repair.packet_sha256, auth_repair.receipt]
+    entry: {action: validate_auth_repair_receipt}
+    "on":
+      specialist_auth_repair_ready: [{target: use_inspect, mutate: record_auth_repair_success}]
+      specialist_auth_repair_failed: [{target: blocked, mutate: record_auth_repair_failure}]
+      auth_repair_receipt_invalid: [{target: blocked, mutate: record_invalid_auth_repair_receipt}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_output:
     owner: play
@@ -445,7 +498,7 @@ states:
     "on":
       adapter_ready: [{target: explore_handoff, mutate: record_adapter_discovery}]
       adapter_choices_ready: [{target: adapter_offer, mutate: record_adapter_discovery}]
-      adapter_catalog_empty: [{target: explore_handoff, mutate: record_adapter_discovery}]
+      adapter_catalog_empty: [{target: adapter_converge, mutate: record_adapter_discovery}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   adapter_offer:
@@ -454,8 +507,18 @@ states:
     requires: [adapter_discovery.status, adapter_discovery.choices]
     prompt: choose_adapter_source
     "on":
-      adapter_source_selected: [{target: explore_handoff, mutate: select_adapter_source}]
-      adapter_catalog_rejected: [{target: explore_handoff, mutate: record_catalog_rejection}]
+      adapter_source_selected: [{target: adapter_converge, mutate: select_adapter_source}]
+      adapter_catalog_rejected: [{target: adapter_converge, mutate: record_catalog_rejection}]
+
+  adapter_converge:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [request.requested_outcome, adapter_discovery.status, adapter_discovery.searched_sources]
+    entry: {action: converge_call_adapter}
+    "on":
+      adapter_converged: [{target: explore_handoff, mutate: record_adapter_convergence}]
+      adapter_convergence_failed: [{target: blocked, mutate: record_adapter_convergence_failure}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
 
   modality_offer:
     owner: play

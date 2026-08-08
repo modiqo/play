@@ -17,6 +17,7 @@ guards:
   - search_is_complete
   - search_only_requested
   - match_satisfies_constraints
+  - search_has_remaining_choices
   - explore_is_approved
   - route_within_policy
   - exploration_budget_remaining
@@ -98,6 +99,8 @@ mutations:
   - record_unrunnable_inspection
   - recover_unresolved_reference
   - approve_inspected_run
+  - record_play_run_handoff
+  - record_use_auth_repair_required
   - record_run_dismissal
   - record_controller_run
   - record_formatted_output
@@ -118,6 +121,8 @@ mutations:
   - record_adapter_discovery
   - select_adapter_source
   - record_catalog_rejection
+  - record_adapter_convergence
+  - record_adapter_convergence_failure
   - record_specialist_handoff
   - record_specialist_unavailable
   - record_specialist_response
@@ -257,6 +262,7 @@ actions:
   handoff_rote_setup:
     kind: delegated
     owner: rote-specialist
+    specialist: rote-setup
     effect: mixed
     input_required: [onboarding.intent, onboarding.rote_status, onboarding.setup_status]
     command_policy:
@@ -356,6 +362,7 @@ actions:
   list_play_management:
     kind: delegated
     owner: rote-specialist
+    specialist: rote-registry
     effect: read
     input_required: [management.views]
     events:
@@ -411,6 +418,7 @@ actions:
     input_required: [request.requested_outcome, search.results, modality_policy]
     events:
       full_match: [match.reference, match.covered, match.uncovered, confidence]
+      remote_match_choice_required: [match.covered, match.uncovered, confidence]
       partial_match: [match.reference, match.covered, match.uncovered, confidence]
       uncertain_match: [match.reference, match.covered, match.uncovered, confidence]
       no_match: [match.covered, match.uncovered, confidence]
@@ -426,6 +434,18 @@ actions:
     events:
       local_play_ready: []
       remote_pull_required: []
+
+  prepare_play_run_handoff:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [run_id, request.requested_outcome, request.parameters, inspection.exact_reference, inspection.disclosure_sha256]
+    command: scripts/bin/play-handoff prepare-play-run --stdin --json
+    command_policy:
+      - Bind the exact inspected reference, parameters, and disclosure digest before execution.
+      - This packet records the original Play-run contract for a possible rote-adapter-config repair; it performs no pull, configuration, authentication, or execution.
+    events:
+      play_run_handoff_ready: [auth_repair.original_packet, auth_repair.original_packet_sha256]
 
   inspect_registry_play:
     kind: deterministic
@@ -448,7 +468,7 @@ actions:
     kind: deterministic
     owner: flow-runtime
     effect: mixed
-    input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, request.original, request.parameters, effect_policy, output_policy]
+    input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, request.original, request.parameters, effect_policy, output_policy, auth_repair.original_packet, auth_repair.original_packet_sha256]
     command: rote play run <inspection.exact_reference> <approved-parameters> --yes
     command_policy:
       - Use --yes after local readiness is proven, or after approve_play_run binds a remote pull to the exact inspection digest, reference, and displayed parameters.
@@ -458,9 +478,11 @@ actions:
       - Never request summary output. Preserve the complete primary payload, response and artifact references, effects, and any full-output reference returned by Rote.
       - Prefer Rote's human presentation for steps-with-presentation Plays; accept JSON or structured responses only when they retain the full primary result.
       - A compact Play summary cannot prove full detail and must not emit play_run_ready.
+      - If rote play run returns a recoverable typed authentication failure, preserve its adapter id, credential variable, classified rung, distinguishing error, and evidence as play_auth_repair_required; Play must not classify or repair it.
     events:
       play_run_ready: [play.version, resolution.local_state, resolution.pull_performed, result_ref, response_refs, artifact_refs, effects, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
       play_drifted: [reason, evidence_refs]
+      play_auth_repair_required: [auth_repair.source, auth_repair.owner, auth_repair.recoverable, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.evidence_refs]
 
   format_run_output:
     kind: deterministic
@@ -564,6 +586,7 @@ actions:
   discover_call_adapter:
     kind: delegated
     owner: rote-specialist
+    specialist: rote-adapter-create
     effect: read
     input_required: [request.requested_outcome, route.modalities, execution.owner, adapter_discovery.query]
     command_policy:
@@ -579,6 +602,20 @@ actions:
       adapter_choices_ready: [adapter_discovery.status, adapter_discovery.searched_sources, adapter_discovery.choices, adapter_discovery.evidence_refs]
       adapter_catalog_empty: [adapter_discovery.status, adapter_discovery.searched_sources, adapter_discovery.choices, adapter_discovery.evidence_refs]
 
+  converge_call_adapter:
+    kind: delegated
+    owner: rote-specialist
+    specialist: rote-adapter-create
+    effect: mixed
+    input_required: [request.requested_outcome, adapter_discovery]
+    command_policy:
+      - Hand the selected catalog choice, rejected catalog set, or proven catalog exhaustion to rote-adapter-create as one closed convergence request.
+      - rote-adapter-create owns spec discovery, substrate detection, dry-run, creation, initial authentication, masked human gates, and readiness verification; Play must not reproduce those stages.
+      - Return adapter_converged only after the adapter is installed and ready for rote-using-adapters, with the complete updated adapter_discovery record and evidence.
+    events:
+      adapter_converged: [adapter_discovery.status, adapter_discovery.searched_sources, adapter_discovery.choices, adapter_discovery.selected_id, adapter_discovery.evidence_refs]
+      adapter_convergence_failed: [reason, evidence_refs]
+
   prepare_specialist_handoff:
     kind: deterministic
     owner: play
@@ -588,8 +625,8 @@ actions:
     command_policy:
       - Enumerate only rote-* skills exposed as callable by the current harness; installed files or raw MCP tools do not count as available specialists.
       - CALL requires rote-using-adapters, SHELL requires rote-shell, DRIVE requires rote-browse, and combined routes require rote-workspace.
-      - A CALL packet requires adapter convergence from the bound discovery record: reuse its selected installed adapter, use its selected catalog entry, or ask rote-adapter-create to continue from proven catalog exhaustion into provided-spec/provider-document discovery.
-      - Bind the typed adapter_discovery record into every CALL packet. It must prove installed inventory and either a selected catalog entry, explicit catalog rejection, or a zero-result catalog search before provided-spec or provider-document discovery.
+      - A CALL packet requires an installed_ready adapter_discovery receipt produced by rote-adapter-create; packet preparation never creates or configures an adapter.
+      - Bind the converged adapter_discovery record into every CALL packet.
       - Existing-adapter authentication repair is never performed inside packet preparation; it requires a typed auth_repair_required receipt, Play approval, and the separate rote-adapter-config repair handoff.
       - Provider schemas, endpoint metadata, documentation, and MCP server cards are discovery evidence only. They never authorize direct capability execution outside the Rote adapter.
       - When effect_policy.rote_confirmation is approved, invalidate the prior packet and bind the new packet to the exact Rote tool, impact, token, workspace, and evidence so the same specialist resumes only that guarded call.
@@ -601,13 +638,13 @@ actions:
   execute_route:
     kind: delegated
     owner: rote-specialist
+    specialist_from: execution.owner
     effect: mixed
     input_required: [execution.owner, consent.explore, route.modalities, handoff.owner, handoff.available, handoff.packet, handoff.packet_sha256]
     command_policy:
       - Invoke the selected rote-* skill through the harness skill mechanism with the exact play.handoff/v1 packet.
       - For CALL, accept only the packet-bound adapter_discovery result. Never repeat or skip its installed-then-catalog sequence, silently select an unchosen match, or replace it with model memory.
-      - Reuse the selected installed adapter. For a selected catalog entry or proven catalog exhaustion/rejection, delegate adapter creation to rote-adapter-create, which must determine OpenAPI, GraphQL, or MCP before using the matching Rote creation command.
-      - Complete initial authentication for a newly created adapter through rote-adapter-create, including required human approval and masked secret entry, before invoking rote-using-adapters.
+      - Execute only through the installed_ready adapter selected by the prior rote-adapter-create handoff; do not create, configure, or rediscover adapters in this state.
       - When a recoverable auth failure is classified, emit auth_repair_required with the adapter id, environment variable, opaque classified rung, distinguishing error, and evidence; do not collapse it into route_exhausted.
       - If adapter creation, type detection, non-recoverable authentication, or adapter execution cannot complete, emit route_exhausted with evidence; never fall back to a raw provider or MCP call.
       - Treat probe readOnlyHint and destructiveHint values as discovery metadata only; never emit confirmation_required, route_exhausted, or action_blocked solely from those hints.
@@ -644,7 +681,7 @@ actions:
     kind: deterministic
     owner: play
     effect: none
-    input_required: [run_id, request.requested_outcome, auth_repair.status, auth_repair.owner, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.original_packet, auth_repair.original_packet_sha256, execution.idempotency_key]
+    input_required: [run_id, request.requested_outcome, auth_repair.source, auth_repair.status, auth_repair.owner, auth_repair.recoverable, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.evidence_refs, auth_repair.original_packet, auth_repair.original_packet_sha256, execution.idempotency_key]
     command: scripts/bin/play-handoff prepare-auth-repair --stdin --json
     command_policy:
       - Require rote-adapter-config to be callable; it is the only permitted auth-repair owner and never becomes a CALL execution owner.
@@ -658,6 +695,7 @@ actions:
   execute_auth_repair:
     kind: delegated
     owner: rote-specialist
+    specialist: rote-adapter-config
     effect: mixed
     input_required: [auth_repair.owner, auth_repair.packet, auth_repair.packet_sha256, auth_repair.original_packet_sha256]
     command_policy:
@@ -687,6 +725,7 @@ actions:
   prepare_candidate:
     kind: delegated
     owner: rote-specialist
+    specialist: rote-flow-crystallization
     effect: local-write
     input_required: [evidence.verification]
     events:
@@ -719,6 +758,7 @@ actions:
   ensure_private_org:
     kind: delegated
     owner: rote-specialist
+    specialist: rote-org
     effect: external-write
     input_required: [consent.save]
     events:

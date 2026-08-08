@@ -49,19 +49,22 @@ The portable packet and receipt shapes are declared in
 A CALL packet includes `capability_policy.kind=rote_adapter`. Treat that policy as a stop condition,
 not a suggestion:
 
-1. In `adapter_discover`, ask `rote-adapter-create` to search installed Rote adapters and inspect
+1. In `adapter_discover`, hand discovery to `rote-adapter-create` to search installed Rote adapters and inspect
    every plausible match. Reuse a unique adequate one; present multiple plausible adapters.
 2. If no installed adapter is adequate, always run
    `rote adapter catalog search <adapter_discovery.query> --json`. Present every result through
    `adapter_offer`; REST/OpenAPI, GraphQL, and MCP entries for the same provider are separate choices.
-3. Only after a successful zero-result catalog search or explicit rejection may
-   `rote-adapter-create` inspect a supplied spec/endpoint, server card, or provider documentation.
+3. After a selection, successful zero-result catalog search, or explicit rejection, enter
+   `adapter_converge` and hand the complete discovery record back to `rote-adapter-create`. That
+   specialist owns spec inspection, dry-run, creation, initial authentication, and readiness; Play
+   must not reproduce those steps. It may inspect a supplied spec/endpoint, server card, or provider documentation.
    Detect `openapi`, `graphql`, or `mcp` from that ordered evidence. MCP uses
    `rote adapter new-from-mcp`; OpenAPI and GraphQL use the dry-run-first `rote adapter new` path.
 4. Complete initial authentication through the Rote creation flow. For a recoverable failure on an
    existing adapter, return the typed repair request described below. Do not ask Play to classify
    authentication or handle credentials.
-5. Execute the requested capability through `rote-using-adapters`.
+5. Only an `installed_ready` convergence receipt may prepare the execution packet. Execute the
+   requested capability through `rote-using-adapters`.
 
 The CALL packet binds the typed `adapter_discovery` record. Missing installed-inventory evidence,
 catalog fallthrough without catalog evidence, an unselected match, or reordered discovery is an
@@ -81,6 +84,11 @@ detected substrate and evidence, creation/reuse status, auth status/owner, orche
 `adapter_execute_owner=rote-using-adapters`, and `direct_tool_execution=false`.
 
 ## Recoverable authentication repair
+
+The same repair contract applies when `rote play run` encounters adapter authentication. Before a
+Play run, bind the exact reference, parameters, disclosure SHA, and expected events into
+`play.run-handoff/v1` with `scripts/bin/play-handoff prepare-play-run --stdin --json`. Preserve that
+packet and SHA as the original contract; do not expand the Play run into adapter commands.
 
 Do not collapse a recoverable CALL authentication failure into `route_exhausted`. The execution
 owner returns `auth_repair_required` with `source=rote_auth_repair_required`, `recoverable=true`, the

@@ -15,7 +15,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "a5b2b64903f30655dbb7961a3f50efb9e71600b3bbd0d34fa1952f80bcfe9940"
+SUPPORTED_MUTATION_SET_SHA256 = "d33d5206093477a8346cec38ea0537fb7db57787eb913a23004125f70c3f7184"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -357,6 +357,7 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "enter_direct_use": {"mode": "use"},
     "attach_onboarding_starter_receipt": {"onboarding.starter_status": "completed"},
     "approve_repair_explore": {"mode": "explore", "consent.explore": "approved"},
+    "record_use_auth_repair_required": {"auth_repair.status": "required"},
     "record_ordinary_exit": {"mode": "exited"},
     "approve_explore": {"mode": "explore", "consent.explore": "approved"},
     "record_missing_consent": {"consent.explore": "declined"},
@@ -373,6 +374,7 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "record_unpublished_result": {"candidate.publication_status": "unknown"},
     "choose_private": {"consent.save": "private"},
     "choose_public": {"consent.save": "public"},
+    "choose_resolved_public_owner": {"consent.save": "public"},
     "record_save_skipped": {"consent.save": "skip"},
     "record_publication_boundary_violation": {"candidate.publication_status": "published"},
     "record_index": {"publication.indexed": True},
@@ -389,13 +391,35 @@ def _apply_mutation_semantics(
     for path, value in _CONSTANT_PATCHES.get(mutation, {}).items():
         _set_existing_path(context, path, value)
 
-    if mutation in {"enter_use", "enter_search_use"}:
+    if mutation == "enter_use":
         # Search result descriptions and choices are presentation data. Once a match is
         # selected they must not inflate every subsequent opaque session token.
         selected = _path_value(payload, "match.reference")
         context["search"]["results"] = []
         context["search"]["play_choices"] = []
         context["search"]["result_refs"] = [selected] if isinstance(selected, str) else []
+
+    if mutation == "record_unrunnable_inspection":
+        selected = context["match"].get("reference")
+        context["search"]["results"] = [
+            result
+            for result in context["search"]["results"]
+            if not isinstance(result, Mapping) or result.get("reference") != selected
+        ]
+        context["search"]["play_choices"] = [
+            choice
+            for choice in context["search"]["play_choices"]
+            if not isinstance(choice, Mapping) or choice.get("reference") != selected
+        ]
+        context["search"]["result_refs"] = [
+            reference
+            for reference in context["search"]["result_refs"]
+            if reference != selected
+        ]
+
+    if mutation == "approve_inspected_run":
+        context["search"]["results"] = []
+        context["search"]["play_choices"] = []
 
     if mutation == "enter_onboarding_starter_use":
         starter = _path_value(payload, "onboarding.starter_reference")

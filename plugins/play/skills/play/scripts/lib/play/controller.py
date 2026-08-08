@@ -368,12 +368,25 @@ class ControllerRuntime:
             action = self.bundle.actions[state.action]
             kind = str(action["kind"])
             boundary = f"{kind}_action"
+            specialist = action.get("specialist")
+            specialist_from = action.get("specialist_from")
+            if specialist_from is not None:
+                if context is None or not isinstance(specialist_from, str):
+                    raise ControllerRuntimeError(
+                        f"action {state.action} cannot resolve its specialist"
+                    )
+                specialist = _path_value(context, specialist_from)
+            if kind == "delegated" and not isinstance(specialist, str):
+                raise ControllerRuntimeError(
+                    f"delegated action {state.action} lacks an exact specialist"
+                )
             instruction = {
                 "type": "action",
                 "id": state.action,
                 "kind": kind,
                 "owner": action["owner"],
                 "effect": action["effect"],
+                **({"specialist": specialist} if isinstance(specialist, str) else {}),
                 "input_required": list(action.get("input_required", ())),
                 **({"command": action["command"]} if action.get("command") else {}),
                 **(
@@ -750,6 +763,12 @@ def _resolve_guard_values(event: ControllerEvent) -> dict[GuardId, bool]:
     values[GuardId("public_owner_choice_is_required")] = (
         owner_resolution == "choice_required"
     )
+    values[GuardId("exact_published_version_is_indexed")] = (
+        event.id == EventId("play_indexed")
+        and isinstance(_path_value(event.payload, "publication.canonical_reference"), str)
+        and isinstance(_path_value(event.payload, "play.version"), str)
+        and isinstance(_path_value(event.payload, "index_ref"), str)
+    )
     return values
 
 
@@ -777,6 +796,17 @@ def _derive_session_guards(
         and isinstance(_path_value(event.payload, "match.reference"), str)
         and _path_value(event.payload, "match.uncovered") == []
     )
+    selected_reference = _path_value(context, "match.reference")
+    choices = _path_value(context, "search.play_choices")
+    values[GuardId("search_has_remaining_choices")] = (
+        isinstance(choices, list)
+        and any(
+            isinstance(choice, Mapping)
+            and isinstance(choice.get("reference"), str)
+            and choice.get("reference") != selected_reference
+            for choice in choices
+        )
+    )
     values[GuardId("explore_is_approved")] = (
         _path_value(context, "consent.explore") == "approved"
     )
@@ -788,9 +818,27 @@ def _derive_session_guards(
     budget = _path_value(context, "execution.budget")
     if isinstance(attempts, int) and isinstance(budget, int):
         values[GuardId("exploration_budget_remaining")] = attempts < budget
-    values[GuardId("outcome_is_verified")] = event.id == EventId("outcome_verified")
-    values[GuardId("save_choice_private")] = event.id == EventId("save_private")
-    values[GuardId("save_choice_public")] = event.id == EventId("save_public")
+    values[GuardId("outcome_is_verified")] = (
+        _path_value(context, "last_event.id") == "outcome_verified"
+    )
+    values[GuardId("save_choice_private")] = (
+        _path_value(context, "consent.save") == "private"
+    )
+    values[GuardId("save_choice_public")] = (
+        _path_value(context, "consent.save") == "public"
+    )
+    inspected_hash = _path_value(event.payload, "publication.content_hash")
+    captured_hash = _path_value(context, "birth.registry_content_hash")
+    matching_content = (
+        isinstance(inspected_hash, str)
+        and bool(inspected_hash)
+        and inspected_hash == captured_hash
+    )
+    values[GuardId("saved_public_inspection_matches_publication")] = (
+        _path_value(event.payload, "publication.visibility") == "public"
+        and matching_content
+    )
+    values[GuardId("saved_inspection_matches_publication")] = matching_content
     return ControllerEvent(
         id=event.id,
         payload=event.payload,
