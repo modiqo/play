@@ -427,10 +427,15 @@ def validate_bundle(
     check(states.get("use_run", {}).get("entry", {}).get("action") == "run_registry_play", "Use mode must be owned by run_registry_play")
     check(actions.get("inspect_registry_play", {}).get("command") == "scripts/bin/play-inspect <match.reference> --json", "Use inspection must invoke the reusable first-class wrapper")
     check(
-        actions.get("run_registry_play", {}).get("kind") == "delegated"
-        and actions.get("run_registry_play", {}).get("specialist") == "rote-flow-run"
-        and "command" not in actions.get("run_registry_play", {}),
-        "Use mode must hand the prepared exact Play to rote-flow-run",
+        actions.get("run_registry_play", {}).get("kind") == "deterministic"
+        and actions.get("run_registry_play", {}).get("command")
+        == "scripts/bin/play-run --stdin --json",
+        "Use mode must invoke the universal deterministic Play runner",
+    )
+    check(
+        states.get("use_verify", {}).get("entry", {}).get("action")
+        == "verify_play_output",
+        "Use output verification must remain deterministic",
     )
     check(actions.get("inspect_saved_play", {}).get("command") == "scripts/bin/play-inspect <publication.canonical_reference> --json", "saved Play readback must invoke the reusable first-class wrapper")
     check(initial == "invoke", "the typed invocation classifier must be the initial state")

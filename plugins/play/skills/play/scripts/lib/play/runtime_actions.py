@@ -44,6 +44,8 @@ _SELECTOR_ACTIONS = {
     "dispatch_route",
     "classify_adequacy",
     "route_inspected_play",
+    "run_registry_play",
+    "verify_play_output",
 }
 @dataclass(frozen=True)
 class DeterministicTrace:
@@ -339,6 +341,40 @@ def _commandless_result(
             "event": (
                 "local_play_ready" if local_change == "none" else "remote_pull_required"
             )
+        }
+    if action_id == "verify_play_output":
+        output = context.get("output")
+        if not isinstance(output, Mapping):
+            raise ControllerRuntimeError("Play output context is malformed")
+        primary = output.get("primary")
+        complete = (
+            output.get("mode") == "detailed"
+            and output.get("detail") == "full"
+            and output.get("truncated") is False
+            and primary is not None
+            and primary != ""
+        )
+        try:
+            encoded = (
+                primary.encode()
+                if isinstance(primary, str)
+                else json.dumps(
+                    primary, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+                ).encode()
+            )
+        except (TypeError, ValueError) as error:
+            raise ControllerRuntimeError("Play output is not serializable") from error
+        evidence_ref = "sha256:" + hashlib.sha256(encoded).hexdigest()
+        if complete:
+            return {
+                "event": "outcome_verified",
+                "postconditions": ["complete Play output returned"],
+                "evidence_refs": [evidence_ref],
+            }
+        return {
+            "event": "outcome_not_verified",
+            "failed_postconditions": ["Play output was incomplete or truncated"],
+            "evidence_refs": [evidence_ref],
         }
     raise ControllerRuntimeError(f"no deterministic renderer for {action_id}")
 

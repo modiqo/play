@@ -15,6 +15,7 @@ RUNTIME_COMMANDLESS_ACTIONS = frozenset(
         "dispatch_route",
         "classify_adequacy",
         "route_inspected_play",
+        "verify_play_output",
     }
 )
 
