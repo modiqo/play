@@ -31,17 +31,18 @@ with a nonempty harness-owned run ID, stable task key, and the unchanged user re
 
 The command creates the complete logical `play.context/v1`, executes eligible deterministic
 actions, validates every event, applies context fields, checkpoints the transition, and stops only
-at a boundary requiring model, user, or specialist work. Retain its `session_token` opaquely in
-harness/thread state. To resume, call the same command with `session_token` and the one declared
-event:
+at a boundary requiring model, user, or specialist work. It returns a short `continuation_id`; keep
+that opaque value in harness/thread state. To resume, call the same command with the continuation
+and the one declared event:
 
 ```json
-{"session_token":"<opaque-token>","event":{"id":"<event>","payload":{},"guards":{}}}
+{"continuation_id":"<24-character-id>","event":{"id":"<event>","payload":{},"guards":{}}}
 ```
 
-Never decode, edit, summarize, or manufacture the token. Never serialize Play controller context to an ad hoc file. A token is an in-thread transport envelope, not authorization for persistence. Do
-not write it under `/tmp`, a repository, a home directory, a registry, or an execution workspace.
-If the harness cannot retain the token, emit `action_blocked` and stop.
+Never inspect, edit, summarize, manufacture, print, or persist the continuation ID yourself. The
+runtime stores its context owner-privately under `~/.rote/play/continuations`, expires it after 24
+hours, and removes it at a terminal state. The harness must not copy controller context or a large
+transport token between calls. If it cannot retain the short ID, emit `action_blocked` and stop.
 
 The returned projection is the entire current instruction contract. It contains the current state,
 boundary, bound input, exact action or prompt, and accepted event templates. Fill only null values
@@ -67,13 +68,14 @@ Follow only the returned `projection.state.boundary`:
 a controller defect. Do not execute its command manually or read source to repair it.
 
 Pass returned `presentations` to the user in order before handling the final boundary. They are
-complete milestone presentations, not debug output. Do not print the session token, raw context,
+complete milestone presentations, not debug output. Do not print the continuation ID, raw context,
 transition record, command chatter, or evidence addresses.
 
 If `instruction.preflight_required_for_events` contains the evaluator event you selected, run
 `scripts/bin/play-preflight --harness <codex|claude|generic> --json` after qualification and before
-resuming. Include `"preflight":{"ready":true}` with the resume request. Conversation and excluded
-repository work exit without paying this probe. If setup is required, invoke the callable
+resuming. Include the complete unchanged `play.preflight/v1` JSON output as the `preflight` value;
+do not reduce it to `{ "ready": true }`. Conversation and excluded repository work exit without
+paying this probe. If setup is required, invoke the callable
 `rote-setup` skill; Play never installs or authenticates Rote itself.
 
 ## Keep execution quiet and visible at milestones

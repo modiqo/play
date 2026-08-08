@@ -29,7 +29,12 @@ ONBOARDING_STATE_SCHEMA = "play.onboarding-state/v1"
 ONBOARDING_ORIENTATION_VERSION = 1
 DEFAULT_ONBOARDING_STATE_PATH = Path.home() / ".rote" / "play" / "onboarding-state.json"
 STARTER_PLAY_REFERENCE = "modiqo/hello@0.1.0"
+STARTER_PLAY_URI = "https://play.modiqo.ai/modiqo/hello@0.1.0"
 _PLAY_PREFIX = re.compile(r"^(?:\$play|/play)(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL)
+_STARTER_RUN = re.compile(
+    r"^(?:(?:please\s+)?run\s+(?:the\s+)?hello(?:\s+play)?|(?:\$play|/play)\s+run\s+hello)[.!]?$",
+    re.IGNORECASE,
+)
 _SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _NAME_VERSION = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9_-]*(?:@[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?)?$"
@@ -104,12 +109,15 @@ def _canonical_play_action_uri(value: object, label: str) -> str:
 
 
 def classify_invocation(original: str) -> dict[str, Any]:
-    """Classify only the exact empty aliases and canonical Play URI forms."""
+    """Classify exact aliases, the pinned Hello command, and canonical Play URIs."""
 
     started = time.perf_counter_ns()
     stripped = original.strip()
     match = _PLAY_PREFIX.fullmatch(stripped)
-    if match is not None:
+    if _STARTER_RUN.fullmatch(stripped):
+        kind = "play_uri"
+        play_uri = STARTER_PLAY_URI
+    elif match is not None:
         remainder = (match.group(1) or "").strip()
         if not remainder:
             kind = "greeting"
@@ -308,7 +316,7 @@ def prepare_first_use_orientation(payload: Mapping[str, Any]) -> dict[str, Any]:
         "orientation_version": ONBOARDING_ORIENTATION_VERSION,
         "orientation_markdown": markdown,
         "orientation_ref": presentation_ref,
-        "starter_reference": STARTER_PLAY_REFERENCE,
+        "starter_reference": STARTER_PLAY_URI,
         "orientation_ns": time.perf_counter_ns() - started,
         "presentation_markdown": markdown,
         "presentation_ref": presentation_ref,

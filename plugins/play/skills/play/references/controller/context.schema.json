@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://play.modiqo.ai/schemas/play.context.v1.json",
   "title": "Play logical controller context",
-  "$comment": "This schema defines logical controller state only. It does not define or authorize filesystem persistence. Implementations must keep context in harness-owned state unless an explicit Play storage backend and ownership policy are provided.",
+  "$comment": "This schema defines logical controller state. Only the Play runtime continuation backend may persist it: owner-private permissions, random opaque ID, 24-hour expiry, and deletion at terminal state. Harnesses and specialists must not persist or inspect it.",
   "type": "object",
   "required": [
     "schema",
