@@ -86,10 +86,11 @@ class MachineConformanceTest(unittest.TestCase):
         for state in MACHINE["terminal"]:
             self.assertFalse(MACHINE["states"][state].get("on", {}))
 
-    def test_context_does_not_authorize_ad_hoc_persistence(self) -> None:
-        self.assertIn("Never serialize Play controller context to an ad hoc file", SKILL_TEXT)
+    def test_context_allows_only_the_private_runtime_continuation_store(self) -> None:
+        self.assertIn("~/.rote/play/continuations", SKILL_TEXT)
         self.assertEqual("Play logical controller context", CONTEXT["title"])
-        self.assertIn("does not define or authorize filesystem persistence", CONTEXT["$comment"])
+        self.assertIn("Only the Play runtime continuation backend", CONTEXT["$comment"])
+        self.assertIn("24-hour expiry", CONTEXT["$comment"])
 
     def test_empty_invocation_uses_typed_live_identity_or_setup(self) -> None:
         self.assertEqual("invoke", MACHINE["initial"])
@@ -146,7 +147,7 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertEqual(["onboarding.email_handle"], prompt["template_fields"])
         self.assertIn("{onboarding.email_handle}", prompt["question"])
         first_prompt = PROMPTS["choose_first_use_path"]
-        self.assertEqual("Try Hello", first_prompt["choices"][0]["label"])
+        self.assertEqual("Run Hello", first_prompt["choices"][0]["label"])
         self.assertTrue(first_prompt["choices"][0]["recommended"])
         self.assertEqual(
             "use_inspect",

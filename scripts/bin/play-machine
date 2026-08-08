@@ -4,9 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
+import os
+import shutil
 import statistics
 import sys
+import tempfile
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -14,11 +18,32 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
+if importlib.util.find_spec("statemachine") is None:
+    uv = shutil.which("uv")
+    if uv is None or os.environ.get("PLAY_MACHINE_UV_BOOTSTRAPPED") == "1":
+        raise SystemExit(
+            "play-machine requires uv or the pinned Play Python environment"
+        )
+    environment = os.environ.copy()
+    environment["PLAY_MACHINE_UV_BOOTSTRAPPED"] = "1"
+    os.execve(
+        uv,
+        [
+            uv,
+            "run",
+            "--project",
+            str(ROOT),
+            str(Path(__file__).resolve()),
+            *sys.argv[1:],
+        ],
+        environment,
+    )
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.controller import (
     ControllerRuntime,
     ControllerRuntimeError,
+    RuntimeSession,
     cursor_from_dict,
     decode_session,
     encode_session,
@@ -26,6 +51,13 @@ from play.controller import (
     session_from_dict,
 )
 from play.runtime_actions import advance_until_yield
+from play.continuations import (
+    create as create_continuation,
+    discard as discard_continuation,
+    load as load_continuation,
+    save as save_continuation,
+)
+from play.private_store import PrivateStoreError
 
 
 def _read_object() -> dict[str, Any]:
@@ -42,6 +74,31 @@ def _percentile(values: list[int], percentile: float) -> int:
     ordered = sorted(values)
     index = round((len(ordered) - 1) * percentile)
     return ordered[index]
+
+
+def _continuation_session(
+    request: dict[str, Any],
+) -> tuple[RuntimeSession | None, str | None]:
+    continuation_id = request.get("continuation_id")
+    if isinstance(continuation_id, str) and continuation_id:
+        return load_continuation(continuation_id), continuation_id
+    session_token = request.get("session_token")
+    if isinstance(session_token, str) and session_token:
+        return decode_session(session_token), None
+    return None, None
+
+
+def _persist_continuation(
+    session: RuntimeSession, continuation_id: str | None, *, terminal: bool
+) -> str | None:
+    if terminal:
+        if continuation_id is not None:
+            discard_continuation(continuation_id)
+        return None
+    if continuation_id is None:
+        return create_continuation(session)
+    save_continuation(continuation_id, session)
+    return continuation_id
 
 
 def main() -> int:
@@ -137,38 +194,39 @@ def main() -> int:
             )
             payload = {
                 "schema": "play.runtime-session-start/v1",
-                "session_token": encode_session(session),
+                "continuation_id": create_continuation(session),
                 "projection": runtime.project_session(session).as_dict(),
             }
         elif args.command == "session-project":
             request = _read_object()
-            session_token = request.get("session_token")
-            if not isinstance(session_token, str) or not session_token:
-                raise ControllerRuntimeError("stdin requires a session_token")
-            payload = runtime.project_session(decode_session(session_token)).as_dict()
+            session, _ = _continuation_session(request)
+            if session is None:
+                raise ControllerRuntimeError("stdin requires a continuation_id")
+            payload = runtime.project_session(session).as_dict()
         elif args.command == "session-advance":
             request = _read_object()
-            session_token = request.get("session_token")
+            session, continuation_id = _continuation_session(request)
             event_payload = request.get("event")
-            if not isinstance(session_token, str) or not session_token:
-                raise ControllerRuntimeError("stdin requires a session_token")
+            if session is None:
+                raise ControllerRuntimeError("stdin requires a continuation_id")
             if not isinstance(event_payload, dict):
                 raise ControllerRuntimeError("stdin requires an event object")
             result = runtime.advance_session(
-                decode_session(session_token), event_from_dict(event_payload)
+                session, event_from_dict(event_payload)
             )
+            terminal = result.session.cursor.state in runtime.bundle.terminals
             payload = {
                 "schema": result.schema,
-                "session_token": encode_session(result.session),
+                "continuation_id": _persist_continuation(
+                    result.session, continuation_id, terminal=terminal
+                ),
                 "step": result.step.as_dict(),
                 "projection": result.projection.as_dict(),
             }
         elif args.command == "run-until-yield":
             request = _read_object()
-            session_token = request.get("session_token")
-            if isinstance(session_token, str) and session_token:
-                session = decode_session(session_token)
-            else:
+            session, continuation_id = _continuation_session(request)
+            if session is None:
                 run_id = request.get("run_id")
                 task_key = request.get("task_key")
                 request_record = request.get("request")
@@ -204,9 +262,12 @@ def main() -> int:
                 root=ROOT,
                 max_actions=args.max_actions,
             )
+            terminal = yielded.session.cursor.state in runtime.bundle.terminals
             payload = {
                 "schema": yielded.schema,
-                "session_token": encode_session(yielded.session),
+                "continuation_id": _persist_continuation(
+                    yielded.session, continuation_id, terminal=terminal
+                ),
                 "projection": yielded.projection,
                 "trace": [asdict(item) for item in yielded.trace],
                 "presentations": list(yielded.presentations),
@@ -259,20 +320,26 @@ def main() -> int:
                 raise ControllerRuntimeError("iterations must be at least 1")
             durations = []
             projection_bytes = []
-            token_bytes = []
-            for index in range(args.iterations):
-                started = time.perf_counter_ns()
-                session = runtime.initial_session(
-                    run_id=f"runtime-benchmark-{index}",
-                    task_key="runtime-benchmark",
-                    request_original="Review this repository implementation",
-                )
-                yielded = advance_until_yield(runtime, session, root=ROOT)
-                durations.append(time.perf_counter_ns() - started)
-                projection_bytes.append(
-                    len(json.dumps(yielded.projection, separators=(",", ":")).encode())
-                )
-                token_bytes.append(len(encode_session(yielded.session).encode()))
+            continuation_bytes = []
+            with tempfile.TemporaryDirectory() as directory:
+                continuation_root = Path(directory) / "continuations"
+                for index in range(args.iterations):
+                    started = time.perf_counter_ns()
+                    session = runtime.initial_session(
+                        run_id=f"runtime-benchmark-{index}",
+                        task_key="runtime-benchmark",
+                        request_original="Review this repository implementation",
+                    )
+                    yielded = advance_until_yield(runtime, session, root=ROOT)
+                    continuation_id = create_continuation(
+                        yielded.session, root=continuation_root
+                    )
+                    durations.append(time.perf_counter_ns() - started)
+                    projection_bytes.append(
+                        len(json.dumps(yielded.projection, separators=(",", ":")).encode())
+                    )
+                    continuation_bytes.append(len(continuation_id.encode()))
+                    discard_continuation(continuation_id, root=continuation_root)
             payload = {
                 "schema": "play.runtime-loop-benchmark/v1",
                 "bundle_sha256": runtime.bundle.sha256,
@@ -284,9 +351,9 @@ def main() -> int:
                     "max": max(durations),
                 },
                 "projection_bytes": int(statistics.median(projection_bytes)),
-                "session_token_bytes": int(statistics.median(token_bytes)),
+                "continuation_id_bytes": int(statistics.median(continuation_bytes)),
             }
-    except ControllerRuntimeError as error:
+    except (ControllerRuntimeError, PrivateStoreError) as error:
         parser.exit(1, f"play-machine: {error}\n")
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0

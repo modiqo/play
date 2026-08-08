@@ -13,7 +13,7 @@ prompts:
     question: What would you like to do first?
     selection: single
     choices:
-      - {id: hello, label: Try Hello, description: Inspect the pinned starter Play, then decide whether to run it., event: onboarding_starter_selected, recommended: true}
+      - {id: hello, label: Run Hello, description: Run the pinned canonical Hello Play URI., event: onboarding_starter_selected, recommended: true}
       - {id: goal, label: Tell me your goal, description: Describe the result you want so I can find a Play or help work out a new one., event: onboarding_goal_selected}
       - {id: useful, label: See useful Plays, description: Open the Play inbox and browse public Plays with clearly labeled download and install counts., event: onboarding_awareness_selected}
       - {id: done, label: Not now, description: Finish the introduction without inspecting or running anything., event: onboarding_dismissed}

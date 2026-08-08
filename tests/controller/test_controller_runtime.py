@@ -296,6 +296,104 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("classify_play_invocation", yielded.trace[0].action)
         self.assertEqual("ordinary_play_invocation", yielded.trace[0].event)
 
+    @patch("play.runtime_actions.subprocess.run")
+    def test_run_hello_reaches_exact_specialist_without_model_or_search(self, run) -> None:
+        disclosure = {
+            "schema": "play.run-disclosure/v1",
+            "complete": True,
+            "exact_reference": "modiqo/hello@0.1.0",
+            "description": "Hello",
+            "local_change": "none",
+            "dependencies": {"adapter_checks": []},
+            "operations": [],
+            "effects": {"summary": "No declared writes."},
+            "blockers": [],
+            "disclosure_sha256": "a" * 64,
+            "identity": {
+                "name": "hello",
+                "description": "Hello",
+                "visibility": "public",
+            },
+            "parameters": [],
+            "preflight": {
+                "run_eligible": True,
+                "play_local_state": "exact_ready",
+                "decision": "ready",
+                "blockers": [],
+            },
+            "approval": {"notice": "Nothing has run."},
+        }
+        run.side_effect = [
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "schema": "play.onboarding/v1",
+                        "kind": "invocation",
+                        "ok": True,
+                        "invocation_kind": "play_uri",
+                        "play_uri": "https://play.modiqo.ai/modiqo/hello@0.1.0",
+                        "classify_ns": 1,
+                    }
+                ),
+            ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "schema": "play.onboarding/v1",
+                        "kind": "rote_probe",
+                        "ok": True,
+                        "rote_status": "installed",
+                        "rote_command": "/usr/local/bin/rote",
+                        "rote_off_path": False,
+                        "probe_ns": 1,
+                    }
+                ),
+            ),
+            SimpleNamespace(returncode=0, stderr="", stdout=json.dumps(disclosure)),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "schema": "play.run-handoff-preparation/v1",
+                        "ok": True,
+                        "event": "play_run_handoff_ready",
+                        "auth_repair": {
+                            "original_packet": {"schema": "play.run-handoff/v1"},
+                            "original_packet_sha256": "c" * 64,
+                        },
+                    }
+                ),
+            ),
+        ]
+        session = self.runtime.initial_session(
+            run_id="hello-fast-path",
+            task_key="hello-fast-path",
+            request_original="run hello",
+        )
+
+        yielded = advance_until_yield(self.runtime, session, root=ROOT)
+
+        self.assertEqual("use_run", yielded.projection["state"]["id"])
+        self.assertEqual("specialist", yielded.projection["state"]["boundary"])
+        self.assertEqual("rote-flow-run", yielded.projection["instruction"]["specialist"])
+        self.assertEqual(
+            [
+                "classify_play_invocation",
+                "probe_rote_for_onboarding",
+                "inspect_registry_play",
+                "route_inspected_play",
+                "prepare_play_run_handoff",
+            ],
+            [item.action for item in yielded.trace],
+        )
+        self.assertNotIn("qualify_request", str(yielded.projection))
+        self.assertNotIn("search_authorized_plays", str(yielded.projection))
+
     def test_advance_until_yield_accepts_boundary_on_action_limit(self) -> None:
         session = self.runtime.initial_session(
             run_id="session-1", task_key="task-1", request_original="Repository work"
@@ -369,7 +467,8 @@ class ControllerRuntimeTest(unittest.TestCase):
         context["state"] = "onboarding_first_offer"
         context["onboarding"] = dict(context["onboarding"])
         context["onboarding"]["orientation_status"] = "recorded"
-        context["onboarding"]["starter_reference"] = "modiqo/hello@0.1.0"
+        starter_uri = "https://play.modiqo.ai/modiqo/hello@0.1.0"
+        context["onboarding"]["starter_reference"] = starter_uri
         projected = session.__class__(
             schema=session.schema,
             cursor=replace(session.cursor, state=StateId("onboarding_first_offer")),
@@ -384,14 +483,15 @@ class ControllerRuntimeTest(unittest.TestCase):
                 payload={
                     "prompt_version": "1",
                     "selected_at": "2026-08-07T00:00:00Z",
-                    "onboarding": {"starter_reference": "modiqo/hello@0.1.0"},
+                    "onboarding": {"starter_reference": starter_uri},
                 },
                 guards={},
             ),
         )
 
         self.assertEqual("use_inspect", advanced.session.cursor.state)
-        self.assertEqual("modiqo/hello@0.1.0", advanced.session.context["match"]["reference"])
+        self.assertEqual(starter_uri, advanced.session.context["match"]["reference"])
+        self.assertIn(starter_uri, advanced.session.context["request"]["requested_outcome"])
         self.assertEqual("selected", advanced.session.context["onboarding"]["starter_status"])
 
     def test_session_derives_onboarding_guards_from_context(self) -> None:

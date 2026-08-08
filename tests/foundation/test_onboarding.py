@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.onboarding import (
     OnboardingError,
-    STARTER_PLAY_REFERENCE,
+    STARTER_PLAY_URI,
     canonical_play_uri,
     check_onboarding_experience,
     classify_invocation,
@@ -96,6 +96,13 @@ class InvocationClassificationTest(unittest.TestCase):
                 result = classify_invocation(value)
                 self.assertEqual("play_uri", result["invocation_kind"])
                 self.assertEqual(URI, result["play_uri"])
+
+    def test_run_hello_binds_the_pinned_uri_without_model_qualification(self) -> None:
+        for value in ("run hello", "Run the Hello Play", "$play run hello"):
+            with self.subTest(value=value):
+                result = classify_invocation(value)
+                self.assertEqual("play_uri", result["invocation_kind"])
+                self.assertEqual(STARTER_PLAY_URI, result["play_uri"])
 
     def test_noncanonical_hosts_and_nonempty_requests_remain_ordinary(self) -> None:
         for value in (
@@ -275,7 +282,7 @@ class FirstUseOrientationTest(unittest.TestCase):
         result = prepare_first_use_orientation(
             {"onboarding": {"email_handle": "Ada Example"}}
         )
-        self.assertEqual(STARTER_PLAY_REFERENCE, result["starter_reference"])
+        self.assertEqual(STARTER_PLAY_URI, result["starter_reference"])
         self.assertEqual("presented", result["orientation_status"])
         self.assertTrue(str(result["orientation_ref"]).startswith("sha256:"))
 

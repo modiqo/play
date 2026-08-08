@@ -256,14 +256,15 @@ per-step timing. [`runtime_actions.py`](scripts/lib/play/runtime_actions.py) exe
 deterministic commands without shell interpolation and loops until the next evaluator, prompt,
 effect, specialist, unsupported action, or terminal boundary.
 
-The automatic runner owns 28 of the machine's 35 deterministic action states. The seven
-intentional yields are host/specialist effects or actions whose missing typed renderer or workspace
-owner makes automatic execution unsafe.
+The automatic runner owns every deterministic action state. The harness sees only model judgments,
+human prompts, exact Rote specialist handoffs, and terminal results. Machine validation rejects raw
+external commands and deterministic actions without a compiled runtime executor.
 
-The complete context travels between stateless CLI calls as a compressed opaque session token. It
-is never written to an improvised controller journal, and the model sees only the current action's
-minimum input, command policy, and accepted typed events. New mutations and deterministic adapters
-remain fail-closed: unsupported work is projected back to the harness instead of being guessed.
+The complete context is checkpointed in an owner-private, 24-hour continuation store under
+`~/.rote/play/continuations`. Stateless CLI calls exchange only a random 24-character continuation
+ID, while the model sees the current action's minimum input, command policy, and bound typed event
+templates. Terminal states delete their continuation. New mutations and deterministic adapters
+remain fail-closed instead of being guessed.
 
 Install the locked development/runtime dependencies and inspect the compiled bundle:
 
@@ -284,8 +285,8 @@ just benchmark-runtime
 
 The controller benchmark compiles once and repeatedly executes a warm transition. The runtime
 benchmark measures the complete deterministic `invoke → qualify` loop, including context creation,
-schema checks, the lexical subprocess action, checkpointing, token encoding, and current-state
-projection. Every result includes the exact bundle SHA.
+schema checks, the lexical subprocess action, checkpointing, owner-private continuation write, and
+current-state projection. Every result includes the exact bundle SHA.
 
 Baseline recorded on 2026-08-07 on an Apple Silicon Mac with Python 3.14.5 and
 `python-statemachine` 3.2.0:
@@ -297,11 +298,11 @@ Baseline recorded on 2026-08-07 on an Apple Silicon Mac with Python 3.14.5 and
 | Warm transition p95 | 0.784 ms |
 | Full invoke-to-evaluator median | 53.6 ms |
 | Qualifier projection | 2,024 bytes |
-| Opaque session token | 2,594 bytes |
+| Opaque continuation ID | 24 bytes |
 
-The 75-state bundle remains sub-millisecond at p95 for warm transitions. Search adequacy and local
+The 80-state bundle remains sub-millisecond at p95 for warm transitions. Search adequacy and local
 versus remote routing are deterministic: adequate results are ordered local, private organization,
-then public hub; selected search payloads are pruned before the next opaque token is emitted.
+then public hub; selected search payloads are pruned before the next continuation is stored.
 Loading validated
 documents once instead of rereading the controller YAML during compilation reduced the observed
 cold compile baseline by roughly half. The 12.9 KB activation skill is also about 63% smaller than

@@ -393,7 +393,7 @@ def _apply_mutation_semantics(
 
     if mutation == "enter_use":
         # Search result descriptions and choices are presentation data. Once a match is
-        # selected they must not inflate every subsequent opaque session token.
+        # selected they must not inflate every subsequent private continuation.
         selected = _path_value(payload, "match.reference")
         context["search"]["results"] = []
         context["search"]["play_choices"] = []
@@ -425,10 +425,15 @@ def _apply_mutation_semantics(
         starter = _path_value(payload, "onboarding.starter_reference")
         if isinstance(starter, str) and starter:
             context["match"]["reference"] = starter
+            _bind_direct_play_request(context, starter)
     elif mutation == "start_uri_onboarding":
         play_uri = _path_value(payload, "onboarding.play_uri")
         if isinstance(play_uri, str) and play_uri:
             context["match"]["reference"] = play_uri
+    elif mutation == "enter_onboarding_uri_use":
+        reference = context["match"].get("reference")
+        if isinstance(reference, str) and reference:
+            _bind_direct_play_request(context, reference)
     elif mutation == "approve_adapt_explore":
         reference = _path_value(payload, "match.reference")
         if isinstance(reference, str) and reference:
@@ -455,6 +460,16 @@ def _apply_mutation_semantics(
             context["modality_policy"]["allowed"] = allowed
     elif mutation == "consume_attempt":
         context["execution"]["attempts"] += 1
+
+
+def _bind_direct_play_request(context: dict[str, Any], reference: str) -> None:
+    """Complete the request contract for a lexically exact Play selection."""
+
+    context["request"]["intent"] = f"run {reference}"
+    context["request"]["requested_outcome"] = (
+        f"Run {reference} and return its complete output."
+    )
+    context["request"]["parameters"] = {}
 
 
 def _set_existing_path(context: dict[str, Any], path: str, value: Any) -> None:
