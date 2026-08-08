@@ -5,12 +5,14 @@ authenticated Rote identity. Keep canonical URI onboarding separate.
 
 ## Promise
 
-Lead with: **Get the result. Keep the method.**
+Lead with: **Start small. See what happens. Stay in control.**
 
 Explain these facts in plain language:
 
-- A Play is a job that has been worked out, checked, and saved.
-- Rote checks and runs Plays on the user's computer.
+- A Play is a checked, reusable way to get a result.
+- Rote inspects and runs Plays on the user's computer.
+- Hello is the recommended low-risk proof: public data, no account, no credentials, and no
+  declared writes.
 - Play searches for an existing method before starting new exploration.
 - If none fits, the human and agent work out the job together.
 - The agent brings broad knowledge, search, tool use, and testing.
@@ -29,14 +31,16 @@ knowledge becomes memory.
 
 After the orientation is presented and remembered, offer:
 
-1. **Try Hello** — inspect `modiqo/hello@0.1.0`, then ask whether to run it.
+1. **Run Hello** — use the pinned canonical URI
+   `https://play.modiqo.ai/modiqo/hello@0.1.0`; disclose it, then run locally or request the exact
+   remote pull approval.
 2. **Tell me your goal** — accept ordinary language and route it through normal Play invocation.
 3. **See useful Plays** — open the normal remembered awareness inbox.
 4. **Not now** — finish without inspection or execution.
 
-The starter choice authorizes read-only inspection only. Preserve the normal disclosure and
-`approve_play_run` gate. Pin the exact starter version; replacing it requires a deliberate source
-change and tests.
+The starter choice selects the exact Play for read-only inspection. A proven local copy proceeds to
+execution; a remote copy preserves the normal `approve_play_run` pull gate. Pin the exact starter
+version; replacing it requires a deliberate source change and tests.
 
 After a verified starter receipt, explain what happened without replacing or summarizing the full
 result. Offer a goal, useful Plays, or Finish.

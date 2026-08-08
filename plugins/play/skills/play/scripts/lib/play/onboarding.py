@@ -26,7 +26,7 @@ CARD_SCHEMA = "rote.play.v1"
 PLAY_HOST = "play.modiqo.ai"
 MAX_CARD_BYTES = 200_000
 ONBOARDING_STATE_SCHEMA = "play.onboarding-state/v1"
-ONBOARDING_ORIENTATION_VERSION = 1
+ONBOARDING_ORIENTATION_VERSION = 2
 DEFAULT_ONBOARDING_STATE_PATH = Path.home() / ".rote" / "play" / "onboarding-state.json"
 STARTER_PLAY_REFERENCE = "modiqo/hello@0.1.0"
 STARTER_PLAY_URI = "https://play.modiqo.ai/modiqo/hello@0.1.0"
@@ -35,6 +35,12 @@ _STARTER_RUN = re.compile(
     r"^(?:(?:please\s+)?run\s+(?:the\s+)?hello(?:\s+play)?|(?:\$play|/play)\s+run\s+hello)[.!]?$",
     re.IGNORECASE,
 )
+_ACTIVATION_ONLY = {
+    'user activated the skill "play". follow the loaded skill instructions.',
+    "user activated the skill 'play'. follow the loaded skill instructions.",
+    'the user has activated the "play" skill.',
+    "the user has activated the 'play' skill.",
+}
 _SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _NAME_VERSION = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9_-]*(?:@[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?)?$"
@@ -114,7 +120,10 @@ def classify_invocation(original: str) -> dict[str, Any]:
     started = time.perf_counter_ns()
     stripped = original.strip()
     match = _PLAY_PREFIX.fullmatch(stripped)
-    if _STARTER_RUN.fullmatch(stripped):
+    if stripped.casefold() in _ACTIVATION_ONLY:
+        kind = "greeting"
+        play_uri = None
+    elif _STARTER_RUN.fullmatch(stripped):
         kind = "play_uri"
         play_uri = STARTER_PLAY_URI
     elif match is not None:
@@ -283,21 +292,15 @@ def render_first_use_orientation(human_name: str) -> str:
         [
             f"# Hello, {human_name}.",
             "",
-            "**Get the result. Keep the method.**",
+            "**Start small. See what happens. Stay in control.**",
             "",
-            "A Play is a job that has been worked out, checked, and saved. Rote checks and runs Plays on your computer.",
+            "A Play is a checked, reusable way to get a result. Rote inspects and runs it on your computer.",
             "",
-            "If a Play already exists, we can use it. If none fits, we work out the job together.",
+            "The recommended first step is **Run Hello**. It uses public data only, needs no account or credentials, and declares no writes. You will see the Play before it runs and then get a real result.",
             "",
-            "I bring broad knowledge and the ability to search, use tools, and test steps. You bring the knowledge of your work: its goals, rules, exceptions, and standards. You are the expert. I am your apprentice.",
+            "You can also tell me a goal, browse useful Plays, or leave. Nothing is downloaded or run without the approval required for that action.",
             "",
-            "You can watch the work, correct me, and decide what happens. When the result is right, Rote can save the successful method as a new Play.",
-            "",
-            "Keep it private, share it with your team, or publish it so other people can solve the same problem without starting over. You decide what is saved and who may use it.",
-            "",
-            "Before anything runs, Rote shows what the Play needs and what it may change. Your credentials stay local. Nothing runs until you approve it.",
-            "",
-            "You get the result now. If you save the Play, you also keep a checked method that you can run again, improve, or share.",
+            "If no Play fits later, we can work out the job together. You provide the goals, rules, and exceptions; I help test the method. You decide whether the result stays one-off or becomes a private, team, or public Play.",
         ]
     )
 

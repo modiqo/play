@@ -13,9 +13,9 @@ prompts:
     question: What would you like to do first?
     selection: single
     choices:
-      - {id: hello, label: Run Hello, description: Run the pinned canonical Hello Play URI., event: onboarding_starter_selected, recommended: true}
-      - {id: goal, label: Tell me your goal, description: Describe the result you want so I can find a Play or help work out a new one., event: onboarding_goal_selected}
-      - {id: useful, label: See useful Plays, description: Open the Play inbox and browse public Plays with clearly labeled download and install counts., event: onboarding_awareness_selected}
+      - {id: hello, label: Run Hello, description: "Low-risk proof: public data, no account, no credentials, and no declared writes.", event: onboarding_starter_selected, recommended: true}
+      - {id: goal, label: Tell me your goal, description: Find an existing Play or work out a checked method together., event: onboarding_goal_selected}
+      - {id: useful, label: Browse useful Plays, description: See available Plays before choosing whether to inspect one., event: onboarding_awareness_selected}
       - {id: done, label: Not now, description: Finish the introduction without inspecting or running anything., event: onboarding_dismissed}
     events:
       onboarding_starter_selected: [prompt_version, selected_at, onboarding.starter_reference]

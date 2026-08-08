@@ -20,14 +20,22 @@ run.
 For a new task, call:
 
 ```text
-scripts/bin/play-machine run-until-yield --stdin --json
+play-machine run-until-yield --stdin --json
 ```
+
+The installer places `play-machine` on `PATH`. Invoke it directly. Do not locate the skill, list its
+directories, inspect its virtual environment, or prepend `uv run`. If the launcher is unavailable,
+report that Play installation is incomplete and stop.
 
 with a nonempty harness-owned run ID, stable task key, and the unchanged user request:
 
 ```json
 {"run_id":"<run-id>","task_key":"<task-key>","request":{"original":"<request>"}}
 ```
+
+An explicit `/play` or `$play` is a complete onboarding request. If the harness reports only that
+the Play skill was activated and supplies no separate task, set `request.original` to `/play`.
+Never substitute activation boilerplate or send this case to qualification.
 
 The command creates the complete logical `play.context/v1`, executes eligible deterministic
 actions, validates every event, applies context fields, checkpoints the transition, and stops only
@@ -72,7 +80,7 @@ complete milestone presentations, not debug output. Do not print the continuatio
 transition record, command chatter, or evidence addresses.
 
 If `instruction.preflight_required_for_events` contains the evaluator event you selected, run
-`scripts/bin/play-preflight --harness <codex|claude|generic> --json` after qualification and before
+`play-machine preflight --harness <codex|claude|generic> --json` after qualification and before
 resuming. Include the complete unchanged `play.preflight/v1` JSON output as the `preflight` value;
 do not reduce it to `{ "ready": true }`. Conversation and excluded repository work exit without
 paying this probe. If setup is required, invoke the callable
@@ -85,14 +93,8 @@ save/publication, blockers, and terminal results. Do not narrate fast determinis
 For non-interactive Rote execution, set `ROTE_FLOW_PROGRESS=0` and `ROTE_NO_HINTS=1` when safe, but
 never suppress primary output, errors, approvals, effects, references, or receipts.
 
-For every visible milestone, resolve the projected state through
-`scripts/bin/play-presentation <state>`. A renderer exists only when the harness exposes a callable
-custom UI accepting `play.presentation/v1`. Merely bundling `PlayActivity.tsx`, using a terminal
-harness, or mentioning React is not renderer availability. Without a renderer, use the exact stdout
-as the first line; it contains the static orb glyph and message. Do not query the mapping with `jq`,
-copy only the message, or call the fallback animated. For prompts, prefix the structured question
-with the listening fallback. For terminals, use the terminal fallback as the first line of the
-actual outcome.
+Present returned `presentations` and the projected human prompt directly. They are already compiled
+for the current state. Do not locate or invoke a second presentation script during a normal run.
 
 Immediately before invoking the projected `rote-flow-run` specialist, present `use_run` once. After execution, preserve
 the complete primary payload exactly as received and pass it directly to verification with its
@@ -147,8 +149,9 @@ and UTC checkpoint. When unchanged, say only “Nothing new since your last Play
 present the grouped Play inbox and truthfully labeled public-card lifetime metrics, never a false
 time-window trend.
 
-An empty `$play` or `/play` and a canonical `https://play.modiqo.ai/<owner>/<name>` URI use the typed
-onboarding trajectory. Missing Rote delegates to `rote-setup`. A URI without Rote may fetch only the
+An empty `$play` or `/play`, activation with no separate task, and a canonical
+`https://play.modiqo.ai/<owner>/<name>` URI use the typed onboarding trajectory. Missing Rote
+delegates to `rote-setup`. A URI without Rote may fetch only the
 exact HTTPS host without redirects, cookies, credentials, or custom headers, and may present only a
 bounded matching `rote.play.v1` card. Never execute its install or bootstrap links.
 

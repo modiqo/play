@@ -34,6 +34,18 @@ def state_path() -> Path:
     return state_home / "play-skill" / "activation-profile.json"
 
 
+def launcher_path() -> Path:
+    override = os.environ.get("PLAY_MACHINE_LAUNCHER")
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path.home() / ".local" / "bin" / "play-machine"
+
+
+def launcher_content() -> bytes:
+    executable = SOURCE / "scripts" / "bin" / "play-machine"
+    return f'#!/bin/sh\nexec "{executable}" "$@"\n'.encode()
+
+
 def configured_roots() -> list[Path] | None:
     value = os.environ.get("PLAY_HARNESS_ROOTS")
     if value is None:
@@ -254,6 +266,9 @@ def verify_state(state: dict[str, object]) -> list[str]:
         problems.append(f"activation mode changed; expected {expected_mode}")
     if not play_is_implicit():
         problems.append("Play source is not configured for implicit invocation")
+    launcher = Path(str(state.get("launcher", launcher_path())))
+    if not launcher.is_file() or read_bytes(launcher) != launcher_content():
+        problems.append(f"missing or changed Play runtime launcher: {launcher}")
     try:
         current_roots = {
             str(root)
@@ -328,6 +343,10 @@ def reconcile(state: dict[str, object]) -> None:
     previous_skills = {Path(str(value)) for value in state["rote_skills"]}
     desired_skills = set(rote_skills)
     policy_changed = state.get("activation_policy") != ACTIVATION_POLICY
+    launcher = launcher_path()
+    recorded_launcher = state.get("launcher")
+    if recorded_launcher is not None and Path(str(recorded_launcher)) != launcher:
+        raise ProfileError("Play runtime launcher path changed; uninstall before reinstalling")
 
     try:
         for skill in sorted(previous_skills - desired_skills, key=str):
@@ -363,6 +382,25 @@ def reconcile(state: dict[str, object]) -> None:
                 backups[str(path)]["managed_sha256"] = digest(read_bytes(path))
                 rebased_skills.add(skill)
 
+        launcher_record = backups.get(str(launcher))
+        launcher_managed = (
+            launcher_record.get("managed_sha256") if launcher_record else None
+        )
+        launcher_matches_managed = (
+            launcher.is_file()
+            and launcher_managed is not None
+            and launcher_managed == digest(read_bytes(launcher))
+        )
+        if launcher.exists() and not launcher_matches_managed and launcher_record is None:
+            raise ProfileError(f"refusing to replace existing Play launcher: {launcher}")
+        launcher_changed = not launcher.is_file() or read_bytes(launcher) != launcher_content()
+        if launcher_changed:
+            rollback_files.setdefault(launcher, snapshot(launcher))
+            if launcher_record is None:
+                backups[str(launcher)] = snapshot(launcher)
+            atomic_write(launcher, launcher_content(), 0o755)
+            backups[str(launcher)]["managed_sha256"] = digest(read_bytes(launcher))
+
         for link in sorted(old_link_set - desired_link_set, key=str):
             if link.is_symlink():
                 link.unlink()
@@ -373,6 +411,7 @@ def reconcile(state: dict[str, object]) -> None:
 
         profile_changed = bool(
             rebased_skills
+            or launcher_changed
             or policy_changed
             or old_link_set != desired_link_set
             or previous_skills != desired_skills
@@ -389,6 +428,7 @@ def reconcile(state: dict[str, object]) -> None:
             "roots": [str(root) for root in roots],
             "play_links": [str(link) for link in play_links],
             "rote_skills": [str(skill) for skill in sorted(desired_skills, key=str)],
+            "launcher": str(launcher),
             "backups": backups,
         }
         atomic_write(
@@ -425,6 +465,9 @@ def install() -> None:
     mode = "marketplace" if marketplace_source() else "source-linked"
     roots, play_links, rote_skills = desired_profile(mode)
     conflicts = [path for path in play_links if path.exists() or path.is_symlink()]
+    launcher = launcher_path()
+    if launcher.exists() or launcher.is_symlink():
+        conflicts.append(launcher)
     if conflicts:
         raise ProfileError(
             "refusing to replace existing Play installs:\n  "
@@ -454,6 +497,10 @@ def install() -> None:
             link.symlink_to(SOURCE, target_is_directory=True)
             created_links.append(link)
 
+        backups[str(launcher)] = snapshot(launcher)
+        atomic_write(launcher, launcher_content(), 0o755)
+        backups[str(launcher)]["managed_sha256"] = digest(read_bytes(launcher))
+
         state = {
             "schema": SCHEMA,
             "activation_policy": ACTIVATION_POLICY,
@@ -462,6 +509,7 @@ def install() -> None:
             "roots": [str(root) for root in roots],
             "play_links": [str(link) for link in play_links],
             "rote_skills": [str(skill) for skill in rote_skills],
+            "launcher": str(launcher),
             "backups": backups,
         }
         atomic_write(
@@ -494,6 +542,10 @@ def plan() -> None:
         for link in play_links
         if (link.exists() or link.is_symlink()) and link not in managed_links
     ]
+    launcher = launcher_path()
+    managed_launcher = Path(str(state.get("launcher"))) if state and state.get("launcher") else None
+    if (launcher.exists() or launcher.is_symlink()) and managed_launcher != launcher:
+        conflicts.append(launcher)
     print(
         f"Play-first {mode} plan: {len(roots)} harness root(s), "
         f"{len(rote_skills)} canonical rote skill(s), {len(conflicts)} Play conflict(s)"

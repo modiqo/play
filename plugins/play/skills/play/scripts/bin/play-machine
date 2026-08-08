@@ -58,6 +58,7 @@ from play.continuations import (
     save as save_continuation,
 )
 from play.private_store import PrivateStoreError
+from play.preflight import inspect as inspect_preflight
 
 
 def _read_object() -> dict[str, Any]:
@@ -150,7 +151,12 @@ def main() -> int:
     runtime_benchmark.add_argument("--iterations", type=int, default=20)
     runtime_benchmark.add_argument("--json", action="store_true", dest="as_json")
 
+    preflight = subparsers.add_parser("preflight")
+    preflight.add_argument("--harness", choices=("codex", "claude", "generic"), default="generic")
+    preflight.add_argument("--json", action="store_true", dest="as_json")
+
     args = parser.parse_args()
+    return_code = 0
     try:
         runtime = ControllerRuntime(ROOT)
         if args.command == "describe":
@@ -315,7 +321,7 @@ def main() -> int:
                     "max": max(durations),
                 },
             }
-        else:
+        elif args.command == "benchmark-runtime":
             if args.iterations < 1:
                 raise ControllerRuntimeError("iterations must be at least 1")
             durations = []
@@ -353,10 +359,13 @@ def main() -> int:
                 "projection_bytes": int(statistics.median(projection_bytes)),
                 "continuation_id_bytes": int(statistics.median(continuation_bytes)),
             }
+        else:
+            payload = inspect_preflight(args.harness)
+            return_code = 0 if payload["ready"] is True else 2
     except (ControllerRuntimeError, PrivateStoreError) as error:
         parser.exit(1, f"play-machine: {error}\n")
     print(json.dumps(payload, indent=2, sort_keys=True))
-    return 0
+    return return_code
 
 
 if __name__ == "__main__":
