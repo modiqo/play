@@ -11,9 +11,9 @@ description: >
 
 > Think in terms of Plays before thinking in terms of tools.
 
-Play's typed runtime owns the controller. The model handles only declared evaluator, prompt,
-approval, presentation, and specialist boundaries. Do not reconstruct or reread the complete state
-machine during a run.
+Play's typed runtime owns the controller. The harness handles only declared model, human, and exact
+specialist boundaries. Do not reconstruct or reread the state machine or implementation during a
+run.
 
 ## Enter or resume the runtime
 
@@ -44,7 +44,8 @@ not write it under `/tmp`, a repository, a home directory, a registry, or an exe
 If the harness cannot retain the token, emit `action_blocked` and stop.
 
 The returned projection is the entire current instruction contract. It contains the current state,
-boundary, minimum input, exact action or prompt, and accepted event payloads. Do not read
+boundary, bound input, exact action or prompt, and accepted event templates. Fill only null values
+owned by the current boundary; preserve all prebound values. Do not read
 `machine.yaml`, `actions.yaml`, `prompts.yaml`, or `context.schema.json` during a normal run. The
 runtime already loaded, validated, and bundle-hash-bound them.
 
@@ -52,18 +53,18 @@ runtime already loaded, validated, and bundle-hash-bound them.
 
 Follow only the returned `projection.state.boundary`:
 
-- `evaluator_action`: reason over only `instruction.input`, policy, and accepted events. Return one
+- `model`: reason over only `instruction.input`, policy, and accepted events. Return one
   declared event with every required payload field. Evaluators are limited to request qualification,
   adequacy, creator reuse, route selection, and outcome verification.
-- `prompt`: present the exact projected prompt through the harness's structured elicitation control.
-  Read [references/integration/elicitation.md](references/integration/elicitation.md) immediately
-  before the prompt. Resume with the selected declared event and bound values.
-- `delegated_action`: read [references/integration/rote-handoffs.md](references/integration/rote-handoffs.md),
-  invoke only the projected specialist owner, and resume only with its typed receipt event.
-- `deterministic_action`: the runtime yielded because the action is effectful, owned by another
-  runtime, or lacks a safe automatic adapter. Execute exactly the projected command or declared
-  owner contract. Do not improvise a fallback. Resume with one accepted typed event.
+- `human`: present the exact projected prompt through the harness's structured elicitation control.
+  Resume with the selected declared event and its projected event template.
+- `specialist`: invoke only `instruction.specialist` with `instruction.input` and its projected
+  policy through the harness's skill mechanism. Resume only with one accepted typed receipt event.
+  Do not read Play references or implementation to recreate the specialist's process.
 - `terminal`: present only the terminal outcome described below and stop.
+
+`runtime` is internal and must be consumed by `run-until-yield`; receiving it as a final boundary is
+a controller defect. Do not execute its command manually or read source to repair it.
 
 Pass returned `presentations` to the user in order before handling the final boundary. They are
 complete milestone presentations, not debug output. Do not print the session token, raw context,
@@ -91,41 +92,29 @@ copy only the message, or call the fallback animated. For prompts, prefix the st
 with the listening fallback. For terminals, use the terminal fallback as the first line of the
 actual outcome.
 
-Immediately before `rote play run`, present `use_run` once. After execution, preserve
+Immediately before invoking the projected `rote-flow-run` specialist, present `use_run` once. After execution, preserve
 the complete primary payload exactly as received and pass it directly to verification with its
 declared source, format, manifest, truncation flag, and full-output reference. The harness owns
 presentation; Play must not wrap, summarize, convert, or decorate the result. Compact summaries are
 incomplete results.
 
-## Load only branch guidance returned by the trajectory
+## Trust the compiled trajectory
 
-Read a branch reference only immediately before its boundary:
-
-- Search, results, or adequacy: [references/awareness/search.md](references/awareness/search.md)
-- Explore route or execution: [references/explore/modalities.md](references/explore/modalities.md)
-- Irreducible saved inference: [references/explore/judge.md](references/explore/judge.md)
-- Save, author, publish, index, share, or invite: [references/publish/lifecycle.md](references/publish/lifecycle.md)
-- Birth capture, binding, lookup, or certificate: [references/publish/birth.md](references/publish/birth.md)
-- Organization summaries or inventory: [references/awareness/management.md](references/awareness/management.md)
-- Digest or public awareness: [references/awareness/digest.md](references/awareness/digest.md)
-- Recurring delivery: [references/integration/scheduling.md](references/integration/scheduling.md)
-- First-use orientation: [references/onboarding/first-use.md](references/onboarding/first-use.md)
-- Callable Rote specialist handoff: [references/integration/rote-handoffs.md](references/integration/rote-handoffs.md)
-
-Do not load unrelated references. The runtime projection already carries the state-local command
-policy from `actions.yaml` or the exact structured prompt from `prompts.yaml`.
+Do not load branch references during a normal run. The runtime projection carries the complete
+state-local policy, prompt, bound event template, and exact specialist identity. Reference files are
+for authoring and maintenance only, never an execution prerequisite.
 
 ## Preserve the Use contract
 
 An adequate local Play follows:
 
 ```text
-inspect → disclose → bind run handoff → rote play run → detailed output → verify → receipt
+inspect → disclose → bind run handoff → rote-flow-run → detailed output → verify → receipt
 ```
 
 An adequate remote Play inserts `approve → pull/install` between disclosure and execution. Use
 `scripts/bin/play-inspect <reference> --json` for read-only inspection. If inspection proves the
-exact Play is already local, continue directly to `rote play run`. If it reports install,
+exact Play is already local, continue directly to the projected `rote-flow-run` handoff. If it reports install,
 replacement, repair, or unknown local state, present the structured approval prompt and run only
 after the approval binds the exact reference, parameters, and disclosure SHA.
 
@@ -135,7 +124,7 @@ retry contract. If `rote play run` returns a recoverable adapter-authentication 
 repair approval, hand the packet and its SHA to `rote-adapter-config`, validate its receipt, inspect
 again, and retry the exact Play. Play must not recreate the adapter configuration process.
 
-`rote play run` owns installation, convergence, dependencies, credentials, and execution. Never
+`rote-flow-run` owns installation, convergence, dependencies, credentials, and execution. Never
 decompose it into registry pull, adapter setup, or lower-level commands. A failed `rote play` command is not a capability gap and never authorizes a legacy or manual fallback.
 
 Present the resolved version, visibility, description, parameters, local status, dependencies,
