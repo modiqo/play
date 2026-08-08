@@ -150,11 +150,6 @@ def local_reference(path_value: str, flow_root: Path) -> str | None:
     return None
 
 
-def preferred_local_path(paths: set[str], flow_root: Path) -> str:
-    canonical = [path for path in paths if local_reference(path, flow_root)]
-    return sorted(canonical or paths)[0]
-
-
 def new_hit(name: str, description: str, reference: str | None) -> dict:
     return {
         "name": name,
@@ -191,8 +186,13 @@ def merge_results(
             raise SearchError("registry search contains an invalid item")
         owner = item.get("owner_slug")
         name = item.get("skill_name")
-        if not isinstance(owner, str) or not isinstance(name, str):
-            raise SearchError("registry search item lacks owner_slug or skill_name")
+        if not isinstance(name, str):
+            raise SearchError("registry search item lacks skill_name")
+        if not isinstance(owner, str) or not owner:
+            # Some authorized private records intentionally omit a public owner slug.
+            # They cannot form a runnable owner/name reference, so ignore only that
+            # record instead of discarding valid local, private, and public matches.
+            continue
         reference = f"{owner}/{name}"
         description = bounded_description(item.get("skill_description"))
         hit = canonical.setdefault(reference, new_hit(name, description, reference))
@@ -236,7 +236,6 @@ def merge_results(
     for reference, hit in canonical.items():
         references_by_fingerprint.setdefault(fingerprint(hit["name"], hit["description"]), []).append(reference)
 
-    local_only: list[dict] = []
     for rank, item in aliases:
         matches = references_by_fingerprint.get(
             fingerprint(item["name"], item.get("description") or ""), []
@@ -247,8 +246,7 @@ def merge_results(
         elif len(matches) == 1:
             hit = canonical[matches[0]]
         else:
-            hit = new_hit(item["name"], bounded_description(item.get("description")), None)
-            local_only.append(hit)
+            continue
         hit["sources"].add("local")
         hit["local_paths"].add(item["path"])
         hit["source_ranks"]["local"] = min(rank, hit["source_ranks"].get("local", rank))
@@ -257,7 +255,10 @@ def merge_results(
                 float(item["score"]), hit["source_scores"].get("local", float("-inf"))
             )
 
-    hits = [*canonical.values(), *local_only]
+    # Legacy local aliases without an owner/name identity are informational only.
+    # Current DAG Plays must be addressable by canonical reference; never hand a
+    # filesystem path to inspection or execution.
+    hits = [*canonical.values()]
     discovery = discovery_queries(normalized_query)
     semantic_query = discovery[-1] if discovery else normalized_query
     query_tokens = set(semantic_query.split())
@@ -290,15 +291,16 @@ def merge_results(
         reference = hit["reference"]
         primary_scope = hit["primary_scope"]
         if primary_scope == "local":
-            path = preferred_local_path(hit["local_paths"], flow_root)
-            exact_reference = path
-            uri = Path(path).expanduser().resolve(strict=False).as_uri()
-            run_command = shlex.join(["rote", "play", "run", path])
-            inspect_command = shlex.join(["rote", "play", "inspect", path, "--json"])
-            hint_kind = "local-play"
-            local_availability = "found" if reference else "local_only"
+            if not reference:
+                raise SearchError("local DAG Play lacks a canonical owner/name reference")
+            exact_reference = reference
+            uri = f"https://play.modiqo.ai/{reference}"
+            run_command = shlex.join(["rote", "play", "run", reference])
+            inspect_command = shlex.join(["rote", "play", "inspect", reference, "--json"])
+            hint_kind = "play"
+            local_availability = "found"
             execution_resolution = "run_local"
-            candidate_reference = path
+            candidate_reference = reference
         elif reference:
             selected_version = hit["versions_by_scope"].get(primary_scope) or hit["version"]
             exact_reference = f"{reference}@{selected_version}" if selected_version else reference

@@ -103,6 +103,13 @@ declared source, format, manifest, truncation flag, and full-output reference. T
 presentation; Play must not wrap, summarize, convert, or decorate the result. Compact summaries are
 incomplete results.
 
+Unambiguous retrieve, fetch, get, find, collect, download, export, list, summarize, check,
+monitor, calculate, and compare requests use the deterministic outcome fast lane. Do not send them
+to `qualify_request` or run a separate harness preflight; search and inspection provide the live
+capability feedback. Canonical Play URIs may carry explicit `key=value` parameters. When inspection
+declares a required parameter that was not supplied, present the projected parameter prompt and
+resume with only its typed value; never invent it or ask the model to rediscover the Play contract.
+
 ## Trust the compiled trajectory
 
 Do not load branch references during a normal run. The runtime projection carries the complete

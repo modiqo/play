@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -47,6 +48,14 @@ _NAME_VERSION = re.compile(
 )
 _OK_EMAIL = re.compile(r"(?im)^ok:\s*([^@\s]+@[^@\s]+\.[^@\s]+)$")
 _SAFE_HUMAN_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+_PARAMETER_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+_FAST_OUTCOME = re.compile(
+    r"^(?:(?:please|kindly)\s+)?(?:(?:can|could|would)\s+you\s+)?"
+    r"(?:(?:help\s+me|help)\s+)?"
+    r"(?:retrieve|fetch|get|find|collect|download|export|list|summarize|check|"
+    r"monitor|calculate|compare)\b",
+    re.IGNORECASE,
+)
 
 
 class OnboardingError(RuntimeError):
@@ -95,6 +104,32 @@ def canonical_play_uri(value: str) -> str | None:
     return value.strip()
 
 
+def _play_uri_request(value: str) -> tuple[str, dict[str, str]] | None:
+    """Parse one canonical Play URI followed only by explicit key=value parameters."""
+
+    try:
+        parts = shlex.split(value)
+    except ValueError:
+        return None
+    if not parts:
+        return None
+    uri = canonical_play_uri(parts[0])
+    if uri is None:
+        return None
+    parameters: dict[str, str] = {}
+    for token in parts[1:]:
+        name, separator, parameter_value = token.partition("=")
+        if (
+            not separator
+            or not _PARAMETER_NAME.fullmatch(name)
+            or not parameter_value
+            or name in parameters
+        ):
+            return None
+        parameters[name] = parameter_value
+    return uri, parameters
+
+
 def _canonical_play_action_uri(value: object, label: str) -> str:
     uri = _string(value, label)
     try:
@@ -115,11 +150,14 @@ def _canonical_play_action_uri(value: object, label: str) -> str:
 
 
 def classify_invocation(original: str) -> dict[str, Any]:
-    """Classify exact aliases, the pinned Hello command, and canonical Play URIs."""
+    """Classify exact aliases, URI runs, and unambiguous outcome requests."""
 
     started = time.perf_counter_ns()
     stripped = original.strip()
     match = _PLAY_PREFIX.fullmatch(stripped)
+    candidate = (match.group(1) or "").strip() if match is not None else stripped
+    uri_request = _play_uri_request(candidate)
+    parameters: dict[str, str] = {}
     if stripped.casefold() in _ACTIVATION_ONLY:
         kind = "greeting"
         play_uri = None
@@ -131,18 +169,32 @@ def classify_invocation(original: str) -> dict[str, Any]:
         if not remainder:
             kind = "greeting"
             play_uri = None
+        elif uri_request is not None:
+            kind = "play_uri"
+            play_uri, parameters = uri_request
+        elif _FAST_OUTCOME.match(remainder):
+            kind = "outcome"
+            play_uri = None
         else:
-            play_uri = canonical_play_uri(remainder)
-            kind = "play_uri" if play_uri else "ordinary"
+            play_uri = None
+            kind = "ordinary"
+    elif uri_request is not None:
+        kind = "play_uri"
+        play_uri, parameters = uri_request
+    elif _FAST_OUTCOME.match(stripped):
+        kind = "outcome"
+        play_uri = None
     else:
-        play_uri = canonical_play_uri(stripped)
-        kind = "play_uri" if play_uri else "ordinary"
+        play_uri = None
+        kind = "ordinary"
     return {
         "schema": SCHEMA,
         "kind": "invocation",
         "ok": True,
         "invocation_kind": kind,
         "play_uri": play_uri,
+        "parameters": parameters,
+        "intent": candidate.rstrip(".!?"),
         "classify_ns": time.perf_counter_ns() - started,
     }
 

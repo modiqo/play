@@ -48,6 +48,7 @@
     "classify": {"orb": "solving", "label": "Checking whether a Play fully fits…"},
     "use_inspect": {"orb": "connecting", "label": "Inspecting the Play and its dependencies…"},
     "use_decide": {"orb": "solving", "label": "Resolving local readiness…"},
+    "use_parameter_offer": {"orb": "listening", "label": "Waiting for a required Play parameter…"},
     "use_offer": {"orb": "listening", "label": "Waiting for remote pull approval…"},
     "use_prepare": {"orb": "connecting", "label": "Binding the exact Play run handoff…"},
     "use_run": {"orb": "connecting", "label": "Running the approved Play…"},
