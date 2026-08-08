@@ -118,7 +118,7 @@ policy from `actions.yaml` or the exact structured prompt from `prompts.yaml`.
 An adequate local Play follows:
 
 ```text
-inspect → disclose → rote play run → detailed output → verify → receipt
+inspect → disclose → bind run handoff → rote play run → detailed output → verify → receipt
 ```
 
 An adequate remote Play inserts `approve → pull/install` between disclosure and execution. Use
@@ -126,6 +126,12 @@ An adequate remote Play inserts `approve → pull/install` between disclosure an
 exact Play is already local, continue directly to `rote play run`. If it reports install,
 replacement, repair, or unknown local state, present the structured approval prompt and run only
 after the approval binds the exact reference, parameters, and disclosure SHA.
+
+Before execution, prepare `play.run-handoff/v1` with
+`scripts/bin/play-handoff prepare-play-run --stdin --json`. This compact packet is the immutable
+retry contract. If `rote play run` returns a recoverable adapter-authentication failure, ask for
+repair approval, hand the packet and its SHA to `rote-adapter-config`, validate its receipt, inspect
+again, and retry the exact Play. Play must not recreate the adapter configuration process.
 
 `rote play run` owns installation, convergence, dependencies, credentials, and execution. Never
 decompose it into registry pull, adapter setup, or lower-level commands. A failed `rote play` command is not a capability gap and never authorizes a legacy or manual fallback.
@@ -140,7 +146,8 @@ Search local, every private authorized organization, and the authorized public h
 `scripts/bin/play-search`; require a complete scope-partitioned response, normalized canonical
 references, and deduplicated versions. Outcome discovery ranks adequate matches local first,
 private remote second, and public remote third. Local matches proceed after read-only inspection;
-remote matches require explicit pull consent.
+when only remote matches exist, present the ordered private/public choices instead of silently
+selecting one. The selected remote match then requires explicit pull consent.
 
 Digest requests use `scripts/bin/play-digest --remember`; its local cache stores only scope, SHA,
 and UTC checkpoint. When unchanged, say only “Nothing new since your last Play check.” Otherwise
@@ -167,8 +174,11 @@ uses `rote-browse`, and combined routes use `rote-workspace`. The selected owner
 the harness. An installed file, MCP server, app, or browser is not proof. Never call provider, shell,
 browser, MCP, or app tools directly during `explore_execute`; invoke only the typed specialist.
 
-CALL must search installed adapters and then the Rote catalog before documentation discovery. Show
-all catalog choices and never silently collapse REST and MCP entries. Authentication repair must
+CALL discovery delegates to `rote-adapter-create`, which searches installed adapters and then the
+Rote catalog before documentation discovery. Show all catalog choices and never silently collapse
+REST and MCP entries. A choice or proven catalog miss returns to `rote-adapter-create` for the whole
+dry-run/create/initial-auth/readiness process; only an `installed_ready` receipt can reach
+`rote-using-adapters`. Authentication repair must
 arrive as `auth_repair_required`, receive explicit approval, use a separate
 `rote-adapter-config` packet, and produce a validated repair receipt before a fresh execution packet.
 Never place raw

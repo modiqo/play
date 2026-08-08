@@ -120,13 +120,20 @@ stateDiagram-v2
 
     %% ── Use (existing Play) ──
     use_inspect --> use_decide : inspected
-    use_inspect --> completed : not runnable
+    use_inspect --> search_present : not runnable, another result remains
+    use_inspect --> explore_offer : not runnable, no result remains
     use_inspect --> search : reference unresolved
-    use_decide --> use_run : exact local Play
+    use_decide --> use_prepare : exact local Play
     use_decide --> use_offer : remote pull required
-    use_offer --> use_run : pull approved
+    use_offer --> use_prepare : pull approved
     use_offer --> completed : declined
+    use_prepare --> use_run : exact run handoff bound
     use_run --> use_output : run ready
+    use_run --> use_auth_repair_offer : recoverable adapter auth
+    use_auth_repair_offer --> use_auth_repair_handoff : approved
+    use_auth_repair_handoff --> use_auth_repair_execute
+    use_auth_repair_execute --> use_auth_repair_receipt
+    use_auth_repair_receipt --> use_inspect : validated repair
     use_run --> repair_offer : drifted / failed
     use_output --> use_verify : detailed output ready
     use_output --> repair_offer : incomplete / summary only
@@ -154,9 +161,11 @@ stateDiagram-v2
     modality_offer --> blocked : declined
     explore_dispatch --> adapter_discover : CALL route
     explore_dispatch --> explore_handoff : SHELL / DRIVE route
-    adapter_discover --> explore_handoff : installed ready / catalog empty
+    adapter_discover --> explore_handoff : installed ready
+    adapter_discover --> adapter_converge : catalog empty
     adapter_discover --> adapter_offer : installed or catalog choices
-    adapter_offer --> explore_handoff : selected / catalog rejected
+    adapter_offer --> adapter_converge : selected / catalog rejected
+    adapter_converge --> explore_handoff : installed-ready receipt
     explore_handoff --> explore_execute : typed packet ready
     explore_execute --> explore_receipt : typed specialist receipt
     explore_receipt --> explore_verify : outcome ready
