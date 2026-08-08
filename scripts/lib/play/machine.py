@@ -235,6 +235,28 @@ def validate_bundle(
         check(action.get("effect") in effects, f"action {name}: invalid effect")
         check(sum(key in action for key in ("events", "events_by_state")) == 1,
               f"action {name}: declare events or events_by_state")
+        if action.get("kind") == "delegated":
+            specialist = action.get("specialist")
+            specialist_from = action.get("specialist_from")
+            check(
+                (isinstance(specialist, str) and not specialist_from)
+                or (specialist is None and specialist_from == "execution.owner"),
+                f"action {name}: delegated actions require one exact specialist source",
+            )
+            allowed_specialists = {
+                *expected_specialists,
+                *adapter_specialist_owners,
+                "rote-setup",
+                "rote-registry",
+                "rote-flow-crystallization",
+                "rote-flow-authoring",
+                "rote-org",
+            }
+            if isinstance(specialist, str):
+                check(
+                    specialist in allowed_specialists,
+                    f"action {name}: unknown specialist {specialist}",
+                )
 
     for name, prompt in prompts.items():
         question = prompt.get("question")
@@ -388,9 +410,12 @@ def validate_bundle(
     check(states.get("use_inspect", {}).get("entry", {}).get("action") == "inspect_registry_play", "Use must start with reusable Play inspection")
     check(_target(states, "use_inspect", "play_inspected") == "use_decide", "inspection must route by local readiness")
     check(states.get("use_decide", {}).get("entry", {}).get("action") == "route_inspected_play", "local readiness must be resolved deterministically")
-    check(_target(states, "use_decide", "local_play_ready") == "use_run", "an exact local Play must execute without a pull prompt")
+    check(_target(states, "use_decide", "local_play_ready") == "use_prepare", "an exact local Play must prepare its run handoff without a pull prompt")
     check(_target(states, "use_decide", "remote_pull_required") == "use_offer", "a remote Play must reach pull consent")
     check(states.get("use_offer", {}).get("prompt") == "approve_play_run", "remote Use must ask for pull and execution approval")
+    check(_target(states, "use_offer", "play_run_approved") == "use_prepare", "an approved remote Play must prepare its run handoff")
+    check(states.get("use_prepare", {}).get("entry", {}).get("action") == "prepare_play_run_handoff", "Play execution must bind a typed run handoff")
+    check(_target(states, "use_prepare", "play_run_handoff_ready") == "use_run", "only a prepared run handoff may enter execution")
     check(states.get("use_run", {}).get("entry", {}).get("action") == "run_registry_play", "Use mode must be owned by run_registry_play")
     check(states.get("use_output", {}).get("entry", {}).get("action") == "format_run_output", "Use output must be normalized by the deterministic formatter")
     check(actions.get("inspect_registry_play", {}).get("command") == "scripts/bin/play-inspect <match.reference> --json", "Use inspection must invoke the reusable first-class wrapper")
@@ -554,12 +579,16 @@ def validate_bundle(
         "installed or catalog choices must be presented instead of silently selected",
     )
     check(
-        _target(states, "adapter_discover", "adapter_catalog_empty") == "explore_handoff",
-        "only a proven empty catalog may fall through to spec discovery",
+        _target(states, "adapter_discover", "adapter_catalog_empty") == "adapter_converge",
+        "a proven empty catalog must hand spec discovery to adapter convergence",
     )
     check(
-        _target(states, "adapter_offer", "adapter_source_selected") == "explore_handoff",
-        "an explicit adapter choice must bind into specialist preparation",
+        _target(states, "adapter_offer", "adapter_source_selected") == "adapter_converge",
+        "an explicit adapter choice must enter adapter convergence",
+    )
+    check(
+        _target(states, "adapter_converge", "adapter_converged") == "explore_handoff",
+        "only an installed-ready adapter may bind into specialist preparation",
     )
     check(
         _target(states, "explore_handoff", "specialist_handoff_ready") == "explore_execute",
@@ -604,9 +633,10 @@ def validate_bundle(
     for forbidden in ("use_preflight", "use_resolve"):
         check(forbidden not in states, f"{forbidden} must stay inside the rote play run controller")
     check(
-        predecessors["use_run"] == {"use_decide", "use_offer"},
-        "execution may follow only local readiness or remote pull approval",
+        predecessors["use_prepare"] == {"use_decide", "use_offer"},
+        "run handoff preparation may follow only local readiness or remote pull approval",
     )
+    check(predecessors["use_run"] == {"use_prepare"}, "execution may follow only a prepared run handoff")
     check("use_inspect" in dominators["use_run"], "inspection must dominate execution")
     check(_target(states, "use_run", "play_run_ready") == "use_output", "successful execution must enter detailed output formatting")
     check(_target(states, "use_output", "detailed_output_ready") == "use_verify", "only detailed output may enter verification")
@@ -624,6 +654,10 @@ def validate_bundle(
     check(predecessors["explore_dispatch"] == {"explore_route"}, "route dispatch may follow only route selection")
     check(predecessors["adapter_discover"] == {"explore_dispatch"}, "adapter discovery may follow only CALL dispatch")
     check(predecessors["adapter_offer"] == {"adapter_discover"}, "adapter choice may follow only typed discovery")
+    check(
+        predecessors["adapter_converge"] == {"adapter_discover", "adapter_offer"},
+        "adapter convergence may follow only proven catalog exhaustion or an explicit adapter choice",
+    )
     check(
         predecessors["explore_execute"] == {"explore_handoff"},
         "Explore execution may follow only a prepared specialist handoff",
@@ -912,6 +946,7 @@ def validate_bundle(
     )
     execute_policy = " ".join(actions.get("execute_route", {}).get("command_policy", []))
     discovery_policy = " ".join(actions.get("discover_call_adapter", {}).get("command_policy", []))
+    convergence_policy = " ".join(actions.get("converge_call_adapter", {}).get("command_policy", []))
     check(
         "always run rote adapter catalog search" in discovery_policy
         and "never silently select" in discovery_policy
@@ -923,11 +958,12 @@ def validate_bundle(
         "delegated Explore must explicitly forbid direct tool execution",
     )
     check(
-        "determine OpenAPI, GraphQL, or MCP" in execute_policy,
-        "CALL adapter creation must auto-detect its substrate",
+        "substrate detection" in convergence_policy
+        and "Play must not reproduce those stages" in convergence_policy,
+        "CALL adapter creation must be handed off with substrate detection owned by rote-adapter-create",
     )
     check(
-        "Complete initial authentication" in execute_policy
+        "initial authentication" in convergence_policy
         and "recoverable auth failure" in execute_policy,
         "CALL adapter execution must separate initial authentication from recoverable repair",
     )

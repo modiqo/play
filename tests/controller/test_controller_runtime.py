@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -46,7 +47,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(75, len(self.runtime.bundle.states))
+        self.assertEqual(81, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -104,6 +105,32 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("terminal", projection["state"]["boundary"])
         self.assertIsNone(projection["instruction"])
         self.assertEqual({}, projection["accepted_events"])
+
+    def test_delegated_projection_names_the_exact_rote_specialist(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-specialist",
+            task_key="task-specialist",
+            request_original="Fetch recent emails",
+        )
+        for state, expected in (
+            ("adapter_discover", "rote-adapter-create"),
+            ("adapter_converge", "rote-adapter-create"),
+            ("use_auth_repair_execute", "rote-adapter-config"),
+        ):
+            projection = self.runtime.project(
+                replace(session.cursor, state=StateId(state)), session.context
+            ).as_dict()
+            self.assertEqual(expected, projection["instruction"]["specialist"])
+
+        context = dict(session.context)
+        context["execution"] = dict(context["execution"])
+        context["execution"]["owner"] = "rote-using-adapters"
+        projection = self.runtime.project(
+            replace(session.cursor, state=StateId("explore_execute")), context
+        ).as_dict()
+        self.assertEqual(
+            "rote-using-adapters", projection["instruction"]["specialist"]
+        )
 
     def test_session_initializes_complete_valid_context(self) -> None:
         session = self.runtime.initial_session(
@@ -457,6 +484,24 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "approval": {"notice": "Nothing has run."},
             }
         )
+        run.side_effect = [
+            run.return_value,
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "schema": "play.run-handoff-preparation/v1",
+                        "ok": True,
+                        "event": "play_run_handoff_ready",
+                        "auth_repair": {
+                            "original_packet": {"schema": "play.run-handoff/v1"},
+                            "original_packet_sha256": "c" * 64,
+                        },
+                    }
+                ),
+            ),
+        ]
         session = self.runtime.initial_session(
             run_id="session-1", task_key="task-1", request_original="Run Hello"
         )
@@ -480,11 +525,13 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("play_inspected", yielded.trace[0].event)
         self.assertEqual("route_inspected_play", yielded.trace[1].action)
         self.assertEqual("local_play_ready", yielded.trace[1].event)
+        self.assertEqual("prepare_play_run_handoff", yielded.trace[2].action)
+        self.assertEqual("play_run_handoff_ready", yielded.trace[2].event)
         self.assertEqual(1, len(yielded.presentations))
         self.assertIn("#", yielded.presentations[0])
 
     @patch("play.runtime_actions.subprocess.run")
-    def test_deterministic_match_routes_remote_to_pull_consent_and_prunes_token(self, run) -> None:
+    def test_deterministic_match_presents_remote_choices_before_pull_consent(self, run) -> None:
         run.return_value.returncode = 0
         run.return_value.stderr = ""
         run.return_value.stdout = json.dumps(
@@ -550,7 +597,14 @@ class ControllerRuntimeTest(unittest.TestCase):
             "sources": ["local", "remote_private", "remote_public"],
             "result_refs": [candidate["reference"]],
             "results": [candidate] * 5,
-            "play_choices": [],
+            "play_choices": [
+                {
+                    "reference": candidate["reference"],
+                    "label": "retrieve-rideshare-receipts — modiqo",
+                    "description": candidate["selection_description"],
+                    "parameters": {},
+                }
+            ],
         }
         projected = session.__class__(
             schema=session.schema,
@@ -562,15 +616,15 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         yielded = advance_until_yield(self.runtime, projected, root=ROOT)
 
-        self.assertEqual("use_offer", yielded.projection["state"]["id"])
+        self.assertEqual("search_offer", yielded.projection["state"]["id"])
         self.assertEqual("prompt", yielded.projection["state"]["boundary"])
         self.assertEqual(
-            ["classify_adequacy", "inspect_registry_play", "route_inspected_play"],
+            ["classify_adequacy", "present_search_results"],
             [item.action for item in yielded.trace],
         )
-        self.assertEqual([], yielded.session.context["search"]["results"])
-        self.assertEqual([], yielded.session.context["search"]["play_choices"])
-        self.assertLess(len(encode_session(yielded.session)), token_before)
+        self.assertTrue(yielded.session.context["search"]["results"])
+        self.assertTrue(yielded.session.context["search"]["play_choices"])
+        self.assertLess(len(encode_session(yielded.session)), token_before + 512)
 
     @patch("play.runtime_actions.subprocess.run")
     def test_advance_until_yield_collects_and_presents_awareness(self, run) -> None:
@@ -671,6 +725,19 @@ class ControllerRuntimeTest(unittest.TestCase):
             ControllerEvent(
                 id=EventId("local_play_ready"),
                 payload={},
+                guards={},
+            ),
+        ).session
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("play_run_handoff_ready"),
+                payload={
+                    "auth_repair": {
+                        "original_packet": {"schema": "play.run-handoff/v1"},
+                        "original_packet_sha256": "c" * 64,
+                    }
+                },
                 guards={},
             ),
         ).session
@@ -957,7 +1024,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 guards={},
             ),
         ).cursor
-        self.assertEqual("explore_handoff", handoff_cursor.state)
+        self.assertEqual("adapter_converge", handoff_cursor.state)
 
     def test_release_cannot_cross_publication_boundary_before_birth_capture(self) -> None:
         release_cursor = replace(self.cursor(), state=StateId("author_release"))

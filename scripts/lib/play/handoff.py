@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .digest_state import stable_sha
@@ -15,6 +15,7 @@ PACKET_SCHEMA = "play.handoff/v1"
 RECEIPT_SCHEMA = "play.handoff-receipt/v1"
 AUTH_REPAIR_PACKET_SCHEMA = "play.auth-repair-handoff/v1"
 AUTH_REPAIR_RECEIPT_SCHEMA = "play.auth-repair-receipt/v1"
+PLAY_RUN_PACKET_SCHEMA = "play.run-handoff/v1"
 AUTH_REPAIR_OWNER = "rote-adapter-config"
 SPECIALIST_OWNERS = (
     "rote-using-adapters",
@@ -72,6 +73,94 @@ def capability_policy(owner: str, modalities: Sequence[str]) -> dict[str, Any]:
 
 class HandoffError(ValueError):
     """A handoff input is malformed or violates delegated ownership."""
+
+
+def prepare_play_run_handoff(payload: dict[str, Any]) -> dict[str, Any]:
+    """Bind one inspected Play run before any install, auth repair, or execution."""
+
+    run_id = _string(payload, "run_id")
+    requested_outcome = _dotted_path(payload, "request.requested_outcome")
+    exact_reference = _dotted_path(payload, "inspection.exact_reference")
+    disclosure_sha256 = _dotted_path(payload, "inspection.disclosure_sha256")
+    parameters = _dotted_path(payload, "request.parameters")
+    if not isinstance(requested_outcome, str) or not requested_outcome:
+        raise HandoffError("request.requested_outcome must be a non-empty string")
+    if not isinstance(exact_reference, str) or not exact_reference:
+        raise HandoffError("inspection.exact_reference must be a non-empty string")
+    if not isinstance(disclosure_sha256, str) or not disclosure_sha256:
+        raise HandoffError("inspection.disclosure_sha256 must be a non-empty string")
+    if not isinstance(parameters, dict):
+        raise HandoffError("request.parameters must be an object")
+    packet = {
+        "schema": PLAY_RUN_PACKET_SCHEMA,
+        "run_id": run_id,
+        "state": "use_run",
+        "action": "run_registry_play",
+        "owner": "flow-runtime",
+        "requested_outcome": requested_outcome,
+        "exact_reference": exact_reference,
+        "parameters": parameters,
+        "disclosure_sha256": disclosure_sha256,
+        "expected_events": [
+            "play_run_ready",
+            "play_drifted",
+            "play_auth_repair_required",
+        ],
+    }
+    packet_sha256 = stable_sha(packet)
+    return {
+        "schema": "play.run-handoff-preparation/v1",
+        "ok": True,
+        "event": "play_run_handoff_ready",
+        "auth_repair": {
+            "original_packet": packet,
+            "original_packet_sha256": packet_sha256,
+        },
+    }
+
+
+_MISSING = object()
+
+
+def _dotted_path(payload: Mapping[str, Any], path: str) -> Any:
+    current: Any = payload
+    for part in path.split("."):
+        if not isinstance(current, Mapping) or part not in current:
+            return _MISSING
+        current = current[part]
+    return current
+
+
+def _normalize_handoff_input(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Accept both flat and dotted Play context shapes, with safe defaults."""
+
+    normalized: dict[str, Any] = dict(payload)
+
+    def pick(flat_key: str, dotted: str, default: Any = None) -> Any:
+        if normalized.get(flat_key) not in (None, "", []):
+            return normalized[flat_key]
+        value = _dotted_path(payload, dotted)
+        if value is not _MISSING and value not in (None, "", []):
+            return value
+        return default
+
+    normalized["requested_outcome"] = pick("requested_outcome", "request.requested_outcome")
+    normalized["owner"] = pick("owner", "execution.owner")
+    normalized["modalities"] = pick("modalities", "route.modalities")
+    normalized["workspace"] = pick("workspace", "execution.workspace")
+    normalized["idempotency_key"] = pick(
+        "idempotency_key", "execution.idempotency_key"
+    ) or pick("idempotency_key", "run_id", "")
+    normalized["available_owners"] = pick(
+        "available_owners", "available_owners", [normalized.get("owner")]
+    )
+    normalized["constraints"] = pick("constraints", "constraints", {})
+    normalized["inputs"] = pick("inputs", "inputs", {})
+    normalized["evidence_contract"] = pick(
+        "evidence_contract", "evidence_contract", []
+    )
+    # effect_policy and adapter_discovery are already selected at the top level.
+    return normalized
 
 
 def owner_for_modalities(modalities: Sequence[str]) -> str:
@@ -146,8 +235,10 @@ def _adapter_discovery(payload: dict[str, Any], modalities: Sequence[str]) -> di
         )
     evidence_refs = _string_list(discovery, "evidence_refs", allow_empty=False)
     status = _string(discovery, "status")
-    if status not in {"installed_ready", "catalog_empty", "selected", "catalog_rejected"}:
-        raise HandoffError("adapter_discovery status is not handoff-ready")
+    if status != "installed_ready":
+        raise HandoffError(
+            "adapter_discovery must be installed_ready before execution handoff"
+        )
     choices = discovery.get("choices")
     if not isinstance(choices, list):
         raise HandoffError("adapter_discovery choices must be a list")
@@ -161,25 +252,13 @@ def _adapter_discovery(payload: dict[str, Any], modalities: Sequence[str]) -> di
     ):
         raise HandoffError("adapter_discovery selected_id must be a non-empty string or null")
 
-    if status in {"installed_ready", "selected"}:
-        if selected_id not in choice_ids:
-            raise HandoffError("adapter_discovery selected_id must identify a returned choice")
-        selected = normalized_choices[choice_ids.index(selected_id)]
-        if selected["source"] == "catalog" and sources != ["installed", "catalog"]:
-            raise HandoffError("a catalog selection requires installed and catalog evidence")
-    elif selected_id is not None:
-        raise HandoffError(f"adapter_discovery {status} cannot carry selected_id")
-
-    if status == "installed_ready" and sources != ["installed"]:
-        raise HandoffError("installed_ready must stop after installed discovery")
-    if status == "catalog_empty":
-        if sources != ["installed", "catalog"] or normalized_choices:
-            raise HandoffError("catalog_empty requires an empty catalog result after installed discovery")
-    if status == "catalog_rejected":
-        if sources != ["installed", "catalog"] or not any(
-            choice["source"] == "catalog" for choice in normalized_choices
-        ):
-            raise HandoffError("catalog_rejected requires presented catalog choices")
+    if selected_id not in choice_ids:
+        raise HandoffError("adapter_discovery selected_id must identify the ready adapter")
+    selected = normalized_choices[choice_ids.index(selected_id)]
+    if selected["health"] != "ready":
+        raise HandoffError("adapter_discovery selected adapter must be ready")
+    if selected["source"] == "catalog" and sources != ["installed", "catalog"]:
+        raise HandoffError("a converged catalog adapter requires installed and catalog evidence")
 
     return {
         "status": status,
@@ -242,6 +321,7 @@ def _adapter_choice(value: Any) -> dict[str, Any]:
 def prepare_handoff(payload: dict[str, Any]) -> dict[str, Any]:
     """Build a packet only when its exact Rote specialist is currently callable."""
 
+    payload = _normalize_handoff_input(payload)
     run_id = _string(payload, "run_id")
     requested_outcome = _string(payload, "requested_outcome")
     selected_owner = _string(payload, "owner")
@@ -428,7 +508,10 @@ def prepare_auth_repair_handoff(payload: dict[str, Any]) -> dict[str, Any]:
     """Build a dedicated repair packet without widening the execution owner set."""
 
     run_id = _string(payload, "run_id")
-    available_owners = _string_list(payload, "available_owners")
+    available_value = payload.get("available_owners", [AUTH_REPAIR_OWNER])
+    available_owners = _string_list(
+        {"available_owners": available_value}, "available_owners"
+    )
     if AUTH_REPAIR_OWNER not in available_owners:
         reason = f"required Rote specialist {AUTH_REPAIR_OWNER} is not callable in this harness"
         return {
@@ -442,24 +525,54 @@ def prepare_auth_repair_handoff(payload: dict[str, Any]) -> dict[str, Any]:
             "available_owners": sorted(set(available_owners)),
         }
 
-    auth_repair = _object(payload, "auth_repair")
+    auth_repair_record = _object(payload, "auth_repair")
+    repair_fields = {
+        "source",
+        "status",
+        "recoverable",
+        "adapter_id",
+        "env_var",
+        "classified_rung",
+        "distinguishing_error",
+        "evidence_refs",
+    }
+    auth_repair = {
+        key: auth_repair_record[key]
+        for key in repair_fields
+        if key in auth_repair_record
+    }
     repair_reasons = _validate_auth_repair_required(auth_repair)
     if repair_reasons:
         raise HandoffError("; ".join(repair_reasons))
-    original_packet = _object(payload, "original_packet")
-    original_packet_sha256 = _string(payload, "original_packet_sha256")
-    if original_packet.get("schema") != PACKET_SCHEMA:
-        raise HandoffError(f"original_packet must use {PACKET_SCHEMA}")
+    original_packet = auth_repair_record.get("original_packet")
+    original_packet_sha256 = auth_repair_record.get("original_packet_sha256")
+    if not isinstance(original_packet, dict):
+        original_packet = _object(payload, "original_packet")
+    if not isinstance(original_packet_sha256, str) or not original_packet_sha256:
+        original_packet_sha256 = _string(payload, "original_packet_sha256")
+    original_schema = original_packet.get("schema")
+    if original_schema not in {PACKET_SCHEMA, PLAY_RUN_PACKET_SCHEMA}:
+        raise HandoffError(
+            f"original_packet must use {PACKET_SCHEMA} or {PLAY_RUN_PACKET_SCHEMA}"
+        )
     if stable_sha(original_packet) != original_packet_sha256:
         raise HandoffError("original_packet_sha256 does not match original_packet")
     if original_packet.get("run_id") != run_id:
         raise HandoffError("original_packet run_id does not match auth repair run")
-    modalities = original_packet.get("modalities")
-    if not isinstance(modalities, list) or "call" not in modalities:
-        raise HandoffError("auth repair requires an original CALL packet")
-    capability = original_packet.get("capability_policy")
-    if not isinstance(capability, dict) or capability.get("kind") != "rote_adapter":
-        raise HandoffError("auth repair requires original Rote adapter provenance")
+    if original_schema == PACKET_SCHEMA:
+        modalities = original_packet.get("modalities")
+        if not isinstance(modalities, list) or "call" not in modalities:
+            raise HandoffError("auth repair requires an original CALL packet")
+        capability = original_packet.get("capability_policy")
+        if not isinstance(capability, dict) or capability.get("kind") != "rote_adapter":
+            raise HandoffError("auth repair requires original Rote adapter provenance")
+    else:
+        if (
+            original_packet.get("owner") != "flow-runtime"
+            or original_packet.get("action") != "run_registry_play"
+            or not isinstance(original_packet.get("exact_reference"), str)
+        ):
+            raise HandoffError("auth repair requires a bound Play run packet")
 
     packet = {
         "schema": AUTH_REPAIR_PACKET_SCHEMA,
@@ -474,8 +587,19 @@ def prepare_auth_repair_handoff(payload: dict[str, Any]) -> dict[str, Any]:
         "expected_events": {
             key: list(value) for key, value in AUTH_REPAIR_EXPECTED_EVENTS.items()
         },
-        "evidence_contract": _string_list(payload, "evidence_contract"),
-        "idempotency_key": _string(payload, "idempotency_key"),
+        "evidence_contract": _string_list(
+            {
+                "evidence_contract": payload.get(
+                    "evidence_contract", ["evidence_refs"]
+                )
+            },
+            "evidence_contract",
+        ),
+        "idempotency_key": (
+            _dotted_path(payload, "execution.idempotency_key")
+            if isinstance(_dotted_path(payload, "execution.idempotency_key"), str)
+            else f"{run_id}:auth-repair"
+        ),
     }
     packet_sha256 = stable_sha(packet)
     return {
@@ -605,6 +729,11 @@ def verify_receipt(payload: dict[str, Any]) -> dict[str, Any]:
 
     packet = payload.get("packet")
     receipt = payload.get("receipt")
+    if not isinstance(packet, dict) or not isinstance(receipt, dict):
+        handoff = payload.get("handoff") if isinstance(payload, dict) else None
+        if isinstance(handoff, dict):
+            packet = handoff.get("packet")
+            receipt = handoff.get("receipt")
     if not isinstance(packet, dict) or not isinstance(receipt, dict):
         return _invalid_receipt("packet and receipt must be objects")
     if packet.get("schema") != PACKET_SCHEMA:
@@ -911,7 +1040,13 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="play-handoff", description=__doc__)
     parser.add_argument(
         "command",
-        choices=("prepare", "verify", "prepare-auth-repair", "verify-auth-repair"),
+        choices=(
+            "prepare",
+            "verify",
+            "prepare-play-run",
+            "prepare-auth-repair",
+            "verify-auth-repair",
+        ),
     )
     parser.add_argument("--stdin", action="store_true", required=True, help="Read one JSON object")
     parser.add_argument("--json", action="store_true", required=True, help="Emit one JSON object")
@@ -928,6 +1063,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         handlers = {
             "prepare": prepare_handoff,
             "verify": verify_receipt,
+            "prepare-play-run": prepare_play_run_handoff,
             "prepare-auth-repair": prepare_auth_repair_handoff,
             "verify-auth-repair": verify_auth_repair_receipt,
         }

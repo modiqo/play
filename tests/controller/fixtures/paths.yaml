@@ -41,7 +41,8 @@ cases:
       - {state: onboarding_first_offer, event: onboarding_starter_selected, target: use_inspect}
       - {state: use_inspect, event: play_inspected, target: use_decide}
       - {state: use_decide, event: remote_pull_required, target: use_offer}
-      - {state: use_offer, event: play_run_approved, target: use_run}
+      - {state: use_offer, event: play_run_approved, target: use_prepare}
+      - {state: use_prepare, event: play_run_handoff_ready, target: use_run}
       - {state: use_run, event: play_run_ready, target: use_output}
       - {state: use_output, event: detailed_output_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
@@ -121,7 +122,8 @@ cases:
       - {state: qualify, event: exact_play_request, target: use_inspect}
       - {state: use_inspect, event: play_inspected, target: use_decide}
       - {state: use_decide, event: remote_pull_required, target: use_offer}
-      - {state: use_offer, event: play_run_approved, target: use_run}
+      - {state: use_offer, event: play_run_approved, target: use_prepare}
+      - {state: use_prepare, event: play_run_handoff_ready, target: use_run}
       - {state: use_run, event: play_run_ready, target: use_output}
       - {state: use_output, event: detailed_output_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
@@ -149,7 +151,8 @@ cases:
         target: use_inspect
       - {state: use_inspect, event: play_inspected, target: use_decide}
       - {state: use_decide, event: remote_pull_required, target: use_offer}
-      - {state: use_offer, event: play_run_approved, target: use_run}
+      - {state: use_offer, event: play_run_approved, target: use_prepare}
+      - {state: use_prepare, event: play_run_handoff_ready, target: use_run}
       - {state: use_run, event: play_run_ready, target: use_output}
       - {state: use_output, event: detailed_output_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}
@@ -491,7 +494,8 @@ cases:
         guards: {route_within_policy: true}
         target: explore_dispatch
       - {state: explore_dispatch, event: adapter_discovery_required, target: adapter_discover}
-      - {state: adapter_discover, event: adapter_catalog_empty, target: explore_handoff}
+      - {state: adapter_discover, event: adapter_catalog_empty, target: adapter_converge}
+      - {state: adapter_converge, event: adapter_converged, target: explore_handoff}
       - {state: explore_handoff, event: specialist_unavailable, target: blocked}
     terminal: blocked
     excludes: [explore_execute, explore_receipt, explore_verify]
@@ -504,14 +508,16 @@ cases:
         target: explore_dispatch
       - {state: explore_dispatch, event: adapter_discovery_required, target: adapter_discover}
       - {state: adapter_discover, event: adapter_choices_ready, target: adapter_offer}
-      - {state: adapter_offer, event: adapter_source_selected, target: explore_handoff}
+      - {state: adapter_offer, event: adapter_source_selected, target: adapter_converge}
+      - {state: adapter_converge, event: adapter_converged, target: explore_handoff}
     terminal: explore_handoff
     includes_once: [adapter_discover, adapter_offer]
 
   - name: rejected catalog matches permit later spec discovery
     steps:
       - {state: adapter_discover, event: adapter_choices_ready, target: adapter_offer}
-      - {state: adapter_offer, event: adapter_catalog_rejected, target: explore_handoff}
+      - {state: adapter_offer, event: adapter_catalog_rejected, target: adapter_converge}
+      - {state: adapter_converge, event: adapter_converged, target: explore_handoff}
     terminal: explore_handoff
 
   - name: raw direct-tool output cannot pass specialist receipt validation
@@ -565,7 +571,8 @@ cases:
       - {state: awareness_offer, event: awareness_play_selected, target: use_inspect}
       - {state: use_inspect, event: play_inspected, target: use_decide}
       - {state: use_decide, event: remote_pull_required, target: use_offer}
-      - {state: use_offer, event: play_run_approved, target: use_run}
+      - {state: use_offer, event: play_run_approved, target: use_prepare}
+      - {state: use_prepare, event: play_run_handoff_ready, target: use_run}
       - {state: use_run, event: play_run_ready, target: use_output}
       - {state: use_output, event: detailed_output_ready, target: use_verify}
       - {state: use_verify, event: outcome_verified, target: use_receipt}

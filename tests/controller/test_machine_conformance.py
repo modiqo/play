@@ -528,23 +528,27 @@ class MachineConformanceTest(unittest.TestCase):
             "use_decide", MACHINE["states"]["use_inspect"]["on"]["play_inspected"][0]["target"]
         )
         self.assertEqual(
-            "use_run", MACHINE["states"]["use_decide"]["on"]["local_play_ready"][0]["target"]
+            "use_prepare", MACHINE["states"]["use_decide"]["on"]["local_play_ready"][0]["target"]
         )
         self.assertEqual(
             "use_offer",
             MACHINE["states"]["use_decide"]["on"]["remote_pull_required"][0]["target"],
         )
         self.assertEqual(
-            "use_run", MACHINE["states"]["use_offer"]["on"]["play_run_approved"][0]["target"]
+            "use_prepare", MACHINE["states"]["use_offer"]["on"]["play_run_approved"][0]["target"]
         )
         incoming = {
             state_name
             for state_name, state in MACHINE["states"].items()
             for branches in state.get("on", {}).values()
             for branch in branches
-            if branch["target"] == "use_run"
+            if branch["target"] == "use_prepare"
         }
         self.assertEqual({"use_decide", "use_offer"}, incoming)
+        self.assertEqual(
+            "use_run",
+            MACHINE["states"]["use_prepare"]["on"]["play_run_handoff_ready"][0]["target"],
+        )
 
     def test_detailed_output_dominates_use_verification_and_receipt(self) -> None:
         self.assertEqual(
@@ -623,9 +627,11 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["explore_receipt"]["on"]["specialist_receipt_invalid"][0]["target"],
         )
         execute_policy = " ".join(ACTIONS["execute_route"]["command_policy"])
+        convergence_policy = " ".join(ACTIONS["converge_call_adapter"]["command_policy"])
         self.assertIn("must not call MCP, app, shell, or browser tools directly", execute_policy)
-        self.assertIn("determine OpenAPI, GraphQL, or MCP", execute_policy)
-        self.assertIn("Complete initial authentication", execute_policy)
+        self.assertIn("substrate detection", convergence_policy)
+        self.assertIn("initial authentication", convergence_policy)
+        self.assertIn("Play must not reproduce those stages", convergence_policy)
         self.assertIn("recoverable auth failure", execute_policy)
         self.assertIn("handoff.receipt", ACTIONS["execute_route"]["events"]["outcome_ready"])
         self.assertIn("route_provenance", ACTIONS["execute_route"]["events"]["outcome_ready"])
@@ -644,8 +650,12 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["adapter_discover"]["on"]["adapter_choices_ready"][0]["target"],
         )
         self.assertEqual(
-            "explore_handoff",
+            "adapter_converge",
             MACHINE["states"]["adapter_offer"]["on"]["adapter_source_selected"][0]["target"],
+        )
+        self.assertEqual(
+            "explore_handoff",
+            MACHINE["states"]["adapter_converge"]["on"]["adapter_converged"][0]["target"],
         )
         self.assertEqual(
             ["installed", "catalog", "provided_spec", "provider_docs"],

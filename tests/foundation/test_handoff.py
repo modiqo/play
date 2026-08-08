@@ -13,6 +13,7 @@ from play.handoff import (
     owner_for_modalities,
     prepare_auth_repair_handoff,
     prepare_handoff,
+    prepare_play_run_handoff,
     verify_auth_repair_receipt,
     verify_receipt,
 )
@@ -219,7 +220,7 @@ class HandoffTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "typed adapter_discovery"):
             prepare_handoff(payload)
 
-    def test_zero_catalog_results_can_fall_through_to_spec_discovery(self) -> None:
+    def test_zero_catalog_results_require_adapter_creation_before_execution(self) -> None:
         payload = self.input(available=["rote-using-adapters"])
         payload["adapter_discovery"] = {
             "status": "catalog_empty",
@@ -229,11 +230,10 @@ class HandoffTest(unittest.TestCase):
             "selected_id": None,
             "evidence_refs": ["adapter-list:1", "adapter-catalog-search:1"],
         }
-        prepared = prepare_handoff(payload)
-        self.assertTrue(prepared["ok"])
-        self.assertEqual("catalog_empty", prepared["packet"]["adapter_discovery"]["status"])
+        with self.assertRaisesRegex(ValueError, "installed_ready"):
+            prepare_handoff(payload)
 
-    def test_selected_catalog_entry_is_bound_into_the_call_packet(self) -> None:
+    def test_converged_catalog_entry_is_bound_into_the_call_packet(self) -> None:
         payload = self.input(available=["rote-using-adapters"])
         choice = payload["adapter_discovery"]["choices"][0]
         choice.update(
@@ -246,14 +246,14 @@ class HandoffTest(unittest.TestCase):
                 "category": "Payments",
                 "substrate": "openapi",
                 "auth_shape": "static_token",
-                "health": "unknown",
+                "health": "ready",
                 "install_impact": "local-write",
                 "next_command": "rote adapter catalog info stripe --json",
             }
         )
         payload["adapter_discovery"].update(
             {
-                "status": "selected",
+                "status": "installed_ready",
                 "query": "stripe",
                 "searched_sources": ["installed", "catalog"],
                 "selected_id": "stripe",
@@ -274,20 +274,34 @@ class HandoffTest(unittest.TestCase):
                 "selected_id": None,
             }
         )
-        with self.assertRaisesRegex(ValueError, "not handoff-ready"):
+        with self.assertRaisesRegex(ValueError, "installed_ready"):
             prepare_handoff(payload)
 
     def test_catalog_cannot_be_skipped_after_an_installed_miss(self) -> None:
         payload = self.input(available=["rote-using-adapters"])
         payload["adapter_discovery"] = {
-            "status": "catalog_empty",
-            "query": "unlisted provider",
+            "status": "installed_ready",
+            "query": "stripe",
             "searched_sources": ["installed"],
-            "choices": [],
-            "selected_id": None,
+            "choices": [
+                {
+                    "id": "stripe",
+                    "label": "Stripe",
+                    "description": "Catalog Stripe adapter",
+                    "source": "catalog",
+                    "provider": "Stripe",
+                    "category": "Payments",
+                    "substrate": "openapi",
+                    "auth_shape": "static_token",
+                    "health": "ready",
+                    "install_impact": "none",
+                    "next_command": "rote adapter info stripe",
+                }
+            ],
+            "selected_id": "stripe",
             "evidence_refs": ["adapter-list:1"],
         }
-        with self.assertRaisesRegex(ValueError, "installed then catalog order|catalog_empty"):
+        with self.assertRaisesRegex(ValueError, "installed and catalog evidence"):
             prepare_handoff(payload)
 
     def test_probe_hints_are_not_an_approval_gate(self) -> None:
@@ -326,6 +340,48 @@ class HandoffTest(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual("specialist_auth_repair_required", result["event"])
         self.assertEqual("oauth_subject_rejected", result["auth_repair"]["classified_rung"])
+
+    def test_play_run_auth_failure_hands_off_to_adapter_config(self) -> None:
+        prepared = prepare_play_run_handoff(
+            {
+                "run_id": "play-run-17",
+                "request": {
+                    "requested_outcome": "Fetch recent emails",
+                    "parameters": {"limit": 10},
+                },
+                "inspection": {
+                    "exact_reference": "modiqo/retrieve-recent-emails@0.0.5",
+                    "disclosure_sha256": "a" * 64,
+                },
+            }
+        )
+        repair = prepare_auth_repair_handoff(
+            {
+                "run_id": "play-run-17",
+                "auth_repair": {
+                    "source": "rote_auth_repair_required",
+                    "status": "required",
+                    "owner": "rote-adapter-config",
+                    "recoverable": True,
+                    "adapter_id": "gmail",
+                    "env_var": "GSUITE_TOKEN",
+                    "classified_rung": "oauth_subject_rejected",
+                    "distinguishing_error": "token needs reauthentication",
+                    "evidence_refs": ["rote-play-run:auth-1"],
+                    **prepared["auth_repair"],
+                },
+            }
+        )
+
+        self.assertTrue(repair["ok"])
+        self.assertEqual("rote-adapter-config", repair["packet"]["owner"])
+        self.assertEqual(
+            "play.run-handoff/v1", repair["packet"]["original_packet"]["schema"]
+        )
+        self.assertEqual(
+            prepared["auth_repair"]["original_packet_sha256"],
+            repair["packet"]["original_packet_sha256"],
+        )
 
     def test_auth_repair_request_rejects_undeclared_credential_material(self) -> None:
         prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
