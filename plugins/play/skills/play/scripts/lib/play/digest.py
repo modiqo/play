@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .digest_state import (
-    DEFAULT_STATE_PATH,
+    default_state_path,
     DigestStateError,
     compare_digest,
     load_entry,
@@ -596,7 +596,7 @@ def main() -> int:
     remember = args.remember or args.state is not None
     if remember and (args.since is not None or args.checkpoint is not None):
         parser.error("--remember/--state cannot be combined with --since or --checkpoint")
-    state_path = args.state or DEFAULT_STATE_PATH
+    state_path = args.state or default_state_path()
     remembered: tuple[str, dict[str, Any]] | None = None
     key: str | None = None
     previous: dict[str, Any] | None = None

@@ -7,6 +7,8 @@ import json
 import os
 import tempfile
 from pathlib import Path
+
+from .state_home import state_path
 from typing import Any
 
 from .registry import Organization
@@ -14,7 +16,8 @@ from .timewindow import CHECKPOINT_SCHEMA, parse_timestamp
 
 
 STATE_SCHEMA = "play.digest-state/v1"
-DEFAULT_STATE_PATH = Path.home() / ".rote" / "play" / "digest-state.json"
+def default_state_path() -> Path:
+    return state_path("digest-state.json")
 
 
 class DigestStateError(ValueError):

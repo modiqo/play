@@ -217,7 +217,7 @@ actions:
     input_required: [onboarding.identity_status, onboarding.email]
     command: scripts/bin/play-onboarding experience --stdin --json
     command_policy:
-      - Read only the declared owner-private onboarding marker at ~/.rote/play/onboarding-state.json.
+      - Read only the declared owner-private onboarding marker at ~/.rote-play/onboarding-state.json.
       - Key the marker by a SHA-256 digest of the authenticated email; never store the email, raw whoami output, prompts, credentials, or controller context.
       - Treat the current orientation version as returning and an absent identity entry as first use; fail closed on malformed state.
     events:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+
+from .state_home import state_path
 import re
 import secrets
 import time
@@ -22,7 +24,7 @@ def default_root() -> Path:
     return (
         Path(override).expanduser()
         if override
-        else Path.home() / ".rote" / "play" / "continuations"
+        else state_path("continuations")
     )
 
 

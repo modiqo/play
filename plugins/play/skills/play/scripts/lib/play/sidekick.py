@@ -16,6 +16,7 @@ from typing import Any
 
 from .private_store import atomic_write_json, load_json
 from .render import json_text
+from .state_home import state_path
 
 
 SCHEMA = "play.sidekick/v1"
@@ -23,13 +24,13 @@ STANDBY_SCHEMA = "play.standby/v1"
 LEDGER_SCHEMA = "play.preferences/v1"
 def _default_standby_path() -> Path:
     override = os.environ.get("PLAY_SIDEKICK_STANDBY_PATH")
-    return Path(override) if override else Path.home() / ".rote" / "play" / "standby.json"
+    return Path(override) if override else state_path("standby.json")
 
 
 def _default_ledger_path() -> Path:
     override = os.environ.get("PLAY_SIDEKICK_LEDGER_PATH")
     return (
-        Path(override) if override else Path.home() / ".rote" / "play" / "preferences.json"
+        Path(override) if override else state_path("preferences.json")
     )
 HOOK_TTL_SECONDS = 7 * 24 * 3600
 MAX_HOOKS = 20

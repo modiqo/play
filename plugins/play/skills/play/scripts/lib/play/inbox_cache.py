@@ -22,7 +22,7 @@ from typing import Any
 
 from .digest import collect_digest, render_markdown
 from .digest_state import (
-    DEFAULT_STATE_PATH,
+    default_state_path,
     load_entry,
     scope_contract,
     scope_key,
@@ -30,6 +30,7 @@ from .digest_state import (
 from .private_store import atomic_write_json, load_json
 from .registry import Organization, load_authorized_flows, load_organizations
 from .render import json_text
+from .state_home import state_path
 
 
 CACHE_SCHEMA = "play.inbox-cache/v1"
@@ -38,7 +39,7 @@ DEFAULT_WINDOW_DAYS = 7
 
 def _default_cache_path() -> Path:
     override = os.environ.get("PLAY_INBOX_CACHE_PATH")
-    return Path(override) if override else Path.home() / ".rote" / "play" / "inbox-cache.json"
+    return Path(override) if override else state_path("inbox-cache.json")
 
 
 def _utc_now() -> datetime:
@@ -123,7 +124,7 @@ def refresh_cache(
         update_metadata_budget=100,
         update_inspection_budget=4,
     )
-    entry = load_entry(state_path or DEFAULT_STATE_PATH, scope_key(scope))
+    entry = load_entry(state_path or default_state_path(), scope_key(scope))
     if entry is not None and entry.get("scope") == scope:
         since = entry["checkpoint"]["last_seen_at"]
 

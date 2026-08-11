@@ -27,6 +27,7 @@ from typing import Any
 
 from .inbox_cache import read_cache as read_inbox_cache
 from .private_store import atomic_write_json, load_json
+from .state_home import state_path
 from .sidekick import coarse_task_class, latest_hook, load_ledger
 
 
@@ -60,12 +61,12 @@ def _flows_root() -> Path:
 
 def _index_path() -> Path:
     override = os.environ.get("PLAY_INTERCEPT_INDEX_PATH")
-    return Path(override) if override else Path.home() / ".rote" / "play" / "intercept-index.json"
+    return Path(override) if override else state_path("intercept-index.json")
 
 
 def _state_path() -> Path:
     override = os.environ.get("PLAY_INTERCEPT_STATE_PATH")
-    return Path(override) if override else Path.home() / ".rote" / "play" / "intercept-state.json"
+    return Path(override) if override else state_path("intercept-state.json")
 
 
 def _tokens(text: str) -> set[str]:

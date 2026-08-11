@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 from .private_store import PrivateStoreError, atomic_write_json, load_json, locked_store
 from .render import json_text
 from .sidekick import latest_hook, load_ledger
+from .state_home import state_path
 
 
 SCHEMA = "play.onboarding/v1"
@@ -29,7 +30,9 @@ PLAY_HOST = "play.modiqo.ai"
 MAX_CARD_BYTES = 200_000
 ONBOARDING_STATE_SCHEMA = "play.onboarding-state/v1"
 ONBOARDING_ORIENTATION_VERSION = 3
-DEFAULT_ONBOARDING_STATE_PATH = Path.home() / ".rote" / "play" / "onboarding-state.json"
+def default_onboarding_state_path() -> Path:
+    return state_path("onboarding-state.json")
+
 STARTER_PLAY_REFERENCE = "modiqo/hello@0.1.0"
 STARTER_PLAY_URI = "https://play.modiqo.ai/modiqo/hello@0.1.0"
 _PLAY_PREFIX = re.compile(r"^(?:\$play|/play)(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL)
@@ -371,11 +374,13 @@ def _load_onboarding_state(path: Path) -> dict[str, Any]:
 def check_onboarding_experience(
     payload: Mapping[str, Any],
     *,
-    state_path: Path = DEFAULT_ONBOARDING_STATE_PATH,
+    state_path: Path | None = None,
 ) -> dict[str, Any]:
     """Classify an authenticated identity without storing its email address."""
 
     started = time.perf_counter_ns()
+    if state_path is None:
+        state_path = default_onboarding_state_path()
     onboarding = _object(payload.get("onboarding"), "onboarding")
     identity_key = _onboarding_identity_key(onboarding.get("email"))
     state = _load_onboarding_state(state_path)
@@ -444,11 +449,13 @@ def prepare_first_use_orientation(payload: Mapping[str, Any]) -> dict[str, Any]:
 def remember_first_use_orientation(
     payload: Mapping[str, Any],
     *,
-    state_path: Path = DEFAULT_ONBOARDING_STATE_PATH,
+    state_path: Path | None = None,
 ) -> dict[str, Any]:
     """Remember only a hashed identity, version, and timestamp after presentation."""
 
     started = time.perf_counter_ns()
+    if state_path is None:
+        state_path = default_onboarding_state_path()
     onboarding = _object(payload.get("onboarding"), "onboarding")
     if onboarding.get("orientation_status") != "presented":
         raise OnboardingError("first-use orientation must be presented before it is remembered")

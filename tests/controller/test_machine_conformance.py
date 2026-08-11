@@ -87,7 +87,7 @@ class MachineConformanceTest(unittest.TestCase):
             self.assertFalse(MACHINE["states"][state].get("on", {}))
 
     def test_context_allows_only_the_private_runtime_continuation_store(self) -> None:
-        self.assertIn("~/.rote/play/continuations", SKILL_TEXT)
+        self.assertIn("~/.rote-play/continuations", SKILL_TEXT)
         self.assertEqual("Play logical controller context", CONTEXT["title"])
         self.assertIn("Only the Play runtime continuation backend", CONTEXT["$comment"])
         self.assertIn("24-hour expiry", CONTEXT["$comment"])

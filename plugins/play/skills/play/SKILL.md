@@ -30,7 +30,7 @@ settles, re-enter once with `request.original` set to `$play settle <one-line su
 The command executes every eligible deterministic action and stops only at a model, human,
 specialist, or terminal boundary, returning a short `continuation_id`. Keep that value opaque in
 harness state — never inspect, print, or persist it yourself. The runtime stores context
-owner-privately under `~/.rote/play/continuations` and expires it after 24 hours. Resume with:
+owner-privately under `~/.rote-play/continuations` and expires it after 24 hours. Resume with:
 
 ```json
 {"continuation_id":"<24-character-id>","event":{"id":"<event>","payload":{},"guards":{}}}

@@ -81,7 +81,7 @@ live-probes for Rote and reads the signed-in email with `rote whoami`. A returni
 short personal greeting. A first-time user gets a recommended **Run Hello** choice: public data, no
 account, no credentials, no declared writes. Missing or unauthenticated Rote is handed to the
 guided `rote-setup` skill. First-use memory is owner-private and deliberately small
-(`~/.rote/play/onboarding-state.json`: a hash of the email, orientation version, timestamp —
+(`~/.rote-play/onboarding-state.json`: a hash of the email, orientation version, timestamp —
 nothing else).
 
 ## The Play state machine
@@ -211,7 +211,7 @@ specialist, or terminal boundary.
 
 The automatic runner owns every deterministic action state. The harness sees only model judgments,
 human prompts, exact Rote specialist handoffs, and terminal results. The complete context is
-checkpointed in an owner-private, 24-hour continuation store under `~/.rote/play/continuations`;
+checkpointed in an owner-private, 24-hour continuation store under `~/.rote-play/continuations`;
 stateless CLI calls exchange only a random 24-character continuation ID.
 
 Install the locked dependencies and inspect the compiled bundle:
@@ -640,7 +640,7 @@ checkpoint token can be persisted by an authorized host for gap-free daily deliv
 does not write host state unless `--remember` is explicit.
 
 On normal `$play whats new` requests, Play uses remembered mode. It stores only a stable awareness SHA,
-UTC checkpoint, and authorized-scope contract in `~/.rote/play/digest-state.json`. If the current
+UTC checkpoint, and authorized-scope contract in `~/.rote-play/digest-state.json`. If the current
 snapshot has the same SHA, the next response is simply “Nothing new since your last Play check.”
 The moving time window is excluded from the SHA, and no inbox contents or credentials are stored.
 
@@ -648,7 +648,7 @@ The moving time window is excluded from the SHA, and no inbox contents or creden
 
 The inbox also has a proactive, zero-token surface. A background refresh caches both tiers —
 a precomputed one-line summary and the full digest with rendered markdown — plus the authorized
-hub catalog, under `~/.rote/play/inbox-cache.json`:
+hub catalog, under `~/.rote-play/inbox-cache.json`:
 
 ```bash
 play-inbox refresh --if-older-than 6   # background-job body; skips when fresh
@@ -668,7 +668,7 @@ play-intercept settle-nudge  # Stop: one reminder per armed save hook per sessio
 ```
 
 Hook state (index cache, cooldowns, nudge markers, preference ledger, standby hooks) lives in
-shared `~/.rote/play/` stores, so the safeguards compose across harnesses: a Play saved from one
+shared `~/.rote-play/` stores, so the safeguards compose across harnesses: a Play saved from one
 harness is an interception candidate in every other, and nudges never double-fire.
 
 Cache lifecycle: `just install` kicks one detached warm-up refresh, and every session start
