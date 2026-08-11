@@ -241,3 +241,25 @@ Freshness tracks usage; zero model tokens are spent except the one injected
 line. The line goes quiet after the user actually views the digest, because
 the interactive awareness lane owns the acknowledgment checkpoint and the
 refresh only reads it.
+
+## Structural interception (`play-intercept`)
+
+Field testing proved that prose triggers lose to the model's directness bias:
+a PR-status request went straight to `gh` past both play's and rote's skill
+descriptions. Both intervention moments therefore get structural triggers:
+
+- `play-intercept prompt` (UserPromptSubmit hook): local-only, ~60ms warm. An
+  mtime-keyed index over `~/.rote/flows` frontmatter is matched lexically
+  against the prompt. Specific hit → one injected context line naming the
+  saved Play. Outcome-shaped prompt with no hit → one advice line to search
+  preexisting Plays via the play skill, cooldown one hour. Ledger-silenced
+  classes, `$play`-bound prompts, and conversation → nothing. The injected
+  line converts "remember to check for a play" into "the check already
+  happened."
+- `play-intercept settle-nudge` (Stop hook): if a save hook armed by
+  `standby_exit` is still unsettled, show the user one reminder line — once
+  per hook per session — to `$play settle`. The deterministic gate is the
+  armed hook itself: play's own runtime said this outcome went unserved.
+
+These hooks are the backstop for (and arrive before) the rote Reuse Triage
+Gate edit; skills remain the executor, hooks own the remembering.
