@@ -215,6 +215,29 @@ promise of the runtime, and it is what removes the read-before-act tax.
   "interrupt every task with weak matches." classify should demand a full match
   to interrupt; partial matches go to standby silently or to a single-line
   mention, not a dialog.
-- **Digest/trending surface.** Awareness stays as an explicit trajectory for
-  now; whether it deserves proactive surfacing (e.g., session-start digest) is
-  a later product decision, not part of the reduction.
+- **Digest/trending surface.** Awareness stays as an explicit trajectory; the
+  proactive surface is built as a zero-token cache (below), with the decision
+  of *when* to show it deferred until the ledger has real data.
+
+## The zero-token inbox (`play-inbox`)
+
+The what's-new loop must never cost tokens or latency at the moment of recall.
+`scripts/bin/play-inbox` implements stale-while-revalidate over the existing
+digest collector:
+
+- `play-inbox refresh [--if-older-than H]` — the background-job body. Fetches
+  the digest (honoring the awareness lane's acknowledgment checkpoint without
+  advancing it), precomputes a one-line summary, and atomically writes both
+  tiers to `~/.rote/play/inbox-cache.json`: `summary_line` + `counts` for the
+  banner, `digest` + rendered `markdown` for detail recall.
+- `play-inbox line` — instant, read-only, prints the one line or nothing.
+  Quiet inbox = empty output, so a hook can inject it unconditionally.
+- `play-inbox details` — the cached full inbox, no network.
+
+Session-start wiring (SWR, no daemon or cron needed): a SessionStart hook runs
+`play-inbox line` (instant, serves the previous refresh) and then kicks
+`play-inbox refresh --if-older-than 6` in the background for next session.
+Freshness tracks usage; zero model tokens are spent except the one injected
+line. The line goes quiet after the user actually views the digest, because
+the interactive awareness lane owns the acknowledgment checkpoint and the
+refresh only reads it.
