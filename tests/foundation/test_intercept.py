@@ -38,6 +38,7 @@ class InterceptTest(unittest.TestCase):
             "PLAY_INTERCEPT_FLOWS_ROOT": str(self.flows),
             "PLAY_INTERCEPT_INDEX_PATH": str(base / "intercept-index.json"),
             "PLAY_INTERCEPT_STATE_PATH": str(base / "intercept-state.json"),
+            "PLAY_INBOX_CACHE_PATH": str(base / "inbox-cache.json"),
             "PLAY_SIDEKICK_STANDBY_PATH": str(base / "standby.json"),
             "PLAY_SIDEKICK_LEDGER_PATH": str(base / "preferences.json"),
         }
@@ -153,6 +154,35 @@ class InterceptTest(unittest.TestCase):
         match = best_match("can you check status on PR 1701", entries)
         assert match is not None
         self.assertEqual("pr-status-check", match["reference"])
+
+    def test_hub_catalog_entries_match_when_not_local(self) -> None:
+        from play.private_store import atomic_write_json
+
+        atomic_write_json(
+            Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
+            {
+                "schema": "play.inbox-cache/v1",
+                "fetched_at": "2026-08-11T00:00:00+00:00",
+                "window_days": 7,
+                "summary_line": None,
+                "counts": {"new": 0, "revised": 0},
+                "digest": {},
+                "markdown": None,
+                "catalog": [
+                    {
+                        "reference": "modiqo/list-top-committers",
+                        "name": "list-top-committers",
+                        "description": "Lists top contributors for a GitHub repository.",
+                        "visibility": "public",
+                    }
+                ],
+            },
+        )
+        line = intercept_prompt("list top committers for modiqo/rote")
+        assert line is not None
+        self.assertIn("available in your hub", line)
+        self.assertIn("modiqo/list-top-committers", line)
+        self.assertIn("Pull and run", line)
 
 
 if __name__ == "__main__":

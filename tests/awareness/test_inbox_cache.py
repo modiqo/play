@@ -85,6 +85,15 @@ class InboxCacheTest(unittest.TestCase):
             cache_path=self.cache_path,
             state_path=self.state_path,
             collect=lambda **_: digest,
+            load_flows=lambda slugs: {
+                "acme": [
+                    {
+                        "name": "ship-and-tell",
+                        "description": "Deploy, smoke, and post a summary.",
+                        "visibility": "private",
+                    }
+                ]
+            },
             organizations=[Organization("acme", "acme")],
             **kwargs,
         )
@@ -100,6 +109,17 @@ class InboxCacheTest(unittest.TestCase):
         self.assertEqual(
             "acme/play-new-0",
             stored["digest"]["org_updates"]["new"][0]["reference"],
+        )
+        self.assertEqual(
+            [
+                {
+                    "reference": "acme/ship-and-tell",
+                    "name": "ship-and-tell",
+                    "description": "Deploy, smoke, and post a summary.",
+                    "visibility": "private",
+                }
+            ],
+            stored["catalog"],
         )
 
     def test_quiet_inbox_stores_no_line(self) -> None:

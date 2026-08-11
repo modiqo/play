@@ -73,6 +73,27 @@ class SearchTest(unittest.TestCase):
         self.assertEqual("run_local", results[0]["execution_resolution"])
         self.assertEqual("local", results[0]["primary_scope"])
 
+    def test_argument_tokens_do_not_dilute_a_complete_name_match(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        local = {
+            "flows": [
+                {
+                    "name": "list-top-committers",
+                    "path": str(flow_root / "modiqo" / "list-top-committers" / "main.ts"),
+                    "description": "Lists top contributors for a GitHub repository.",
+                    "score": 20.0,
+                }
+            ]
+        }
+        results = PLAY_SEARCH.merge_results(
+            local, [], flow_root, 10, "list top committers for modiqo rote"
+        )
+        self.assertEqual("full", results[0]["match_classification"])
+        results = PLAY_SEARCH.merge_results(
+            local, [], flow_root, 10, "list something unrelated entirely here"
+        )
+        self.assertNotEqual("full", results[0]["match_classification"])
+
     def test_registry_only_result_discloses_expected_pull_before_selection(self):
         results = PLAY_SEARCH.merge_results(
             {"flows": []},

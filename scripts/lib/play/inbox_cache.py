@@ -28,7 +28,7 @@ from .digest_state import (
     scope_key,
 )
 from .private_store import atomic_write_json, load_json
-from .registry import Organization, load_organizations
+from .registry import Organization, load_authorized_flows, load_organizations
 from .render import json_text
 
 
@@ -92,6 +92,7 @@ def refresh_cache(
     state_path: Path | None = None,
     if_older_than_hours: float | None = None,
     collect: Callable[..., dict[str, Any]] | None = None,
+    load_flows: Callable[[set[str]], dict[str, list[dict[str, Any]]]] | None = None,
     organizations: list[Organization] | None = None,
 ) -> dict[str, Any]:
     """Fetch the digest and persist both cache tiers; the background-job body."""
@@ -128,6 +129,38 @@ def refresh_cache(
 
     collector = collect or collect_digest
     digest = collector(days=days, since=since, organizations=resolved_organizations)
+    flows_loader = load_flows or load_authorized_flows
+    try:
+        grouped = flows_loader({org.slug for org in resolved_organizations})
+    except Exception:  # noqa: BLE001 - the catalog tier is best-effort
+        grouped = {}
+    catalog: list[dict[str, Any]] = []
+    seen_references: set[str] = set()
+    for slug, flows in grouped.items():
+        if not isinstance(flows, list):
+            continue
+        for flow in flows:
+            if not isinstance(flow, Mapping):
+                continue
+            name = flow.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            reference = flow.get("reference")
+            if not isinstance(reference, str) or not reference:
+                reference = f"{slug}/{name}"
+            if reference in seen_references:
+                continue
+            seen_references.add(reference)
+            catalog.append(
+                {
+                    "reference": reference,
+                    "name": name,
+                    "description": str(flow.get("description") or "")[:240],
+                    "visibility": flow.get("visibility"),
+                }
+            )
+            if len(catalog) >= 500:
+                break
     try:
         markdown = render_markdown(dict(digest))
     except (KeyError, TypeError):
@@ -143,6 +176,7 @@ def refresh_cache(
         },
         "digest": digest,
         "markdown": markdown,
+        "catalog": catalog,
         "refreshed": True,
     }
     atomic_write_json(target, {key: value for key, value in cache.items() if key != "refreshed"})

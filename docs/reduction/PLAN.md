@@ -263,3 +263,19 @@ descriptions. Both intervention moments therefore get structural triggers:
 
 These hooks are the backstop for (and arrive before) the rote Reuse Triage
 Gate edit; skills remain the executor, hooks own the remembering.
+
+Field-test refinements:
+
+- **Argument tokens must not dilute adequacy.** A request naturally carries
+  parameter values (repo, channel, date) that never appear in Play metadata;
+  raw query coverage under-scored every parameterized request and caused
+  false step-asides. When the query contains the Play's complete name
+  identity, the unmatched remainder is treated as arguments and the match is
+  full ("list top committers for modiqo/rote" → `modiqo/list-top-committers`).
+- **The interceptor has a hub tier.** The inbox background refresh also
+  caches the authorized org/hub catalog (reference, name, description, URI
+  visibility; bounded at 500). The prompt interceptor merges it under the
+  local index, so a Play available remotely but not locally yields
+  "available in your hub — pull and run it through the play skill" with zero
+  network at prompt time. No separate sign-in step needed: the existing
+  authenticated background refresh owns freshness.

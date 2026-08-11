@@ -25,6 +25,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from .inbox_cache import read_cache as read_inbox_cache
 from .private_store import atomic_write_json, load_json
 from .sidekick import coarse_task_class, latest_hook, load_ledger
 
@@ -164,6 +165,41 @@ def load_index(root: Path | None = None, path: Path | None = None) -> list[dict[
     return entries
 
 
+def _hub_entries(local_names: set[str]) -> list[dict[str, Any]]:
+    """Authorized hub Plays from the inbox catalog cache — zero network."""
+
+    cache = read_inbox_cache()
+    if cache is None:
+        return []
+    catalog = cache.get("catalog")
+    if not isinstance(catalog, list):
+        return []
+    entries: list[dict[str, Any]] = []
+    for item in catalog:
+        if not isinstance(item, Mapping):
+            continue
+        reference = item.get("reference")
+        name = item.get("name")
+        if (
+            not isinstance(reference, str)
+            or not isinstance(name, str)
+            or name in local_names
+        ):
+            continue
+        description = str(item.get("description") or "")[:240]
+        entries.append(
+            {
+                "reference": reference,
+                "name": name,
+                "description": description,
+                "scope": "hub",
+                "name_tokens": sorted(_tokens(name.replace("-", " "))),
+                "text_tokens": sorted(_tokens(description)),
+            }
+        )
+    return entries
+
+
 def best_match(prompt: str, entries: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Score prompt tokens against name/tag (weight 3) and description (weight 1)."""
 
@@ -228,9 +264,15 @@ def intercept_prompt(prompt: str) -> str | None:
     ):
         return None
     entries = load_index()
+    entries = [*entries, *_hub_entries({entry["name"] for entry in entries})]
     match = best_match(stripped, entries)
     if match is not None:
         description = match.get("description") or "a saved Play"
+        if match.get("scope") == "hub":
+            return (
+                f"Play: Play `{match['reference']}` is available in your hub — {description} "
+                "Pull and run it through the play skill instead of doing this manually."
+            )
         return (
             f"Play: saved Play `{match['reference']}` looks relevant — {description} "
             "Run it through the play skill instead of doing this manually."

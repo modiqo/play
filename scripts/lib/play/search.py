@@ -268,8 +268,18 @@ def merge_results(
         rank_fusion = sum(1.0 / (60 + rank) for rank in hit["source_ranks"].values())
         hit["combined_score"] = coverage + rank_fusion
         hit["coverage"] = coverage
+        # A request naturally carries argument tokens (repo, channel, date) that
+        # can never appear in Play metadata, so raw query coverage under-scores
+        # parameterized requests. When the query contains the Play's complete
+        # name identity, treat the unmatched remainder as arguments, not gaps.
+        name_tokens = set(normalize_query(hit["name"]).split())
+        name_is_covered = bool(name_tokens) and name_tokens <= query_tokens
         hit["match_classification"] = (
-            "full" if coverage >= 0.75 else "partial" if coverage >= 0.34 else "uncertain"
+            "full"
+            if coverage >= 0.75 or (name_is_covered and coverage >= 0.34)
+            else "partial"
+            if coverage >= 0.34
+            else "uncertain"
         )
         hit["primary_scope"] = (
             "local" if "local" in hit["sources"]
