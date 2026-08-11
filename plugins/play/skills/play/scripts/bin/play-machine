@@ -102,6 +102,38 @@ def _persist_continuation(
     return continuation_id
 
 
+def _maybe_warm_inbox() -> None:
+    """Self-healing catalog warm-up at runtime entry, covering every trajectory.
+
+    The staleness check is one stat call; the refresh is detached and quiet. A
+    signed-out machine fails the refresh silently and simply retries on the
+    next invocation after login — no trajectory-specific hook can be missed.
+    """
+
+    if os.environ.get("PLAY_SKIP_CACHE_WARMUP") == "1":
+        return
+    try:
+        sys.path.insert(0, str(ROOT / "scripts" / "lib"))
+        from play.state_home import state_path
+
+        cache = state_path("inbox-cache.json")
+        if cache.exists() and time.time() - cache.stat().st_mtime < 6 * 3600:
+            return
+        refresher = ROOT / "scripts" / "bin" / "play-inbox"
+        if not refresher.is_file():
+            return
+        import subprocess
+
+        subprocess.Popen(
+            [sys.executable, str(refresher), "refresh", "--if-older-than", "6"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:  # noqa: BLE001 - warm-up must never affect the runtime
+        pass
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -156,6 +188,8 @@ def main() -> int:
     preflight.add_argument("--json", action="store_true", dest="as_json")
 
     args = parser.parse_args()
+    if args.command == "run-until-yield":
+        _maybe_warm_inbox()
     return_code = 0
     try:
         runtime = ControllerRuntime(ROOT)
