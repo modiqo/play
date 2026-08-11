@@ -278,6 +278,30 @@ def _validated_rote_command(value: object) -> str:
     return command
 
 
+def _warm_caches_after_identity() -> None:
+    """Detached, best-effort warm-up of the inbox and hub catalog after sign-in.
+
+    Fires the moment an authenticated identity is verified so a first-time user's
+    catalog, interception index, and what's-new inbox populate in the background
+    without waiting for the next session start. Never blocks or fails identity.
+    """
+
+    if os.environ.get("PLAY_SKIP_CACHE_WARMUP") == "1":
+        return
+    refresher = Path(__file__).resolve().parents[2] / "bin" / "play-inbox"
+    if not refresher.is_file():
+        return
+    try:
+        subprocess.Popen(
+            [sys.executable, str(refresher), "refresh", "--if-older-than", "6"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError:
+        pass
+
+
 def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Run whoami only after the binary probe and return email metadata, never auth tokens."""
 
@@ -310,6 +334,7 @@ def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
         }
     email = email_match.group(1).strip().lower()
     handle = email.split("@", 1)[0]
+    _warm_caches_after_identity()
     return {
         "schema": SCHEMA,
         "kind": "identity",
@@ -658,7 +683,13 @@ def normalize_card(uri: str, card: Mapping[str, Any], fetch_ns: int) -> dict[str
     if card.get("schema") != CARD_SCHEMA or card.get("type") != "play":
         raise OnboardingError("public URI did not return a rote.play.v1 card")
     card_id = _string(card.get("id"), "card.id")
-    if card_id != uri:
+    # The registry serves versionless URIs by pinning them: /owner/name returns a
+    # card whose id is /owner/name@<current-version>. Accept that pinning; reject
+    # any other identity drift (different owner or name fails closed).
+    requested_is_versionless = "@" not in uri.rsplit("/", 1)[-1]
+    if card_id != uri and not (
+        requested_is_versionless and card_id.startswith(f"{uri}@")
+    ):
         raise OnboardingError("public card id does not match the requested Play URI")
     actions = _object(card.get("actions"), "card.actions")
     inspect_action = _object(actions.get("inspect"), "card.actions.inspect")
@@ -674,11 +705,14 @@ def normalize_card(uri: str, card: Mapping[str, Any], fetch_ns: int) -> dict[str
     ):
         raise OnboardingError("public card install actions must require explicit consent")
     inspect_command = _string(inspect_action.get("command"), "card inspect command")
-    if inspect_command not in {f"rote play inspect {uri}", f"rote play inspect {uri} --json"}:
+    if inspect_command not in {
+        f"rote play inspect {card_id}",
+        f"rote play inspect {card_id} --json",
+    }:
         raise OnboardingError("public card inspect command does not match the requested URI")
     normalized = {
         "schema": CARD_SCHEMA,
-        "uri": uri,
+        "uri": card_id,
         "title": _string(card.get("title") or card.get("name"), "card.title"),
         "description": _string(card.get("description"), "card.description"),
         "reference": _string(card.get("reference"), "card.reference"),

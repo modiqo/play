@@ -198,13 +198,14 @@ actions:
   inspect_onboarding_identity:
     kind: deterministic
     owner: play
-    effect: read
+    effect: local-write
     input_required: [onboarding.rote_status, onboarding.rote_command]
     command: scripts/bin/play-onboarding identity --stdin --json
     command_policy:
       - Run exactly one `<onboarding.rote_command> whoami` only after the binary probe reports installed.
       - Extract the authenticated email and its local-part handle; retain a digest instead of raw stdout or stderr.
       - If whoami is unauthenticated or lacks an email, request rote-setup instead of inventing an identity.
+      - A verified identity kicks one detached best-effort warm-up of the owner-private inbox and hub-catalog cache; it never blocks, fails, or delays the identity result.
     events:
       onboarding_identity_ready: [onboarding.identity_status, onboarding.email, onboarding.email_handle, onboarding.identity_ref, onboarding.whoami_ns]
       onboarding_identity_setup_required: [onboarding.identity_status, onboarding.email, onboarding.email_handle, onboarding.identity_ref, onboarding.whoami_ns]

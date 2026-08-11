@@ -179,11 +179,12 @@ class RoteGreetingProbeTest(unittest.TestCase):
         self.assertEqual("installed", result["rote_status"])
         self.assertTrue(result["rote_off_path"])
 
+    @patch("play.onboarding.subprocess.Popen")
     @patch("play.onboarding.subprocess.run")
     @patch("play.onboarding.os.access", return_value=True)
     @patch("play.onboarding.Path.is_file", return_value=True)
     def test_whoami_extracts_email_handle_without_retaining_raw_output(
-        self, _is_file, _access, run
+        self, _is_file, _access, run, popen
     ) -> None:
         run.return_value.returncode = 0
         run.return_value.stdout = "@@status\nok: Chetan@Modiqo.ai\n"
@@ -194,12 +195,15 @@ class RoteGreetingProbeTest(unittest.TestCase):
         self.assertEqual("chetan", result["email_handle"])
         self.assertNotIn("warning", str(result))
         self.assertTrue(str(result["identity_ref"]).startswith("sha256:"))
+        popen.assert_called_once()
+        self.assertIn("refresh", popen.call_args.args[0])
 
+    @patch("play.onboarding.subprocess.Popen")
     @patch("play.onboarding.subprocess.run")
     @patch("play.onboarding.os.access", return_value=True)
     @patch("play.onboarding.Path.is_file", return_value=True)
     def test_missing_identity_routes_to_setup_without_fabricating_handle(
-        self, _is_file, _access, run
+        self, _is_file, _access, run, popen
     ) -> None:
         run.return_value.returncode = 1
         run.return_value.stdout = "not logged in"
@@ -208,6 +212,7 @@ class RoteGreetingProbeTest(unittest.TestCase):
         self.assertEqual("setup_required", result["identity_status"])
         self.assertIsNone(result["email"])
         self.assertIsNone(result["email_handle"])
+        popen.assert_not_called()
 
 
 class ExplorationWelcomeTest(unittest.TestCase):
@@ -371,6 +376,18 @@ class PublicCardTest(unittest.TestCase):
         self.assertIn("Guided bootstrap and run", markdown)
         self.assertIn("Install only the Rote CLI", markdown)
         self.assertIn("explicit consent", markdown)
+
+    def test_versionless_request_accepts_the_registry_pinned_card(self) -> None:
+        versionless = URI.rsplit("@", 1)[0]
+        card = normalize_card(versionless, public_card(), 1)
+        self.assertEqual(URI, card["uri"])
+
+    def test_versionless_request_still_rejects_a_different_play(self) -> None:
+        versionless = URI.rsplit("@", 1)[0]
+        card = public_card()
+        card["id"] = "https://play.modiqo.ai/other/report@1.0.0"
+        with self.assertRaisesRegex(OnboardingError, "does not match"):
+            normalize_card(versionless, card, 1)
 
     def test_card_identity_or_effect_mismatch_fails_closed(self) -> None:
         card = public_card()
