@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -361,66 +362,86 @@ def render_markdown(digest: dict[str, Any]) -> str:
     if isinstance(memory, dict) and memory.get("status") == "unchanged":
         return "Nothing new since your last Play check."
     window = digest["window"]
+    new_items = digest["org_updates"]["new"]
+    revised_items = digest["org_updates"]["revised"]
+    display_names = {org["slug"]: org["display_name"] for org in digest["organizations"]}
     lines = [
         "# What’s new in Plays",
         "",
-        f"Window: `{window['start']}` to `{window['end']}`",
+        f"Window: `{window['start']}` → `{window['end']}` (UTC)",
+        "",
     ]
-    new_items = digest["org_updates"]["new"]
-    revised_items = digest["org_updates"]["revised"]
-    lines.extend(["", f"## Inbox ({len(new_items) + len(revised_items)})", ""])
     if not digest["org_updates"]["revised_complete"]:
-        lines.append("Revisions are unavailable: registry list lacks released-version timestamps.")
-        lines.append("")
-    display_names = {org["slug"]: org["display_name"] for org in digest["organizations"]}
-    all_updates = [*new_items, *revised_items]
-    if not all_updates:
         lines.append(
-            "— Your Play inbox is clear"
-            if digest["org_updates"]["revised_complete"]
-            else "— No new publications were found"
+            "Revisions are unavailable: registry list lacks released-version timestamps."
         )
-    for owner in sorted({item["owner"] for item in all_updates}, key=lambda value: display_names.get(value, value).casefold()):
-        owner_items = [item for item in all_updates if item["owner"] == owner]
-        lines.extend([f"### {display_names.get(owner, owner)} (`{owner}`)", ""])
-        for item in owner_items:
-            creator = item.get("creator_name") or "Creator unavailable"
-            description = " ".join((item.get("description") or "No description provided.").split())
-            if len(description) > 180:
-                description = description[:177].rstrip() + "…"
-            state = "New" if item["kind"] == "new" else "Revised"
-            lines.append(f"- **{item['name']}** · {state} · by {creator}")
-            lines.append(f"  {description}")
+        lines.append("")
+
+    def base_reference(value: str) -> str:
+        return value.rsplit("@", 1)[0]
+
+    def link(reference: str) -> str:
+        return f"[{reference}](https://play.modiqo.ai/{reference})"
+
+    rows: dict[str, dict[str, Any]] = {}
+    for item in [*new_items, *revised_items]:
+        base = base_reference(item["reference"])
+        state = "New" if item["kind"] == "new" else "Revised"
+        badge = "" if item.get("actionable") else " · inspect first"
+        author = item.get("creator_name") or display_names.get(
+            item["owner"], item["owner"]
+        )
+        rows[base] = {
+            "play": f"**{item['name']}** · {state}{badge}",
+            "scope": item["visibility"],
+            "author": author,
+            "downloads": "—",
+            "link": link(base),
+        }
+    for item in digest["public_top"]:
+        base = item.get("base_reference") or base_reference(item.get("reference", ""))
+        if not base:
+            continue
+        downloads = str(item.get("download_count", 0))
+        if base in rows:
+            rows[base]["downloads"] = downloads
+            continue
+        owner = base.split("/", 1)[0]
+        rows[base] = {
+            "play": f"**{item['name']}**",
+            "scope": "public",
+            "author": display_names.get(owner, owner),
+            "downloads": downloads,
+            "link": link(base),
+        }
+
+    inbox_count = len(new_items) + len(revised_items)
+    lines.extend([f"## Inbox and rankings ({inbox_count} new or revised)", ""])
+    if rows:
+        lines.append("| Play | Scope | Author | Downloads | Link |")
+        lines.append("|---|---|---|---|---|")
+        for row in rows.values():
             lines.append(
-                f"  `{item['reference']}` · {item['visibility']} · {item['timestamp']}"
-                + ("" if item.get("actionable") else " · inspect before Use")
+                f"| {row['play']} | {row['scope']} | {row['author']} "
+                f"| {row['downloads']} | {row['link']} |"
             )
-    ranking = digest["ranking"]
-    lines.extend(["", f"## {ranking['label']} ({len(digest['public_top'])})", ""])
-    lines.append(
-        "Metric: lifetime downloads. Scope: authorized organizations; global public ranking "
-        "and run counts are unavailable."
+    elif digest["org_updates"]["revised_complete"]:
+        lines.append("— Your Play inbox is clear")
+    else:
+        lines.append("— No new publications were found")
+    lines.extend(
+        [
+            "",
+            "Downloads are lifetime counts across your authorized organizations; global "
+            "rankings and run counts are unavailable. Selecting a Play opens read-only "
+            "inspection before any run approval.",
+        ]
     )
+    ranking = digest["ranking"]
     if not ranking["complete"]:
         lines.append("Coverage is partial because one or more public Plays could not be read.")
-    lines.append("")
-    if digest["public_top"]:
-        for group in digest["public_groups"]:
-            lines.extend([f"### {group['owner']} ({group['owner_kind']})", ""])
-            for item in group["plays"]:
-                description = " ".join((item.get("description") or "No description provided.").split())
-                if len(description) > 180:
-                    description = description[:177].rstrip() + "…"
-                lines.append(
-                    f"- **{item['name']}** · {item['download_count']} downloads · "
-                    f"{item['install_count']} installs"
-                )
-                lines.append(f"  {description}")
-                lines.append(f"  `{item['reference']}`")
-    else:
-        lines.append(f"— Unavailable: {ranking.get('reason', 'no eligible public Plays')}")
     stats = digest["personal_stats"]
-    lines.extend(["", "## Your impact", "", f"— Unavailable: {stats['reason']}"])
+    lines.extend(["", f"Your impact: unavailable — {stats['reason']}"])
     return "\n".join(lines)
 
 
@@ -493,6 +514,33 @@ def collect_digest(
         update_inspection_errors=update_batch.errors,
         update_omitted_count=update_batch.omitted_count,
     )
+
+
+def _fresh_cached_digest(*, days: int, max_age_hours: float = 6.0) -> dict[str, Any] | None:
+    """Serve the interactive digest from the background inbox cache when fresh.
+
+    The what's-new surface tolerates the stale-while-revalidate window; a live
+    registry sweep only runs when no fresh cache exists. Freshness comparison
+    still runs against the remembered acknowledgment SHA, so "Nothing new since
+    your last Play check" behaves identically from either source.
+    """
+
+    from .inbox_cache import read_cache  # local import: inbox_cache imports this module
+
+    cache = read_cache()
+    if cache is None or cache.get("window_days") != days:
+        return None
+    try:
+        fetched = datetime.fromisoformat(str(cache.get("fetched_at")))
+    except ValueError:
+        return None
+    age = (datetime.now(timezone.utc) - fetched).total_seconds()
+    if age < 0 or age > max_age_hours * 3600:
+        return None
+    digest = cache.get("digest")
+    if not isinstance(digest, dict) or digest.get("schema") != SCHEMA:
+        return None
+    return copy.deepcopy(digest)
 
 
 def main() -> int:
@@ -576,23 +624,27 @@ def main() -> int:
             if previous is not None:
                 since = previous["checkpoint"]["last_seen_at"]
             remembered = (key, scope)
-        digest = collect_digest(
-            days=args.days,
-            since=since,
-            checkpoint=args.checkpoint,
-            public_limit=args.public_limit,
-            inspection_budget=args.inspection_budget,
-            update_metadata_budget=args.update_metadata_budget,
-            update_inspection_budget=args.update_inspection_budget,
-            org_slugs=[] if organizations is not None else args.org,
-            organizations=organizations,
-        )
+        digest = _fresh_cached_digest(days=args.days) if remember and not args.org else None
+        served_from = "cache" if digest is not None else "live"
+        if digest is None:
+            digest = collect_digest(
+                days=args.days,
+                since=since,
+                checkpoint=args.checkpoint,
+                public_limit=args.public_limit,
+                inspection_budget=args.inspection_budget,
+                update_metadata_budget=args.update_metadata_budget,
+                update_inspection_budget=args.update_inspection_budget,
+                org_slugs=[] if organizations is not None else args.org,
+                organizations=organizations,
+            )
         if remember:
             assert key is not None
             digest["memory"] = {
                 "schema": "play.digest-memory-result/v1",
                 "scope_key": key,
                 "status": compare_digest(digest, previous),
+                "served_from": served_from,
             }
     except (DigestStateError, RegistryReadError, TimeWindowError, ValueError) as error:
         print(f"play-digest: {error}", file=sys.stderr)

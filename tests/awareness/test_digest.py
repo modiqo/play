@@ -159,9 +159,10 @@ class DigestTest(unittest.TestCase):
         )
         rendered = render_markdown(digest)
         self.assertIn("# What’s new in Plays", rendered)
-        self.assertIn("### Alpha Team (`alpha`)", rendered)
-        self.assertIn("**weekly-report** · New · by Alice Example", rendered)
-        self.assertIn("A concise weekly customer report.", rendered)
+        self.assertIn("| Play | Scope | Author | Downloads | Link |", rendered)
+        self.assertIn("**weekly-report** · New", rendered)
+        self.assertIn("| Alice Example |", rendered)
+        self.assertIn("https://play.modiqo.ai/alpha/weekly-report", rendered)
         self.assertEqual("unavailable", digest["capabilities"]["run_metrics"]["status"])
 
     def test_ranking_reports_partial_inspection_without_inventing_global_coverage(self) -> None:
@@ -208,8 +209,9 @@ class DigestTest(unittest.TestCase):
         self.assertEqual("parallel", digest["ranking"]["fetch"]["mode"])
         self.assertEqual(15.25, digest["ranking"]["fetch"]["elapsed_ms"])
         rendered = render_markdown(digest)
-        self.assertIn("### modiqo (org)", rendered)
-        self.assertIn("7 downloads · 2 installs", rendered)
+        self.assertIn("https://play.modiqo.ai/modiqo/hello", rendered)
+        self.assertIn("| 7 |", rendered)
+        self.assertIn("lifetime counts across your authorized organizations", rendered)
 
     def test_awareness_sha_is_stable_across_windows_but_changes_with_source_state(self) -> None:
         grouped = {
