@@ -74,6 +74,48 @@ adequacy, outcome verification, and the new save-worthiness judgment.
 | Onboarding + team invites (19) | **Separate machine** (`machine.onboarding.yaml`), entered only via empty `/play`, Play URI, or first-use detection. Never on the interception path. |
 | Awareness/digest (4), creator (4), management (3) | Creator collapses into search/classify (create intent = no-match path with save hook pre-armed). Awareness and management become explicit-request trajectory dispatches. |
 
+## Decision memory: the preference ledger
+
+The habit loop dies without memory. Every intervention play makes — run offer,
+save offer — produces a user decision, and every decision carries scope. A user
+who says "I don't want plays during vibe coding, I want plays for the workflows
+around it" has expressed a per-task-class policy, not an on/off switch. Play
+must remember decisions at that granularity or it trains users to dismiss it.
+
+Design:
+
+- **Ledger, not config.** An owner-private, human-readable ledger under
+  `~/.rote/play/preferences` holding scoped entries:
+  `(task_class, policy, evidence, timestamp)` where policy ∈
+  {intervene, mention_only, silent} and evidence is the decision that created
+  the entry (explicit statement or accumulated dismissals). No upfront
+  configuration screen — the ledger is learned.
+- **Qualify consults the ledger.** The qualification evaluator's input gains
+  the matching ledger entries. A `silent`-classed request skips search and
+  narration entirely and exits without a trace; `mention_only` allows a
+  one-line surface but never a dialog. The ledger is a prior, and the
+  evaluator may override it only for an exact saved-play invocation by the
+  user.
+- **Dismissals write, they don't just exit.** `search_dismissed`,
+  `play_run_declined`, and `save_skipped` events gain an optional scope
+  payload. An explicit statement ("no plays when I'm prototyping") writes a
+  ledger entry immediately; repeated unexplained dismissals in the same task
+  class (2–3) write a `mention_only` downgrade automatically, with a
+  presentation telling the user it happened and how to undo it.
+- **Saves write positive scope too.** A saved play's task class becomes an
+  `intervene` prior — the classes a user saves in are the classes they want
+  play active in. The ledger converges toward the user's actual orbit of
+  repeatable work without anyone configuring it.
+- **Visible and revocable.** The management trajectory gains a `play prefs`
+  view: list ledger entries with their evidence, delete or flip any of them.
+  Silent muting without inspectability would be worse than no muting.
+- **Machine cost is near zero.** No new interception states — the existing
+  decline events gain payload fields, qualify/classify gain a ledger input,
+  and one deterministic action reads/writes the ledger file. This is Phase 2
+  scope, not a later phase: the ledger must exist before the save hook ships,
+  because the first weeks of dismissals are exactly the signal that teaches
+  play where to stand.
+
 ## The SKILL.md contract shrinks with the machine
 
 Target ≤ 60 lines: how to enter (`run-until-yield`), the four boundary types,
