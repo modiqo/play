@@ -175,20 +175,32 @@ promise of the runtime, and it is what removes the read-before-act tax.
 
 ## Sequencing
 
-1. **Phase 0 (this commit)** — plan + target contract draft (`SKILL.next.md`).
-2. **Phase 1 — carve out onboarding.** Move the 19 onboarding/team states to
-   their own machine with a dispatch edge from `invoke`. No behavior change;
-   pure extraction. Aligns `actions.yaml`, `prompts.yaml`, `context.schema.json`,
-   tests.
-3. **Phase 2 — cut explore, arm the save hook.** Remove the explore lane and
-   its auth-repair duplicate; add `standby_exit`, `save_judge`, and post-task
-   re-entry. This is the behavior change and the heart of the sidekick model.
-4. **Phase 3 — collapse the save chain.** Delegate release/publish/birth/smoke
-   to specialists; keep one offer and one receipt presentation.
-5. **Phase 4 — shrink SKILL.md** to the ≤60-line contract once projections
-   carry state-local policy. Retire dead references, actions, prompts, and the
-   `play-*` bin scripts the cut states orphan.
-6. **Phase 5 (separate track) — runtime convergence.** Port surviving `play-*`
+1. **Phase 0 (done)** — plan + target contract draft.
+2. **Phase 2 (done, commit 1690fb0)** — cut explore orchestration and its
+   auth-repair duplicate (87 → 70 states), add `standby_exit`, `save_judge`,
+   settle re-entry, the preference ledger, and the 74-line SKILL.md.
+3. **Phase 3 — removal, not relocation.** The remaining lanes are play
+   re-implementing orchestration the rote skills already own; delete them and
+   defer:
+   - Onboarding + team (19 states) → one probe-and-present action; setup
+     stays with `rote-setup`, team spaces and invites go to `rote-org`.
+     Orientation survives as a presentation, not a trajectory.
+   - Publication chain (15 states) → `save_offer` → one `save_delegate`
+     specialist handoff (`rote-flow-crystallization` / `rote-flow-authoring` /
+     `rote-registry` run their own flow) → `saved_present` receipt
+     validation. Birth capture stays as a deterministic wrapper around the
+     handoff (capture before, verify canonical readback after); `birth_show`
+     stays as an explicit request. Play validates typed receipts instead of
+     supervising steps.
+   - Creator lane (4 states) → the no-match path with the hook pre-armed.
+   - Management (3 states) → `rote-registry`; play keeps only `play prefs`.
+   - Awareness 4 → 2 (genuinely play's: cards, digest cache, trending).
+   Target: ~30 states, each either on the interception path or a typed
+   receipt boundary. The trade, accepted deliberately: play trusts rote
+   specialists' internal quality and enforces only packet/receipt integrity.
+4. **Phase 4 — retire orphaned surfaces.** Dead `play-*` bin scripts,
+   references, prompts, and validator invariants the removals strand.
+5. **Phase 5 (separate track) — runtime convergence.** Port surviving `play-*`
    helpers into `rote play …` subcommands so one binary owns identity, search,
    inspection, and the registry. The skill layer does not block on this.
 
