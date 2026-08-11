@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from typing import Any, Sequence
+
+_OK_EMAIL = re.compile(r"(?im)^ok:\s*([^@\s]+@[^@\s]+\.[^@\s]+)$")
 
 
 SCHEMA = "play.preflight/v1"
@@ -68,7 +71,12 @@ def inspect(harness: str) -> dict[str, object]:
         try:
             identity = identity_future.result()
             identity_text = (identity.stdout or identity.stderr).strip()
-            authenticated = identity.returncode == 0 and bool(identity_text)
+            # rote whoami can exit 0 while reporting "error: Not logged in", so a
+            # clean exit is not proof of identity; demand the ok: email line.
+            authenticated = (
+                identity.returncode == 0
+                and bool(_OK_EMAIL.search(identity.stdout or ""))
+            )
         except (OSError, subprocess.TimeoutExpired) as error:
             authenticated = False
             identity_text = f"Identity check failed: {error}"

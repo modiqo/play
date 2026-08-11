@@ -78,16 +78,41 @@ class UniversalPlayRunTest(unittest.TestCase):
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")
-    def test_failure_returns_typed_drift_without_retry(self, run, _which) -> None:
+    def test_generic_failure_blocks_with_rotes_own_words_not_drift(self, run, _which) -> None:
         run.return_value = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="", stderr="one failure"
         )
 
         result = execute(payload())
 
-        self.assertEqual("play_drifted", result["event"])
+        self.assertEqual("action_blocked", result["event"])
         self.assertEqual("one failure", result["reason"])
+        self.assertTrue(result["recoverable"])
         run.assert_called_once()
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_drift_event_is_reserved_for_drift_evidence(self, run, _which) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="artifact hash mismatch after pull"
+        )
+
+        result = execute(payload())
+
+        self.assertEqual("play_drifted", result["event"])
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_registry_login_failure_names_its_remedy(self, run, _which) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="@@status\nerror: Not logged in\n@@next\n- rote login"
+        )
+
+        result = execute(payload())
+
+        self.assertEqual("action_blocked", result["event"])
+        self.assertIn("rote login", result["reason"])
+        self.assertIn("retry this exact Play", result["reason"])
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")

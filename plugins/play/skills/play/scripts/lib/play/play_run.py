@@ -115,14 +115,43 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+_DRIFT_MARKERS = ("drift", "hash mismatch", "fingerprint mismatch", "disclosure mismatch")
+_LOGIN_MARKERS = ("not logged in", "rote login", "requires login", "authentication required")
+
+
 def _failed(reason: str) -> dict[str, Any]:
+    """Classify a failed run honestly instead of calling every failure drift.
+
+    ``play_drifted`` is reserved for evidence that the artifact changed after
+    inspection. A registry sign-in failure names its remedy. Everything else is
+    ``action_blocked`` carrying rote's own words — the reason must never be
+    laundered into a narrative the evidence does not support.
+    """
+
     bounded = reason.strip()[:20_000] or "rote play run failed"
     digest = hashlib.sha256(bounded.encode()).hexdigest()
+    lowered = bounded.casefold()
+    if any(marker in lowered for marker in _DRIFT_MARKERS):
+        return {
+            "schema": "play.run-result/v1",
+            "ok": False,
+            "event": "play_drifted",
+            "reason": bounded,
+            "evidence_refs": [f"sha256:{digest}"],
+        }
+    if any(marker in lowered for marker in _LOGIN_MARKERS):
+        bounded = (
+            "rote registry login is required before this Play can be pulled and run. "
+            "Sign in with `rote login` (or the rote-setup skill), then retry this exact "
+            "Play. Original error: " + bounded
+        )[:20_000]
     return {
         "schema": "play.run-result/v1",
         "ok": False,
-        "event": "play_drifted",
+        "event": "action_blocked",
         "reason": bounded,
+        "recoverable": True,
+        "owner": "play",
         "evidence_refs": [f"sha256:{digest}"],
     }
 

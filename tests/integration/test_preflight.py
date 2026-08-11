@@ -30,6 +30,30 @@ class PreflightTest(unittest.TestCase):
         self.assertTrue(payload["ready"])
         self.assertEqual([], payload["setup_commands"])
 
+    @patch("scripts.lib.play.preflight.run")
+    @patch("scripts.lib.play.preflight.shutil.which", return_value="/bin/rote")
+    def test_clean_exit_without_ok_email_is_not_authenticated(
+        self, _which: MagicMock, run_command: MagicMock
+    ) -> None:
+        # rote whoami can exit 0 while reporting it is not logged in.
+        run_command.side_effect = [
+            MagicMock(
+                returncode=0,
+                stdout="@@status\nerror: Not logged in\n@@next\n- rote login\n",
+                stderr="",
+            ),
+            MagicMock(returncode=0, stdout="rote play\nUSAGE\n", stderr=""),
+        ]
+
+        payload = inspect("claude")
+
+        self.assertFalse(payload["ready"])
+        authenticated = next(
+            check for check in payload["checks"] if check["id"] == "authenticated"
+        )
+        self.assertFalse(authenticated["ok"])
+        self.assertIn("Not logged in", authenticated["detail"])
+
 
 if __name__ == "__main__":
     unittest.main()
