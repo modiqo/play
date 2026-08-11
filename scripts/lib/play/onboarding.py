@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 
 from .private_store import PrivateStoreError, atomic_write_json, load_json, locked_store
 from .render import json_text
+from .sidekick import latest_hook, load_ledger
 
 
 SCHEMA = "play.onboarding/v1"
@@ -32,6 +33,9 @@ DEFAULT_ONBOARDING_STATE_PATH = Path.home() / ".rote" / "play" / "onboarding-sta
 STARTER_PLAY_REFERENCE = "modiqo/hello@0.1.0"
 STARTER_PLAY_URI = "https://play.modiqo.ai/modiqo/hello@0.1.0"
 _PLAY_PREFIX = re.compile(r"^(?:\$play|/play)(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL)
+_SETTLE_REQUEST = re.compile(
+    r"^(?:\$play|/play)\s+settle\b(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL
+)
 _STARTER_RUN = re.compile(
     r"^(?:(?:please\s+)?run\s+(?:the\s+)?hello(?:\s+play)?|(?:\$play|/play)\s+run\s+hello)[.!]?$",
     re.IGNORECASE,
@@ -154,6 +158,11 @@ def classify_invocation(original: str) -> dict[str, Any]:
 
     started = time.perf_counter_ns()
     stripped = original.strip()
+    settle_match = _SETTLE_REQUEST.fullmatch(stripped)
+    if settle_match is not None:
+        return _classify_settled(
+            (settle_match.group(1) or "").strip(), started=started
+        )
     match = _PLAY_PREFIX.fullmatch(stripped)
     candidate = (match.group(1) or "").strip() if match is not None else stripped
     uri_request = _play_uri_request(candidate)
@@ -195,6 +204,31 @@ def classify_invocation(original: str) -> dict[str, Any]:
         "play_uri": play_uri,
         "parameters": parameters,
         "intent": candidate.rstrip(".!?"),
+        "preferences": {"policies": load_ledger()},
+        "classify_ns": time.perf_counter_ns() - started,
+    }
+
+
+def _classify_settled(summary: str, *, started: int) -> dict[str, Any]:
+    """Classify the post-task save-hook re-entry without qualification or search."""
+
+    hook = latest_hook()
+    intent = summary or (hook or {}).get("intent") or "settled task"
+    return {
+        "schema": SCHEMA,
+        "kind": "invocation",
+        "ok": True,
+        "invocation_kind": "settled",
+        "play_uri": None,
+        "parameters": {},
+        "intent": intent,
+        "standby": {
+            "armed": hook is not None,
+            "task_class": (hook or {}).get("task_class"),
+            "hook_ref": (hook or {}).get("hook_ref"),
+            "settle_summary": summary or None,
+        },
+        "preferences": {"policies": load_ledger()},
         "classify_ns": time.perf_counter_ns() - started,
     }
 

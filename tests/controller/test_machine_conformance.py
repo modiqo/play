@@ -423,7 +423,10 @@ class MachineConformanceTest(unittest.TestCase):
             ["unknown", "unpublished", "published"],
             candidate["properties"]["publication_status"]["enum"],
         )
-        self.assertIn("Publication is never a terminal milestone", SKILL_TEXT)
+        self.assertIn(
+            "a saved Play is complete only when its birth certificate has been presented",
+            SKILL_TEXT.replace("\n", " "),
+        )
 
     def test_public_namespace_is_resolved_before_save_and_release(self) -> None:
         self.assertEqual(
@@ -503,7 +506,11 @@ class MachineConformanceTest(unittest.TestCase):
             ACTIONS["run_registry_play"]["command"],
         )
         self.assertIn(
-            "A failed `rote play` command is not a capability gap",
+            "never treat its failure as authorization for a manual fallback",
+            SKILL_TEXT.replace("\n", " "),
+        )
+        self.assertIn(
+            "Never decompose `rote play run`",
             SKILL_TEXT.replace("\n", " "),
         )
 
@@ -533,7 +540,7 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["awareness_collect"]["on"]["awareness_unchanged"][0]["target"],
         )
 
-    def test_creator_intent_searches_before_explore_and_skips_generic_offer(self) -> None:
+    def test_creator_intent_searches_before_standby_and_skips_generic_offer(self) -> None:
         self.assertEqual(
             "creator_search",
             MACHINE["states"]["qualify"]["on"]["play_creation_request"][0]["target"],
@@ -543,35 +550,67 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["creator_search"]["on"]["creator_search_ready"][0]["target"],
         )
         self.assertEqual(
-            "explore_welcome",
+            "standby_exit",
             MACHINE["states"]["creator_classify"]["on"]["creator_no_match"][0]["target"],
         )
 
-    def test_every_new_exploration_welcomes_the_human_before_workspace_creation(self) -> None:
-        self.assertEqual(
-            "scripts/bin/play-onboarding explore-welcome --stdin --json",
-            ACTIONS["present_exploration_welcome"]["command"],
-        )
-        self.assertEqual(
-            "explore_prepare",
-            MACHINE["states"]["explore_welcome"]["on"][
-                "exploration_welcome_presented"
-            ][0]["target"],
-        )
-        for state, event in (
-            ("explore_offer", "explore_approved"),
-            ("repair_offer", "repair_approved"),
-            ("creator_classify", "creator_no_match"),
-            ("creator_offer", "creator_adapt_selected"),
-            ("creator_offer", "creator_create_selected"),
+    def test_every_unserved_outcome_arms_the_save_hook_and_steps_aside(self) -> None:
+        for state, event, branch in (
+            ("classify", "no_match", 0),
+            ("classify", "partial_match", 0),
+            ("classify", "uncertain_match", 0),
+            ("classify", "full_match", 1),
+            ("creator_classify", "creator_no_match", 0),
+            ("creator_offer", "creator_adapt_selected", 0),
+            ("creator_offer", "creator_create_selected", 0),
+            ("use_run", "play_drifted", 0),
+            ("use_verify", "outcome_not_verified", 0),
+            ("qualify", "play_excluded", 0),
         ):
             with self.subTest(state=state, event=event):
                 self.assertEqual(
-                    "explore_welcome", MACHINE["states"][state]["on"][event][0]["target"]
+                    "standby_exit",
+                    MACHINE["states"][state]["on"][event][branch]["target"],
                 )
-        exploration = CONTEXT["$defs"]["exploration"]
-        self.assertIn("human_name", exploration["required"])
-        self.assertIn("welcome_markdown", exploration["required"])
+        self.assertEqual(
+            "record_standby", MACHINE["states"]["standby_exit"]["entry"]["action"]
+        )
+        self.assertEqual(
+            "scripts/bin/play-standby record --stdin --json",
+            ACTIONS["record_standby"]["command"],
+        )
+        self.assertEqual(
+            "exited",
+            MACHINE["states"]["standby_exit"]["on"]["standby_recorded"][0]["target"],
+        )
+
+    def test_settled_reentry_judges_the_trace_before_any_save_offer(self) -> None:
+        self.assertEqual(
+            "save_judge",
+            MACHINE["states"]["invoke"]["on"]["settled_task_invocation"][0]["target"],
+        )
+        judge = ACTIONS["judge_save_worthiness"]
+        self.assertEqual("evaluator", judge["kind"])
+        policy = " ".join(judge["command_policy"])
+        self.assertIn("trace evidence, not conversation prose", policy)
+        self.assertIn("recurrence prior", policy)
+        self.assertIn("failed or abandoned task", policy)
+        self.assertEqual(
+            "crystallize",
+            MACHINE["states"]["save_judge"]["on"]["worth_saving"][0]["target"],
+        )
+        self.assertEqual(
+            "exited",
+            MACHINE["states"]["save_judge"]["on"]["not_worth_saving"][0]["target"],
+        )
+        incoming = {
+            state_name
+            for state_name, state in MACHINE["states"].items()
+            for branches in state.get("on", {}).values()
+            for branch in branches
+            if branch["target"] == "crystallize"
+        }
+        self.assertEqual({"save_judge"}, incoming)
 
     def test_open_text_prompts_have_stable_input_events(self) -> None:
         for name in ("describe_awareness_need", "describe_creator_need"):
@@ -635,7 +674,7 @@ class MachineConformanceTest(unittest.TestCase):
         )
         self.assertEqual("detailed", CONTEXT["$defs"]["outputPolicy"]["properties"]["mode"]["const"])
 
-    def test_explore_requires_a_callable_rote_specialist_and_typed_receipt(self) -> None:
+    def test_specialist_registries_stay_closed(self) -> None:
         specialists = [
             "rote-using-adapters",
             "rote-shell",
@@ -652,65 +691,6 @@ class MachineConformanceTest(unittest.TestCase):
             CONTEXT["$defs"]["execution"]["properties"]["owner"]["enum"],
         )
         self.assertEqual(
-            "explore_dispatch",
-            MACHINE["states"]["explore_route"]["on"]["route_selected"][0]["target"],
-        )
-        self.assertEqual(
-            "adapter_discover",
-            MACHINE["states"]["explore_dispatch"]["on"]["adapter_discovery_required"][0]["target"],
-        )
-        self.assertEqual(
-            "explore_handoff",
-            MACHINE["states"]["explore_dispatch"]["on"]["direct_handoff_ready"][0]["target"],
-        )
-        self.assertEqual(
-            "blocked",
-            MACHINE["states"]["explore_handoff"]["on"]["specialist_unavailable"][0]["target"],
-        )
-        self.assertEqual(
-            "explore_receipt",
-            MACHINE["states"]["explore_execute"]["on"]["outcome_ready"][0]["target"],
-        )
-        self.assertEqual(
-            "explore_verify",
-            MACHINE["states"]["explore_receipt"]["on"]["specialist_outcome_ready"][0]["target"],
-        )
-        self.assertEqual(
-            "blocked",
-            MACHINE["states"]["explore_receipt"]["on"]["specialist_receipt_invalid"][0]["target"],
-        )
-        execute_policy = " ".join(ACTIONS["execute_route"]["command_policy"])
-        convergence_policy = " ".join(ACTIONS["converge_call_adapter"]["command_policy"])
-        self.assertIn("must not call MCP, app, shell, or browser tools directly", execute_policy)
-        self.assertIn("substrate detection", convergence_policy)
-        self.assertIn("initial authentication", convergence_policy)
-        self.assertIn("Play must not reproduce those stages", convergence_policy)
-        self.assertIn("recoverable auth failure", execute_policy)
-        self.assertIn("handoff.receipt", ACTIONS["execute_route"]["events"]["outcome_ready"])
-        self.assertIn("route_provenance", ACTIONS["execute_route"]["events"]["outcome_ready"])
-
-    def test_call_searches_adapter_catalog_before_spec_discovery(self) -> None:
-        discovery = ACTIONS["discover_call_adapter"]
-        policy = " ".join(discovery["command_policy"])
-        self.assertEqual("rote-specialist", discovery["owner"])
-        self.assertEqual("read", discovery["effect"])
-        self.assertIn("rote adapter list --json", policy)
-        self.assertIn("always run rote adapter catalog search", policy)
-        self.assertIn("return every match", policy)
-        self.assertIn("successful zero-result catalog search", policy)
-        self.assertEqual(
-            "adapter_offer",
-            MACHINE["states"]["adapter_discover"]["on"]["adapter_choices_ready"][0]["target"],
-        )
-        self.assertEqual(
-            "adapter_converge",
-            MACHINE["states"]["adapter_offer"]["on"]["adapter_source_selected"][0]["target"],
-        )
-        self.assertEqual(
-            "explore_handoff",
-            MACHINE["states"]["adapter_converge"]["on"]["adapter_converged"][0]["target"],
-        )
-        self.assertEqual(
             ["installed", "catalog", "provided_spec", "provider_docs"],
             capability_policy("rote-using-adapters", ["call"])["discovery_order"],
         )
@@ -720,61 +700,25 @@ class MachineConformanceTest(unittest.TestCase):
             handoff["$defs"]["adapterChoice"]["required"],
         )
 
-    def test_probe_hints_cannot_replace_the_rote_write_guard(self) -> None:
-        execute_policy = " ".join(ACTIONS["execute_route"]["command_policy"])
-        self.assertIn("discovery metadata only", execute_policy)
-        self.assertIn("Rote call itself returns confirmation_required", execute_policy)
-        self.assertEqual(
-            "explore_receipt",
-            MACHINE["states"]["explore_execute"]["on"]["confirmation_required"][0]["target"],
-        )
-        self.assertEqual(
-            "effect_offer",
-            MACHINE["states"]["explore_receipt"]["on"][
-                "specialist_confirmation_required"
-            ][0]["target"],
-        )
-        self.assertEqual(
-            "explore_handoff",
-            MACHINE["states"]["effect_offer"]["on"]["effect_confirmation_approved"][0][
-                "target"
-            ],
-        )
-        self.assertEqual(
-            "blocked",
-            MACHINE["states"]["effect_offer"]["on"]["effect_confirmation_declined"][0][
-                "target"
-            ],
-        )
-        self.assertEqual(
-            "approve_effect_confirmation", MACHINE["states"]["effect_offer"]["prompt"]
-        )
-
     def test_recoverable_auth_uses_separate_approved_repair_loop(self) -> None:
         self.assertEqual(
-            "explore_receipt",
-            MACHINE["states"]["explore_execute"]["on"]["auth_repair_required"][0][
+            "use_auth_repair_offer",
+            MACHINE["states"]["use_run"]["on"]["play_auth_repair_required"][0][
                 "target"
             ],
         )
         self.assertEqual(
-            "auth_repair_offer",
-            MACHINE["states"]["explore_receipt"]["on"][
-                "specialist_auth_repair_required"
-            ][0]["target"],
+            "approve_auth_repair", MACHINE["states"]["use_auth_repair_offer"]["prompt"]
         )
         self.assertEqual(
-            "approve_auth_repair", MACHINE["states"]["auth_repair_offer"]["prompt"]
-        )
-        self.assertEqual(
-            "auth_repair_handoff",
-            MACHINE["states"]["auth_repair_offer"]["on"]["auth_repair_approved"][0][
+            "use_auth_repair_handoff",
+            MACHINE["states"]["use_auth_repair_offer"]["on"]["auth_repair_approved"][0][
                 "target"
             ],
         )
         self.assertEqual(
             "blocked",
-            MACHINE["states"]["auth_repair_offer"]["on"]["auth_repair_declined"][0][
+            MACHINE["states"]["use_auth_repair_offer"]["on"]["auth_repair_declined"][0][
                 "target"
             ],
         )
@@ -792,18 +736,18 @@ class MachineConformanceTest(unittest.TestCase):
             ACTIONS["validate_auth_repair_receipt"]["command"],
         )
         self.assertEqual(
-            "explore_handoff",
-            MACHINE["states"]["auth_repair_receipt"]["on"][
+            "use_inspect",
+            MACHINE["states"]["use_auth_repair_receipt"]["on"][
                 "specialist_auth_repair_ready"
             ][0]["target"],
         )
         self.assertEqual(
             "blocked",
-            MACHINE["states"]["auth_repair_receipt"]["on"][
+            MACHINE["states"]["use_auth_repair_receipt"]["on"][
                 "auth_repair_receipt_invalid"
             ][0]["target"],
         )
-        self.assertIn("Never place raw\ncredentials", SKILL_TEXT)
+        self.assertIn("Never place raw credentials", SKILL_TEXT)
 
     def test_search_selection_is_inspection_only(self) -> None:
         self.assertEqual(

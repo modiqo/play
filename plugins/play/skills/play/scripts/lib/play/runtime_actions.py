@@ -35,13 +35,10 @@ _SELECTOR_ACTIONS = {
     "inspect_onboarding_experience",
     "inspect_registry_play",
     "collect_awareness_digest",
-    "prepare_specialist_handoff",
-    "validate_specialist_receipt",
     "prepare_auth_repair_handoff",
     "validate_auth_repair_receipt",
     "resolve_public_owner",
     "inspect_publication_credentials",
-    "dispatch_route",
     "classify_adequacy",
     "route_inspected_play",
     "run_registry_play",
@@ -285,14 +282,6 @@ def _commandless_result(
             },
             "presentation": primary,
         }
-    if action_id == "dispatch_route":
-        modalities = _path_value(context, "route.modalities")
-        event = (
-            "adapter_discovery_required"
-            if isinstance(modalities, list) and "call" in modalities
-            else "direct_handoff_ready"
-        )
-        return {"event": event}
     if action_id == "classify_adequacy":
         search = context.get("search")
         request = context.get("request")
@@ -457,6 +446,10 @@ def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, An
         }
     elif event_id == "ordinary_play_invocation":
         derived["onboarding"] = {"classify_ns": raw.get("classify_ns")}
+    elif event_id == "settled_task_invocation":
+        intent = raw.get("intent")
+        derived["onboarding"] = {"classify_ns": raw.get("classify_ns")}
+        derived["request"] = {"intent": intent, "requested_outcome": intent}
     elif event_id == "play_reference_unresolved":
         error = raw.get("error")
         if isinstance(error, Mapping):
@@ -559,6 +552,7 @@ def _select_event(
             "greeting": "empty_play_invocation",
             "play_uri": "play_uri_invocation",
             "outcome": "outcome_play_invocation",
+            "settled": "settled_task_invocation",
             "ordinary": "ordinary_play_invocation",
         }.get(str(raw.get("invocation_kind")), "action_blocked")
     if action_id == "probe_rote_for_onboarding":
