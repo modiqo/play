@@ -45,7 +45,9 @@ Present returned `presentations` in order, then act on `projection.state.boundar
 - `human`: present the exact projected prompt through structured elicitation; resume with the
   selected declared event.
 - `specialist`: invoke only `instruction.specialist` with `instruction.input` through the
-  harness's skill mechanism; resume with the one accepted typed receipt event.
+  harness's skill mechanism; resume with the one accepted typed receipt event. Interactive
+  specialists own their own user questions — ask those directly and continue inside the
+  specialist flow; return to the runtime only with a declared receipt event.
 - `terminal`: present the terminal outcome and stop.
 
 If `instruction.preflight_required_for_events` names your selected event, run

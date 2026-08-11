@@ -297,6 +297,8 @@ actions:
     input_required: [onboarding.intent, onboarding.rote_status, onboarding.setup_status]
     command_policy:
       - Invoke the rote-setup skill through the harness skill mechanism; rote-setup owns all live probes, install choices, remote-code approval, login, and optional onboarding.
+      - rote-setup is interactive and owns its own human gates (orphaned-state backup, remote-code approval, sign-in). Ask those questions directly to the user inside the specialist flow and continue setup with their answer; never convert a specialist question into rote_setup_paused.
+      - Emit rote_setup_paused only when the user explicitly declines to continue setup or the specialist reports it cannot proceed after its own gates were answered.
       - When onboarding.intent is play_uri, setup does double duty; anchor every step to the pasted Play by name, explain in plain language what Rote is and how Plays work (local engine, credentials stay local, inspect then approve then run), and say that after sign-in this exact Play will be inspected and approved before anything executes.
       - Do not run an installer, login command, or credential flow directly from Play.
       - Require live setup results and re-enter onboarding_probe after completion so Play verifies the binary and identity itself.
