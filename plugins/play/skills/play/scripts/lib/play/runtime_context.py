@@ -15,7 +15,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "687992b4e9b1afafe30feb5c97df7aa6586c95df45cc9fcc1fe81ff026b67c05"
+SUPPORTED_MUTATION_SET_SHA256 = "14f57b895c6e0addf925df6e238b617bc250869b8d11e20ba2bd20325db8aa46"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -361,6 +361,7 @@ def apply_event(
 _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "start_greeting_onboarding": {"onboarding.intent": "greeting"},
     "start_uri_onboarding": {"onboarding.intent": "play_uri"},
+    "enter_uri_setup": {"onboarding.setup_status": "required"},
     "enter_onboarding_uri_use": {"mode": "use"},
     "enter_onboarding_starter_use": {
         "mode": "use",

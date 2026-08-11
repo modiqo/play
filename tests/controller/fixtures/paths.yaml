@@ -88,9 +88,31 @@ cases:
         guards: {onboarding_is_greeting: false, onboarding_is_play_uri: true}
         target: onboarding_card_fetch
       - {state: onboarding_card_fetch, event: onboarding_play_card_ready, target: onboarding_card_present}
-      - {state: onboarding_card_present, event: onboarding_play_card_presented, target: completed}
+      - {state: onboarding_card_present, event: onboarding_play_card_presented, target: onboarding_card_offer}
+      - {state: onboarding_card_offer, event: onboarding_card_dismissed, target: completed}
     terminal: completed
     excludes: [onboarding_identity, onboarding_setup, use_inspect, use_run]
+
+  - name: pasted Play URI without Rote can begin guided setup and reach the exact Play
+    steps:
+      - {state: invoke, event: play_uri_invocation, target: onboarding_probe}
+      - state: onboarding_probe
+        event: rote_missing
+        guards: {onboarding_is_greeting: false, onboarding_is_play_uri: true}
+        target: onboarding_card_fetch
+      - {state: onboarding_card_fetch, event: onboarding_play_card_ready, target: onboarding_card_present}
+      - {state: onboarding_card_present, event: onboarding_play_card_presented, target: onboarding_card_offer}
+      - {state: onboarding_card_offer, event: onboarding_uri_setup_selected, target: onboarding_setup}
+      - {state: onboarding_setup, event: rote_setup_completed, target: onboarding_probe}
+      - state: onboarding_probe
+        event: rote_available
+        guards: {onboarding_is_greeting: false, onboarding_is_play_uri: true}
+        target: use_inspect
+      - {state: use_inspect, event: play_inspected, target: use_decide}
+      - {state: use_decide, event: remote_pull_required, target: use_offer}
+    terminal: use_offer
+    includes_once: [onboarding_card_offer, onboarding_setup]
+    excludes: [qualify, search]
 
   - name: missing setup specialist blocks without installing directly
     steps:

@@ -194,6 +194,16 @@ prompts:
       public_owner_selected: [prompt_version, selected_at, publication.owner]
       public_owner_declined: [prompt_version, selected_at]
 
+  choose_uri_setup:
+    question: Set up Rote now and run this Play?
+    selection: single
+    choices:
+      - {id: setup, label: Set up and run, description: "Install Rote with the guided rote-setup skill, sign in, then inspect and approve this exact Play before anything runs.", event: onboarding_uri_setup_selected, recommended: true}
+      - {id: done, label: Not now, description: Keep the Play card without installing or running anything., event: onboarding_card_dismissed}
+    events:
+      onboarding_uri_setup_selected: [prompt_version, selected_at]
+      onboarding_card_dismissed: [prompt_version, selected_at]
+
   select_management_views:
     question: Which Play inventory views would you like to see?
     selection: multiple

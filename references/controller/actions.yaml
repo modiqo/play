@@ -64,6 +64,8 @@ mutations:
   - record_setup_specialist_unavailable
   - record_onboarding_card
   - record_onboarding_card_presentation
+  - enter_uri_setup
+  - record_onboarding_card_dismissal
   - set_request_contract
   - set_search_request
   - set_awareness_request
@@ -294,6 +296,7 @@ actions:
     input_required: [onboarding.intent, onboarding.rote_status, onboarding.setup_status]
     command_policy:
       - Invoke the rote-setup skill through the harness skill mechanism; rote-setup owns all live probes, install choices, remote-code approval, login, and optional onboarding.
+      - When onboarding.intent is play_uri, setup does double duty; anchor every step to the pasted Play by name, explain in plain language what Rote is and how Plays work (local engine, credentials stay local, inspect then approve then run), and say that after sign-in this exact Play will be inspected and approved before anything executes.
       - Do not run an installer, login command, or credential flow directly from Play.
       - Require live setup results and re-enter onboarding_probe after completion so Play verifies the binary and identity itself.
       - Treat a missing callable rote-setup skill as setup_specialist_unavailable; never replace it with an improvised curl installer.
@@ -324,6 +327,7 @@ actions:
     command: scripts/bin/play-onboarding present-card --stdin --json
     command_policy:
       - Present the complete normalized card with its read-only inspect command and consent-gated install/bootstrap links.
+      - Lead with the plain-language orientation; what a Play URI is, what Rote is, that credentials stay local, that this card was fetched read-only, and that nothing installs or runs without explicit approval.
       - Do not describe a fetched card as locally inspected and do not ask for run approval while Rote is absent.
     events:
       onboarding_play_card_presented: [onboarding.card_presented, onboarding.card_presentation_ref, presentation.markdown]

@@ -332,6 +332,10 @@
     "save_judge": {
       "orb": "weaving",
       "label": "Weighing whether this is worth saving…"
+    },
+    "onboarding_card_offer": {
+      "orb": "listening",
+      "label": "Waiting for the setup-and-run choice…"
     }
   }
 }

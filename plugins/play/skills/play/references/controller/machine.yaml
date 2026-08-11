@@ -177,8 +177,17 @@ states:
     requires: [onboarding.card]
     entry: {action: present_onboarding_play_card}
     "on":
-      onboarding_play_card_presented: [{target: completed, mutate: record_onboarding_card_presentation}]
+      onboarding_play_card_presented: [{target: onboarding_card_offer, mutate: record_onboarding_card_presentation}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_card_offer:
+    owner: play
+    checkpoint: after
+    requires: [onboarding.play_uri, onboarding.card_presented]
+    prompt: choose_uri_setup
+    "on":
+      onboarding_uri_setup_selected: [{target: onboarding_setup, mutate: enter_uri_setup}]
+      onboarding_card_dismissed: [{target: completed, mutate: record_onboarding_card_dismissal}]
 
   qualify:
     owner: play
