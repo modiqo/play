@@ -1,8 +1,46 @@
 # Play
 
-Play is the implicit pre-harness controller for reusable outcomes. It searches authorized Play
-indexes first, runs an adequate Play in Use mode, or asks before entering Explore mode. The
-existing `rote` and `rote-*` skills remain callable specialists that can hand off through Play.
+> Think in terms of Plays before thinking in terms of tools.
+
+Play is the sidekick that makes reusable procedures — **Plays** — the center of gravity of agent
+work. It intervenes at exactly two moments and is invisible everywhere else:
+
+1. **Before work** — when you ask for an outcome, Play checks whether a saved Play already does it
+   and offers to run it.
+2. **After work** — when repeatable work settles, Play judges whether it is worth saving and offers
+   to preserve it as a Play.
+
+Everything else — one-off tasks, conversation, creative work — proceeds without Play saying a
+word. Stepping aside is a feature: when no adequate Play exists, Play exits silently, arms a save
+hook, and lets the agent work normally through the rote skills. A scoped preference ledger learns
+where you want Play active ("no Plays while I'm prototyping; always offer them for deploy chores")
+from your decisions, without a settings screen.
+
+## The handoff chain: simple skill → state machine → rote skills
+
+Play stays simple by making each layer own exactly one thing and hand the rest down:
+
+| Layer | Owns | Size |
+|---|---|---|
+| **`SKILL.md`** (the harness contract) | How the agent enters the runtime and handles four yield boundaries: model, human, specialist, terminal. Nothing else. | ~74 lines |
+| **`play-machine`** (the typed state machine) | All control flow: classification, search, adequacy, inspection, approval, execution, verification, the save hook, and fail-closed blocking. Policy arrives just-in-time inside each state's projection — the agent never reads the machine. | 70 states, warm transitions <1 ms |
+| **rote specialist skills** | All execution with machinery: adapters (`rote-using-adapters`), shell (`rote-shell`), browser (`rote-browse`), workspaces (`rote-workspace`), adapter creation/repair (`rote-adapter-create`/`-config`), orgs (`rote-org`), crystallization (`rote-flow-crystallization`), release (`rote-flow-authoring`), registry (`rote-registry`), setup (`rote-setup`). Play invokes them through typed handoff packets and accepts only validated typed receipts — never prose. | |
+| **rote CLI + registry** | The universal Play runner (`rote play run` owns pull, convergence, credentials, execution) and the hub where Plays are shared. | |
+
+The agent's job at any moment is small and local: read one projection, do one bounded thing,
+return one declared event. The reasoning-and-reading tax lives in none of the layers.
+
+Two intervention moments also get **structural triggers** — hooks, not prose — because field
+testing showed skill descriptions lose to a capable model's directness bias:
+
+- `play-intercept prompt` (UserPromptSubmit): a local-only, ~60 ms match of your prompt against the
+  saved-Play index and the cached hub catalog. A hit injects one context line naming the Play; an
+  outcome-shaped prompt with no hit injects, at most hourly, one line advising a Play search;
+  everything else is silence.
+- `play-intercept settle-nudge` (Stop): when a save hook is still armed at turn end, one reminder —
+  once per hook per session — to `$play settle <summary>`.
+- `play-inbox line` (SessionStart): the zero-token "what's new" inbox line from a
+  stale-while-revalidate cache, refreshed in the background.
 
 ## Start here
 
@@ -15,23 +53,23 @@ $play
 $play https://play.modiqo.ai/chetan/list-my-github-repos@0.0.2
 $play find a Play that retrieves recent emails
 $play run the PostHog daily active users report
-$play create a reusable weekly customer report
+$play settle deployed staging and posted the summary
 $play whats new
 $play birth weekly customer report
 $play list my organizations and shared Plays
 Handle this normally without Play
 ```
 
-Play keeps four decisions separate so each prompt is small and honest:
+Play keeps each decision separate so every prompt is small and honest:
 
 | You intend to… | Play does… | You choose… |
 |---|---|---|
-| Find something reusable | Search local and authorized organization indexes | Inspect one result or stop |
-| Run a known or vaguely named Play | Resolve the name, inspect it read-only, and show setup/effects | Pull and run, or not now |
-| Solve a one-off task | Search first; if no adequate Play exists, offer Explore | Explore with rote, or continue normally |
-| Preserve successful exploration | Verify it before preparing a candidate | Team, Community, or Skip |
-| See what’s new | Pull an inbox grouped by organization and compare it with the remembered SHA | Run, search, create, or finish |
-| Revisit how a Play was born | Open the owner-private, redacted birth certificate | Choose an unambiguous name, reference, or birth SHA |
+| Ask for an outcome | Search local and authorized indexes; run an adequate Play through inspection and approval | Pull and run, or not now |
+| Ask for something with no adequate Play | Step aside silently and arm the save hook | Nothing — the agent works normally |
+| Settle finished repeatable work (`$play settle …`) | Judge the trace: parameterizable inputs, repeatable steps, stable output, recurrence | Team, Community, or Skip |
+| State a scope preference ("no Plays during prototyping") | Record it in the scoped preference ledger and honor it from the next request | Inspect or revise it any time |
+| See what's new | Pull the inbox grouped by organization; compare with the remembered SHA | Run, search, or finish |
+| Revisit how a Play was born | Open the owner-private, redacted birth certificate | A name, reference, or birth SHA |
 
 Search selection is never execution approval. Before every run, Play shows what the exact version
 does, its parameters, adapters and credentials, what this machine must install or repair, declared
@@ -39,206 +77,97 @@ operations and writes, and any unknown effect semantics. Only the next structure
 authorize the exact inspected version and displayed parameters.
 
 An empty `$play` or `/play` is a complete warm typed onboarding request, not an empty task. Play
-live-probes for Rote and reads the
-signed-in email with `rote whoami`. A returning user gets the short personal greeting. A first-time
-user sees “Start small. See what happens. Stay in control,” then gets a recommended **Run Hello**
-choice: public data, no account, no credentials, and no declared writes. They may instead describe
-a goal, create a team space, browse useful Plays, or stop. Team setup claims an explicit handle
-through the `rote-org` specialist and offers colleague invites for reviewing and using Plays.
-Missing or
-unauthenticated Rote is handed to the guided `rote-setup` skill. A public Play URI uses first-class
-Rote inspection when available; without Rote, Play reads the URI's bounded public JSON card and
-shows its own inspect and consent-gated install/bootstrap paths without executing them.
-
-First-use memory is owner-private and deliberately small. `~/.rote/play/onboarding-state.json`
-stores only a hash of the authenticated email, the orientation version, and the time it was shown.
-It stores no email, prompt, result, credential, raw identity output, or controller context.
-
-When Explore begins, Play resolves the signed-in human's email handle without retaining raw identity
-output and welcomes them as the domain expert, with the agent as their apprentice. The welcome
-invites the human to watch, question, and steer the work. A verified repeatable method can become a
-personal, Team, or Community Play only when the human chooses. The same invite loop is reused after
-a newly created Team Play is verified. Community publication completes the learn → teach → learn
-loop and returns paste-ready X and LinkedIn explanations; Play never posts them automatically. The
-expert welcome appears once after Explore consent
-and before any workspace is created; if
-personalization is unavailable, Play uses the neutral `friend` fallback instead of inventing a name.
+live-probes for Rote and reads the signed-in email with `rote whoami`. A returning user gets the
+short personal greeting. A first-time user gets a recommended **Run Hello** choice: public data, no
+account, no credentials, no declared writes. Missing or unauthenticated Rote is handed to the
+guided `rote-setup` skill. First-use memory is owner-private and deliberately small
+(`~/.rote/play/onboarding-state.json`: a hash of the email, orientation version, timestamp —
+nothing else).
 
 ## The Play state machine
 
-Play is driven by one declarative machine, [`references/controller/machine.yaml`](references/controller/machine.yaml)
-(`play.machine/v1`). The typed runtime loads and validates the bundle once per invocation, returns
-only the compact current-state projection, executes eligible deterministic actions until a model,
-user, effect, or specialist boundary, and accepts only events declared by
-[`actions.yaml`](references/controller/actions.yaml) and [`prompts.yaml`](references/controller/prompts.yaml).
-It never jumps states from conversational intuition. Initial state: `invoke`. Terminals:
-`receipt`, `completed`, `exited`, `blocked`. Any action failure emits `action_blocked` and lands in
-`blocked` (or, for a failed run, the `repair_offer` gate).
+Play is driven by one declarative machine,
+[`references/controller/machine.yaml`](references/controller/machine.yaml) (`play.machine/v1`).
+The typed runtime loads and validates the bundle once per invocation, executes eligible
+deterministic actions until a model, human, specialist, or terminal boundary, and accepts only
+events declared by [`actions.yaml`](references/controller/actions.yaml) and
+[`prompts.yaml`](references/controller/prompts.yaml). It never jumps states from conversational
+intuition. Initial state: `invoke`. Terminals: `receipt`, `completed`, `exited`, `blocked`.
 
 ```mermaid
 stateDiagram-v2
     direction TB
     [*] --> invoke
 
-    %% ── Typed invocation and warm onboarding ──
-    invoke --> onboarding_probe : empty $play or /play
-    invoke --> onboarding_probe : canonical Play URI
+    %% ── Typed invocation ──
+    invoke --> onboarding : empty $play, /play, or canonical URI
+    invoke --> search : unambiguous outcome (fast lane)
+    invoke --> save_judge : $play settle (post-task re-entry)
     invoke --> qualify : ordinary request
-    onboarding_probe --> onboarding_identity : greeting + Rote installed
-    onboarding_probe --> onboarding_setup : greeting + Rote missing
-    onboarding_probe --> use_inspect : URI + Rote installed
-    onboarding_probe --> onboarding_card_fetch : URI + Rote missing
-    onboarding_identity --> onboarding_experience : authenticated email
-    onboarding_identity --> onboarding_setup : login/setup required
-    onboarding_experience --> onboarding_welcome : returning user
-    onboarding_experience --> onboarding_first_present : first use
-    onboarding_first_present --> onboarding_first_record : orientation shown
-    onboarding_first_record --> onboarding_first_offer : private marker stored
-    onboarding_first_offer --> use_inspect : Run Hello
-    onboarding_first_offer --> onboarding_team_handle : create team space
-    onboarding_first_offer --> onboarding_need : describe a goal
-    onboarding_first_offer --> awareness_collect : see useful Plays
-    onboarding_first_offer --> completed : not now
-    onboarding_team_handle --> onboarding_team_create : handle supplied
-    onboarding_team_create --> onboarding_team_present : rote-org confirms team
-    onboarding_team_present --> team_invite_offer : sharing loop explained
-    team_invite_offer --> team_invite_email : invite colleague
-    team_invite_email --> team_invite_execute : email supplied
-    team_invite_execute --> team_invite_offer : rote-org confirms invite
-    team_invite_offer --> completed : finish
-    onboarding_need --> invoke : goal described
-    onboarding_setup --> onboarding_probe : setup completed; reprobe
-    onboarding_setup --> blocked : paused / unavailable
-    onboarding_welcome --> invoke : user describes need
-    onboarding_card_fetch --> onboarding_card_present : card ready
-    onboarding_card_present --> completed
 
     %% ── Qualify routes each request to one trajectory ──
     qualify --> search : outcome / search request
     qualify --> use_inspect : exact play request
     qualify --> awareness_collect : whats new
     qualify --> creator_search : create a Play
-    qualify --> management_list : list orgs / plays
-    qualify --> management_offer : ambiguous list request
+    qualify --> management : list orgs / plays
     qualify --> birth_show : birth lookup
-    qualify --> exited : conversation / excluded
+    qualify --> standby_exit : explicitly excluded (ledger writes)
+    qualify --> exited : conversation
 
     %% ── Search and adequacy ──
-    search --> search_present : search-only request
-    search --> classify : outcome request
-    search_present --> search_offer
+    search --> classify : results complete
+    search --> search_offer : search-only request
     search_offer --> use_inspect : result selected
-    search_offer --> completed : dismissed
-    classify --> use_inspect : full match
-    classify --> explore_offer : partial / uncertain / no match
+    classify --> use_inspect : full match (arguments do not dilute)
+    classify --> standby_exit : partial / uncertain / no match
 
-    %% ── Use (existing Play) ──
-    use_inspect --> use_decide : inspected
-    use_inspect --> search_present : not runnable, another result remains
-    use_inspect --> explore_offer : not runnable, no result remains
-    use_inspect --> search : reference unresolved
+    %% ── Use (run a saved Play) ──
+    use_inspect --> use_decide : read-only inspection
+    use_decide --> use_parameter_offer : required parameter missing
+    use_parameter_offer --> use_decide : typed value supplied
     use_decide --> use_prepare : exact local Play
-    use_decide --> use_offer : remote pull required
-    use_offer --> use_prepare : pull approved
-    use_offer --> completed : declined
-    use_prepare --> use_run : exact run handoff bound
-    use_run --> use_verify : unchanged run output ready
-    use_run --> use_auth_repair_offer : recoverable adapter auth
-    use_auth_repair_offer --> use_auth_repair_handoff : approved
-    use_auth_repair_handoff --> use_auth_repair_execute
-    use_auth_repair_execute --> use_auth_repair_receipt
-    use_auth_repair_receipt --> use_inspect : validated repair
-    use_run --> repair_offer : drifted / failed
+    use_decide --> use_offer : remote pull consent
+    use_offer --> use_prepare : approved
+    use_prepare --> use_run : run handoff bound
+    use_run --> use_verify : unchanged output
+    use_run --> use_auth_repair : recoverable adapter auth
+    use_auth_repair --> use_inspect : validated rote-adapter-config repair
+    use_run --> standby_exit : drifted / failed
     use_verify --> use_receipt : outcome verified
-    use_verify --> repair_offer : not verified
-    use_receipt --> receipt : normal Play
-    use_receipt --> onboarding_activation_present : verified first Hello
-    onboarding_activation_present --> onboarding_activation_offer
-    onboarding_activation_offer --> onboarding_need : use Play for my task
-    onboarding_activation_offer --> awareness_collect : see useful Plays
-    onboarding_activation_offer --> receipt : finish
-    repair_offer --> explore_welcome : repair approved
-    repair_offer --> exited : continue normally
+    use_verify --> standby_exit : not verified
+    use_receipt --> receipt
 
-    %% ── Explore (consent, route, delegated execution) ──
-    explore_offer --> explore_welcome : explore approved
-    explore_offer --> exited : continue normally
-    creator_classify --> explore_welcome : create intent + no match
-    creator_offer --> explore_welcome : adapt / create selected
-    explore_welcome --> explore_prepare : human welcomed
-    explore_prepare --> explore_route
-    explore_route --> explore_dispatch : route within policy
-    explore_route --> modality_offer : widening required
-    modality_offer --> explore_route : widening approved
-    modality_offer --> blocked : declined
-    explore_dispatch --> adapter_discover : CALL route
-    explore_dispatch --> explore_handoff : SHELL / DRIVE route
-    adapter_discover --> explore_handoff : installed ready
-    adapter_discover --> adapter_converge : catalog empty
-    adapter_discover --> adapter_offer : installed or catalog choices
-    adapter_offer --> adapter_converge : selected / catalog rejected
-    adapter_converge --> explore_handoff : installed-ready receipt
-    explore_handoff --> explore_execute : typed packet ready
-    explore_execute --> explore_receipt : typed specialist receipt
-    explore_receipt --> explore_verify : outcome ready
-    explore_receipt --> explore_route : route exhausted, budget left
-    explore_receipt --> effect_offer : rote confirmation required
-    explore_receipt --> auth_repair_offer : auth repair required
-    effect_offer --> explore_handoff : guarded call approved
-    effect_offer --> blocked : declined
-    auth_repair_offer --> auth_repair_handoff : approved
-    auth_repair_offer --> blocked : declined
-    auth_repair_handoff --> auth_repair_execute
-    auth_repair_execute --> auth_repair_receipt
-    auth_repair_receipt --> explore_handoff : validated repair
-    auth_repair_receipt --> blocked : failed / invalid
-    explore_verify --> crystallize : outcome verified
-    explore_verify --> explore_route : not verified, budget left
+    %% ── Stay out of the way + the save hook ──
+    standby_exit --> exited : hook armed, ledger updated, silence
+    save_judge --> crystallize : worth saving (trace evidence)
+    save_judge --> exited : one-off
 
-    %% ── Save lifecycle (crystallize → publish → birth → index) ──
-    crystallize --> save_prepare : candidate ready
-    save_prepare --> save_offer : profile + authorized namespaces resolved
+    %% ── Save lifecycle (delegated to rote specialists) ──
+    crystallize --> save_prepare : rote-flow-crystallization candidate
     crystallize --> completed : not reusable
-    save_offer --> author_release : Private / Public owner resolved
-    save_offer --> public_owner_offer : Public owner choice required
+    save_prepare --> save_offer : namespaces resolved
+    save_offer --> author_release : Team / Community
     save_offer --> completed : Skip
-    public_owner_offer --> author_release : owner selected
-    public_owner_offer --> blocked : declined
-    author_release --> birth_capture : unpublished flow released
-    author_release --> blocked : specialist published early
-    birth_capture --> private_org : private
-    birth_capture --> public_publish : public
-    private_org --> private_publish
-    private_publish --> birth_bind : published private + birth SHA matches
-    public_publish --> birth_bind : published public + birth SHA matches
+    author_release --> birth_capture : unpublished release
+    birth_capture --> publish : private org / public owner
+    publish --> birth_bind : publication matches captured birth
     birth_bind --> index
-    index --> saved_inspect
-    saved_inspect --> birth_present : private readback matches
-    saved_inspect --> publication_credentials : public readback matches
-    publication_credentials --> publication_smoke : contracts verified
-    publication_credentials --> blocked : mismatch
-    publication_smoke --> birth_present : canonical URI run passes
-    publication_smoke --> blocked : run fails
-    birth_present --> completed : certificate + trace learning + farewell
+    index --> saved_inspect : canonical readback
+    saved_inspect --> publication_gate : public credentials + smoke
+    saved_inspect --> birth_present : private
+    publication_gate --> birth_present : verified
+    birth_present --> completed : certificate presented
 
-    %% ── Awareness, creator, management, birth ──
-    awareness_collect --> awareness_present : new items
+    %% ── Awareness, creator, management ──
+    awareness_collect --> awareness_offer : new items
     awareness_collect --> completed : unchanged
-    awareness_present --> awareness_offer
     awareness_offer --> use_inspect : play selected
-    awareness_offer --> awareness_need : search
-    awareness_offer --> creator_need : create
-    awareness_offer --> completed : done
-    awareness_need --> search
-    creator_need --> creator_search
-    creator_search --> creator_classify
-    creator_classify --> creator_offer : related Play exists
-    creator_classify --> explore_prepare : no match
+    creator_search --> creator_offer : related Play exists
+    creator_search --> standby_exit : no match — hook armed
     creator_offer --> use_inspect : use existing
-    creator_offer --> explore_prepare : adapt / create distinct
-    management_offer --> management_list
-    management_list --> management_present
-    management_present --> completed
+    creator_offer --> standby_exit : adapt / create outside the machine
+    management --> completed
     birth_show --> completed
 
     receipt --> [*]
@@ -247,41 +176,45 @@ stateDiagram-v2
     blocked --> [*]
 ```
 
-State ownership is explicit: `play` owns invocation classification, live onboarding probes, prompts,
-output formatting, evaluators, and verification; `rote-specialist`
-states (`explore_execute`, `crystallize`, `author_release`, publication, `management_list`) are
-delegated through typed `play.handoff/v1` packets and validated `play.handoff-receipt/v1` receipts;
-`play` owns `use_run` through the universal deterministic Play runner; `flow-runtime` owns
-`saved_inspect`, `publication_credentials`, and `publication_smoke` via first-class Rote
-inspection/execution surfaces.
-Guards (for example `search_is_complete`, `route_within_policy`, `exploration_budget_remaining`,
-`exact_published_version_is_indexed`) are declared in `actions.yaml`, and
-`tests/controller/test_machine_conformance.py` fails when the machine, actions, prompts, or the
-thinking-orbs presentation mapping drift.
+(The diagram groups the onboarding, team-invite, auth-repair, and publication sub-chains for
+readability; [`machine.yaml`](references/controller/machine.yaml) is the exact authority.)
+
+There is deliberately **no Explore lane**. Earlier versions of this machine orchestrated
+exploration — modality routing, adapter discovery, effect approvals — re-implementing what the
+rote skills already own. Today, when no adequate Play exists, Play arms the save hook and steps
+aside; the agent works normally through rote; and `$play settle` re-enters for the save judgment.
+Fewer states, fewer bespoke entry paths, fewer places for bugs to hide.
+
+State ownership is explicit: `play` owns invocation classification, prompts, evaluators,
+deterministic verification, and the standby/ledger writes; `rote-specialist` states
+(`crystallize`, `author_release`, publication, `management_list`, team/org actions) are delegated
+through typed `play.handoff/v1` packets and validated `play.handoff-receipt/v1` receipts;
+`flow-runtime` owns `saved_inspect`, `publication_credentials`, and `publication_smoke` via
+first-class Rote surfaces. `tests/controller/test_machine_conformance.py` fails when the machine,
+actions, prompts, or the thinking-orbs presentation mapping drift.
+
+Three evaluator (model) boundaries remain in the whole machine: request qualification (ledger-
+aware), creator classification, and the save-worthiness judgment. An adequate local Play with
+bound parameters runs with **zero** model and zero human yields — one runtime call to the receipt.
 
 ### Typed controller runtime
 
 The executable controller lives in
 [`scripts/lib/play/controller.py`](scripts/lib/play/controller.py). It compiles the authoritative
 Play YAML into [`python-statemachine`](https://python-statemachine.readthedocs.io/) 3.2, while
-retaining Play's existing machine, action, prompt, context, and handoff contracts as the source of
-truth. The runtime provides typed cursors and events, context-schema validation, bundle-SHA binding,
+retaining Play's machine, action, prompt, context, and handoff contracts as the source of truth.
+The runtime provides typed cursors and events, context-schema validation, bundle-SHA binding,
 derived guards, mutation semantics, checkpointed `play.context/v1`, terminal enforcement, and
 per-step timing. [`runtime_actions.py`](scripts/lib/play/runtime_actions.py) executes safe
 deterministic commands without shell interpolation and loops until the next evaluator, prompt,
-effect, specialist, unsupported action, or terminal boundary.
+specialist, or terminal boundary.
 
 The automatic runner owns every deterministic action state. The harness sees only model judgments,
-human prompts, exact Rote specialist handoffs, and terminal results. Machine validation rejects raw
-external commands and deterministic actions without a compiled runtime executor.
+human prompts, exact Rote specialist handoffs, and terminal results. The complete context is
+checkpointed in an owner-private, 24-hour continuation store under `~/.rote/play/continuations`;
+stateless CLI calls exchange only a random 24-character continuation ID.
 
-The complete context is checkpointed in an owner-private, 24-hour continuation store under
-`~/.rote/play/continuations`. Stateless CLI calls exchange only a random 24-character continuation
-ID, while the model sees the current action's minimum input, command policy, and bound typed event
-templates. Terminal states delete their continuation. New mutations and deterministic adapters
-remain fail-closed instead of being guessed.
-
-Install the locked development/runtime dependencies and inspect the compiled bundle:
+Install the locked dependencies and inspect the compiled bundle:
 
 ```bash
 uv sync
@@ -290,50 +223,12 @@ printf '%s' '{"run_id":"demo","task_key":"demo","request":{"original":"Review th
   | uv run scripts/bin/play-machine run-until-yield --stdin --json
 ```
 
-Measure controller-only latency with:
-
-```bash
-just benchmark-controller
-just benchmark-controller 10000
-just benchmark-runtime
-```
-
-The controller benchmark compiles once and repeatedly executes a warm transition. The runtime
-benchmark measures the complete deterministic `invoke → qualify` loop, including context creation,
-schema checks, the lexical subprocess action, checkpointing, owner-private continuation write, and
-current-state projection. Every result includes the exact bundle SHA.
-
-Baseline recorded on 2026-08-07 on an Apple Silicon Mac with Python 3.14.5 and
-`python-statemachine` 3.2.0:
-
-| Metric | Time |
-|---|---:|
-| One-time bundle compile | 76.0–81.8 ms |
-| Warm transition median | 0.581 ms |
-| Warm transition p95 | 0.784 ms |
-| Full invoke-to-evaluator median | 53.6 ms |
-| Qualifier projection | 2,024 bytes |
-| Opaque continuation ID | 24 bytes |
-
-The 87-state bundle remains sub-millisecond at p95 for warm transitions. Search adequacy and local
-versus remote routing are deterministic: adequate results are ordered local, private organization,
-then public hub; selected search payloads are pruned before the next continuation is stored.
-Loading validated
-documents once instead of rereading the controller YAML during compilation reduced the observed
-cold compile baseline by roughly half. The 12.9 KB activation skill is also about 63% smaller than
-the former 34.9 KB model-owned controller manual, and normal runs no longer require the model to
-read the 30 KB machine. A single live
-`explore-welcome` sample on the same machine resolved the signed-in Rote identity and rendered the
-welcome in 1.624 seconds; almost all of that is the external `rote whoami` call. Registry inspection,
-public-card fetches, and setup are likewise separately timed external I/O actions. Every certificate
-result records its local store verification and rendering latency in `birth.certificate_ns`.
-
-Treat these numbers as a development baseline, not a cross-machine guarantee. Future performance
-changes should record the command, iteration count, bundle SHA, Python version, and machine class.
-
-The first live pre-save namespace sample ran the profile and organization reads concurrently and
-completed in 4.089 seconds. That timing is recorded as `publication.owner_probe_ns`; it is external
-registry I/O and is intentionally separate from the sub-millisecond controller transition numbers.
+Measure controller-only latency with `just benchmark-controller` and `just benchmark-runtime`.
+The 2026-08-07 baseline (Apple Silicon, Python 3.14.5, then 87 states) recorded one-time compile
+at 76–82 ms, warm transitions at 0.58 ms median / 0.78 ms p95, and the full invoke-to-evaluator
+loop at 54 ms; the machine has since shrunk to 70 states and the ~4 KB activation skill replaced a
+34.9 KB model-owned controller manual. Treat these as development baselines, not cross-machine
+guarantees.
 
 ## Install Play everywhere
 
@@ -569,7 +464,7 @@ This launch sets `model_verbosity="low"`, `model_reasoning_summary="none"`, and
 `hide_agent_reasoning=true` as per-session overrides. It reduces model narration and reasoning
 events; the Codex UI may still render tool calls that were actually made.
 
-Run a read-only smoke test that must reach Play's Explore-or-continue consent gate:
+Run a read-only smoke test that must reach Play's search-and-step-aside boundary:
 
 ```bash
 just smoke codex
@@ -608,46 +503,39 @@ $play list plays
 $play list
 ```
 
-Create, explore, save, and share without memorizing lifecycle commands:
+Create, save, and share without memorizing lifecycle commands:
 
 ```text
 $play create a reusable weekly customer report
-Explore this with rote and make it reusable if it works
+$play settle built the weekly customer report end to end
 Handle this normally without Play
 ```
 
-Play always searches before creating. If an adequate Play exists it offers Inspect existing, Adapt
-existing, or Create distinct. Otherwise explicit create intent enters Explore directly. Successful
-exploration is verified before Play asks:
+Play always searches before creating. If an adequate Play exists it offers **Inspect existing** or
+lets you adapt outside the machine. If none exists, Play arms the save hook and steps aside — the
+agent does the work normally through the rote skills, with rote's own workspace capture recording
+the evidence. When the work settles, `$play settle <one-line summary>` re-enters the machine and
+the save-worthiness judge examines the **trace, not the conversation**: at least two effect-bearing
+steps, at least one input that would vary on reuse, a stable output shape, and a recurrence prior.
+A worth-saving verdict leads to one offer:
 
-- **Private** — release and publish to an authorized private organization;
-- **Public** — release and publish under a selected public owner, verify associated adapter
+- **Team** — release and publish to an authorized private organization, then offer colleague
+  invites through `rote-org`;
+- **Community** — release and publish under a selected public owner, verify associated adapter
   credential contracts, then run the exact public URI once from an isolated directory;
 - **Skip** — keep the result without publishing or indexing a Play.
 
-Explore execution is fail-closed around Rote ownership. CALL routes only through
-`rote-using-adapters`, SHELL through `rote-shell`, DRIVE through `rote-browse`, and combined work
-through `rote-workspace`. Play first confirms that the exact skill is callable in the current
-harness, then validates its typed receipt before accepting the result. If the specialist is absent,
-Play blocks; it never substitutes a directly exposed MCP, app, shell, or browser tool.
+Execution ownership stays with the rote skill suite end to end: crystallization with
+`rote-flow-crystallization`, release with `rote-flow-authoring`, publication with `rote-registry`.
+Play never re-implements those flows; it validates each specialist's typed receipt and blocks on
+mismatch — a specialist cannot claim success in prose.
 
-CALL routes also converge on an authenticated Rote adapter. Play first searches installed adapters.
-After an installed miss it must search the built-in adapter catalog and present every match, keeping
-REST/OpenAPI, GraphQL, and MCP options distinct. Only an empty catalog result or explicit rejection
-may fall through to a supplied specification or provider-document search. The selected or exhausted
-discovery evidence is bound into the handoff packet before Rote creates and authenticates an adapter.
-The receipt records adapter, type, creation, and auth provenance, so a raw MCP call cannot masquerade
-as a delegated result.
-
-DRIVE routes carry a current-version crystallization limit that Play discloses **before**
-exploration begins. Typed browser steps express navigation, waits, clicks, typing, and the
-canonical extract slices only; they cannot carry a raw page snapshot or arbitrary DOM/table
-content, and front-end accessibility trees are volatile across sites and releases. A browser
-outcome whose required facts exceed the canonical slices can crystallize only as a legacy stepless
-body, which `rote play run` rejects (`play_run_eligible: false`). Play therefore warns at the
-Explore offer (or the DRIVE route milestone), repeats the limit at the save offer, and treats
-`play_run_eligible: false` as a publication gate requiring explicit user approval. See the
-[DRIVE crystallization limit](references/explore/modalities.md) guidance and the
+One save-time caveat Play discloses honestly: browser-derived (DRIVE) work has a crystallization
+limit. Typed browser steps carry navigation, waits, clicks, typing, and canonical extract slices
+only; an outcome whose required facts exceed those slices can crystallize only as a legacy stepless
+body, which `rote play run` rejects (`play_run_eligible: false`) — a publication gate requiring
+explicit approval. See the
+[DRIVE crystallization limit](references/explore/modalities.md) and the
 [RCA that motivated it](docs/rca/2026-08-05-drive-crystallization-not-play-run-eligible.md).
 
 After release, Play captures a private birth certificate from the exploration evidence. After
@@ -755,6 +643,33 @@ On normal `$play whats new` requests, Play uses remembered mode. It stores only 
 UTC checkpoint, and authorized-scope contract in `~/.rote/play/digest-state.json`. If the current
 snapshot has the same SHA, the next response is simply “Nothing new since your last Play check.”
 The moving time window is excluded from the SHA, and no inbox contents or credentials are stored.
+
+### The zero-token inbox and structural hooks
+
+The inbox also has a proactive, zero-token surface. A background refresh caches both tiers —
+a precomputed one-line summary and the full digest with rendered markdown — plus the authorized
+hub catalog, under `~/.rote/play/inbox-cache.json`:
+
+```bash
+play-inbox refresh --if-older-than 6   # background-job body; skips when fresh
+play-inbox line                        # instant; prints one line or nothing
+play-inbox details                     # cached full inbox, no network
+```
+
+Wire it stale-while-revalidate at session start (no daemon or cron): the hook serves the previous
+refresh instantly and detaches the next one. The line counts only unseen items — the interactive
+digest owns the acknowledgment checkpoint, so viewing "what's new" quiets the banner on its own.
+
+The same hook surface carries the interception loop:
+
+```bash
+play-intercept prompt        # UserPromptSubmit: local + hub-catalog match, one line or silence
+play-intercept settle-nudge  # Stop: one reminder per armed save hook per session
+```
+
+Hook state (index cache, cooldowns, nudge markers, preference ledger, standby hooks) lives in
+shared `~/.rote/play/` stores, so the safeguards compose across harnesses: a Play saved from one
+harness is an interception candidate in every other, and nudges never double-fire.
 
 Recurring delivery is optional and must be explicitly requested. Its host-neutral two-phase
 contract remains available for an authorized scheduler:
