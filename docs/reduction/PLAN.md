@@ -116,6 +116,54 @@ Design:
   because the first weeks of dismissals are exactly the signal that teaches
   play where to stand.
 
+### Preference tiers
+
+Preferences are keyed `(scope, task_class) → policy` with three scopes and
+strict precedence: **session > project > global**.
+
+- **Session** ("stay out of my way today"): an overlay held in run/session
+  state, never written to the durable ledger, dies with the session. Cheapest
+  to honor, cheapest to get wrong.
+- **Project**: keyed by repo/workspace root. Vibe-coding-heavy repos and
+  ops-heavy repos deserve different defaults; ledger evidence records the cwd
+  so this tier can be inferred, not configured.
+- **Global**: the durable ledger entries described above.
+
+Promotion is observed, not asked: a session mute for the same class in ~3
+consecutive sessions silently promotes to the durable tier with a one-line
+notice and an undo path — a promotion question would itself be an
+intervention. All tiers are visible in `play prefs`.
+
+### The two classifiers (and why neither is a skill)
+
+Both judgments are **model-evaluator boundaries inside the machine**, with
+rubrics delivered state-locally via the projection — not separate skills.
+A classifier SKILL.md would recreate the read-before-act tax the reduction
+exists to remove.
+
+1. **Qualify-time classifier** (runs on every request, must be near-free):
+   two-stage. A deterministic gate first — exact play-name/URI match, ledger
+   hit on an unambiguous verb class, conversation shapes — resolves the
+   common cases with no model call (the existing deterministic fast lane,
+   generalized). Only ambiguous requests reach the model evaluator, whose
+   output is `(task_class, intervention_decision)` with the ledger tiers as
+   priors.
+2. **save_judge** (runs once, after settled work): judges the **trace, not
+   the conversation**. The rote workspace DAG and cached `@N` responses are
+   its evidence: parameterizable inputs are literals in the trace that would
+   vary next time (branch, channel, date); repeatable steps are an
+   effect-bearing step sequence without human improvisation forks; stable
+   output is a typed final artifact. Rubric gates, all required early:
+   ≥2 effect-bearing steps, ≥1 identifiable parameter, a stable output
+   contract, and a recurrence prior (similar past work, or explicit user
+   signal). Negative gates: never offer after a failed or abandoned task,
+   and never for work in a `silent`-classed session regardless of scores.
+
+The task-class taxonomy stays coarse — on the order of five classes
+(creative/exploratory, build-ship chore, data-fetch/report, ops/maintenance,
+conversation) — so a handful of decisions per class is enough evidence to
+learn from. A fine ontology would never converge.
+
 ## The SKILL.md contract shrinks with the machine
 
 Target ≤ 60 lines: how to enter (`run-until-yield`), the four boundary types,
