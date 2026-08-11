@@ -110,7 +110,46 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
             if key not in seen_registry:
                 seen_registry.add(key)
                 registry_items.append(item)
+    # The registry's lexical search can miss an exactly-named Play the user is
+    # authorized to run. The cached hub catalog is the authoritative bounded
+    # enumeration of authorized-org Plays, so merge it as a recall backstop;
+    # live results keep rank priority, and adequacy scoring decides matches.
+    for item in _catalog_items():
+        key = (item.get("owner_slug"), item.get("skill_name"), None, None)
+        if key not in seen_registry:
+            seen_registry.add(key)
+            registry_items.append(item)
     return {"flows": local_flows}, registry_items
+
+
+def _catalog_items() -> list[dict]:
+    """Authorized-org Plays from the inbox catalog cache, registry-shaped."""
+
+    try:
+        from .inbox_cache import read_cache
+
+        cache = read_cache()
+    except Exception:  # noqa: BLE001 - the backstop must never break live search
+        return []
+    if cache is None or not isinstance(cache.get("catalog"), list):
+        return []
+    items: list[dict] = []
+    for entry in cache["catalog"]:
+        if not isinstance(entry, dict):
+            continue
+        reference = entry.get("reference")
+        if not isinstance(reference, str) or "/" not in reference:
+            continue
+        owner, name = reference.split("/", 1)
+        items.append(
+            {
+                "owner_slug": owner,
+                "skill_name": name,
+                "skill_description": entry.get("description") or "",
+                "visibility": entry.get("visibility"),
+            }
+        )
+    return items
 
 
 def registry_scope(item: dict) -> str:

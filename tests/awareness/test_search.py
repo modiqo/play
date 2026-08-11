@@ -1,3 +1,4 @@
+import os
 import pathlib
 import sys
 import threading
@@ -196,6 +197,51 @@ class SearchTest(unittest.TestCase):
         )
         self.assertEqual([], results)
 
+    def test_catalog_cache_backstops_registry_search_recall(self):
+        import json as json_module
+        import tempfile
+
+        def fake_run(command, **_kwargs):
+            return {"flows": []} if command[1:3] == ["play", "search"] else []
+
+        with tempfile.TemporaryDirectory() as temporary:
+            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
+            cache_path.write_text(
+                json_module.dumps(
+                    {
+                        "schema": "play.inbox-cache/v1",
+                        "fetched_at": "2026-08-11T00:00:00+00:00",
+                        "window_days": 7,
+                        "summary_line": None,
+                        "counts": {"new": 0, "revised": 0},
+                        "digest": {},
+                        "markdown": None,
+                        "catalog": [
+                            {
+                                "reference": "modiqo/list-top-committers",
+                                "name": "list-top-committers",
+                                "description": "Lists top contributors for a GitHub repository.",
+                                "visibility": "public",
+                            }
+                        ],
+                    }
+                )
+            )
+            with mock.patch.object(PLAY_SEARCH, "run_json", side_effect=fake_run), \
+                    mock.patch.dict(
+                        os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
+                    ):
+                local, registry = PLAY_SEARCH.search_both(
+                    "list top committers for modiqo rote", 5
+                )
+            self.assertEqual("list-top-committers", registry[0]["skill_name"])
+            results = PLAY_SEARCH.merge_results(
+                local, registry, pathlib.Path("/tmp/none"), 5,
+                "list top committers for modiqo rote",
+            )
+            self.assertEqual("modiqo/list-top-committers", results[0]["reference"])
+            self.assertEqual("full", results[0]["match_classification"])
+
     def test_local_and_registry_searches_start_in_parallel(self):
         barrier = threading.Barrier(2)
         commands = []
@@ -205,7 +251,10 @@ class SearchTest(unittest.TestCase):
             barrier.wait(timeout=2)
             return {"flows": []} if command[1:3] == ["play", "search"] else []
 
-        with mock.patch.object(PLAY_SEARCH, "run_json", side_effect=fake_run):
+        with mock.patch.object(PLAY_SEARCH, "run_json", side_effect=fake_run), \
+                mock.patch.dict(
+                    os.environ, {"PLAY_INBOX_CACHE_PATH": "/nonexistent/inbox.json"}
+                ):
             local, registry = PLAY_SEARCH.search_both("hello", 5)
         self.assertEqual({"flows": []}, local)
         self.assertEqual([], registry)
