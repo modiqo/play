@@ -287,7 +287,31 @@ def execute(command: str, *, copy_install: bool) -> None:
         raise
     finish_portable_copy(backup)
     if command == "install":
+        warm_inbox_cache(source)
         print(f"Play {version(source)} is ready. Restart each running harness, then type $play.")
+
+
+def warm_inbox_cache(source: Path) -> None:
+    """Best-effort background warm-up of the zero-token inbox and hub catalog.
+
+    Detached and quiet: without an installed, authenticated Rote the refresh
+    simply fails silently and the interceptor/inbox stay empty until the next
+    session-start refresh after setup. Never blocks or fails installation.
+    """
+
+    refresher = source / "scripts" / "bin" / "play-inbox"
+    if not refresher.is_file():
+        return
+    try:
+        subprocess.Popen(
+            [sys.executable, str(refresher), "refresh", "--if-older-than", "6"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        print("Warming the Play inbox and hub catalog cache in the background.")
+    except OSError:
+        pass
 
 
 def main(argv: list[str] | None = None) -> int:

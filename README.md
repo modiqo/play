@@ -671,6 +671,13 @@ Hook state (index cache, cooldowns, nudge markers, preference ledger, standby ho
 shared `~/.rote/play/` stores, so the safeguards compose across harnesses: a Play saved from one
 harness is an interception candidate in every other, and nudges never double-fire.
 
+Cache lifecycle: `just install` kicks one detached warm-up refresh, and every session start
+re-refreshes when the cache is older than six hours — no cron, no manual sync. Without an
+installed, authenticated Rote every tier degrades to silence: the refresh fails quietly, the
+catalog stays empty, and the interceptor's advice line becomes the onboarding funnel (play skill →
+Rote probe → guided `rote-setup`). The first refresh after sign-in populates the catalog with
+everything the new identity is authorized to see.
+
 Recurring delivery is optional and must be explicitly requested. Its host-neutral two-phase
 contract remains available for an authorized scheduler:
 
