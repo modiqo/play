@@ -770,6 +770,35 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual(1, len(yielded.presentations))
         self.assertIn("Search: `release notes`", yielded.presentations[0])
 
+    def test_digest_and_search_selections_bind_the_direct_run_contract(self) -> None:
+        from play.runtime_context import apply_event, initial_context
+
+        for mutation in ("enter_awareness_use", "enter_search_use"):
+            with self.subTest(mutation=mutation):
+                context = initial_context(
+                    run_id="run-bind",
+                    task_key="task-bind",
+                    machine_version="test",
+                    request_original="what's new",
+                )
+                updated = apply_event(
+                    context,
+                    event_id="selection",
+                    payload={
+                        "match.reference": "acme/ship-and-tell@0.1.0",
+                        "request.parameters": {"channel": "#ship"},
+                    },
+                    state="use_inspect",
+                    transition_seq=1,
+                    mutation=mutation,
+                )
+                self.assertEqual("use", updated["mode"])
+                self.assertIsNotNone(updated["request"]["requested_outcome"])
+                self.assertIn(
+                    "acme/ship-and-tell@0.1.0", updated["request"]["requested_outcome"]
+                )
+                self.assertEqual({"channel": "#ship"}, updated["request"]["parameters"])
+
     def test_session_applies_settled_judgment_mutation_before_save_judge(self) -> None:
         session = self.runtime.initial_session(
             run_id="session-1",

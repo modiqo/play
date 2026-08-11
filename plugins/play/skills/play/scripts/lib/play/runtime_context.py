@@ -485,6 +485,18 @@ def _apply_mutation_semantics(
             _bind_direct_play_request(
                 context, reference, parameters=context["request"]["parameters"]
             )
+    elif mutation in ("enter_awareness_use", "enter_search_use"):
+        # A digest or search selection is a direct Play run; bind the complete
+        # request contract so handoff preparation and verification have the
+        # required outcome, exactly like the URI and starter entries.
+        reference = _path_value(payload, "match.reference")
+        if isinstance(reference, str) and reference:
+            parameters = _path_value(payload, "request.parameters")
+            _bind_direct_play_request(
+                context,
+                reference,
+                parameters=parameters if isinstance(parameters, Mapping) else None,
+            )
     elif mutation == "record_parameter_request":
         parameter = payload.get("parameter_input")
         if isinstance(parameter, Mapping):
