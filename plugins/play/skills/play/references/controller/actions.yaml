@@ -366,7 +366,7 @@ actions:
     command_policy:
       - Arm the owner-private save hook only when an unserved outcome intent exists; keep only a bounded intent, coarse task class, and UTC timestamp, never conversation prose.
       - Append a scoped preference ledger entry only when the qualifier returned an explicit statement; record the statement, scope, task class, policy, and UTC time.
-      - Stay quiet; this exit produces no user-facing narration beyond the projected standby presentation.
+      - A standby exit is a baton-pass, never a result. Present the single returned continuation line, then complete the user's still-unfulfilled request immediately through the normal path; the rote skill owns adapter catalog search and exploration for provider work.
     events:
       standby_recorded: [standby.armed, standby.task_class, standby.hook_ref, preferences.ledger_ref]
 

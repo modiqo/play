@@ -241,6 +241,15 @@ def record_standby(payload: Mapping[str, Any]) -> dict[str, Any]:
             policy=stated_policy,
         )
 
+    presentation = None
+    if armed:
+        presentation = (
+            "No saved Play covers this yet — continuing with the task normally. "
+            "The agent should now complete the request itself (for API or provider work, "
+            "the rote skill owns adapter catalog search and exploration). If the finished "
+            "work turns out repeatable, settle it with `$play settle <one-line summary>` "
+            "to judge it for saving."
+        )
     return {
         "schema": SCHEMA,
         "kind": "standby",
@@ -252,6 +261,7 @@ def record_standby(payload: Mapping[str, Any]) -> dict[str, Any]:
             "hook_ref": hook_ref,
         },
         "preferences": {"ledger_ref": ledger_ref},
+        "presentation_markdown": presentation,
     }
 
 

@@ -58,7 +58,10 @@ unchanged output as `preflight`. Missing Rote setup delegates to the `rote-setup
 
 Play interrupts only for an adequate saved Play or a projected approval. When qualification
 returns conversation or exclusion, or no adequate Play exists, Play exits quietly — no search
-narration, no explore offers; the runtime arms its save hook on the way out. Saving, publication,
+narration, no explore offers; the runtime arms its save hook on the way out. **A standby exit is
+a baton-pass, never a result**: the user's request is still unfulfilled, so complete it yourself
+immediately through the normal path — the rote skill owns adapter catalog search, exploration,
+shell, and browser work — and after repeatable work finishes, re-enter with `$play settle`. Saving, publication,
 adapter repair, and team invites run only through the projected specialist handoffs. Never
 decompose `rote play run` into registry pulls, adapter setup, or local-path execution, and never
 treat its failure as authorization for a manual fallback. Preserve every primary payload exactly
