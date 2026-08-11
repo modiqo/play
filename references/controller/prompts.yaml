@@ -152,68 +152,6 @@ prompts:
     events:
       play_parameter_supplied: [prompt_version, selected_at, parameter_input.name, parameter_input.value]
 
-  explore_or_exit:
-    question: >
-      I couldn't find a Play that adequately covers this. Would you like me to explore with rote
-      and preserve the successful path as a reusable Play, or continue normally?
-    selection: single
-    choices:
-      - {id: explore, label: Explore with rote, description: Attempt the outcome and offer to preserve a verified reusable Play., event: explore_approved, recommended: true}
-      - {id: continue, label: Continue normally, description: Leave Play and handle this as an ordinary one-off task., event: ordinary_execution_selected}
-    events:
-      explore_approved: [prompt_version, selected_at]
-      ordinary_execution_selected: [prompt_version, selected_at]
-
-  repair_or_exit:
-    question: >
-      The selected Play could not produce a verified result. Would you like me to explore with rote
-      to repair it, or continue normally?
-    selection: single
-    choices:
-      - {id: repair, label: Explore a repair, description: Diagnose the drift and offer to preserve a verified repair., event: repair_approved, recommended: true}
-      - {id: continue, label: Continue normally, description: Leave Play and handle the remaining work as a one-off task., event: ordinary_execution_selected}
-    events:
-      repair_approved: [prompt_version, selected_at]
-      ordinary_execution_selected: [prompt_version, selected_at]
-
-  widen_modalities:
-    question: >
-      The allowed modalities cannot complete the outcome. May I widen the modality set as shown?
-    selection: single
-    choices:
-      - {id: allow, label: Allow shown modalities, description: Add only the displayed modalities for this task., event: modality_widening_approved}
-      - {id: keep, label: Keep current limits, description: Preserve the current constraints and stop this Play as blocked., event: modality_widening_declined}
-    events:
-      modality_widening_approved: [prompt_version, selected_at, allowed]
-      modality_widening_declined: [prompt_version, selected_at]
-
-  choose_adapter_source:
-    question: Which installed or catalog adapter should the CALL route use?
-    selection: single
-    choices_from:
-      context: adapter_discovery.choices
-      id_field: id
-      label_field: label
-      description_field: description
-      value_source_field: id
-      value_field: adapter_discovery.selected_id
-      event: adapter_source_selected
-    choices:
-      - {id: reject, label: Search specifications, description: Reject these matches and continue with a provided specification or authoritative provider documentation., event: adapter_catalog_rejected}
-    events:
-      adapter_source_selected: [prompt_version, selected_at, adapter_discovery.selected_id]
-      adapter_catalog_rejected: [prompt_version, selected_at]
-
-  approve_effect_confirmation:
-    question: Approve this exact Rote-guarded operation using the displayed tool, impact, token, and workspace?
-    selection: single
-    choices:
-      - {id: approve, label: Approve guarded call, description: Resume the same Rote workspace and retry only this operation with its exact confirmation token., event: effect_confirmation_approved}
-      - {id: decline, label: Do not run, description: Stop without performing the guarded external effect., event: effect_confirmation_declined}
-    events:
-      effect_confirmation_approved: [prompt_version, selected_at, effect_policy.rote_confirmation.tool, effect_policy.rote_confirmation.impact, effect_policy.rote_confirmation.confirm_token, effect_policy.rote_confirmation.workspace]
-      effect_confirmation_declined: [prompt_version, selected_at, effect_policy.rote_confirmation.tool, effect_policy.rote_confirmation.confirm_token, effect_policy.rote_confirmation.workspace]
-
   approve_auth_repair:
     question: Let rote-adapter-config repair authentication for the displayed adapter using its classified repair rung?
     selection: single

@@ -15,7 +15,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "03d6a5ce2f21022dabdd9af4559cf3b17d676f8c90fb86aa2c8e91c8ee817421"
+SUPPORTED_MUTATION_SET_SHA256 = "687992b4e9b1afafe30feb5c97df7aa6586c95df45cc9fcc1fe81ff026b67c05"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -313,6 +313,20 @@ def initial_context(
             "failure_reason": None,
             "evidence_refs": [],
         },
+        "standby": {
+            "armed": False,
+            "task_class": None,
+            "hook_ref": None,
+            "settle_summary": None,
+        },
+        "save_judge": {"assessment": None, "parameters": [], "step_count": None},
+        "preferences": {
+            "policies": [],
+            "statement": None,
+            "task_class": None,
+            "policy": None,
+            "ledger_ref": None,
+        },
         "receipt_ref": None,
         "last_event": {"id": None, "payload_ref": None},
     }
@@ -366,8 +380,7 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "set_creator_request": {"mode": "create"},
     "enter_awareness_use": {"mode": "use"},
     "set_awareness_search": {"mode": "awareness"},
-    "approve_creator_explore": {"mode": "explore", "consent.explore": "approved"},
-    "approve_adapt_explore": {"mode": "explore", "consent.explore": "approved"},
+    "record_creator_standby": {"mode": "exited"},
     "enter_creator_use": {"mode": "use"},
     "record_non_outcome_exit": {"mode": "exited"},
     "record_explicit_exit": {"mode": "exited", "request.excluded": True},
@@ -381,16 +394,10 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "record_no_match": {"match.classification": "none"},
     "enter_direct_use": {"mode": "use"},
     "attach_onboarding_starter_receipt": {"onboarding.starter_status": "completed"},
-    "approve_repair_explore": {"mode": "explore", "consent.explore": "approved"},
     "record_use_auth_repair_required": {"auth_repair.status": "required"},
-    "record_ordinary_exit": {"mode": "exited"},
-    "approve_explore": {"mode": "explore", "consent.explore": "approved"},
-    "record_missing_consent": {"consent.explore": "declined"},
-    "select_adapter_source": {"adapter_discovery.status": "selected"},
-    "record_catalog_rejection": {"adapter_discovery.status": "catalog_rejected"},
-    "approve_effect_confirmation": {"effect_policy.rote_confirmation.status": "approved"},
-    "decline_effect_confirmation": {"effect_policy.rote_confirmation.status": "declined"},
-    "record_auth_repair_required": {"auth_repair.status": "required"},
+    "record_save_hook": {"mode": "exited"},
+    "enter_settled_judgment": {"mode": "settle"},
+    "record_not_worth_saving": {"mode": "exited"},
     "approve_auth_repair": {"auth_repair.status": "approved"},
     "decline_auth_repair": {"auth_repair.status": "declined"},
     "record_auth_repair_handoff": {"auth_repair.status": "repairing"},
@@ -478,6 +485,18 @@ def _apply_mutation_semantics(
             _bind_direct_play_request(
                 context, reference, parameters=context["request"]["parameters"]
             )
+    elif mutation in ("enter_awareness_use", "enter_search_use"):
+        # A digest or search selection is a direct Play run; bind the complete
+        # request contract so handoff preparation and verification have the
+        # required outcome, exactly like the URI and starter entries.
+        reference = _path_value(payload, "match.reference")
+        if isinstance(reference, str) and reference:
+            parameters = _path_value(payload, "request.parameters")
+            _bind_direct_play_request(
+                context,
+                reference,
+                parameters=parameters if isinstance(parameters, Mapping) else None,
+            )
     elif mutation == "record_parameter_request":
         parameter = payload.get("parameter_input")
         if isinstance(parameter, Mapping):
@@ -491,10 +510,14 @@ def _apply_mutation_semantics(
             if isinstance(name, str) and name and isinstance(value, str) and value:
                 context["request"]["parameters"][name] = value
                 context["parameter_input"]["value"] = value
-    elif mutation == "approve_adapt_explore":
+    elif mutation == "record_creator_standby":
         reference = _path_value(payload, "match.reference")
         if isinstance(reference, str) and reference:
             context["creator"]["seed_reference"] = reference
+    elif mutation == "record_save_worthiness":
+        refs = payload.get("evidence_refs")
+        if isinstance(refs, list) and refs:
+            context["evidence"]["verification"] = refs[0]
     elif mutation == "record_verification":
         refs = payload.get("evidence_refs")
         if isinstance(refs, list) and refs:
@@ -503,20 +526,6 @@ def _apply_mutation_semantics(
         refs = payload.get("evidence_refs")
         if isinstance(refs, list) and refs:
             context["evidence"]["failed_receipt"] = refs[0]
-    elif mutation == "record_effect_confirmation":
-        confirmation = payload.get("effect_policy")
-        if isinstance(confirmation, Mapping):
-            rote_confirmation = confirmation.get("rote_confirmation")
-            if isinstance(rote_confirmation, Mapping):
-                context["effect_policy"]["rote_confirmation"] = copy.deepcopy(
-                    dict(rote_confirmation)
-                )
-    elif mutation == "widen_modality_policy":
-        allowed = payload.get("allowed")
-        if isinstance(allowed, list):
-            context["modality_policy"]["allowed"] = allowed
-    elif mutation == "consume_attempt":
-        context["execution"]["attempts"] += 1
 
 
 def _bind_direct_play_request(

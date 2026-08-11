@@ -31,8 +31,10 @@ class PresentationTest(unittest.TestCase):
         skill = (Path(__file__).resolve().parents[2] / "SKILL.md").read_text()
 
         self.assertIn("Present returned `presentations`", skill)
-        self.assertIn("already compiled", skill)
-        self.assertIn("Do not locate or invoke a second presentation script", skill)
+        self.assertIn(
+            "the returned projection is the entire instruction contract",
+            skill.replace("\n", " "),
+        )
 
 
 if __name__ == "__main__":

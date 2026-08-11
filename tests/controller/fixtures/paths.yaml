@@ -97,10 +97,18 @@ cases:
       - {state: onboarding_setup, event: setup_specialist_unavailable, target: blocked}
     terminal: blocked
 
-  - name: non-outcome conversation exits the hook
+  - name: non-outcome conversation exits without any standby write
     steps:
       - {state: qualify, event: conversation, target: exited}
     terminal: exited
+    excludes: [standby_exit]
+
+  - name: explicit exclusion records scoped preferences before exiting
+    steps:
+      - {state: qualify, event: play_excluded, target: standby_exit}
+      - {state: standby_exit, event: standby_recorded, target: exited}
+    terminal: exited
+    excludes: [search, save_judge]
 
   - name: explicit Play search can keep merged results without running
     steps:
@@ -112,7 +120,7 @@ cases:
       - {state: search_present, event: search_presented, target: search_offer}
       - {state: search_offer, event: search_dismissed, target: completed}
     terminal: completed
-    excludes: [classify, use_inspect, use_run, explore_offer]
+    excludes: [classify, use_inspect, use_run, standby_exit]
 
   - name: explicit Play search inspects an organization result before approval
     steps:
@@ -127,7 +135,7 @@ cases:
       - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_declined, target: completed}
     terminal: completed
-    excludes: [classify, use_run, explore_offer]
+    excludes: [classify, use_run, standby_exit]
 
   - name: exact Play reference is inspected and approved before first-class execution
     steps:
@@ -142,13 +150,13 @@ cases:
     terminal: receipt
     excludes: [search, classify, author_release, birth_capture, private_publish, public_publish, birth_bind, index]
 
-  - name: unresolved exact reference falls back to outcome search
+  - name: unresolved exact reference falls back to outcome search then standby
     steps:
       - {state: qualify, event: exact_play_request, target: use_inspect}
       - {state: use_inspect, event: play_reference_unresolved, target: search}
       - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
-      - {state: classify, event: no_match, target: explore_offer}
-      - {state: explore_offer, event: ordinary_execution_selected, target: exited}
+      - {state: classify, event: no_match, target: standby_exit}
+      - {state: standby_exit, event: standby_recorded, target: exited}
     terminal: exited
     excludes: [use_run]
 
@@ -169,45 +177,38 @@ cases:
       - {state: use_receipt, event: receipt_ready, target: receipt}
     terminal: receipt
 
-  - name: inadequate full match falls back to Explore offer
+  - name: inadequate full match arms the save hook and steps aside
     steps:
       - {state: qualify, event: outcome_request, target: search}
       - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
       - state: classify
         event: full_match
         guards: {match_satisfies_constraints: false}
-        target: explore_offer
-      - {state: explore_offer, event: ordinary_execution_selected, target: exited}
+        target: standby_exit
+      - {state: standby_exit, event: standby_recorded, target: exited}
     terminal: exited
+    excludes: [use_inspect, save_judge]
 
-  - name: no match can step aside
+  - name: no match steps aside quietly with an armed save hook
     steps:
       - {state: qualify, event: outcome_request, target: search}
       - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
-      - {state: classify, event: no_match, target: explore_offer}
-      - {state: explore_offer, event: ordinary_execution_selected, target: exited}
+      - {state: classify, event: no_match, target: standby_exit}
+      - {state: standby_exit, event: standby_recorded, target: exited}
     terminal: exited
+    excludes: [use_inspect, crystallize]
 
-  - name: verified exploration can skip saving
+  - name: settled one-off work exits without a save offer
     steps:
-      - {state: qualify, event: outcome_request, target: search}
-      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
-      - {state: classify, event: no_match, target: explore_offer}
-      - {state: explore_offer, event: explore_approved, target: explore_welcome}
-      - {state: explore_welcome, event: exploration_welcome_presented, target: explore_prepare}
-      - state: explore_prepare
-        event: exploration_ready
-        guards: {explore_is_approved: true}
-        target: explore_route
-      - state: explore_route
-        event: route_selected
-        guards: {route_within_policy: true}
-        target: explore_dispatch
-      - {state: explore_dispatch, event: direct_handoff_ready, target: explore_handoff}
-      - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
-      - {state: explore_execute, event: outcome_ready, target: explore_receipt}
-      - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
-      - {state: explore_verify, event: outcome_verified, target: crystallize}
+      - {state: invoke, event: settled_task_invocation, target: save_judge}
+      - {state: save_judge, event: not_worth_saving, target: exited}
+    terminal: exited
+    excludes: [qualify, search, crystallize, save_offer]
+
+  - name: settled repeatable work can skip saving at the offer
+    steps:
+      - {state: invoke, event: settled_task_invocation, target: save_judge}
+      - {state: save_judge, event: worth_saving, target: crystallize}
       - state: crystallize
         event: candidate_ready
         guards: {outcome_is_verified: true}
@@ -215,87 +216,42 @@ cases:
       - {state: save_prepare, event: public_owner_context_ready, target: save_offer}
       - {state: save_offer, event: save_skipped, target: completed}
     terminal: completed
-    excludes: [author_release, birth_capture, private_org, private_publish, public_owner, public_publish, birth_bind, index]
+    excludes: [qualify, search, author_release, birth_capture, private_org, private_publish, public_publish, birth_bind, index]
 
-  - name: a Rote write guard can be approved and resumed without reclassification
+  - name: a use-run auth failure can be repaired and retried through the exact chain
     steps:
-      - {state: qualify, event: outcome_request, target: search}
-      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
-      - {state: classify, event: no_match, target: explore_offer}
-      - {state: explore_offer, event: explore_approved, target: explore_welcome}
-      - {state: explore_welcome, event: exploration_welcome_presented, target: explore_prepare}
-      - state: explore_prepare
-        event: exploration_ready
-        guards: {explore_is_approved: true}
-        target: explore_route
-      - state: explore_route
-        event: route_selected
-        guards: {route_within_policy: true}
-        target: explore_dispatch
-      - {state: explore_dispatch, event: direct_handoff_ready, target: explore_handoff}
-      - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
-      - {state: explore_execute, event: confirmation_required, target: explore_receipt}
-      - {state: explore_receipt, event: specialist_confirmation_required, target: effect_offer}
-      - {state: effect_offer, event: effect_confirmation_approved, target: explore_handoff}
-      - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
-      - {state: explore_execute, event: outcome_ready, target: explore_receipt}
-      - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
-      - {state: explore_verify, event: outcome_verified, target: crystallize}
-      - {state: crystallize, event: not_reusable, target: completed}
-    terminal: completed
-    includes_once: [effect_offer]
+      - {state: use_run, event: play_auth_repair_required, target: use_auth_repair_offer}
+      - {state: use_auth_repair_offer, event: auth_repair_approved, target: use_auth_repair_handoff}
+      - {state: use_auth_repair_handoff, event: auth_repair_handoff_ready, target: use_auth_repair_execute}
+      - {state: use_auth_repair_execute, event: auth_repair_ready, target: use_auth_repair_receipt}
+      - {state: use_auth_repair_receipt, event: specialist_auth_repair_ready, target: use_inspect}
+      - {state: use_inspect, event: play_inspected, target: use_decide}
+      - {state: use_decide, event: local_play_ready, target: use_prepare}
+      - {state: use_prepare, event: play_run_handoff_ready, target: use_run}
+      - {state: use_run, event: play_run_ready, target: use_verify}
+      - {state: use_verify, event: outcome_verified, target: use_receipt}
+      - {state: use_receipt, event: receipt_ready, target: receipt}
+    terminal: receipt
+    includes_once: [use_auth_repair_offer, use_auth_repair_handoff, use_auth_repair_execute, use_auth_repair_receipt]
 
-  - name: recoverable CALL authentication can be repaired and retried
+  - name: declined use-run authentication repair blocks without retrying
     steps:
-      - {state: explore_execute, event: auth_repair_required, target: explore_receipt}
-      - {state: explore_receipt, event: specialist_auth_repair_required, target: auth_repair_offer}
-      - {state: auth_repair_offer, event: auth_repair_approved, target: auth_repair_handoff}
-      - {state: auth_repair_handoff, event: auth_repair_handoff_ready, target: auth_repair_execute}
-      - {state: auth_repair_execute, event: auth_repair_ready, target: auth_repair_receipt}
-      - {state: auth_repair_receipt, event: specialist_auth_repair_ready, target: explore_handoff}
-      - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
-      - {state: explore_execute, event: outcome_ready, target: explore_receipt}
-      - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
-      - {state: explore_verify, event: outcome_verified, target: crystallize}
-      - {state: crystallize, event: not_reusable, target: completed}
-    terminal: completed
-    includes_once: [auth_repair_offer, auth_repair_handoff, auth_repair_execute, auth_repair_receipt]
-
-  - name: declined authentication repair blocks without retrying the CALL
-    steps:
-      - {state: explore_execute, event: auth_repair_required, target: explore_receipt}
-      - {state: explore_receipt, event: specialist_auth_repair_required, target: auth_repair_offer}
-      - {state: auth_repair_offer, event: auth_repair_declined, target: blocked}
+      - {state: use_run, event: play_auth_repair_required, target: use_auth_repair_offer}
+      - {state: use_auth_repair_offer, event: auth_repair_declined, target: blocked}
     terminal: blocked
-    excludes: [auth_repair_handoff, auth_repair_execute, auth_repair_receipt]
+    excludes: [use_auth_repair_handoff, use_auth_repair_execute, use_auth_repair_receipt]
 
-  - name: invalid authentication repair receipt blocks before CALL retry
+  - name: invalid use-run authentication repair receipt blocks before retry
     steps:
-      - {state: auth_repair_execute, event: auth_repair_ready, target: auth_repair_receipt}
-      - {state: auth_repair_receipt, event: auth_repair_receipt_invalid, target: blocked}
+      - {state: use_auth_repair_execute, event: auth_repair_ready, target: use_auth_repair_receipt}
+      - {state: use_auth_repair_receipt, event: auth_repair_receipt_invalid, target: blocked}
     terminal: blocked
-    excludes: [explore_handoff, explore_verify]
+    excludes: [use_inspect, use_run]
 
   - name: private save publishes to a private org and indexes
-    steps: &explore_to_save
-      - {state: qualify, event: outcome_request, target: search}
-      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
-      - {state: classify, event: no_match, target: explore_offer}
-      - {state: explore_offer, event: explore_approved, target: explore_welcome}
-      - {state: explore_welcome, event: exploration_welcome_presented, target: explore_prepare}
-      - state: explore_prepare
-        event: exploration_ready
-        guards: {explore_is_approved: true}
-        target: explore_route
-      - state: explore_route
-        event: route_selected
-        guards: {route_within_policy: true}
-        target: explore_dispatch
-      - {state: explore_dispatch, event: direct_handoff_ready, target: explore_handoff}
-      - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
-      - {state: explore_execute, event: outcome_ready, target: explore_receipt}
-      - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
-      - {state: explore_verify, event: outcome_verified, target: crystallize}
+    steps:
+      - {state: invoke, event: settled_task_invocation, target: save_judge}
+      - {state: save_judge, event: worth_saving, target: crystallize}
       - state: crystallize
         event: candidate_ready
         guards: {outcome_is_verified: true}
@@ -347,24 +303,8 @@ cases:
 
   - name: public save with known owner publishes and indexes
     steps:
-      - {state: qualify, event: outcome_request, target: search}
-      - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
-      - {state: classify, event: no_match, target: explore_offer}
-      - {state: explore_offer, event: explore_approved, target: explore_welcome}
-      - {state: explore_welcome, event: exploration_welcome_presented, target: explore_prepare}
-      - state: explore_prepare
-        event: exploration_ready
-        guards: {explore_is_approved: true}
-        target: explore_route
-      - state: explore_route
-        event: route_selected
-        guards: {route_within_policy: true}
-        target: explore_dispatch
-      - {state: explore_dispatch, event: direct_handoff_ready, target: explore_handoff}
-      - {state: explore_handoff, event: specialist_handoff_ready, target: explore_execute}
-      - {state: explore_execute, event: outcome_ready, target: explore_receipt}
-      - {state: explore_receipt, event: specialist_outcome_ready, target: explore_verify}
-      - {state: explore_verify, event: outcome_verified, target: crystallize}
+      - {state: invoke, event: settled_task_invocation, target: save_judge}
+      - {state: save_judge, event: worth_saving, target: crystallize}
       - state: crystallize
         event: candidate_ready
         guards: {outcome_is_verified: true}
@@ -474,7 +414,7 @@ cases:
       - {state: management_list, event: management_inventory_ready, target: management_present}
       - {state: management_present, event: management_presented, target: completed}
     terminal: completed
-    excludes: [search, explore_offer, author_release]
+    excludes: [search, standby_exit, author_release]
 
   - name: ambiguous Play list uses structured view selection
     steps:
@@ -483,101 +423,37 @@ cases:
       - {state: management_list, event: management_inventory_ready, target: management_present}
       - {state: management_present, event: management_presented, target: completed}
     terminal: completed
-    excludes: [search, explore_offer]
+    excludes: [search, standby_exit]
 
   - name: owner can retrieve a local Play birth certificate
     steps:
       - {state: qualify, event: play_birth_request, target: birth_show}
       - {state: birth_show, event: birth_ready, target: completed}
     terminal: completed
-    excludes: [search, use_run, explore_offer]
+    excludes: [search, use_run, standby_exit]
 
-  - name: declined modality widening blocks exploration
+  - name: controller drift arms the save hook instead of a repair dialog
     steps:
-      - state: explore_route
-        event: route_selected
-        guards: {route_within_policy: false}
-        target: modality_offer
-      - {state: modality_offer, event: modality_widening_declined, target: blocked}
-    terminal: blocked
-
-  - name: CALL blocks when rote-using-adapters is unavailable
-    steps:
-      - state: explore_route
-        event: route_selected
-        guards: {route_within_policy: true}
-        target: explore_dispatch
-      - {state: explore_dispatch, event: adapter_discovery_required, target: adapter_discover}
-      - {state: adapter_discover, event: adapter_catalog_empty, target: adapter_converge}
-      - {state: adapter_converge, event: adapter_converged, target: explore_handoff}
-      - {state: explore_handoff, event: specialist_unavailable, target: blocked}
-    terminal: blocked
-    excludes: [explore_execute, explore_receipt, explore_verify]
-
-  - name: CALL presents every catalog match before specialist preparation
-    steps:
-      - state: explore_route
-        event: route_selected
-        guards: {route_within_policy: true}
-        target: explore_dispatch
-      - {state: explore_dispatch, event: adapter_discovery_required, target: adapter_discover}
-      - {state: adapter_discover, event: adapter_choices_ready, target: adapter_offer}
-      - {state: adapter_offer, event: adapter_source_selected, target: adapter_converge}
-      - {state: adapter_converge, event: adapter_converged, target: explore_handoff}
-    terminal: explore_handoff
-    includes_once: [adapter_discover, adapter_offer]
-
-  - name: rejected catalog matches permit later spec discovery
-    steps:
-      - {state: adapter_discover, event: adapter_choices_ready, target: adapter_offer}
-      - {state: adapter_offer, event: adapter_catalog_rejected, target: adapter_converge}
-      - {state: adapter_converge, event: adapter_converged, target: explore_handoff}
-    terminal: explore_handoff
-
-  - name: raw direct-tool output cannot pass specialist receipt validation
-    steps:
-      - {state: explore_execute, event: outcome_ready, target: explore_receipt}
-      - {state: explore_receipt, event: specialist_receipt_invalid, target: blocked}
-    terminal: blocked
-    excludes: [explore_verify]
-
-  - name: exhausted route retries only within budget
-    steps:
-      - state: explore_execute
-        event: route_exhausted
-        target: explore_receipt
-      - state: explore_receipt
-        event: specialist_route_exhausted
-        guards: {exploration_budget_remaining: true}
-        target: explore_route
-      - {state: explore_route, event: no_safe_route, target: blocked}
-    terminal: blocked
-
-  - name: controller drift enters the declared repair path
-    steps:
-      - {state: use_run, event: play_drifted, target: repair_offer}
-      - {state: repair_offer, event: ordinary_execution_selected, target: exited}
-    terminal: exited
-
-  - name: incomplete run output cannot reach verification
-    steps:
-      - {state: use_run, event: action_blocked, target: repair_offer}
-      - {state: repair_offer, event: ordinary_execution_selected, target: exited}
+      - {state: use_run, event: play_drifted, target: standby_exit}
+      - {state: standby_exit, event: standby_recorded, target: exited}
     terminal: exited
     excludes: [use_verify, use_receipt, receipt]
 
-  - name: drift can enter consented repair exploration
+  - name: incomplete run output cannot reach verification
     steps:
-      - {state: use_run, event: play_drifted, target: repair_offer}
-      - {state: repair_offer, event: repair_approved, target: explore_welcome}
-      - {state: explore_welcome, event: exploration_welcome_presented, target: explore_prepare}
-      - state: explore_prepare
-        event: exploration_ready
-        guards: {explore_is_approved: true}
-        target: explore_route
-    terminal: explore_route
+      - {state: use_run, event: action_blocked, target: standby_exit}
+      - {state: standby_exit, event: standby_recorded, target: exited}
+    terminal: exited
+    excludes: [use_verify, use_receipt, receipt]
 
-  - name: awareness selection enters inspected Use without Explore
+  - name: unverified use output steps aside for ordinary work
+    steps:
+      - {state: use_verify, event: outcome_not_verified, target: standby_exit}
+      - {state: standby_exit, event: standby_recorded, target: exited}
+    terminal: exited
+    excludes: [use_receipt, receipt]
+
+  - name: awareness selection enters inspected Use directly
     steps:
       - {state: qualify, event: play_awareness_request, target: awareness_collect}
       - {state: awareness_collect, event: awareness_ready, target: awareness_present}
@@ -591,7 +467,7 @@ cases:
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
     terminal: receipt
-    excludes: [explore_offer, explore_prepare, crystallize]
+    excludes: [standby_exit, crystallize]
 
   - name: unchanged awareness closes without an action prompt
     steps:
@@ -606,21 +482,17 @@ cases:
       - {state: awareness_need, event: awareness_need_described, target: search}
     terminal: search
 
-  - name: explicit creator intent skips redundant Explore prompt
+  - name: creator intent without a match arms the save hook and steps aside
     steps:
       - {state: qualify, event: play_creation_request, target: creator_search}
       - state: creator_search
         event: creator_search_ready
         guards: {search_is_complete: true}
         target: creator_classify
-      - {state: creator_classify, event: creator_no_match, target: explore_welcome}
-      - {state: explore_welcome, event: exploration_welcome_presented, target: explore_prepare}
-      - state: explore_prepare
-        event: exploration_ready
-        guards: {explore_is_approved: true}
-        target: explore_route
-    terminal: explore_route
-    excludes: [explore_offer]
+      - {state: creator_classify, event: creator_no_match, target: standby_exit}
+      - {state: standby_exit, event: standby_recorded, target: exited}
+    terminal: exited
+    excludes: [save_judge, crystallize]
 
   - name: creator can choose an adequate existing Play
     steps:
@@ -629,3 +501,11 @@ cases:
       - {state: use_inspect, event: play_inspected, target: use_decide}
       - {state: use_decide, event: remote_pull_required, target: use_offer}
     terminal: use_offer
+
+  - name: creator can choose to adapt an existing Play outside the machine
+    steps:
+      - {state: creator_classify, event: creator_match_ready, target: creator_offer}
+      - {state: creator_offer, event: creator_adapt_selected, target: standby_exit}
+      - {state: standby_exit, event: standby_recorded, target: exited}
+    terminal: exited
+    excludes: [use_inspect]

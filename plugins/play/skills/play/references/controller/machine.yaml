@@ -13,6 +13,7 @@ states:
       empty_play_invocation: [{target: onboarding_probe, mutate: start_greeting_onboarding}]
       play_uri_invocation: [{target: onboarding_probe, mutate: start_uri_onboarding}]
       outcome_play_invocation: [{target: search, mutate: set_request_contract}]
+      settled_task_invocation: [{target: save_judge, mutate: enter_settled_judgment}]
       ordinary_play_invocation: [{target: qualify, mutate: record_ordinary_invocation}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -193,7 +194,7 @@ states:
       play_management_choice_required: [{target: management_offer, mutate: record_management_choices}]
       play_birth_request: [{target: birth_show, mutate: set_birth_request}]
       conversation: [{target: exited, mutate: record_non_outcome_exit}]
-      play_excluded: [{target: exited, mutate: record_explicit_exit}]
+      play_excluded: [{target: standby_exit, mutate: record_explicit_exit}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   awareness_collect:
@@ -257,7 +258,7 @@ states:
     entry: {action: classify_creator_options}
     "on":
       creator_match_ready: [{target: creator_offer, mutate: record_creator_match}]
-      creator_no_match: [{target: explore_welcome, mutate: approve_creator_explore}]
+      creator_no_match: [{target: standby_exit, mutate: record_creator_standby}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   creator_offer:
@@ -266,8 +267,8 @@ states:
     prompt: choose_creator_path
     "on":
       creator_use_selected: [{target: use_inspect, mutate: enter_creator_use}]
-      creator_adapt_selected: [{target: explore_welcome, mutate: approve_adapt_explore}]
-      creator_create_selected: [{target: explore_welcome, mutate: approve_creator_explore}]
+      creator_adapt_selected: [{target: standby_exit, mutate: record_creator_standby}]
+      creator_create_selected: [{target: standby_exit, mutate: record_creator_standby}]
 
   management_offer:
     owner: play
@@ -340,11 +341,11 @@ states:
     "on":
       full_match:
         - {guard: match_satisfies_constraints, target: use_inspect, mutate: enter_use}
-        - {target: explore_offer, mutate: downgrade_inadequate_match}
+        - {target: standby_exit, mutate: downgrade_inadequate_match}
       remote_match_choice_required: [{target: search_present, mutate: record_search_results}]
-      partial_match: [{target: explore_offer, mutate: record_partial_match}]
-      uncertain_match: [{target: explore_offer, mutate: record_uncertain_match}]
-      no_match: [{target: explore_offer, mutate: record_no_match}]
+      partial_match: [{target: standby_exit, mutate: record_partial_match}]
+      uncertain_match: [{target: standby_exit, mutate: record_uncertain_match}]
+      no_match: [{target: standby_exit, mutate: record_no_match}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_inspect:
@@ -356,7 +357,7 @@ states:
       play_inspected: [{target: use_decide, mutate: record_play_inspection}]
       play_not_runnable:
         - {guard: search_has_remaining_choices, target: search_present, mutate: record_unrunnable_inspection}
-        - {target: explore_offer, mutate: record_unrunnable_inspection}
+        - {target: standby_exit, mutate: record_unrunnable_inspection}
       play_reference_unresolved: [{target: search, mutate: recover_unresolved_reference}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -404,9 +405,9 @@ states:
     entry: {action: run_registry_play}
     "on":
       play_run_ready: [{target: use_verify, mutate: record_controller_run}]
-      play_drifted: [{target: repair_offer, mutate: record_failed_receipt}]
+      play_drifted: [{target: standby_exit, mutate: record_failed_receipt}]
       play_auth_repair_required: [{target: use_auth_repair_offer, mutate: record_use_auth_repair_required}]
-      action_blocked: [{target: repair_offer, mutate: record_failed_receipt}]
+      action_blocked: [{target: standby_exit, mutate: record_failed_receipt}]
 
   use_auth_repair_offer:
     owner: play
@@ -454,8 +455,8 @@ states:
     entry: {action: verify_play_output}
     "on":
       outcome_verified: [{target: use_receipt, mutate: record_verification}]
-      play_drifted: [{target: repair_offer, mutate: record_failed_receipt}]
-      outcome_not_verified: [{target: repair_offer, mutate: record_failed_receipt}]
+      play_drifted: [{target: standby_exit, mutate: record_failed_receipt}]
+      outcome_not_verified: [{target: standby_exit, mutate: record_failed_receipt}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_receipt:
@@ -488,197 +489,23 @@ states:
       onboarding_awareness_selected: [{target: awareness_collect, mutate: enter_onboarding_awareness}]
       onboarding_finished: [{target: receipt, mutate: finish_onboarding_activation}]
 
-  repair_offer:
-    owner: play
-    checkpoint: after
-    prompt: repair_or_exit
-    "on":
-      repair_approved: [{target: explore_welcome, mutate: approve_repair_explore}]
-      ordinary_execution_selected: [{target: exited, mutate: record_ordinary_exit}]
-
-  explore_offer:
-    owner: play
-    checkpoint: after
-    prompt: explore_or_exit
-    "on":
-      explore_approved: [{target: explore_welcome, mutate: approve_explore}]
-      ordinary_execution_selected: [{target: exited, mutate: record_ordinary_exit}]
-
-  explore_welcome:
+  standby_exit:
     owner: play
     checkpoint: both
-    requires: [consent.explore, onboarding.identity_status]
-    entry: {action: present_exploration_welcome}
+    requires: [request.original]
+    entry: {action: record_standby}
     "on":
-      exploration_welcome_presented: [{target: explore_prepare, mutate: record_exploration_welcome}]
+      standby_recorded: [{target: exited, mutate: record_save_hook}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
-  explore_prepare:
-    owner: rote-specialist
-    checkpoint: both
-    requires: [consent.explore]
-    entry: {action: prepare_exploration}
-    "on":
-      exploration_ready:
-        - {guard: explore_is_approved, target: explore_route, mutate: record_exploration_context}
-        - {target: blocked, mutate: record_missing_consent}
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  explore_route:
+  save_judge:
     owner: play
     checkpoint: after
-    entry: {action: select_modalities}
+    requires: [request.original]
+    entry: {action: judge_save_worthiness}
     "on":
-      route_selected:
-        - {guard: route_within_policy, target: explore_dispatch, mutate: record_route}
-        - {target: modality_offer, mutate: record_widening_request}
-      modality_widening_required: [{target: modality_offer, mutate: record_widening_request}]
-      no_safe_route: [{target: blocked, mutate: record_no_route}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  explore_dispatch:
-    owner: play
-    checkpoint: after
-    requires: [route.modalities, execution.owner, adapter_discovery.status]
-    entry: {action: dispatch_route}
-    "on":
-      adapter_discovery_required: [{target: adapter_discover, mutate: record_route_dispatch}]
-      direct_handoff_ready: [{target: explore_handoff, mutate: record_route_dispatch}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  adapter_discover:
-    owner: rote-specialist
-    checkpoint: both
-    requires: [request.requested_outcome, route.modalities, execution.owner, adapter_discovery.query]
-    entry: {action: discover_call_adapter}
-    "on":
-      adapter_ready: [{target: explore_handoff, mutate: record_adapter_discovery}]
-      adapter_choices_ready: [{target: adapter_offer, mutate: record_adapter_discovery}]
-      adapter_catalog_empty: [{target: adapter_converge, mutate: record_adapter_discovery}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  adapter_offer:
-    owner: play
-    checkpoint: after
-    requires: [adapter_discovery.status, adapter_discovery.choices]
-    prompt: choose_adapter_source
-    "on":
-      adapter_source_selected: [{target: adapter_converge, mutate: select_adapter_source}]
-      adapter_catalog_rejected: [{target: adapter_converge, mutate: record_catalog_rejection}]
-
-  adapter_converge:
-    owner: rote-specialist
-    checkpoint: both
-    requires: [request.requested_outcome, adapter_discovery.status, adapter_discovery.searched_sources]
-    entry: {action: converge_call_adapter}
-    "on":
-      adapter_converged: [{target: explore_handoff, mutate: record_adapter_convergence}]
-      adapter_convergence_failed: [{target: blocked, mutate: record_adapter_convergence_failure}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  modality_offer:
-    owner: play
-    checkpoint: after
-    prompt: widen_modalities
-    "on":
-      modality_widening_approved: [{target: explore_route, mutate: widen_modality_policy}]
-      modality_widening_declined: [{target: blocked, mutate: record_constraint_blocker}]
-
-  explore_handoff:
-    owner: play
-    checkpoint: after
-    requires: [execution.owner, route.modalities, consent.explore]
-    entry: {action: prepare_specialist_handoff}
-    "on":
-      specialist_handoff_ready: [{target: explore_execute, mutate: record_specialist_handoff}]
-      specialist_unavailable: [{target: blocked, mutate: record_specialist_unavailable}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  explore_execute:
-    owner: rote-specialist
-    checkpoint: both
-    requires: [execution.owner, consent.explore, handoff.owner, handoff.available, handoff.packet, handoff.packet_sha256]
-    entry: {action: execute_route}
-    "on":
-      outcome_ready: [{target: explore_receipt, mutate: record_specialist_response}]
-      route_exhausted: [{target: explore_receipt, mutate: record_specialist_response}]
-      confirmation_required: [{target: explore_receipt, mutate: record_specialist_response}]
-      auth_repair_required: [{target: explore_receipt, mutate: record_specialist_response}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  explore_receipt:
-    owner: play
-    checkpoint: after
-    requires: [execution.owner, handoff.packet, handoff.packet_sha256, handoff.receipt]
-    entry: {action: validate_specialist_receipt}
-    "on":
-      specialist_outcome_ready: [{target: explore_verify, mutate: record_execution_evidence}]
-      specialist_route_exhausted:
-        - {guard: exploration_budget_remaining, target: explore_route, mutate: consume_attempt}
-        - {target: blocked, mutate: record_exhaustion}
-      specialist_confirmation_required: [{target: effect_offer, mutate: record_effect_confirmation}]
-      specialist_auth_repair_required: [{target: auth_repair_offer, mutate: record_auth_repair_required}]
-      specialist_receipt_invalid: [{target: blocked, mutate: record_invalid_specialist_receipt}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  effect_offer:
-    owner: play
-    checkpoint: after
-    requires: [effect_policy.rote_confirmation]
-    prompt: approve_effect_confirmation
-    "on":
-      effect_confirmation_approved: [{target: explore_handoff, mutate: approve_effect_confirmation}]
-      effect_confirmation_declined: [{target: blocked, mutate: decline_effect_confirmation}]
-
-  auth_repair_offer:
-    owner: play
-    checkpoint: after
-    requires: [auth_repair.status, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.original_packet, auth_repair.original_packet_sha256]
-    prompt: approve_auth_repair
-    "on":
-      auth_repair_approved: [{target: auth_repair_handoff, mutate: approve_auth_repair}]
-      auth_repair_declined: [{target: blocked, mutate: decline_auth_repair}]
-
-  auth_repair_handoff:
-    owner: play
-    checkpoint: after
-    requires: [auth_repair.status, auth_repair.owner, auth_repair.original_packet, auth_repair.original_packet_sha256]
-    entry: {action: prepare_auth_repair_handoff}
-    "on":
-      auth_repair_handoff_ready: [{target: auth_repair_execute, mutate: record_auth_repair_handoff}]
-      auth_repair_specialist_unavailable: [{target: blocked, mutate: record_auth_repair_unavailable}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  auth_repair_execute:
-    owner: rote-specialist
-    checkpoint: both
-    requires: [auth_repair.owner, auth_repair.packet, auth_repair.packet_sha256, auth_repair.original_packet_sha256]
-    entry: {action: execute_auth_repair}
-    "on":
-      auth_repair_ready: [{target: auth_repair_receipt, mutate: record_auth_repair_response}]
-      auth_repair_failed: [{target: auth_repair_receipt, mutate: record_auth_repair_response}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  auth_repair_receipt:
-    owner: play
-    checkpoint: after
-    requires: [auth_repair.packet, auth_repair.packet_sha256, auth_repair.receipt]
-    entry: {action: validate_auth_repair_receipt}
-    "on":
-      specialist_auth_repair_ready: [{target: explore_handoff, mutate: record_auth_repair_success}]
-      specialist_auth_repair_failed: [{target: blocked, mutate: record_auth_repair_failure}]
-      auth_repair_receipt_invalid: [{target: blocked, mutate: record_invalid_auth_repair_receipt}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  explore_verify:
-    owner: play
-    checkpoint: after
-    entry: {action: verify_outcome}
-    "on":
-      outcome_verified: [{target: crystallize, mutate: record_verification}]
-      outcome_not_verified:
-        - {guard: exploration_budget_remaining, target: explore_route, mutate: consume_attempt}
-        - {target: blocked, mutate: record_verification_failure}
+      worth_saving: [{target: crystallize, mutate: record_save_worthiness}]
+      not_worth_saving: [{target: exited, mutate: record_not_worth_saving}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   crystallize:

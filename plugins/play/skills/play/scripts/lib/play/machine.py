@@ -385,16 +385,14 @@ def validate_bundle(
         if not changed:
             break
     rules = {
-        "explore_handoff": ("explore_execute", "explore_receipt", "explore_verify"),
-        "explore_execute": ("explore_receipt", "explore_verify"),
-        "explore_receipt": ("explore_verify",),
-        "auth_repair_offer": (
-            "auth_repair_handoff",
-            "auth_repair_execute",
-            "auth_repair_receipt",
+        "use_auth_repair_offer": (
+            "use_auth_repair_handoff",
+            "use_auth_repair_execute",
+            "use_auth_repair_receipt",
         ),
-        "auth_repair_handoff": ("auth_repair_execute", "auth_repair_receipt"),
-        "auth_repair_execute": ("auth_repair_receipt",),
+        "use_auth_repair_handoff": ("use_auth_repair_execute", "use_auth_repair_receipt"),
+        "use_auth_repair_execute": ("use_auth_repair_receipt",),
+        "save_judge": ("crystallize",),
         "crystallize": ("save_prepare", "save_offer", "public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
         "save_prepare": ("save_offer", "public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
         "save_offer": ("public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
@@ -576,84 +574,45 @@ def validate_bundle(
     check(_target(states, "awareness_collect", "awareness_unchanged") == "completed", "unchanged awareness must finish without an action prompt")
     check(_target(states, "awareness_offer", "awareness_play_selected") == "use_inspect", "an exact awareness selection must enter inspection")
     check(_target(states, "qualify", "play_creation_request") == "creator_search", "explicit creator intent must search before exploration")
-    check(_target(states, "creator_classify", "creator_no_match") == "explore_welcome", "creator intent without a match must skip the redundant Explore prompt and welcome the human")
     check(
-        actions.get("present_exploration_welcome", {}).get("command")
-        == "scripts/bin/play-onboarding explore-welcome --stdin --json",
-        "Explore must use the deterministic identity-aware welcome",
+        _target(states, "creator_classify", "creator_no_match") == "standby_exit",
+        "creator intent without a match must arm the save hook and step aside",
     )
     check(
-        _target(states, "explore_welcome", "exploration_welcome_presented")
-        == "explore_prepare",
-        "the exploration workspace may be prepared only after the welcome is presented",
+        _target(states, "invoke", "settled_task_invocation") == "save_judge",
+        "a settled-task re-entry must reach the save-worthiness judge directly",
     )
     check(
-        _target(states, "explore_route", "route_selected") == "explore_dispatch",
-        "an approved route must dispatch CALL discovery before specialist preparation",
+        _target(states, "classify", "no_match") == "standby_exit"
+        and _target(states, "classify", "partial_match") == "standby_exit"
+        and _target(states, "classify", "uncertain_match") == "standby_exit",
+        "inadequate discovery must exit to standby instead of orchestrating exploration",
     )
     check(
-        _target(states, "explore_dispatch", "adapter_discovery_required") == "adapter_discover",
-        "a CALL route must enter typed adapter discovery",
+        _target(states, "qualify", "play_excluded") == "standby_exit",
+        "an explicit exclusion must pass the preference recorder before exiting",
     )
     check(
-        _target(states, "explore_dispatch", "direct_handoff_ready") == "explore_handoff",
-        "a non-CALL route may proceed directly to specialist preparation",
+        states.get("standby_exit", {}).get("entry", {}).get("action") == "record_standby"
+        and _target(states, "standby_exit", "standby_recorded") == "exited",
+        "standby must record the save hook and scoped preferences, then exit quietly",
     )
     check(
-        _target(states, "adapter_discover", "adapter_choices_ready") == "adapter_offer",
-        "installed or catalog choices must be presented instead of silently selected",
+        actions.get("record_standby", {}).get("command")
+        == "scripts/bin/play-standby record --stdin --json",
+        "the save hook and preference ledger must use the deterministic standby recorder",
     )
     check(
-        _target(states, "adapter_discover", "adapter_catalog_empty") == "adapter_converge",
-        "a proven empty catalog must hand spec discovery to adapter convergence",
+        states.get("save_judge", {}).get("entry", {}).get("action")
+        == "judge_save_worthiness"
+        and actions.get("judge_save_worthiness", {}).get("kind") == "evaluator"
+        and _target(states, "save_judge", "worth_saving") == "crystallize"
+        and _target(states, "save_judge", "not_worth_saving") == "exited",
+        "save worthiness must be judged from trace evidence and route only to crystallization or a quiet exit",
     )
     check(
-        _target(states, "adapter_offer", "adapter_source_selected") == "adapter_converge",
-        "an explicit adapter choice must enter adapter convergence",
-    )
-    check(
-        _target(states, "adapter_converge", "adapter_converged") == "explore_handoff",
-        "only an installed-ready adapter may bind into specialist preparation",
-    )
-    check(
-        _target(states, "explore_handoff", "specialist_handoff_ready") == "explore_execute",
-        "only a prepared specialist handoff may enter Explore execution",
-    )
-    check(
-        _target(states, "explore_handoff", "specialist_unavailable") == "blocked",
-        "an unavailable specialist must block without direct-tool fallback",
-    )
-    check(
-        _target(states, "explore_execute", "outcome_ready") == "explore_receipt",
-        "delegated output must enter receipt validation before verification",
-    )
-    check(
-        _target(states, "explore_receipt", "specialist_outcome_ready") == "explore_verify",
-        "only a validated specialist receipt may enter outcome verification",
-    )
-    check(
-        _target(states, "explore_receipt", "specialist_receipt_invalid") == "blocked",
-        "an invalid specialist receipt must block",
-    )
-    check(
-        _target(states, "explore_receipt", "specialist_auth_repair_required")
-        == "auth_repair_offer",
-        "a recoverable auth failure must enter the dedicated repair offer",
-    )
-    check(
-        _target(states, "auth_repair_offer", "auth_repair_approved")
-        == "auth_repair_handoff",
-        "approved auth repair must enter its closed specialist handoff",
-    )
-    check(
-        _target(states, "auth_repair_receipt", "specialist_auth_repair_ready")
-        == "explore_handoff",
-        "validated auth repair must prepare a fresh execution handoff",
-    )
-    check(
-        _target(states, "auth_repair_receipt", "auth_repair_receipt_invalid")
-        == "blocked",
-        "an invalid auth repair receipt must block",
+        predecessors["crystallize"] == {"save_judge"},
+        "crystallization may follow only an affirmative save-worthiness judgment",
     )
     for forbidden in ("use_preflight", "use_resolve"):
         check(forbidden not in states, f"{forbidden} must stay inside the rote play run controller")
@@ -670,34 +629,6 @@ def validate_bundle(
         "Preserve output.primary exactly as received" in receipt_policy
         and "never wrap, summarize, convert, or decorate it" in receipt_policy,
         "Use receipts must preserve the Play output for harness-owned presentation",
-    )
-    check(
-        predecessors["explore_welcome"]
-        == {"creator_classify", "creator_offer", "explore_offer", "repair_offer"},
-        "every initial approved Explore path must enter the welcome exactly once",
-    )
-    check(
-        predecessors["explore_prepare"] == {"explore_welcome"},
-        "workspace preparation may follow only the human welcome",
-    )
-    check(predecessors["explore_dispatch"] == {"explore_route"}, "route dispatch may follow only route selection")
-    check(predecessors["adapter_discover"] == {"explore_dispatch"}, "adapter discovery may follow only CALL dispatch")
-    check(predecessors["adapter_offer"] == {"adapter_discover"}, "adapter choice may follow only typed discovery")
-    check(
-        predecessors["adapter_converge"] == {"adapter_discover", "adapter_offer"},
-        "adapter convergence may follow only proven catalog exhaustion or an explicit adapter choice",
-    )
-    check(
-        predecessors["explore_execute"] == {"explore_handoff"},
-        "Explore execution may follow only a prepared specialist handoff",
-    )
-    check(
-        predecessors["explore_receipt"] == {"explore_execute"},
-        "specialist receipt validation may follow only delegated execution",
-    )
-    check(
-        predecessors["explore_verify"] == {"explore_receipt"},
-        "Explore verification may follow only a validated specialist receipt",
     )
     check(predecessors["birth_bind"] == {"private_publish", "public_publish"}, "birth binding may follow only successful private or public publication")
     check(predecessors["index"] == {"birth_bind"}, "index may follow only successful birth binding")
@@ -805,6 +736,9 @@ def validate_bundle(
         "handoff",
         "auth_repair",
         "publication_validation",
+        "standby",
+        "save_judge",
+        "preferences",
         "last_event",
     ):
         check(field in context_roots, f"context schema must require {field}")
@@ -869,16 +803,6 @@ def validate_bundle(
     check(
         auth_repair_owner_enum == ["rote-adapter-config", None],
         "auth repair must use a separate closed rote-adapter-config owner",
-    )
-    check(
-        actions.get("prepare_specialist_handoff", {}).get("command")
-        == "scripts/bin/play-handoff prepare --stdin --json",
-        "specialist availability must use the reusable handoff gate",
-    )
-    check(
-        actions.get("validate_specialist_receipt", {}).get("command")
-        == "scripts/bin/play-handoff verify --stdin --json",
-        "specialist receipts must use the reusable verification gate",
     )
     check(
         actions.get("prepare_auth_repair_handoff", {}).get("command")
@@ -985,33 +909,22 @@ def validate_bundle(
         and "fresh temporary working directory under /tmp" in smoke_policy,
         "public smoke must run the exact canonical URI from isolated local context",
     )
-    execute_policy = " ".join(actions.get("execute_route", {}).get("command_policy", []))
-    discovery_policy = " ".join(actions.get("discover_call_adapter", {}).get("command_policy", []))
-    convergence_policy = " ".join(actions.get("converge_call_adapter", {}).get("command_policy", []))
-    check(
-        "always run rote adapter catalog search" in discovery_policy
-        and "never silently select" in discovery_policy
-        and "successful zero-result catalog search" in discovery_policy,
-        "CALL discovery must search and honor the adapter catalog before spec discovery",
+    judge_policy_text = " ".join(
+        actions.get("judge_save_worthiness", {}).get("command_policy", [])
     )
     check(
-        "must not call MCP, app, shell, or browser tools directly" in execute_policy,
-        "delegated Explore must explicitly forbid direct tool execution",
+        "trace evidence, not conversation prose" in judge_policy_text
+        and "recurrence prior" in judge_policy_text
+        and "failed or abandoned task" in judge_policy_text,
+        "save worthiness must be judged from trace evidence with a recurrence prior and failure gate",
+    )
+    standby_policy_text = " ".join(
+        actions.get("record_standby", {}).get("command_policy", [])
     )
     check(
-        "substrate detection" in convergence_policy
-        and "Play must not reproduce those stages" in convergence_policy,
-        "CALL adapter creation must be handed off with substrate detection owned by rote-adapter-create",
-    )
-    check(
-        "initial authentication" in convergence_policy
-        and "recoverable auth failure" in execute_policy,
-        "CALL adapter execution must separate initial authentication from recoverable repair",
-    )
-    check(
-        "route_provenance"
-        in actions.get("execute_route", {}).get("events", {}).get("outcome_ready", []),
-        "successful delegated execution must report route provenance",
+        "unserved outcome intent" in standby_policy_text
+        and "explicit statement" in standby_policy_text,
+        "standby must arm hooks only for unserved outcomes and ledger only explicit statements",
     )
     outcome_fields = (
         handoff_schema.get("$defs", {})

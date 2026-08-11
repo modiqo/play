@@ -37,7 +37,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             cursor,
             ControllerEvent(
                 id=EventId("ordinary_play_invocation"),
-                payload={"onboarding": {"classify_ns": 1}},
+                payload={"onboarding": {"classify_ns": 1}, "preferences": {"policies": []}},
                 guards={},
             ),
         ).cursor
@@ -47,7 +47,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(87, len(self.runtime.bundle.states))
+        self.assertEqual(70, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -74,7 +74,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             self.initial_cursor(),
             ControllerEvent(
                 id=EventId("ordinary_play_invocation"),
-                payload={"onboarding": {"classify_ns": 1}},
+                payload={"onboarding": {"classify_ns": 1}, "preferences": {"policies": []}},
                 guards={},
             ),
         ).as_dict()
@@ -114,24 +114,15 @@ class ControllerRuntimeTest(unittest.TestCase):
             request_original="Fetch recent emails",
         )
         for state, expected in (
-            ("adapter_discover", "rote-adapter-create"),
-            ("adapter_converge", "rote-adapter-create"),
             ("use_auth_repair_execute", "rote-adapter-config"),
+            ("onboarding_team_create", "rote-org"),
+            ("crystallize", "rote-flow-crystallization"),
+            ("author_release", "rote-flow-authoring"),
         ):
             projection = self.runtime.project(
                 replace(session.cursor, state=StateId(state)), session.context
             ).as_dict()
             self.assertEqual(expected, projection["instruction"]["specialist"])
-
-        context = dict(session.context)
-        context["execution"] = dict(context["execution"])
-        context["execution"]["owner"] = "rote-using-adapters"
-        projection = self.runtime.project(
-            replace(session.cursor, state=StateId("explore_execute")), context
-        ).as_dict()
-        self.assertEqual(
-            "rote-using-adapters", projection["instruction"]["specialist"]
-        )
 
     def test_prompt_event_template_prebinds_controller_evidence(self) -> None:
         session = self.runtime.initial_session(
@@ -191,7 +182,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             session,
             ControllerEvent(
                 id=EventId("ordinary_play_invocation"),
-                payload={"onboarding": {"classify_ns": 42}},
+                payload={"onboarding": {"classify_ns": 42}, "preferences": {"policies": []}},
                 guards={},
             ),
         )
@@ -203,7 +194,10 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertIsNotNone(advanced.projection.instruction)
         assert advanced.projection.instruction is not None
         self.assertEqual(
-            {"request": {"original": "Repository work"}},
+            {
+                "request": {"original": "Repository work"},
+                "preferences": {"policies": []},
+            },
             advanced.projection.instruction["input"],
         )
 
@@ -236,7 +230,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             session,
             ControllerEvent(
                 id=EventId("ordinary_play_invocation"),
-                payload={"onboarding": {"classify_ns": 1}},
+                payload={"onboarding": {"classify_ns": 1}, "preferences": {"policies": []}},
                 guards={},
             ),
         ).session
@@ -266,7 +260,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             session,
             ControllerEvent(
                 id=EventId("ordinary_play_invocation"),
-                payload={"onboarding": {"classify_ns": 1}},
+                payload={"onboarding": {"classify_ns": 1}, "preferences": {"policies": []}},
                 guards={},
             ),
         ).session
@@ -776,31 +770,70 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual(1, len(yielded.presentations))
         self.assertIn("Search: `release notes`", yielded.presentations[0])
 
-    def test_session_applies_consent_mutation_before_explore(self) -> None:
+    def test_digest_and_search_selections_bind_the_direct_run_contract(self) -> None:
+        from play.runtime_context import apply_event, initial_context
+
+        for mutation in ("enter_awareness_use", "enter_search_use"):
+            with self.subTest(mutation=mutation):
+                context = initial_context(
+                    run_id="run-bind",
+                    task_key="task-bind",
+                    machine_version="test",
+                    request_original="what's new",
+                )
+                updated = apply_event(
+                    context,
+                    event_id="selection",
+                    payload={
+                        "match.reference": "acme/ship-and-tell@0.1.0",
+                        "request.parameters": {"channel": "#ship"},
+                    },
+                    state="use_inspect",
+                    transition_seq=1,
+                    mutation=mutation,
+                )
+                self.assertEqual("use", updated["mode"])
+                self.assertIsNotNone(updated["request"]["requested_outcome"])
+                self.assertIn(
+                    "acme/ship-and-tell@0.1.0", updated["request"]["requested_outcome"]
+                )
+                self.assertEqual({"channel": "#ship"}, updated["request"]["parameters"])
+
+    def test_session_applies_settled_judgment_mutation_before_save_judge(self) -> None:
         session = self.runtime.initial_session(
-            run_id="session-1", task_key="task-1", request_original="Explore a result"
-        )
-        context = dict(session.context)
-        context["state"] = "explore_offer"
-        projected = session.__class__(
-            schema=session.schema,
-            cursor=replace(session.cursor, state=StateId("explore_offer")),
-            context=context,
-            preflight_ready=True,
+            run_id="session-1",
+            task_key="task-1",
+            request_original="$play settle deployed staging and posted the summary",
         )
 
         advanced = self.runtime.advance_session(
-            projected,
+            session,
             ControllerEvent(
-                id=EventId("explore_approved"),
-                payload={"prompt_version": "1", "selected_at": "2026-08-07T00:00:00Z"},
+                id=EventId("settled_task_invocation"),
+                payload={
+                    "standby": {
+                        "armed": True,
+                        "task_class": "build-ship-chore",
+                        "hook_ref": "sha256:hook",
+                        "settle_summary": "deployed staging and posted the summary",
+                    },
+                    "request": {
+                        "intent": "deployed staging and posted the summary",
+                        "requested_outcome": "deployed staging and posted the summary",
+                    },
+                    "preferences": {"policies": []},
+                    "onboarding": {"classify_ns": 1},
+                },
                 guards={},
             ),
         )
 
-        self.assertEqual("explore_welcome", advanced.session.cursor.state)
-        self.assertEqual("approved", advanced.session.context["consent"]["explore"])
-        self.assertEqual("explore", advanced.session.context["mode"])
+        self.assertEqual("save_judge", advanced.session.cursor.state)
+        self.assertEqual("settle", advanced.session.context["mode"])
+        self.assertTrue(advanced.session.context["standby"]["armed"])
+        self.assertEqual(
+            "build-ship-chore", advanced.session.context["standby"]["task_class"]
+        )
 
     def test_session_maps_onboarding_starter_into_use_reference(self) -> None:
         session = self.runtime.initial_session(
@@ -1309,7 +1342,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             session,
             ControllerEvent(
                 id=EventId("ordinary_play_invocation"),
-                payload={"onboarding": {"classify_ns": 1}},
+                payload={"onboarding": {"classify_ns": 1}, "preferences": {"policies": []}},
                 guards={},
             ),
         ).session
@@ -1545,80 +1578,6 @@ class ControllerRuntimeTest(unittest.TestCase):
             ),
         ).cursor
         self.assertEqual("use_verify", verify_cursor.state)
-
-    def test_call_route_requires_catalog_discovery_before_handoff(self) -> None:
-        route_cursor = replace(self.cursor(), state=StateId("explore_route"))
-        dispatch_cursor = self.runtime.step(
-            route_cursor,
-            ControllerEvent(
-                id=EventId("route_selected"),
-                payload={
-                    "execution": {"owner": "rote-using-adapters"},
-                    "route": {"modalities": ["call"]},
-                    "justification": "A typed API is the smallest verifiable route.",
-                    "adapter_discovery": {"query": "stripe"},
-                },
-                guards={GuardId("route_within_policy"): True},
-            ),
-        ).cursor
-        self.assertEqual("explore_dispatch", dispatch_cursor.state)
-
-        discovery_cursor = self.runtime.step(
-            dispatch_cursor,
-            ControllerEvent(
-                id=EventId("adapter_discovery_required"),
-                payload={
-                    "execution": {"owner": "rote-using-adapters"},
-                    "route": {"modalities": ["call"]},
-                },
-                guards={},
-            ),
-        ).cursor
-        self.assertEqual("adapter_discover", discovery_cursor.state)
-
-        choice = {
-            "id": "stripe",
-            "label": "Stripe REST API",
-            "description": "Catalog OpenAPI adapter for Stripe.",
-            "source": "catalog",
-            "provider": "Stripe",
-            "category": "Payments",
-            "substrate": "openapi",
-            "auth_shape": "static_token",
-            "health": "unknown",
-            "install_impact": "local-write",
-            "next_command": "rote adapter catalog info stripe --json",
-        }
-        offer_cursor = self.runtime.step(
-            discovery_cursor,
-            ControllerEvent(
-                id=EventId("adapter_choices_ready"),
-                payload={
-                    "adapter_discovery": {
-                        "status": "catalog_choices",
-                        "searched_sources": ["installed", "catalog"],
-                        "choices": [choice],
-                        "evidence_refs": ["catalog-search:stripe"],
-                    }
-                },
-                guards={},
-            ),
-        ).cursor
-        self.assertEqual("adapter_offer", offer_cursor.state)
-
-        handoff_cursor = self.runtime.step(
-            offer_cursor,
-            ControllerEvent(
-                id=EventId("adapter_source_selected"),
-                payload={
-                    "prompt_version": "1",
-                    "selected_at": "2026-08-06T00:00:00Z",
-                    "adapter_discovery": {"selected_id": "stripe"},
-                },
-                guards={},
-            ),
-        ).cursor
-        self.assertEqual("adapter_converge", handoff_cursor.state)
 
     def test_release_cannot_cross_publication_boundary_before_birth_capture(self) -> None:
         release_cursor = replace(self.cursor(), state=StateId("author_release"))

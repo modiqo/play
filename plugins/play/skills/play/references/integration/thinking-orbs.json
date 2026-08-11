@@ -6,103 +6,332 @@
     "homepage": "https://orbs.jakubantalik.com/"
   },
   "trajectories": {
-    "working": {"glyph": "⠿", "message": "Keeping the Play moving…"},
-    "searching": {"glyph": "◌", "message": "Peeking through the Play shelves…"},
-    "solving": {"glyph": "◉", "message": "Fitting the puzzle pieces together…"},
-    "listening": {"glyph": "◎", "message": "I’m all ears—your move."},
-    "connecting": {"glyph": "⟡", "message": "Wiring the right pieces together…"},
-    "weaving": {"glyph": "∞", "message": "Weaving tools into a smooth route…"},
-    "composing": {"glyph": "≋", "message": "Giving this Play its finishing touches…"},
-    "breathing": {"glyph": "○", "message": "All settled."},
-    "shaping": {"glyph": "◇", "message": "Turning a good result into a reusable Play…"}
+    "working": {
+      "glyph": "⠿",
+      "message": "Keeping the Play moving…"
+    },
+    "searching": {
+      "glyph": "◌",
+      "message": "Peeking through the Play shelves…"
+    },
+    "solving": {
+      "glyph": "◉",
+      "message": "Fitting the puzzle pieces together…"
+    },
+    "listening": {
+      "glyph": "◎",
+      "message": "I’m all ears—your move."
+    },
+    "connecting": {
+      "glyph": "⟡",
+      "message": "Wiring the right pieces together…"
+    },
+    "weaving": {
+      "glyph": "∞",
+      "message": "Weaving tools into a smooth route…"
+    },
+    "composing": {
+      "glyph": "≋",
+      "message": "Giving this Play its finishing touches…"
+    },
+    "breathing": {
+      "glyph": "○",
+      "message": "All settled."
+    },
+    "shaping": {
+      "glyph": "◇",
+      "message": "Turning a good result into a reusable Play…"
+    }
   },
   "states": {
-    "invoke": {"orb": "solving", "label": "Reading the Play invocation…"},
-    "onboarding_probe": {"orb": "searching", "label": "Checking for Rote on this machine…"},
-    "onboarding_identity": {"orb": "connecting", "label": "Checking the signed-in Rote identity…"},
-    "onboarding_experience": {"orb": "searching", "label": "Checking whether to show the first-use guide…"},
-    "onboarding_first_present": {"orb": "working", "label": "Explaining how Play, Rote, and your expertise work together…"},
-    "onboarding_first_record": {"orb": "working", "label": "Remembering that the first-use guide was shown…"},
-    "onboarding_first_offer": {"orb": "listening", "label": "Waiting for your first Play choice…"},
-    "onboarding_team_handle": {"orb": "listening", "label": "Listening for your team handle…"},
-    "onboarding_team_create": {"orb": "connecting", "label": "Creating your team space…"},
-    "onboarding_team_present": {"orb": "working", "label": "Preparing your team space…"},
-    "team_invite_offer": {"orb": "listening", "label": "Waiting for your team invite choice…"},
-    "team_invite_email": {"orb": "listening", "label": "Listening for your colleague's email…"},
-    "team_invite_execute": {"orb": "connecting", "label": "Inviting your colleague…"},
-    "onboarding_need": {"orb": "listening", "label": "Listening for the result you want…"},
-    "onboarding_welcome": {"orb": "listening", "label": "Welcoming you to Play…"},
-    "onboarding_setup": {"orb": "connecting", "label": "Connecting the guided Rote setup…"},
-    "onboarding_card_fetch": {"orb": "searching", "label": "Reading the public Play card…"},
-    "onboarding_card_present": {"orb": "working", "label": "Preparing the Play card and setup paths…"},
-    "qualify": {"orb": "solving", "label": "Understanding the request…"},
-    "awareness_collect": {"orb": "searching", "label": "Checking what changed in Plays…"},
-    "awareness_present": {"orb": "working", "label": "Opening your Play inbox…"},
-    "awareness_offer": {"orb": "listening", "label": "Waiting for a digest choice…"},
-    "awareness_need": {"orb": "listening", "label": "Listening for what to find…"},
-    "creator_need": {"orb": "listening", "label": "Listening for the Play outcome…"},
-    "creator_search": {"orb": "searching", "label": "Searching for reusable Plays first…"},
-    "creator_classify": {"orb": "solving", "label": "Comparing reuse and creation paths…"},
-    "creator_offer": {"orb": "listening", "label": "Waiting for a reuse or creation choice…"},
-    "management_offer": {"orb": "listening", "label": "Waiting for an organization view choice…"},
-    "management_list": {"orb": "searching", "label": "Loading organizations and shared Plays…"},
-    "management_present": {"orb": "working", "label": "Preparing the organization view…"},
-    "birth_show": {"orb": "connecting", "label": "Opening the Play’s birth certificate…"},
-    "search": {"orb": "searching", "label": "Searching local and authorized Play indexes…"},
-    "search_present": {"orb": "working", "label": "Preparing Play search results…"},
-    "search_offer": {"orb": "listening", "label": "Waiting for a Play selection…"},
-    "classify": {"orb": "solving", "label": "Checking whether a Play fully fits…"},
-    "use_inspect": {"orb": "connecting", "label": "Inspecting the Play and its dependencies…"},
-    "use_decide": {"orb": "solving", "label": "Resolving local readiness…"},
-    "use_parameter_offer": {"orb": "listening", "label": "Waiting for a required Play parameter…"},
-    "use_offer": {"orb": "listening", "label": "Waiting for remote pull approval…"},
-    "use_prepare": {"orb": "connecting", "label": "Binding the exact Play run handoff…"},
-    "use_run": {"orb": "connecting", "label": "Running the approved Play…"},
-    "use_auth_repair_offer": {"orb": "listening", "label": "Waiting for Play authentication repair approval…"},
-    "use_auth_repair_handoff": {"orb": "connecting", "label": "Connecting the Play authentication repair specialist…"},
-    "use_auth_repair_execute": {"orb": "weaving", "label": "Coordinating the Play authentication repair…"},
-    "use_auth_repair_receipt": {"orb": "solving", "label": "Checking the Play authentication repair receipt…"},
-    "use_verify": {"orb": "solving", "label": "Verifying the Play outcome…"},
-    "use_receipt": {"orb": "working", "label": "Building the verified receipt…"},
-    "onboarding_activation_present": {"orb": "working", "label": "Explaining what your first verified Play achieved…"},
-    "onboarding_activation_offer": {"orb": "listening", "label": "Waiting for your next Play choice…"},
-    "repair_offer": {"orb": "listening", "label": "Waiting for a repair choice…"},
-    "explore_offer": {"orb": "listening", "label": "Waiting for exploration consent…"},
-    "explore_welcome": {"orb": "weaving", "label": "Welcoming the domain expert and apprentice…", "message": "Buckle up—Rote is ready to explore with us."},
-    "explore_prepare": {"orb": "weaving", "label": "Preparing the exploration context…"},
-    "explore_route": {"orb": "solving", "label": "Selecting a safe exploration route…"},
-    "explore_dispatch": {"orb": "weaving", "label": "Preparing the selected Rote route…"},
-    "adapter_discover": {"orb": "searching", "label": "Checking installed adapters and the Rote catalog…"},
-    "adapter_offer": {"orb": "listening", "label": "Waiting for your adapter choice…"},
-    "adapter_converge": {"orb": "connecting", "label": "Handing adapter convergence to Rote…"},
-    "explore_handoff": {"orb": "connecting", "label": "Connecting the approved Rote specialist…"},
-    "modality_offer": {"orb": "listening", "label": "Waiting for a modality choice…"},
-    "explore_execute": {"orb": "weaving", "label": "Coordinating the exploration…"},
-    "explore_receipt": {"orb": "solving", "label": "Checking the specialist receipt…"},
-    "effect_offer": {"orb": "listening", "label": "Waiting for approval of the Rote-guarded operation…"},
-    "auth_repair_offer": {"orb": "listening", "label": "Waiting for authentication repair approval…"},
-    "auth_repair_handoff": {"orb": "connecting", "label": "Connecting the authentication repair specialist…"},
-    "auth_repair_execute": {"orb": "weaving", "label": "Coordinating the approved authentication repair…"},
-    "auth_repair_receipt": {"orb": "solving", "label": "Checking the authentication repair receipt…"},
-    "explore_verify": {"orb": "solving", "label": "Verifying the explored outcome…"},
-    "crystallize": {"orb": "shaping", "label": "Shaping the result into a reusable Play…"},
-    "save_prepare": {"orb": "connecting", "label": "Resolving authorized publication namespaces…"},
-    "save_offer": {"orb": "listening", "label": "Waiting for a sharing choice…"},
-    "author_release": {"orb": "composing", "label": "Composing the Play release…"},
-    "birth_capture": {"orb": "shaping", "label": "Capturing the Play’s birth certificate…"},
-    "private_org": {"orb": "connecting", "label": "Connecting the Play to its private organization…"},
-    "private_publish": {"orb": "composing", "label": "Publishing the private Play…"},
-    "public_owner_offer": {"orb": "listening", "label": "Waiting for a public owner choice…"},
-    "public_publish": {"orb": "composing", "label": "Publishing the public Play…"},
-    "birth_bind": {"orb": "connecting", "label": "Binding the certificate to the minted Play…"},
-    "index": {"orb": "working", "label": "Indexing the published Play…"},
-    "saved_inspect": {"orb": "connecting", "label": "Reading the saved Play back…"},
-    "publication_credentials": {"orb": "connecting", "label": "Checking associated adapter credential contracts…"},
-    "publication_smoke": {"orb": "connecting", "label": "Running the canonical public Play smoke test…"},
-    "birth_present": {"orb": "working", "label": "Framing the verified Play birth certificate and trace learning…", "message": "Framing what we learned into a certificate…"},
-    "receipt": {"orb": "breathing", "label": "Play completed with a verified receipt.", "message": "That’s a wrap—the receipt checks out.", "terminal": true},
-    "completed": {"orb": "breathing", "label": "Play completed.", "message": "All settled—this Play has landed.", "terminal": true},
-    "exited": {"orb": "breathing", "label": "Play stepped aside.", "message": "Stepping aside—the regular route has it from here.", "terminal": true},
-    "blocked": {"orb": "breathing", "label": "Play is blocked and waiting for a change.", "message": "I’ve hit a knot—here’s what needs to change.", "terminal": true}
+    "invoke": {
+      "orb": "solving",
+      "label": "Reading the Play invocation…"
+    },
+    "onboarding_probe": {
+      "orb": "searching",
+      "label": "Checking for Rote on this machine…"
+    },
+    "onboarding_identity": {
+      "orb": "connecting",
+      "label": "Checking the signed-in Rote identity…"
+    },
+    "onboarding_experience": {
+      "orb": "searching",
+      "label": "Checking whether to show the first-use guide…"
+    },
+    "onboarding_first_present": {
+      "orb": "working",
+      "label": "Explaining how Play, Rote, and your expertise work together…"
+    },
+    "onboarding_first_record": {
+      "orb": "working",
+      "label": "Remembering that the first-use guide was shown…"
+    },
+    "onboarding_first_offer": {
+      "orb": "listening",
+      "label": "Waiting for your first Play choice…"
+    },
+    "onboarding_team_handle": {
+      "orb": "listening",
+      "label": "Listening for your team handle…"
+    },
+    "onboarding_team_create": {
+      "orb": "connecting",
+      "label": "Creating your team space…"
+    },
+    "onboarding_team_present": {
+      "orb": "working",
+      "label": "Preparing your team space…"
+    },
+    "team_invite_offer": {
+      "orb": "listening",
+      "label": "Waiting for your team invite choice…"
+    },
+    "team_invite_email": {
+      "orb": "listening",
+      "label": "Listening for your colleague's email…"
+    },
+    "team_invite_execute": {
+      "orb": "connecting",
+      "label": "Inviting your colleague…"
+    },
+    "onboarding_need": {
+      "orb": "listening",
+      "label": "Listening for the result you want…"
+    },
+    "onboarding_welcome": {
+      "orb": "listening",
+      "label": "Welcoming you to Play…"
+    },
+    "onboarding_setup": {
+      "orb": "connecting",
+      "label": "Connecting the guided Rote setup…"
+    },
+    "onboarding_card_fetch": {
+      "orb": "searching",
+      "label": "Reading the public Play card…"
+    },
+    "onboarding_card_present": {
+      "orb": "working",
+      "label": "Preparing the Play card and setup paths…"
+    },
+    "qualify": {
+      "orb": "solving",
+      "label": "Understanding the request…"
+    },
+    "awareness_collect": {
+      "orb": "searching",
+      "label": "Checking what changed in Plays…"
+    },
+    "awareness_present": {
+      "orb": "working",
+      "label": "Opening your Play inbox…"
+    },
+    "awareness_offer": {
+      "orb": "listening",
+      "label": "Waiting for a digest choice…"
+    },
+    "awareness_need": {
+      "orb": "listening",
+      "label": "Listening for what to find…"
+    },
+    "creator_need": {
+      "orb": "listening",
+      "label": "Listening for the Play outcome…"
+    },
+    "creator_search": {
+      "orb": "searching",
+      "label": "Searching for reusable Plays first…"
+    },
+    "creator_classify": {
+      "orb": "solving",
+      "label": "Comparing reuse and creation paths…"
+    },
+    "creator_offer": {
+      "orb": "listening",
+      "label": "Waiting for a reuse or creation choice…"
+    },
+    "management_offer": {
+      "orb": "listening",
+      "label": "Waiting for an organization view choice…"
+    },
+    "management_list": {
+      "orb": "searching",
+      "label": "Loading organizations and shared Plays…"
+    },
+    "management_present": {
+      "orb": "working",
+      "label": "Preparing the organization view…"
+    },
+    "birth_show": {
+      "orb": "connecting",
+      "label": "Opening the Play’s birth certificate…"
+    },
+    "search": {
+      "orb": "searching",
+      "label": "Searching local and authorized Play indexes…"
+    },
+    "search_present": {
+      "orb": "working",
+      "label": "Preparing Play search results…"
+    },
+    "search_offer": {
+      "orb": "listening",
+      "label": "Waiting for a Play selection…"
+    },
+    "classify": {
+      "orb": "solving",
+      "label": "Checking whether a Play fully fits…"
+    },
+    "use_inspect": {
+      "orb": "connecting",
+      "label": "Inspecting the Play and its dependencies…"
+    },
+    "use_decide": {
+      "orb": "solving",
+      "label": "Resolving local readiness…"
+    },
+    "use_parameter_offer": {
+      "orb": "listening",
+      "label": "Waiting for a required Play parameter…"
+    },
+    "use_offer": {
+      "orb": "listening",
+      "label": "Waiting for remote pull approval…"
+    },
+    "use_prepare": {
+      "orb": "connecting",
+      "label": "Binding the exact Play run handoff…"
+    },
+    "use_run": {
+      "orb": "connecting",
+      "label": "Running the approved Play…"
+    },
+    "use_auth_repair_offer": {
+      "orb": "listening",
+      "label": "Waiting for Play authentication repair approval…"
+    },
+    "use_auth_repair_handoff": {
+      "orb": "connecting",
+      "label": "Connecting the Play authentication repair specialist…"
+    },
+    "use_auth_repair_execute": {
+      "orb": "weaving",
+      "label": "Coordinating the Play authentication repair…"
+    },
+    "use_auth_repair_receipt": {
+      "orb": "solving",
+      "label": "Checking the Play authentication repair receipt…"
+    },
+    "use_verify": {
+      "orb": "solving",
+      "label": "Verifying the Play outcome…"
+    },
+    "use_receipt": {
+      "orb": "working",
+      "label": "Building the verified receipt…"
+    },
+    "onboarding_activation_present": {
+      "orb": "working",
+      "label": "Explaining what your first verified Play achieved…"
+    },
+    "onboarding_activation_offer": {
+      "orb": "listening",
+      "label": "Waiting for your next Play choice…"
+    },
+    "crystallize": {
+      "orb": "shaping",
+      "label": "Shaping the result into a reusable Play…"
+    },
+    "save_prepare": {
+      "orb": "connecting",
+      "label": "Resolving authorized publication namespaces…"
+    },
+    "save_offer": {
+      "orb": "listening",
+      "label": "Waiting for a sharing choice…"
+    },
+    "author_release": {
+      "orb": "composing",
+      "label": "Composing the Play release…"
+    },
+    "birth_capture": {
+      "orb": "shaping",
+      "label": "Capturing the Play’s birth certificate…"
+    },
+    "private_org": {
+      "orb": "connecting",
+      "label": "Connecting the Play to its private organization…"
+    },
+    "private_publish": {
+      "orb": "composing",
+      "label": "Publishing the private Play…"
+    },
+    "public_owner_offer": {
+      "orb": "listening",
+      "label": "Waiting for a public owner choice…"
+    },
+    "public_publish": {
+      "orb": "composing",
+      "label": "Publishing the public Play…"
+    },
+    "birth_bind": {
+      "orb": "connecting",
+      "label": "Binding the certificate to the minted Play…"
+    },
+    "index": {
+      "orb": "working",
+      "label": "Indexing the published Play…"
+    },
+    "saved_inspect": {
+      "orb": "connecting",
+      "label": "Reading the saved Play back…"
+    },
+    "publication_credentials": {
+      "orb": "connecting",
+      "label": "Checking associated adapter credential contracts…"
+    },
+    "publication_smoke": {
+      "orb": "connecting",
+      "label": "Running the canonical public Play smoke test…"
+    },
+    "birth_present": {
+      "orb": "working",
+      "label": "Framing the verified Play birth certificate and trace learning…",
+      "message": "Framing what we learned into a certificate…"
+    },
+    "receipt": {
+      "orb": "breathing",
+      "label": "Play completed with a verified receipt.",
+      "message": "That’s a wrap—the receipt checks out.",
+      "terminal": true
+    },
+    "completed": {
+      "orb": "breathing",
+      "label": "Play completed.",
+      "message": "All settled—this Play has landed.",
+      "terminal": true
+    },
+    "exited": {
+      "orb": "breathing",
+      "label": "Play stepped aside.",
+      "message": "Stepping aside—the regular route has it from here.",
+      "terminal": true
+    },
+    "blocked": {
+      "orb": "breathing",
+      "label": "Play is blocked and waiting for a change.",
+      "message": "I’ve hit a knot—here’s what needs to change.",
+      "terminal": true
+    },
+    "standby_exit": {
+      "orb": "breathing",
+      "label": "Stepping aside…"
+    },
+    "save_judge": {
+      "orb": "weaving",
+      "label": "Weighing whether this is worth saving…"
+    }
   }
 }

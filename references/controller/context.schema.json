@@ -43,705 +43,2481 @@
     "publication",
     "publication_validation",
     "receipt_ref",
-    "last_event"
+    "last_event",
+    "standby",
+    "save_judge",
+    "preferences"
   ],
   "additionalProperties": false,
   "properties": {
-    "schema": {"const": "play.context/v1"},
-    "machine_version": {"type": "string", "minLength": 1},
-    "run_id": {"type": "string", "minLength": 1},
-    "task_key": {"type": "string", "minLength": 1},
-    "state": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
-    "transition_seq": {"type": "integer", "minimum": 0},
-    "mode": {"type": ["string", "null"], "enum": ["awareness", "use", "explore", "create", "manage", "exited", null]},
-    "request": {"$ref": "#/$defs/request"},
-    "search": {"$ref": "#/$defs/search"},
-    "match": {"$ref": "#/$defs/match"},
-    "inspection": {"$ref": "#/$defs/inspection"},
-    "parameter_input": {"$ref": "#/$defs/parameterInput"},
-    "resolution": {"$ref": "#/$defs/resolution"},
-    "play": {"$ref": "#/$defs/play"},
-    "readiness": {"$ref": "#/$defs/readiness"},
-    "route": {"$ref": "#/$defs/route"},
-    "onboarding": {"$ref": "#/$defs/onboarding"},
-    "exploration": {"$ref": "#/$defs/exploration"},
-    "adapter_discovery": {"$ref": "#/$defs/adapterDiscovery"},
-    "consent": {"$ref": "#/$defs/consent"},
-    "modality_policy": {"$ref": "#/$defs/modalityPolicy"},
-    "judge_policy": {"$ref": "#/$defs/judgePolicy"},
-    "effect_policy": {"$ref": "#/$defs/effectPolicy"},
+    "schema": {
+      "const": "play.context/v1"
+    },
+    "machine_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "transition_seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "mode": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "awareness",
+        "use",
+        "explore",
+        "create",
+        "manage",
+        "settle",
+        "exited",
+        null
+      ]
+    },
+    "request": {
+      "$ref": "#/$defs/request"
+    },
+    "search": {
+      "$ref": "#/$defs/search"
+    },
+    "match": {
+      "$ref": "#/$defs/match"
+    },
+    "inspection": {
+      "$ref": "#/$defs/inspection"
+    },
+    "parameter_input": {
+      "$ref": "#/$defs/parameterInput"
+    },
+    "resolution": {
+      "$ref": "#/$defs/resolution"
+    },
+    "play": {
+      "$ref": "#/$defs/play"
+    },
+    "readiness": {
+      "$ref": "#/$defs/readiness"
+    },
+    "route": {
+      "$ref": "#/$defs/route"
+    },
+    "onboarding": {
+      "$ref": "#/$defs/onboarding"
+    },
+    "exploration": {
+      "$ref": "#/$defs/exploration"
+    },
+    "adapter_discovery": {
+      "$ref": "#/$defs/adapterDiscovery"
+    },
+    "consent": {
+      "$ref": "#/$defs/consent"
+    },
+    "modality_policy": {
+      "$ref": "#/$defs/modalityPolicy"
+    },
+    "judge_policy": {
+      "$ref": "#/$defs/judgePolicy"
+    },
+    "effect_policy": {
+      "$ref": "#/$defs/effectPolicy"
+    },
     "output_policy": {
       "$ref": "#/$defs/outputPolicy",
-      "default": {"mode": "detailed", "preferred_presentation": "human", "max_inline_bytes": 200000, "overflow": "artifact"}
+      "default": {
+        "mode": "detailed",
+        "preferred_presentation": "human",
+        "max_inline_bytes": 200000,
+        "overflow": "artifact"
+      }
     },
-    "output": {"$ref": "#/$defs/runOutput"},
-    "execution": {"$ref": "#/$defs/execution"},
-    "handoff": {"$ref": "#/$defs/handoff"},
-    "auth_repair": {"$ref": "#/$defs/authRepair"},
-    "evidence": {"$ref": "#/$defs/evidence"},
-    "candidate": {"$ref": "#/$defs/candidate"},
-    "birth": {"$ref": "#/$defs/birth"},
-    "awareness": {"$ref": "#/$defs/awareness"},
-    "creator": {"$ref": "#/$defs/creator"},
-    "management": {"$ref": "#/$defs/management"},
-    "team": {"$ref": "#/$defs/team"},
-    "publication": {"$ref": "#/$defs/publication"},
-    "publication_validation": {"$ref": "#/$defs/publicationValidation"},
-    "receipt_ref": {"$ref": "#/$defs/nullableString"},
-    "last_event": {"$ref": "#/$defs/lastEvent"}
-  },
-  "$defs": {
-    "nullableString": {"type": ["string", "null"]},
-    "stringArray": {"type": "array", "items": {"type": "string"}},
-    "request": {
+    "output": {
+      "$ref": "#/$defs/runOutput"
+    },
+    "execution": {
+      "$ref": "#/$defs/execution"
+    },
+    "handoff": {
+      "$ref": "#/$defs/handoff"
+    },
+    "auth_repair": {
+      "$ref": "#/$defs/authRepair"
+    },
+    "evidence": {
+      "$ref": "#/$defs/evidence"
+    },
+    "candidate": {
+      "$ref": "#/$defs/candidate"
+    },
+    "birth": {
+      "$ref": "#/$defs/birth"
+    },
+    "awareness": {
+      "$ref": "#/$defs/awareness"
+    },
+    "creator": {
+      "$ref": "#/$defs/creator"
+    },
+    "management": {
+      "$ref": "#/$defs/management"
+    },
+    "team": {
+      "$ref": "#/$defs/team"
+    },
+    "publication": {
+      "$ref": "#/$defs/publication"
+    },
+    "publication_validation": {
+      "$ref": "#/$defs/publicationValidation"
+    },
+    "receipt_ref": {
+      "$ref": "#/$defs/nullableString"
+    },
+    "last_event": {
+      "$ref": "#/$defs/lastEvent"
+    },
+    "standby": {
       "type": "object",
-      "required": ["original", "intent", "requested_outcome", "parameters", "excluded"],
+      "required": [
+        "armed",
+        "task_class",
+        "hook_ref",
+        "settle_summary"
+      ],
       "additionalProperties": false,
       "properties": {
-        "original": {"type": "string"},
-        "intent": {"$ref": "#/$defs/nullableString"},
-        "requested_outcome": {"$ref": "#/$defs/nullableString"},
-        "parameters": {"type": "object"},
-        "excluded": {"type": "boolean"}
+        "armed": {
+          "type": "boolean"
+        },
+        "task_class": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "hook_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "settle_summary": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "save_judge": {
+      "type": "object",
+      "required": [
+        "assessment",
+        "parameters",
+        "step_count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "assessment": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "step_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "preferences": {
+      "type": "object",
+      "required": [
+        "policies",
+        "statement",
+        "task_class",
+        "policy",
+        "ledger_ref"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "policies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "scope",
+              "task_class",
+              "policy"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "session",
+                  "project",
+                  "global"
+                ]
+              },
+              "task_class": {
+                "type": "string"
+              },
+              "policy": {
+                "type": "string",
+                "enum": [
+                  "intervene",
+                  "mention_only",
+                  "silent"
+                ]
+              }
+            }
+          }
+        },
+        "statement": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "task_class": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "policy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "intervene",
+            "mention_only",
+            "silent",
+            null
+          ]
+        },
+        "ledger_ref": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "request": {
+      "type": "object",
+      "required": [
+        "original",
+        "intent",
+        "requested_outcome",
+        "parameters",
+        "excluded"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "original": {
+          "type": "string"
+        },
+        "intent": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "requested_outcome": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "excluded": {
+          "type": "boolean"
+        }
       }
     },
     "search": {
       "type": "object",
-      "required": ["complete", "query", "sources", "result_refs", "results", "play_choices"],
+      "required": [
+        "complete",
+        "query",
+        "sources",
+        "result_refs",
+        "results",
+        "play_choices"
+      ],
       "additionalProperties": false,
       "properties": {
-        "complete": {"type": "boolean"},
-        "query": {"$ref": "#/$defs/nullableString"},
-        "sources": {"$ref": "#/$defs/stringArray"},
-        "result_refs": {"$ref": "#/$defs/stringArray"},
-        "results": {"type": "array", "items": {"$ref": "#/$defs/searchResult"}},
-        "play_choices": {"type": "array", "items": {"$ref": "#/$defs/searchChoice"}}
+        "complete": {
+          "type": "boolean"
+        },
+        "query": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sources": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "result_refs": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/searchResult"
+          }
+        },
+        "play_choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/searchChoice"
+          }
+        }
       }
     },
     "searchResult": {
       "type": "object",
-      "required": ["name", "description", "reference", "exact_reference", "version", "status", "sources", "score", "coverage", "match_classification", "primary_scope", "uri", "run_command", "inspect_command", "hint_kind", "local_availability", "execution_resolution", "selection_description"],
+      "required": [
+        "name",
+        "description",
+        "reference",
+        "exact_reference",
+        "version",
+        "status",
+        "sources",
+        "score",
+        "coverage",
+        "match_classification",
+        "primary_scope",
+        "uri",
+        "run_command",
+        "inspect_command",
+        "hint_kind",
+        "local_availability",
+        "execution_resolution",
+        "selection_description"
+      ],
       "additionalProperties": false,
       "properties": {
-        "name": {"type": "string"},
-        "description": {"type": "string"},
-        "reference": {"$ref": "#/$defs/nullableString"},
-        "exact_reference": {"$ref": "#/$defs/nullableString"},
-        "version": {"$ref": "#/$defs/nullableString"},
-        "status": {"$ref": "#/$defs/nullableString"},
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "reference": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "exact_reference": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "version": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "status": {
+          "$ref": "#/$defs/nullableString"
+        },
         "sources": {
           "type": "array",
           "uniqueItems": true,
-          "items": {"enum": ["local", "remote_private", "remote_public"]}
+          "items": {
+            "enum": [
+              "local",
+              "remote_private",
+              "remote_public"
+            ]
+          }
         },
-        "score": {"type": "number", "minimum": 0},
-        "coverage": {"type": "number", "minimum": 0, "maximum": 1},
-        "match_classification": {"enum": ["full", "partial", "uncertain"]},
-        "primary_scope": {"enum": ["local", "remote_private", "remote_public"]},
-        "uri": {"type": "string", "minLength": 1},
-        "run_command": {"type": "string", "minLength": 1},
-        "inspect_command": {"type": "string"},
-        "hint_kind": {"enum": ["play", "local-play"]},
-        "local_availability": {"enum": ["found", "not_found", "local_only"]},
-        "execution_resolution": {"enum": ["run_local", "pull_required"]},
-        "selection_description": {"type": "string", "minLength": 1}
+        "score": {
+          "type": "number",
+          "minimum": 0
+        },
+        "coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "match_classification": {
+          "enum": [
+            "full",
+            "partial",
+            "uncertain"
+          ]
+        },
+        "primary_scope": {
+          "enum": [
+            "local",
+            "remote_private",
+            "remote_public"
+          ]
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inspect_command": {
+          "type": "string"
+        },
+        "hint_kind": {
+          "enum": [
+            "play",
+            "local-play"
+          ]
+        },
+        "local_availability": {
+          "enum": [
+            "found",
+            "not_found",
+            "local_only"
+          ]
+        },
+        "execution_resolution": {
+          "enum": [
+            "run_local",
+            "pull_required"
+          ]
+        },
+        "selection_description": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "searchChoice": {
       "type": "object",
-      "required": ["reference", "label", "description", "parameters"],
+      "required": [
+        "reference",
+        "label",
+        "description",
+        "parameters"
+      ],
       "additionalProperties": false,
       "properties": {
-        "reference": {"type": "string", "minLength": 1},
-        "label": {"type": "string", "minLength": 1},
-        "description": {"type": "string", "minLength": 1},
-        "parameters": {"type": "object"}
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parameters": {
+          "type": "object"
+        }
       }
     },
     "match": {
       "type": "object",
-      "required": ["classification", "reference", "covered", "uncovered"],
+      "required": [
+        "classification",
+        "reference",
+        "covered",
+        "uncovered"
+      ],
       "additionalProperties": false,
       "properties": {
-        "classification": {"type": ["string", "null"], "enum": ["full", "partial", "uncertain", "none", null]},
-        "reference": {"$ref": "#/$defs/nullableString"},
-        "covered": {"$ref": "#/$defs/stringArray"},
-        "uncovered": {"$ref": "#/$defs/stringArray"}
+        "classification": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "full",
+            "partial",
+            "uncertain",
+            "none",
+            null
+          ]
+        },
+        "reference": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "covered": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "uncovered": {
+          "$ref": "#/$defs/stringArray"
+        }
       }
     },
     "inspection": {
       "type": "object",
-      "required": ["complete", "exact_reference", "description", "parameters", "local_change", "dependencies", "operations", "effects", "blockers", "disclosure_sha256"],
+      "required": [
+        "complete",
+        "exact_reference",
+        "description",
+        "parameters",
+        "local_change",
+        "dependencies",
+        "operations",
+        "effects",
+        "blockers",
+        "disclosure_sha256"
+      ],
       "additionalProperties": false,
       "properties": {
-        "complete": {"type": "boolean"},
-        "exact_reference": {"$ref": "#/$defs/nullableString"},
-        "description": {"type": "string"},
-        "parameters": {"type": "array", "items": {"type": "object"}},
-        "local_change": {"type": ["string", "null"], "enum": ["none", "install", "replace_or_repair", "unknown", null]},
-        "dependencies": {"type": "object"},
-        "operations": {"type": "array", "items": {"type": "object"}},
-        "effects": {"type": "object"},
-        "blockers": {"$ref": "#/$defs/stringArray"},
-        "disclosure_sha256": {"$ref": "#/$defs/nullableString"}
+        "complete": {
+          "type": "boolean"
+        },
+        "exact_reference": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "description": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "local_change": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "none",
+            "install",
+            "replace_or_repair",
+            "unknown",
+            null
+          ]
+        },
+        "dependencies": {
+          "type": "object"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "effects": {
+          "type": "object"
+        },
+        "blockers": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "disclosure_sha256": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     },
     "parameterInput": {
       "type": "object",
-      "required": ["name", "label", "type", "description", "value"],
+      "required": [
+        "name",
+        "label",
+        "type",
+        "description",
+        "value"
+      ],
       "additionalProperties": false,
       "properties": {
-        "name": {"$ref": "#/$defs/nullableString"},
-        "label": {"$ref": "#/$defs/nullableString"},
-        "type": {"$ref": "#/$defs/nullableString"},
-        "description": {"$ref": "#/$defs/nullableString"},
-        "value": {"$ref": "#/$defs/nullableString"}
+        "name": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "label": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "type": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "description": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "value": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     },
     "resolution": {
       "type": "object",
-      "required": ["local_state", "source", "pull_performed"],
+      "required": [
+        "local_state",
+        "source",
+        "pull_performed"
+      ],
       "additionalProperties": false,
       "properties": {
-        "local_state": {"enum": ["exact_ready", "missing", "stale", "corrupt", "unknown"]},
-        "source": {"$ref": "#/$defs/nullableString"},
-        "pull_performed": {"type": "boolean"}
+        "local_state": {
+          "enum": [
+            "exact_ready",
+            "missing",
+            "stale",
+            "corrupt",
+            "unknown"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "pull_performed": {
+          "type": "boolean"
+        }
       }
     },
     "play": {
       "type": "object",
-      "required": ["version", "owner", "modalities", "effects"],
+      "required": [
+        "version",
+        "owner",
+        "modalities",
+        "effects"
+      ],
       "additionalProperties": false,
       "properties": {
-        "version": {"$ref": "#/$defs/nullableString"},
-        "owner": {"$ref": "#/$defs/nullableString"},
-        "modalities": {"$ref": "#/$defs/stringArray"},
-        "effects": {"$ref": "#/$defs/stringArray"}
+        "version": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "owner": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "modalities": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "effects": {
+          "$ref": "#/$defs/stringArray"
+        }
       }
     },
     "onboardingAdapter": {
       "type": "object",
-      "required": ["id", "display_name", "requirement", "credential_status", "credential_names", "credential_protocols"],
+      "required": [
+        "id",
+        "display_name",
+        "requirement",
+        "credential_status",
+        "credential_names",
+        "credential_protocols"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": {"$ref": "#/$defs/nullableString"},
-        "display_name": {"$ref": "#/$defs/nullableString"},
-        "requirement": {"$ref": "#/$defs/nullableString"},
-        "credential_status": {"type": "string"},
-        "credential_names": {"$ref": "#/$defs/stringArray"},
-        "credential_protocols": {"$ref": "#/$defs/stringArray"}
+        "id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "display_name": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "requirement": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "credential_status": {
+          "type": "string"
+        },
+        "credential_names": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "credential_protocols": {
+          "$ref": "#/$defs/stringArray"
+        }
       }
     },
     "onboardingParameter": {
       "type": "object",
-      "required": ["name", "type", "required", "default", "description"],
+      "required": [
+        "name",
+        "type",
+        "required",
+        "default",
+        "description"
+      ],
       "additionalProperties": false,
       "properties": {
-        "name": {"type": "string", "minLength": 1},
-        "type": {"type": "string", "minLength": 1},
-        "required": {"type": "boolean"},
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean"
+        },
         "default": {},
-        "description": {"type": "string"}
+        "description": {
+          "type": "string"
+        }
       }
     },
     "onboardingCard": {
-      "type": ["object", "null"],
-      "required": ["schema", "uri", "title", "description", "reference", "version", "visibility", "inspect_command", "bootstrap_uri", "install_uri", "parameters", "adapters", "declared_writes", "credentials_remain_local", "fetch_ns", "card_sha256"],
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "schema",
+        "uri",
+        "title",
+        "description",
+        "reference",
+        "version",
+        "visibility",
+        "inspect_command",
+        "bootstrap_uri",
+        "install_uri",
+        "parameters",
+        "adapters",
+        "declared_writes",
+        "credentials_remain_local",
+        "fetch_ns",
+        "card_sha256"
+      ],
       "additionalProperties": false,
       "properties": {
-        "schema": {"const": "rote.play.v1"},
-        "uri": {"type": "string", "pattern": "^https://play\\.modiqo\\.ai/"},
-        "title": {"type": "string", "minLength": 1},
-        "description": {"type": "string", "minLength": 1},
-        "reference": {"type": "string", "minLength": 1},
-        "version": {"type": "string", "minLength": 1},
-        "visibility": {"type": "string", "minLength": 1},
-        "inspect_command": {"type": "string", "minLength": 1},
-        "bootstrap_uri": {"type": "string", "pattern": "^https://play\\.modiqo\\.ai/"},
-        "install_uri": {"type": "string", "pattern": "^https://play\\.modiqo\\.ai/"},
-        "parameters": {"type": "array", "items": {"$ref": "#/$defs/onboardingParameter"}},
-        "adapters": {"type": "array", "items": {"$ref": "#/$defs/onboardingAdapter"}},
-        "declared_writes": {"type": "array"},
-        "credentials_remain_local": {"type": "boolean"},
-        "fetch_ns": {"type": "integer", "minimum": 0},
-        "card_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        "schema": {
+          "const": "rote.play.v1"
+        },
+        "uri": {
+          "type": "string",
+          "pattern": "^https://play\\.modiqo\\.ai/"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "visibility": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inspect_command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bootstrap_uri": {
+          "type": "string",
+          "pattern": "^https://play\\.modiqo\\.ai/"
+        },
+        "install_uri": {
+          "type": "string",
+          "pattern": "^https://play\\.modiqo\\.ai/"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/onboardingParameter"
+          }
+        },
+        "adapters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/onboardingAdapter"
+          }
+        },
+        "declared_writes": {
+          "type": "array"
+        },
+        "credentials_remain_local": {
+          "type": "boolean"
+        },
+        "fetch_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "card_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
       }
     },
     "onboarding": {
       "type": "object",
-      "required": ["intent", "classify_ns", "rote_status", "rote_command", "rote_off_path", "probe_ns", "identity_status", "email", "email_handle", "identity_ref", "whoami_ns", "experience_status", "experience_ref", "experience_ns", "orientation_version", "orientation_status", "orientation_markdown", "orientation_ref", "orientation_ns", "marker_ns", "starter_reference", "starter_status", "activation_status", "activation_markdown", "activation_ref", "activation_ns", "play_uri", "setup_status", "card", "card_presented", "card_presentation_ref", "evidence_refs"],
+      "required": [
+        "intent",
+        "classify_ns",
+        "rote_status",
+        "rote_command",
+        "rote_off_path",
+        "probe_ns",
+        "identity_status",
+        "email",
+        "email_handle",
+        "identity_ref",
+        "whoami_ns",
+        "experience_status",
+        "experience_ref",
+        "experience_ns",
+        "orientation_version",
+        "orientation_status",
+        "orientation_markdown",
+        "orientation_ref",
+        "orientation_ns",
+        "marker_ns",
+        "starter_reference",
+        "starter_status",
+        "activation_status",
+        "activation_markdown",
+        "activation_ref",
+        "activation_ns",
+        "play_uri",
+        "setup_status",
+        "card",
+        "card_presented",
+        "card_presentation_ref",
+        "evidence_refs"
+      ],
       "additionalProperties": false,
       "properties": {
-        "intent": {"enum": ["unknown", "greeting", "play_uri"]},
-        "classify_ns": {"type": ["integer", "null"], "minimum": 0},
-        "rote_status": {"enum": ["unknown", "installed", "missing"]},
-        "rote_command": {"$ref": "#/$defs/nullableString"},
-        "rote_off_path": {"type": "boolean"},
-        "probe_ns": {"type": ["integer", "null"], "minimum": 0},
-        "identity_status": {"enum": ["unknown", "authenticated", "setup_required"]},
-        "email": {"$ref": "#/$defs/nullableString"},
-        "email_handle": {"$ref": "#/$defs/nullableString"},
-        "identity_ref": {"$ref": "#/$defs/nullableString"},
-        "whoami_ns": {"type": ["integer", "null"], "minimum": 0},
-        "experience_status": {"enum": ["unknown", "first_use", "returning"]},
-        "experience_ref": {"$ref": "#/$defs/nullableString"},
-        "experience_ns": {"type": ["integer", "null"], "minimum": 0},
-        "orientation_version": {"type": ["integer", "null"], "minimum": 1},
-        "orientation_status": {"enum": ["pending", "presented", "recorded"]},
-        "orientation_markdown": {"$ref": "#/$defs/nullableString"},
-        "orientation_ref": {"$ref": "#/$defs/nullableString"},
-        "orientation_ns": {"type": ["integer", "null"], "minimum": 0},
-        "marker_ns": {"type": ["integer", "null"], "minimum": 0},
-        "starter_reference": {"$ref": "#/$defs/nullableString"},
-        "starter_status": {"enum": ["not_selected", "selected", "completed"]},
-        "activation_status": {"enum": ["pending", "presented"]},
-        "activation_markdown": {"$ref": "#/$defs/nullableString"},
-        "activation_ref": {"$ref": "#/$defs/nullableString"},
-        "activation_ns": {"type": ["integer", "null"], "minimum": 0},
-        "play_uri": {"$ref": "#/$defs/nullableString"},
-        "setup_status": {"enum": ["not_required", "required", "completed", "paused", "unavailable"]},
-        "card": {"$ref": "#/$defs/onboardingCard"},
-        "card_presented": {"type": "boolean"},
-        "card_presentation_ref": {"$ref": "#/$defs/nullableString"},
-        "evidence_refs": {"$ref": "#/$defs/stringArray"}
+        "intent": {
+          "enum": [
+            "unknown",
+            "greeting",
+            "play_uri"
+          ]
+        },
+        "classify_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "rote_status": {
+          "enum": [
+            "unknown",
+            "installed",
+            "missing"
+          ]
+        },
+        "rote_command": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "rote_off_path": {
+          "type": "boolean"
+        },
+        "probe_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "identity_status": {
+          "enum": [
+            "unknown",
+            "authenticated",
+            "setup_required"
+          ]
+        },
+        "email": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "email_handle": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "identity_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "whoami_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "experience_status": {
+          "enum": [
+            "unknown",
+            "first_use",
+            "returning"
+          ]
+        },
+        "experience_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "experience_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "orientation_version": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "orientation_status": {
+          "enum": [
+            "pending",
+            "presented",
+            "recorded"
+          ]
+        },
+        "orientation_markdown": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "orientation_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "orientation_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "marker_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "starter_reference": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "starter_status": {
+          "enum": [
+            "not_selected",
+            "selected",
+            "completed"
+          ]
+        },
+        "activation_status": {
+          "enum": [
+            "pending",
+            "presented"
+          ]
+        },
+        "activation_markdown": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "activation_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "activation_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "play_uri": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "setup_status": {
+          "enum": [
+            "not_required",
+            "required",
+            "completed",
+            "paused",
+            "unavailable"
+          ]
+        },
+        "card": {
+          "$ref": "#/$defs/onboardingCard"
+        },
+        "card_presented": {
+          "type": "boolean"
+        },
+        "card_presentation_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/stringArray"
+        }
       }
     },
     "exploration": {
       "type": "object",
-      "required": ["welcome_status", "human_name", "identity_status", "identity_source", "identity_ref", "welcome_markdown", "welcome_ref", "resolve_ns"],
+      "required": [
+        "welcome_status",
+        "human_name",
+        "identity_status",
+        "identity_source",
+        "identity_ref",
+        "welcome_markdown",
+        "welcome_ref",
+        "resolve_ns"
+      ],
       "additionalProperties": false,
       "properties": {
-        "welcome_status": {"enum": ["pending", "presented"]},
-        "human_name": {"$ref": "#/$defs/nullableString"},
-        "identity_status": {"enum": ["unknown", "authenticated", "unavailable"]},
-        "identity_source": {"enum": ["unknown", "onboarding_email_handle", "live_email_handle", "neutral_fallback"]},
-        "identity_ref": {"$ref": "#/$defs/nullableString"},
-        "welcome_markdown": {"$ref": "#/$defs/nullableString"},
-        "welcome_ref": {"$ref": "#/$defs/nullableString"},
-        "resolve_ns": {"type": ["integer", "null"], "minimum": 0}
+        "welcome_status": {
+          "enum": [
+            "pending",
+            "presented"
+          ]
+        },
+        "human_name": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "identity_status": {
+          "enum": [
+            "unknown",
+            "authenticated",
+            "unavailable"
+          ]
+        },
+        "identity_source": {
+          "enum": [
+            "unknown",
+            "onboarding_email_handle",
+            "live_email_handle",
+            "neutral_fallback"
+          ]
+        },
+        "identity_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "welcome_markdown": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "welcome_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "resolve_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
       }
     },
     "outputPolicy": {
       "type": "object",
-      "required": ["mode", "preferred_presentation", "max_inline_bytes", "overflow"],
+      "required": [
+        "mode",
+        "preferred_presentation",
+        "max_inline_bytes",
+        "overflow"
+      ],
       "additionalProperties": false,
       "properties": {
-        "mode": {"const": "detailed"},
-        "preferred_presentation": {"enum": ["human", "json"]},
-        "max_inline_bytes": {"type": "integer", "minimum": 1},
-        "overflow": {"const": "artifact"}
+        "mode": {
+          "const": "detailed"
+        },
+        "preferred_presentation": {
+          "enum": [
+            "human",
+            "json"
+          ]
+        },
+        "max_inline_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "overflow": {
+          "const": "artifact"
+        }
       }
     },
     "runOutput": {
       "type": "object",
-      "required": ["mode", "detail", "source", "format", "primary", "manifest", "truncated", "full_output_ref", "presentation_markdown", "presentation_sha256", "inline_bytes", "primary_bytes", "format_ns"],
+      "required": [
+        "mode",
+        "detail",
+        "source",
+        "format",
+        "primary",
+        "manifest",
+        "truncated",
+        "full_output_ref",
+        "presentation_markdown",
+        "presentation_sha256",
+        "inline_bytes",
+        "primary_bytes",
+        "format_ns"
+      ],
       "additionalProperties": false,
       "properties": {
-        "mode": {"type": ["string", "null"], "enum": ["detailed", null]},
-        "detail": {"type": ["string", "null"], "enum": ["full", "summary", null]},
-        "source": {"type": ["string", "null"], "enum": ["rote_human_presentation", "rote_json_presentation", "structured_responses", "rote_compact_summary", null]},
-        "format": {"type": ["string", "null"], "enum": ["markdown", "json", "text", null]},
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "detailed",
+            null
+          ]
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "full",
+            "summary",
+            null
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "rote_human_presentation",
+            "rote_json_presentation",
+            "structured_responses",
+            "rote_compact_summary",
+            null
+          ]
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "markdown",
+            "json",
+            "text",
+            null
+          ]
+        },
         "primary": {},
-        "manifest": {"$ref": "#/$defs/outputManifest"},
-        "truncated": {"type": "boolean"},
-        "full_output_ref": {"$ref": "#/$defs/nullableString"},
-        "presentation_markdown": {"$ref": "#/$defs/nullableString"},
-        "presentation_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
-        "inline_bytes": {"type": ["integer", "null"], "minimum": 0},
-        "primary_bytes": {"type": ["integer", "null"], "minimum": 0},
-        "format_ns": {"type": ["integer", "null"], "minimum": 0}
+        "manifest": {
+          "$ref": "#/$defs/outputManifest"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "full_output_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "presentation_markdown": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "presentation_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "inline_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "primary_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "format_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
       }
     },
     "outputManifest": {
       "type": "object",
-      "required": ["response_refs", "artifact_refs", "effects"],
+      "required": [
+        "response_refs",
+        "artifact_refs",
+        "effects"
+      ],
       "additionalProperties": false,
       "properties": {
-        "response_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "artifact_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "effects": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        "response_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "artifact_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "effects": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     "handoff": {
       "type": "object",
-      "required": ["owner", "available", "packet", "packet_sha256", "expected_events", "receipt", "receipt_ref", "receipt_valid", "blocked_reason"],
+      "required": [
+        "owner",
+        "available",
+        "packet",
+        "packet_sha256",
+        "expected_events",
+        "receipt",
+        "receipt_ref",
+        "receipt_valid",
+        "blocked_reason"
+      ],
       "additionalProperties": false,
       "properties": {
-        "owner": {"type": ["string", "null"], "enum": ["rote-using-adapters", "rote-shell", "rote-browse", "rote-workspace", null]},
-        "available": {"type": "boolean"},
-        "packet": {"type": ["object", "null"]},
-        "packet_sha256": {"$ref": "#/$defs/nullableString"},
-        "expected_events": {"$ref": "#/$defs/stringArray"},
-        "receipt": {"type": ["object", "null"]},
-        "receipt_ref": {"$ref": "#/$defs/nullableString"},
-        "receipt_valid": {"type": "boolean"},
-        "blocked_reason": {"$ref": "#/$defs/nullableString"}
+        "owner": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "rote-using-adapters",
+            "rote-shell",
+            "rote-browse",
+            "rote-workspace",
+            null
+          ]
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "packet": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "packet_sha256": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "expected_events": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "receipt": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "receipt_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "receipt_valid": {
+          "type": "boolean"
+        },
+        "blocked_reason": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     },
     "readiness": {
       "type": "object",
-      "required": ["status", "exact_version"],
+      "required": [
+        "status",
+        "exact_version"
+      ],
       "additionalProperties": false,
       "properties": {
-        "status": {"enum": ["unknown", "ready", "resolution_required", "drifted"]},
-        "exact_version": {"$ref": "#/$defs/nullableString"}
+        "status": {
+          "enum": [
+            "unknown",
+            "ready",
+            "resolution_required",
+            "drifted"
+          ]
+        },
+        "exact_version": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     },
     "route": {
       "type": "object",
-      "required": ["modalities", "justification"],
+      "required": [
+        "modalities",
+        "justification"
+      ],
       "additionalProperties": false,
       "properties": {
-        "modalities": {"type": "array", "uniqueItems": true, "items": {"enum": ["call", "shell", "drive"]}},
-        "justification": {"$ref": "#/$defs/nullableString"}
+        "modalities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "call",
+              "shell",
+              "drive"
+            ]
+          }
+        },
+        "justification": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     },
     "adapterDiscovery": {
       "type": "object",
-      "required": ["status", "query", "searched_sources", "choices", "selected_id", "evidence_refs"],
+      "required": [
+        "status",
+        "query",
+        "searched_sources",
+        "choices",
+        "selected_id",
+        "evidence_refs"
+      ],
       "additionalProperties": false,
       "properties": {
-        "status": {"enum": ["unknown", "installed_ready", "installed_choices", "catalog_choices", "catalog_empty", "selected", "catalog_rejected"]},
-        "query": {"$ref": "#/$defs/nullableString"},
-        "searched_sources": {"type": "array", "uniqueItems": true, "items": {"enum": ["installed", "catalog"]}},
-        "choices": {"type": "array", "items": {"$ref": "#/$defs/adapterChoice"}},
-        "selected_id": {"$ref": "#/$defs/nullableString"},
-        "evidence_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        "status": {
+          "enum": [
+            "unknown",
+            "installed_ready",
+            "installed_choices",
+            "catalog_choices",
+            "catalog_empty",
+            "selected",
+            "catalog_rejected"
+          ]
+        },
+        "query": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "searched_sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "installed",
+              "catalog"
+            ]
+          }
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/adapterChoice"
+          }
+        },
+        "selected_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     "adapterChoice": {
       "type": "object",
-      "required": ["id", "label", "description", "source", "provider", "category", "substrate", "auth_shape", "health", "install_impact", "next_command"],
+      "required": [
+        "id",
+        "label",
+        "description",
+        "source",
+        "provider",
+        "category",
+        "substrate",
+        "auth_shape",
+        "health",
+        "install_impact",
+        "next_command"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": {"type": "string", "minLength": 1},
-        "label": {"type": "string", "minLength": 1},
-        "description": {"type": "string", "minLength": 1},
-        "source": {"enum": ["installed", "catalog"]},
-        "provider": {"$ref": "#/$defs/nullableString"},
-        "category": {"$ref": "#/$defs/nullableString"},
-        "substrate": {"enum": ["openapi", "graphql", "mcp", "google_discovery", "unknown"]},
-        "auth_shape": {"enum": ["none", "static_token", "api_key", "basic", "oauth2", "mcp_oauth_dcr", "ambiguous", "unknown"]},
-        "health": {"enum": ["ready", "degraded", "auth_required", "unknown"]},
-        "install_impact": {"enum": ["none", "local-write", "human-gate", "unknown"]},
-        "next_command": {"$ref": "#/$defs/nullableString"}
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "enum": [
+            "installed",
+            "catalog"
+          ]
+        },
+        "provider": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "category": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "substrate": {
+          "enum": [
+            "openapi",
+            "graphql",
+            "mcp",
+            "google_discovery",
+            "unknown"
+          ]
+        },
+        "auth_shape": {
+          "enum": [
+            "none",
+            "static_token",
+            "api_key",
+            "basic",
+            "oauth2",
+            "mcp_oauth_dcr",
+            "ambiguous",
+            "unknown"
+          ]
+        },
+        "health": {
+          "enum": [
+            "ready",
+            "degraded",
+            "auth_required",
+            "unknown"
+          ]
+        },
+        "install_impact": {
+          "enum": [
+            "none",
+            "local-write",
+            "human-gate",
+            "unknown"
+          ]
+        },
+        "next_command": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     },
     "consent": {
       "type": "object",
-      "required": ["explore", "save"],
+      "required": [
+        "explore",
+        "save"
+      ],
       "additionalProperties": false,
       "properties": {
-        "explore": {"enum": ["approved", "declined", "not_asked"]},
-        "save": {"enum": ["private", "public", "skip", "not_asked"]}
+        "explore": {
+          "enum": [
+            "approved",
+            "declined",
+            "not_asked"
+          ]
+        },
+        "save": {
+          "enum": [
+            "private",
+            "public",
+            "skip",
+            "not_asked"
+          ]
+        }
       }
     },
     "modalityPolicy": {
       "type": "object",
-      "required": ["mode", "allowed", "forbidden", "widening_requires_approval"],
+      "required": [
+        "mode",
+        "allowed",
+        "forbidden",
+        "widening_requires_approval"
+      ],
       "additionalProperties": false,
       "properties": {
-        "mode": {"enum": ["auto", "manual"]},
-        "allowed": {"type": "array", "uniqueItems": true, "items": {"enum": ["call", "shell", "drive"]}},
-        "forbidden": {"type": "array", "uniqueItems": true, "items": {"enum": ["call", "shell", "drive"]}},
-        "widening_requires_approval": {"const": true}
+        "mode": {
+          "enum": [
+            "auto",
+            "manual"
+          ]
+        },
+        "allowed": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "call",
+              "shell",
+              "drive"
+            ]
+          }
+        },
+        "forbidden": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "call",
+              "shell",
+              "drive"
+            ]
+          }
+        },
+        "widening_requires_approval": {
+          "const": true
+        }
       }
     },
     "judgePolicy": {
       "type": "object",
-      "required": ["allowed", "harness"],
+      "required": [
+        "allowed",
+        "harness"
+      ],
       "additionalProperties": false,
       "properties": {
-        "allowed": {"type": "boolean"},
-        "harness": {"$ref": "#/$defs/nullableString"}
+        "allowed": {
+          "type": "boolean"
+        },
+        "harness": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     },
     "effectPolicy": {
       "type": "object",
-      "required": ["read_only", "approval_gates", "rote_confirmation"],
+      "required": [
+        "read_only",
+        "approval_gates",
+        "rote_confirmation"
+      ],
       "additionalProperties": false,
       "properties": {
-        "read_only": {"type": "boolean"},
-        "approval_gates": {"$ref": "#/$defs/stringArray"},
+        "read_only": {
+          "type": "boolean"
+        },
+        "approval_gates": {
+          "$ref": "#/$defs/stringArray"
+        },
         "rote_confirmation": {
           "oneOf": [
-            {"type": "null"},
-            {"$ref": "#/$defs/effectConfirmation"}
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/effectConfirmation"
+            }
           ]
         }
       }
     },
     "effectConfirmation": {
       "type": "object",
-      "required": ["source", "status", "tool", "impact", "confirm_token", "workspace", "evidence_refs"],
+      "required": [
+        "source",
+        "status",
+        "tool",
+        "impact",
+        "confirm_token",
+        "workspace",
+        "evidence_refs"
+      ],
       "additionalProperties": false,
       "properties": {
-        "source": {"const": "rote_confirmation_required"},
-        "status": {"enum": ["required", "approved", "declined"]},
-        "tool": {"type": "string", "minLength": 1},
-        "impact": {"type": "string", "minLength": 1},
-        "confirm_token": {"type": "string", "minLength": 1},
-        "workspace": {"type": "string", "minLength": 1},
-        "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+        "source": {
+          "const": "rote_confirmation_required"
+        },
+        "status": {
+          "enum": [
+            "required",
+            "approved",
+            "declined"
+          ]
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "impact": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirm_token": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     "authRepair": {
       "type": "object",
-      "required": ["status", "owner", "recoverable", "adapter_id", "env_var", "classified_rung", "distinguishing_error", "repair_action", "original_packet", "original_packet_sha256", "packet", "packet_sha256", "receipt", "receipt_ref", "receipt_valid", "blocked_reason", "evidence_refs"],
+      "required": [
+        "status",
+        "owner",
+        "recoverable",
+        "adapter_id",
+        "env_var",
+        "classified_rung",
+        "distinguishing_error",
+        "repair_action",
+        "original_packet",
+        "original_packet_sha256",
+        "packet",
+        "packet_sha256",
+        "receipt",
+        "receipt_ref",
+        "receipt_valid",
+        "blocked_reason",
+        "evidence_refs"
+      ],
       "additionalProperties": false,
       "properties": {
-        "status": {"enum": ["none", "required", "approved", "repairing", "repaired", "declined", "failed"]},
-        "owner": {"type": ["string", "null"], "enum": ["rote-adapter-config", null]},
-        "recoverable": {"type": ["boolean", "null"]},
-        "adapter_id": {"$ref": "#/$defs/nullableString"},
-        "env_var": {"$ref": "#/$defs/nullableString"},
-        "classified_rung": {"$ref": "#/$defs/nullableString"},
-        "distinguishing_error": {"$ref": "#/$defs/nullableString"},
-        "repair_action": {"$ref": "#/$defs/nullableString"},
-        "original_packet": {"type": ["object", "null"]},
-        "original_packet_sha256": {"$ref": "#/$defs/nullableString"},
-        "packet": {"type": ["object", "null"]},
-        "packet_sha256": {"$ref": "#/$defs/nullableString"},
-        "receipt": {"type": ["object", "null"]},
-        "receipt_ref": {"$ref": "#/$defs/nullableString"},
-        "receipt_valid": {"type": "boolean"},
-        "blocked_reason": {"$ref": "#/$defs/nullableString"},
-        "evidence_refs": {"$ref": "#/$defs/stringArray"}
+        "status": {
+          "enum": [
+            "none",
+            "required",
+            "approved",
+            "repairing",
+            "repaired",
+            "declined",
+            "failed"
+          ]
+        },
+        "owner": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "rote-adapter-config",
+            null
+          ]
+        },
+        "recoverable": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "adapter_id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "env_var": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "classified_rung": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "distinguishing_error": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "repair_action": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "original_packet": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "original_packet_sha256": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "packet": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "packet_sha256": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "receipt": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "receipt_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "receipt_valid": {
+          "type": "boolean"
+        },
+        "blocked_reason": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/stringArray"
+        }
       }
     },
     "execution": {
       "type": "object",
-      "required": ["owner", "workspace", "attempts", "budget", "pending_action", "idempotency_key"],
+      "required": [
+        "owner",
+        "workspace",
+        "attempts",
+        "budget",
+        "pending_action",
+        "idempotency_key"
+      ],
       "additionalProperties": false,
       "properties": {
-        "owner": {"type": ["string", "null"], "enum": ["rote-using-adapters", "rote-shell", "rote-browse", "rote-workspace", null]},
-        "workspace": {"$ref": "#/$defs/nullableString"},
-        "attempts": {"type": "integer", "minimum": 0},
-        "budget": {"type": "integer", "minimum": 0},
-        "pending_action": {"$ref": "#/$defs/nullableString"},
-        "idempotency_key": {"$ref": "#/$defs/nullableString"}
+        "owner": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "rote-using-adapters",
+            "rote-shell",
+            "rote-browse",
+            "rote-workspace",
+            null
+          ]
+        },
+        "workspace": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending_action": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     },
     "evidence": {
       "type": "object",
-      "required": ["baseline", "responses", "artifacts", "verification", "failed_receipt"],
+      "required": [
+        "baseline",
+        "responses",
+        "artifacts",
+        "verification",
+        "failed_receipt"
+      ],
       "additionalProperties": false,
       "properties": {
-        "baseline": {"$ref": "#/$defs/nullableString"},
-        "responses": {"$ref": "#/$defs/stringArray"},
-        "artifacts": {"$ref": "#/$defs/stringArray"},
-        "verification": {"$ref": "#/$defs/nullableString"},
-        "failed_receipt": {"$ref": "#/$defs/nullableString"}
+        "baseline": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "responses": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "artifacts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "verification": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "failed_receipt": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     },
     "candidate": {
       "type": "object",
-      "required": ["reference", "reusable", "contract", "released_flow", "publication_status"],
+      "required": [
+        "reference",
+        "reusable",
+        "contract",
+        "released_flow",
+        "publication_status"
+      ],
       "additionalProperties": false,
       "properties": {
-        "reference": {"$ref": "#/$defs/nullableString"},
-        "reusable": {"type": ["boolean", "null"]},
-        "contract": {"$ref": "#/$defs/nullableString"},
-        "released_flow": {"$ref": "#/$defs/nullableString"},
-        "publication_status": {"enum": ["unknown", "unpublished", "published"]}
+        "reference": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "reusable": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "contract": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "released_flow": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "publication_status": {
+          "enum": [
+            "unknown",
+            "unpublished",
+            "published"
+          ]
+        }
       }
     },
     "birth": {
       "type": "object",
-      "required": ["selector", "sha256", "flow_fingerprint", "object_ref", "capture_ref", "exact_reference", "registry_content_hash", "binding_ref", "certificate_presented", "certificate_ref", "certificate_ns", "trace_learning"],
+      "required": [
+        "selector",
+        "sha256",
+        "flow_fingerprint",
+        "object_ref",
+        "capture_ref",
+        "exact_reference",
+        "registry_content_hash",
+        "binding_ref",
+        "certificate_presented",
+        "certificate_ref",
+        "certificate_ns",
+        "trace_learning"
+      ],
       "additionalProperties": false,
       "properties": {
-        "selector": {"$ref": "#/$defs/nullableString"},
-        "sha256": {"$ref": "#/$defs/nullableString"},
-        "flow_fingerprint": {"$ref": "#/$defs/nullableString"},
-        "object_ref": {"$ref": "#/$defs/nullableString"},
-        "capture_ref": {"$ref": "#/$defs/nullableString"},
-        "exact_reference": {"$ref": "#/$defs/nullableString"},
-        "registry_content_hash": {"$ref": "#/$defs/nullableString"},
-        "binding_ref": {"$ref": "#/$defs/nullableString"},
-        "certificate_presented": {"type": "boolean"},
-        "certificate_ref": {"$ref": "#/$defs/nullableString"},
-        "certificate_ns": {"type": ["integer", "null"], "minimum": 0},
-        "trace_learning": {"$ref": "#/$defs/traceLearning"}
+        "selector": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sha256": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "flow_fingerprint": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "object_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "capture_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "exact_reference": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "registry_content_hash": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "binding_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "certificate_presented": {
+          "type": "boolean"
+        },
+        "certificate_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "certificate_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "trace_learning": {
+          "$ref": "#/$defs/traceLearning"
+        }
       }
     },
     "traceLearning": {
       "type": "object",
-      "required": ["commands", "responses", "successes", "errors", "unknown", "dependency_edges", "modalities", "duration_seconds", "trace_method", "summary"],
+      "required": [
+        "commands",
+        "responses",
+        "successes",
+        "errors",
+        "unknown",
+        "dependency_edges",
+        "modalities",
+        "duration_seconds",
+        "trace_method",
+        "summary"
+      ],
       "additionalProperties": false,
       "properties": {
-        "commands": {"type": "integer", "minimum": 0},
-        "responses": {"type": "integer", "minimum": 0},
-        "successes": {"type": "integer", "minimum": 0},
-        "errors": {"type": "integer", "minimum": 0},
-        "unknown": {"type": "integer", "minimum": 0},
-        "dependency_edges": {"type": "integer", "minimum": 0},
-        "modalities": {"$ref": "#/$defs/stringArray"},
-        "duration_seconds": {"type": ["number", "null"], "minimum": 0},
-        "trace_method": {"type": "string", "minLength": 1},
-        "summary": {"type": "string", "minLength": 1}
+        "commands": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "responses": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "successes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknown": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dependency_edges": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "modalities": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "duration_seconds": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "trace_method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "awareness": {
       "type": "object",
-      "required": ["window_days", "complete", "digest_ref", "play_choices"],
+      "required": [
+        "window_days",
+        "complete",
+        "digest_ref",
+        "play_choices"
+      ],
       "additionalProperties": false,
       "properties": {
-        "window_days": {"type": "integer", "minimum": 1, "maximum": 90},
-        "complete": {"type": "boolean"},
-        "digest_ref": {"$ref": "#/$defs/nullableString"},
-        "play_choices": {"type": "array", "items": {"$ref": "#/$defs/awarenessChoice"}}
+        "window_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 90
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "digest_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "play_choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/awarenessChoice"
+          }
+        }
       }
     },
     "awarenessChoice": {
       "type": "object",
-      "required": ["reference", "label", "description", "parameters"],
+      "required": [
+        "reference",
+        "label",
+        "description",
+        "parameters"
+      ],
       "additionalProperties": false,
       "properties": {
-        "reference": {"type": "string", "minLength": 1},
-        "label": {"type": "string", "minLength": 1},
-        "description": {"type": "string", "minLength": 1},
-        "parameters": {"type": "object"}
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parameters": {
+          "type": "object"
+        }
       }
     },
     "creator": {
       "type": "object",
-      "required": ["intent", "seed_reference"],
+      "required": [
+        "intent",
+        "seed_reference"
+      ],
       "additionalProperties": false,
       "properties": {
-        "intent": {"type": ["string", "null"], "enum": ["self", "private-share", "public-share", "unspecified", null]},
-        "seed_reference": {"$ref": "#/$defs/nullableString"}
+        "intent": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "self",
+            "private-share",
+            "public-share",
+            "unspecified",
+            null
+          ]
+        },
+        "seed_reference": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     },
     "management": {
       "type": "object",
-      "required": ["views", "org_summary_ref", "plays_by_org_ref"],
+      "required": [
+        "views",
+        "org_summary_ref",
+        "plays_by_org_ref"
+      ],
       "additionalProperties": false,
       "properties": {
         "views": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {"enum": ["org_summary", "plays_by_org"]}
+          "items": {
+            "enum": [
+              "org_summary",
+              "plays_by_org"
+            ]
+          }
         },
-        "org_summary_ref": {"$ref": "#/$defs/nullableString"},
-        "plays_by_org_ref": {"$ref": "#/$defs/nullableString"}
+        "org_summary_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "plays_by_org_ref": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     },
     "adapterCredentialContract": {
       "type": "object",
-      "required": ["adapter_id", "selected_source", "selected_version", "fingerprint", "auth_family", "credential_names", "credential_status", "provenance"],
+      "required": [
+        "adapter_id",
+        "selected_source",
+        "selected_version",
+        "fingerprint",
+        "auth_family",
+        "credential_names",
+        "credential_status",
+        "provenance"
+      ],
       "additionalProperties": false,
       "properties": {
-        "adapter_id": {"type": "string", "minLength": 1},
-        "selected_source": {"type": "string", "minLength": 1},
-        "selected_version": {"type": "string", "minLength": 1},
-        "fingerprint": {"type": "string", "minLength": 1},
-        "auth_family": {"enum": ["none", "static", "oauth"]},
-        "credential_names": {"$ref": "#/$defs/stringArray"},
-        "credential_status": {"type": "string", "minLength": 1},
-        "provenance": {"const": "receipt_verified"}
+        "adapter_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selected_source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selected_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fingerprint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "auth_family": {
+          "enum": [
+            "none",
+            "static",
+            "oauth"
+          ]
+        },
+        "credential_names": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "credential_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provenance": {
+          "const": "receipt_verified"
+        }
       }
     },
     "team": {
       "type": "object",
-      "required": ["slug", "name", "status", "members", "invite_email", "invite_role", "invites", "presentation_ref", "evidence_refs"],
+      "required": [
+        "slug",
+        "name",
+        "status",
+        "members",
+        "invite_email",
+        "invite_role",
+        "invites",
+        "presentation_ref",
+        "evidence_refs"
+      ],
       "additionalProperties": false,
       "properties": {
-        "slug": {"type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$"},
-        "name": {"$ref": "#/$defs/nullableString"},
-        "status": {"enum": ["not_started", "creating", "ready", "inviting", "presented", "failed"]},
-        "members": {"type": "array"},
-        "invite_email": {"type": ["string", "null"], "format": "email"},
-        "invite_role": {"enum": ["admin", "developer", "reader"]},
-        "invites": {"type": "array"},
-        "presentation_ref": {"$ref": "#/$defs/nullableString"},
-        "evidence_refs": {"$ref": "#/$defs/stringArray"}
+        "slug": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$"
+        },
+        "name": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "status": {
+          "enum": [
+            "not_started",
+            "creating",
+            "ready",
+            "inviting",
+            "presented",
+            "failed"
+          ]
+        },
+        "members": {
+          "type": "array"
+        },
+        "invite_email": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "email"
+        },
+        "invite_role": {
+          "enum": [
+            "admin",
+            "developer",
+            "reader"
+          ]
+        },
+        "invites": {
+          "type": "array"
+        },
+        "presentation_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/stringArray"
+        }
       }
     },
     "publicationValidation": {
       "type": "object",
-      "required": ["credential_status", "adapter_contracts", "credential_contract_sha256", "credential_check_ns", "smoke_status", "smoke_exact_reference", "smoke_run_ref", "smoke_output_sha256", "smoke_output_bytes", "smoke_ns", "isolated_workdir", "failure_reason", "evidence_refs"],
+      "required": [
+        "credential_status",
+        "adapter_contracts",
+        "credential_contract_sha256",
+        "credential_check_ns",
+        "smoke_status",
+        "smoke_exact_reference",
+        "smoke_run_ref",
+        "smoke_output_sha256",
+        "smoke_output_bytes",
+        "smoke_ns",
+        "isolated_workdir",
+        "failure_reason",
+        "evidence_refs"
+      ],
       "additionalProperties": false,
       "properties": {
-        "credential_status": {"enum": ["not_required", "pending", "verified", "failed"]},
+        "credential_status": {
+          "enum": [
+            "not_required",
+            "pending",
+            "verified",
+            "failed"
+          ]
+        },
         "adapter_contracts": {
           "type": "array",
-          "items": {"$ref": "#/$defs/adapterCredentialContract"}
+          "items": {
+            "$ref": "#/$defs/adapterCredentialContract"
+          }
         },
-        "credential_contract_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
-        "credential_check_ns": {"type": ["integer", "null"], "minimum": 0},
-        "smoke_status": {"enum": ["not_required", "pending", "verified", "failed"]},
-        "smoke_exact_reference": {"$ref": "#/$defs/nullableString"},
-        "smoke_run_ref": {"$ref": "#/$defs/nullableString"},
-        "smoke_output_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
-        "smoke_output_bytes": {"type": ["integer", "null"], "minimum": 0},
-        "smoke_ns": {"type": ["integer", "null"], "minimum": 0},
-        "isolated_workdir": {"type": "boolean"},
-        "failure_reason": {"$ref": "#/$defs/nullableString"},
-        "evidence_refs": {"$ref": "#/$defs/stringArray"}
+        "credential_contract_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "credential_check_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "smoke_status": {
+          "enum": [
+            "not_required",
+            "pending",
+            "verified",
+            "failed"
+          ]
+        },
+        "smoke_exact_reference": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "smoke_run_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "smoke_output_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "smoke_output_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "smoke_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "isolated_workdir": {
+          "type": "boolean"
+        },
+        "failure_reason": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/stringArray"
+        }
       }
     },
     "publication": {
       "type": "object",
-      "required": ["owner", "owner_resolution", "profile_handle", "owner_choices", "owner_summary", "owner_probe_ref", "owner_probe_ns", "private_org", "canonical_reference", "birth_sha256", "title", "description", "uri", "install_uri", "content_hash", "visibility", "indexed", "index_ref", "inspect_ref", "share_copy", "presentation_ref", "presented"],
+      "required": [
+        "owner",
+        "owner_resolution",
+        "profile_handle",
+        "owner_choices",
+        "owner_summary",
+        "owner_probe_ref",
+        "owner_probe_ns",
+        "private_org",
+        "canonical_reference",
+        "birth_sha256",
+        "title",
+        "description",
+        "uri",
+        "install_uri",
+        "content_hash",
+        "visibility",
+        "indexed",
+        "index_ref",
+        "inspect_ref",
+        "share_copy",
+        "presentation_ref",
+        "presented"
+      ],
       "additionalProperties": false,
       "properties": {
-        "owner": {"$ref": "#/$defs/nullableString"},
-        "owner_resolution": {"enum": ["unknown", "resolved", "choice_required", "unavailable"]},
-        "profile_handle": {"$ref": "#/$defs/nullableString"},
+        "owner": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "owner_resolution": {
+          "enum": [
+            "unknown",
+            "resolved",
+            "choice_required",
+            "unavailable"
+          ]
+        },
+        "profile_handle": {
+          "$ref": "#/$defs/nullableString"
+        },
         "owner_choices": {
           "type": "array",
-          "items": {"$ref": "#/$defs/publicationOwnerChoice"}
-        },
-        "owner_summary": {"$ref": "#/$defs/nullableString"},
-        "owner_probe_ref": {"$ref": "#/$defs/nullableString"},
-        "owner_probe_ns": {"type": ["integer", "null"], "minimum": 0},
-        "private_org": {"$ref": "#/$defs/nullableString"},
-        "canonical_reference": {"$ref": "#/$defs/nullableString"},
-        "birth_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
-        "title": {"$ref": "#/$defs/nullableString"},
-        "description": {"$ref": "#/$defs/nullableString"},
-        "uri": {"$ref": "#/$defs/nullableString"},
-        "install_uri": {"$ref": "#/$defs/nullableString"},
-        "content_hash": {"$ref": "#/$defs/nullableString"},
-        "visibility": {"type": ["string", "null"], "enum": ["private", "public", null]},
-        "indexed": {"type": "boolean"},
-        "index_ref": {"$ref": "#/$defs/nullableString"},
-        "inspect_ref": {"$ref": "#/$defs/nullableString"},
-        "share_copy": {
-          "type": "object",
-          "required": ["x", "linkedin"],
-          "additionalProperties": false,
-          "properties": {
-            "x": {"$ref": "#/$defs/nullableString"},
-            "linkedin": {"$ref": "#/$defs/nullableString"}
+          "items": {
+            "$ref": "#/$defs/publicationOwnerChoice"
           }
         },
-        "presentation_ref": {"$ref": "#/$defs/nullableString"},
-        "presented": {"type": "boolean"}
+        "owner_summary": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "owner_probe_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "owner_probe_ns": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "private_org": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "canonical_reference": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "birth_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "title": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "description": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "uri": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "install_uri": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "content_hash": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "visibility": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "private",
+            "public",
+            null
+          ]
+        },
+        "indexed": {
+          "type": "boolean"
+        },
+        "index_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "inspect_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "share_copy": {
+          "type": "object",
+          "required": [
+            "x",
+            "linkedin"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "$ref": "#/$defs/nullableString"
+            },
+            "linkedin": {
+              "$ref": "#/$defs/nullableString"
+            }
+          }
+        },
+        "presentation_ref": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "presented": {
+          "type": "boolean"
+        }
       }
     },
     "publicationOwnerChoice": {
       "type": "object",
-      "required": ["id", "owner", "kind", "display_name", "ownership_description", "recommended"],
+      "required": [
+        "id",
+        "owner",
+        "kind",
+        "display_name",
+        "ownership_description",
+        "recommended"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": {"type": "string", "minLength": 1},
-        "owner": {"type": "string", "minLength": 1},
-        "kind": {"enum": ["profile_handle", "organization"]},
-        "display_name": {"type": "string", "minLength": 1},
-        "ownership_description": {"type": "string", "minLength": 1},
-        "recommended": {"type": "boolean"}
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "profile_handle",
+            "organization"
+          ]
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ownership_description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recommended": {
+          "type": "boolean"
+        }
       }
     },
     "lastEvent": {
       "type": "object",
-      "required": ["id", "payload_ref"],
+      "required": [
+        "id",
+        "payload_ref"
+      ],
       "additionalProperties": false,
       "properties": {
-        "id": {"$ref": "#/$defs/nullableString"},
-        "payload_ref": {"$ref": "#/$defs/nullableString"}
+        "id": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "payload_ref": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     }
   }
