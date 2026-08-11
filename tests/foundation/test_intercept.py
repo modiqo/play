@@ -182,7 +182,8 @@ class InterceptTest(unittest.TestCase):
         assert line is not None
         self.assertIn("available in your hub", line)
         self.assertIn("modiqo/list-top-committers", line)
-        self.assertIn("Pull and run", line)
+        self.assertIn("inspects first", line)
+        self.assertIn("never pull plays or adapters manually", line)
 
 
 if __name__ == "__main__":

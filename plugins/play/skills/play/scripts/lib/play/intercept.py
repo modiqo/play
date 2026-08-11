@@ -271,11 +271,13 @@ def intercept_prompt(prompt: str) -> str | None:
         if match.get("scope") == "hub":
             return (
                 f"Play: Play `{match['reference']}` is available in your hub — {description} "
-                "Pull and run it through the play skill instead of doing this manually."
+                "Run it through the play skill: it inspects first, shows the Play card, and "
+                "asks approval before running — never pull plays or adapters manually."
             )
         return (
             f"Play: saved Play `{match['reference']}` looks relevant — {description} "
-            "Run it through the play skill instead of doing this manually."
+            "Run it through the play skill: it inspects first and asks approval before "
+            "running — never decompose it into manual pull or adapter commands."
         )
     if _FAST_OUTCOME.match(stripped) and entries is not None:
         state_path = _state_path()

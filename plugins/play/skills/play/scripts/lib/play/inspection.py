@@ -226,6 +226,13 @@ def render_markdown(disclosure: dict[str, Any]) -> str:
         identity["description"] or "No description provided.",
         "",
         f"Reference: `{disclosure['exact_reference']}` · {identity['visibility']}",
+    ]
+    base_reference = str(disclosure["exact_reference"]).rsplit("@", 1)[0]
+    if "/" in base_reference:
+        lines.append(
+            f"Play card: https://play.modiqo.ai/{base_reference}"
+        )
+    lines += [
         "",
         "## Setup on this machine",
         "",
