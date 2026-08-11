@@ -179,7 +179,7 @@ def best_match(prompt: str, entries: list[dict[str, Any]]) -> dict[str, Any] | N
         if score > best_score:
             best, best_score = entry, score
     if best is not None and best_score >= 4 and (
-        len(prompt_tokens & set(best.get("name_tokens", []))) >= 1
+        len(prompt_tokens & set(best.get("name_tokens", []))) >= 2
     ):
         return best
     return None

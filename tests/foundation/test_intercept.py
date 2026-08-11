@@ -135,11 +135,24 @@ class InterceptTest(unittest.TestCase):
     def test_settle_nudge_silent_without_a_hook(self) -> None:
         self.assertIsNone(settle_nudge("session-a"))
 
-    def test_best_match_requires_a_name_token(self) -> None:
+    def test_best_match_requires_two_name_tokens(self) -> None:
         entries = load_index()
         self.assertIsNone(
             best_match("compares answers with public things somehow", entries)
         )
+        # A single shared word ("check") in a meta-prompt must not clear the bar.
+        self.assertIsNone(
+            best_match(
+                "go ahead and check that everything reports its state correctly",
+                entries,
+            )
+        )
+
+    def test_specific_match_survives_the_two_token_bar(self) -> None:
+        entries = load_index()
+        match = best_match("can you check status on PR 1701", entries)
+        assert match is not None
+        self.assertEqual("pr-status-check", match["reference"])
 
 
 if __name__ == "__main__":
