@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/skills/play/scripts/bin/play-intercept\" prompt 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/skills/play/scripts/bin/play-intercept\" settle-nudge 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/skills/play/scripts/bin/play-inbox\" line 2>/dev/null; (\"${CLAUDE_PLUGIN_ROOT}/skills/play/scripts/bin/play-inbox\" refresh --if-older-than 6 >/dev/null 2>&1 &)",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
