@@ -926,6 +926,28 @@ def validate_bundle(
         and "explicit statement" in standby_policy_text,
         "standby must arm hooks only for unserved outcomes and ledger only explicit statements",
     )
+    check(
+        "One reading per captured rote call" in standby_policy_text
+        and "crystallizes into a monolith" in standby_policy_text,
+        "the baton-pass must carry exploration-shape steering",
+    )
+    crystallize_policy_text = " ".join(
+        actions.get("prepare_candidate", {}).get("command_policy", [])
+    )
+    check(
+        "One reading = one step" in crystallize_policy_text
+        and "labeled unknown" in crystallize_policy_text
+        and "--yes equivalent" in crystallize_policy_text,
+        "crystallization must carry play-shape steering",
+    )
+    release_shape_text = " ".join(
+        actions.get("author_release", {}).get("command_policy", [])
+    )
+    check(
+        "Test the negative space before release" in release_shape_text
+        and "stage ledger" in release_shape_text,
+        "release must gate on shape standards and negative-space testing",
+    )
     outcome_fields = (
         handoff_schema.get("$defs", {})
         .get("packet", {})

@@ -367,6 +367,7 @@ actions:
       - Arm the owner-private save hook only when an unserved outcome intent exists; keep only a bounded intent, coarse task class, and UTC timestamp, never conversation prose.
       - Append a scoped preference ledger entry only when the qualifier returned an explicit statement; record the statement, scope, task class, policy, and UTC time.
       - A standby exit is a baton-pass, never a result. Present the single returned continuation line, then complete the user's still-unfulfilled request immediately through the normal path; the rote skill owns adapter catalog search and exploration for provider work.
+      - Explore in the shape of the play it may become. One reading per captured rote call (never a script that fetches five things), stages named as you go, upstream responses consumed through rote query @N before values move on, endpoint dialects recorded when discovered, and a clean happy-path rerun before any export. A tangled trace crystallizes into a monolith no formatting can rescue.
     events:
       standby_recorded: [standby.armed, standby.task_class, standby.hook_ref, preferences.ledger_ref]
 
@@ -640,6 +641,9 @@ actions:
     specialist: rote-flow-crystallization
     effect: local-write
     input_required: [evidence.verification]
+    command_policy:
+      - Crystallize to the play-shape standard, not just a valid file. One reading = one step; steps carry author-chosen intent names (probe_harnesses, never python3_2); independent steps are roots so the runner parallelizes; depends_on declares ordering and @step{...} refs declare every consumed value (scalar, piped through join when needed, with a self-sufficient fallback in the script).
+      - Encode the failure contract at capture time. Expected absence prints {"ok":true,"warning":...} and exits zero so the presentation renders one labeled unknown; real faults write stderr and exit nonzero. Interactive subcommands inside steps carry their --yes equivalent because steps have no TTY.
     events:
       candidate_ready: [candidate.reference, candidate.reusable, candidate.contract]
       not_reusable: [reason, evidence_refs]
@@ -652,6 +656,8 @@ actions:
     input_required: [candidate.reference, consent.save]
     command_policy:
       - "Invoke rote-flow-authoring for this state only: author, test, lint, and release the candidate, then stop before every registry push or publication command."
+      - Release only a play that meets the shape standards; author-named steps, a real DAG with both edge kinds declared, degrade-never-die failure handling, honest deps.toml with per-step timeout_ms, and a classified presentation with a per-step stage ledger; never an information dump.
+      - Test the negative space before release; one degraded-source run must complete with a labeled unknown, and one injected hard fault must fail closed with working --resume. Verify the final DAG from the run output's layer lines (or modiqo/play-dag); multi-source work rendering as one step means the shape standards were skipped."
       - Never delegate an end-to-end release-and-publish request. The specialist must return control to Play so birth_capture can record the immutable owner-local birth before publication begins.
       - Emit flow_released only with candidate.publication_status=unpublished. If a registry publication already occurred, emit publication_boundary_violated; never reinterpret the published artifact as a valid pre-publication birth.
     events:
