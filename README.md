@@ -25,29 +25,20 @@ Claude Code.
 
 ### 2. Install on a new machine
 
-The commands below are for macOS or Linux and require Python 3.10+ and
-[`uv`](https://docs.astral.sh/uv/). They download and execute the public Rote and Play installers,
-so inspect the linked scripts first if that is your policy.
+On macOS or Linux, run:
 
 ```bash
-# Install the local Rote engine and runtimes.
-curl -fsSL https://getrote.dev/install | bash
-
-# Make every bundled Rote skill available to your personal agent installations.
-~/.local/bin/rote install skill --provider all --personal --package '*'
-
-# Install Play into the supported agent apps found on this machine.
 curl -fsSL https://raw.githubusercontent.com/modiqo/play/main/install.sh | sh
 ```
 
-Those commands install the Rote executable in `~/.local/bin`, distribute its bundled agent skills,
-and place a stable Play copy under `~/.local/share/modiqo/play`. They do not ask for API credentials;
-sign-in and optional provider connections happen afterward through guided browser or masked-terminal
-flows.
+That is the whole setup. Play finds your agent apps, checks Rote and its skills, and shows what it
+will install, update, or refresh. Nothing changes until you approve the plan, and installing Rote
+from `getrote.dev` has its own confirmation.
 
-Restart any running agent app after installation so it reloads its skills and hooks. Already have
-Rote? Run only the second and third commands. Prefer a pinned release, marketplace, or source
-checkout? See the [installation reference](#installation-reference).
+When it finishes, Play verifies the setup and tells you where it saved the report. Restart your
+agent app, then continue to step 3. The installer requires Python 3.10+ and
+[`uv`](https://docs.astral.sh/uv/); advanced options are in the
+[installation reference](#installation-reference).
 
 ### 3. Say hello
 
@@ -300,80 +291,80 @@ guarantees.
 
 ### Install Play everywhere
 
-If Rote skills are already available to your harnesses, install Play with one command:
+Use the same command on a new machine or to bring an existing installation up to date:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/modiqo/play/main/install.sh | sh
 ```
 
-The installer detects Codex, Claude Code, Kimi, and Cursor commands on the machine. It checks that
-each detected harness can see the Rote skill provider before writing anything, copies the packaged
-Play skill to `~/.local/share/modiqo/play/skill`, links it into every detected harness root, applies
-the reversible Play-first activation profile, verifies every link, verifies the `play-machine`
-launcher, and checks every required bundled `play-*` entrypoint. Existing unmanaged paths are never
-replaced. Updates keep the same stable install path so harness links do not drift between versions.
+Before making changes, the installer shows:
 
-To get checkbox-ready target data for an agent harness, or a readable checklist in a terminal:
+- the detected Codex, Claude Code, Kimi, and Cursor installations;
+- whether Rote is missing, current, or has an update available;
+- whether Rote skills need to be installed or refreshed in Codex, Claude, and `.agents`;
+- the Play installations and hooks it will configure.
 
-```bash
-scripts/harness/install-all targets --json
-scripts/harness/install-all targets
-```
+After approval, it performs that plan, verifies each selected app, and saves a JSON and Markdown
+report under `~/.local/state/play-bootstrap/runs/`. If sign-in is still needed, open a new agent
+session and run `$play` (`/play` in Claude Code) to finish the guided setup.
 
-The target payload is a multi-select over Codex, Claude Code, Kimi, and Cursor, including whether
-each harness command, Play skill, and Rote skill provider is present. Apply the exact selected set
-with repeated flags (unselected harnesses are outside the resulting activation profile):
+### Choose which apps receive Play
+
+By default, Play selects the top three detected apps. To choose explicitly:
 
 ```bash
-scripts/harness/install-all install --harness codex --harness claude
-# Or intentionally target every supported vendor root:
-scripts/harness/install-all install --all-harnesses
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/main/install.sh \
+  | sh -s -- --harness codex --harness claude
 ```
 
-If a selected target lacks `rote` or a `rote-*` skill, installation fails before writing and points
-back to that harness's `rote-setup` flow.
+Repeat `--harness` with any of `codex`, `claude`, `kimi`, or `cursor`.
+
+### Run unattended
+
+For automation, approve the displayed Play plan with `PLAY_INSTALL_YES=1`. If Rote may be missing,
+approve its separate official installer explicitly as well:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/main/install.sh \
+  | env PLAY_INSTALL_YES=1 PLAY_APPROVE_REMOTE_INSTALLER=1 sh
+```
+
+Omit `PLAY_APPROVE_REMOTE_INSTALLER=1` when Rote is known to be installed. Set
+`PLAY_INSTALL_TOP_K=<n>` to change the default number of selected apps.
 
 ### Full Play + Rote bootstrap
 
-For a fresh or partially configured machine, use the transactional, idempotently retryable
-bootstrap. Its read-only plan
-ranks detected harnesses, selects the top K, records the current Rote version and identity status,
-and assigns an immutable plan ID:
+From a checkout, run the same guided bootstrap directly:
+
+```bash
+scripts/bin/play-bootstrap install --top-k 3
+```
+
+To separate review from execution, first create a read-only plan:
 
 ```bash
 scripts/bin/play-bootstrap plan --top-k 3
 scripts/bin/play-bootstrap plan --top-k 3 --json
 ```
 
-Apply the exact reviewed plan by ID:
+Then apply its exact ID:
 
 ```bash
 scripts/bin/play-bootstrap apply --top-k 3 --plan-id sha256:<plan-id>
 ```
 
-If Rote is absent, apply stops with an approval-required report. After the user approves executing
-the official remote installer, resume with `--approve-remote-installer`. If Rote is present, apply
-runs `rote self-update --yes`. It then converges the complete personal Rote skill distribution with
-`rote install skill --provider all --personal --package '*'`, installs the durable Play copy into
-the selected harnesses, and merges Play's pre-prompt, post-stop, and session-start hooks into
-Codex, Claude Code, and Cursor while preserving unrelated hooks. Kimi is reported as unsupported
-for native command hooks rather than treated as successful.
+Add `--approve-remote-installer` only after approving the official Rote download. The bootstrap is
+safe to retry: it updates Rote only when an update is available, refreshes existing Rote skills,
+preserves unrelated hooks, and backs up every hook file it changes. Reports never contain
+credentials.
 
-Every hook file changed by bootstrap gets a run-specific backup. Every run writes owner-private
-JSON and Markdown reports under `~/.local/state/play-bootstrap/runs/` (or
-`PLAY_BOOTSTRAP_STATE`), including selected and skipped targets, Rote before/after state, commands,
-hook backups, verification results, human actions still required, and restart guidance. Login is a
-human/browser gate: when identity is not verified, the run finishes as `action_required` and
-directs the harness to continue through the now-installed `rote-setup` skill. After that handoff
-completes, generate and apply a fresh convergence plan. Bootstrap never puts credentials in the
-report.
+### Pin or inspect the installer
 
-The download uses HTTPS, rejects unsafe archive paths and links, and removes its temporary files.
-For a reproducible install, pin both the downloaded script and archive reference to the same tag:
+Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.0/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.0 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.1/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.1 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -385,7 +376,7 @@ less /tmp/install-play.sh
 sh /tmp/install-play.sh
 ```
 
-From a checkout, use the same detection and verification without downloading anything:
+### Install from a checkout
 
 ```bash
 just package

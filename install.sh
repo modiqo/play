@@ -70,5 +70,20 @@ with tarfile.open(archive, "r:gz") as bundle:
 PY
 fi
 
-[ -f "$source_root/scripts/harness/install-all" ] || fail "downloaded Play package is incomplete"
-python3 "$source_root/scripts/harness/install-all" install --copy
+[ -f "$source_root/scripts/bin/play-bootstrap" ] || fail "downloaded Play package is incomplete"
+
+case "${PLAY_INSTALL_YES:-}" in
+  ""|0) ;;
+  1) set -- "$@" --yes ;;
+  *) fail "PLAY_INSTALL_YES must be 0 or 1" ;;
+esac
+case "${PLAY_APPROVE_REMOTE_INSTALLER:-}" in
+  ""|0) ;;
+  1) set -- "$@" --approve-remote-installer ;;
+  *) fail "PLAY_APPROVE_REMOTE_INSTALLER must be 0 or 1" ;;
+esac
+if [ -n "${PLAY_INSTALL_TOP_K:-}" ]; then
+  set -- "$@" --top-k "$PLAY_INSTALL_TOP_K"
+fi
+
+python3 "$source_root/scripts/bin/play-bootstrap" install "$@"

@@ -33,6 +33,11 @@ LABELS = {
     "kimi": "Kimi",
     "cursor": "Cursor",
 }
+ROTE_SKILL_PROVIDERS = {
+    "codex": ("Codex", "CODEX_HOME", ".codex"),
+    "claude": ("Claude Code", "CLAUDE_CONFIG_DIR", ".claude"),
+    "agents-md": ("Shared .agents", "AGENTS_HOME", ".agents"),
+}
 
 
 class BootstrapError(RuntimeError):
@@ -134,13 +139,83 @@ def _probe_identity(rote: str | None, runner: Runner) -> str:
     return "authenticated" if result.returncode == 0 and "ok:" in output else "required"
 
 
-def _rote_snapshot(runner: Runner) -> dict[str, str | None]:
-    rote = resolve_rote()
+def _probe_update(rote: str | None, runner: Runner) -> dict[str, str | None]:
+    if rote is None:
+        return {
+            "status": "not_installed",
+            "detail": "Rote is not installed.",
+            "recommended_action": "install",
+        }
+    result = runner([rote, "self-update", "--check"])
+    output = (result.stdout or result.stderr).strip()
+    if result.returncode != 0:
+        return {
+            "status": "check_failed",
+            "detail": output or f"update check exited {result.returncode}",
+            "recommended_action": "review",
+        }
+    normalized = output.lower()
+    current_markers = (
+        "latest version",
+        "already current",
+        "up to date",
+        "up-to-date",
+        "no update available",
+        "rote is current",
+    )
+    current = any(marker in normalized for marker in current_markers)
     return {
+        "status": "current" if current else "available",
+        "detail": output or "Rote reports that an update is available.",
+        "recommended_action": "keep" if current else "update",
+    }
+
+
+def _rote_snapshot(runner: Runner, *, check_update: bool = True) -> dict[str, Any]:
+    rote = resolve_rote()
+    snapshot = {
         "path": rote,
         "version": _probe_version(rote, runner),
         "identity": _probe_identity(rote, runner),
     }
+    if check_update:
+        snapshot["update"] = _probe_update(rote, runner)
+    return snapshot
+
+
+def _rote_skill_roots() -> dict[str, tuple[str, Path]]:
+    roots: dict[str, tuple[str, Path]] = {}
+    for provider, (label, variable, default) in ROTE_SKILL_PROVIDERS.items():
+        home = Path(os.environ.get(variable, _home() / default)).expanduser()
+        roots[provider] = (label, home / "skills")
+    return roots
+
+
+def _rote_skills_snapshot() -> list[dict[str, Any]]:
+    result = []
+    for provider, (label, root) in _rote_skill_roots().items():
+        try:
+            names = sorted(
+                child.name
+                for child in root.iterdir()
+                if (child.name == "rote" or child.name.startswith("rote-"))
+                and (child / "SKILL.md").is_file()
+            )
+        except OSError:
+            names = []
+        installed = bool(names)
+        result.append(
+            {
+                "provider": provider,
+                "label": label,
+                "root": str(root),
+                "installed": installed,
+                "skill_count": len(names),
+                "skills": names,
+                "recommended_action": "refresh" if installed else "install",
+            }
+        )
+    return result
 
 
 def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> list[HarnessTarget]:
@@ -206,16 +281,55 @@ def build_plan(
         raise BootstrapError("no supported harnesses were detected or selected")
     rote_state = _rote_snapshot(runner)
     rote = rote_state["path"]
+    update = rote_state["update"]
+    if rote is None:
+        rote_action = {
+            "id": "install_rote",
+            "effect": "downloads and installs executable code",
+            "approval_required": True,
+            "recommended": True,
+        }
+    elif update["status"] == "available":
+        rote_action = {
+            "id": "update_rote",
+            "effect": update["detail"],
+            "command": ["rote", "self-update", "--yes"],
+            "recommended": True,
+        }
+    elif update["status"] == "current":
+        rote_action = {
+            "id": "keep_rote_current",
+            "effect": update["detail"],
+            "recommended": False,
+        }
+    else:
+        rote_action = {
+            "id": "review_rote_update",
+            "effect": f"Update availability could not be determined: {update['detail']}",
+            "recommended": False,
+        }
+    rote_skills = _rote_skills_snapshot()
+    missing_skill_roots = [item["provider"] for item in rote_skills if not item["installed"]]
+    existing_skill_roots = [item["provider"] for item in rote_skills if item["installed"]]
     actions = [
-        {
-            "id": "install_rote" if rote is None else "update_rote",
-            "effect": "downloads and installs executable code" if rote is None else "updates the installed Rote executable",
-            "approval_required": rote is None,
-        },
+        rote_action,
         {
             "id": "converge_rote_skills",
-            "effect": "writes all bundled Rote skills to personal harness roots",
-            "command": ["rote", "install", "skill", "--provider", "all", "--personal", "--package", "*"],
+            "effect": "installs missing and refreshes existing bundled Rote skills in personal harness roots",
+            "missing_providers": missing_skill_roots,
+            "refresh_providers": existing_skill_roots,
+            "command": [
+                "rote",
+                "install",
+                "skill",
+                "--provider",
+                "all",
+                "--personal",
+                "--package",
+                "*",
+                "--force",
+            ],
+            "recommended": True,
         },
         {
             "id": "install_play",
@@ -235,6 +349,7 @@ def build_plan(
         "selected_harnesses": selected,
         "targets": [asdict(target) for target in targets],
         "rote": rote_state,
+        "rote_skills": rote_skills,
         "actions": actions,
     }
     canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
@@ -390,6 +505,17 @@ def _markdown(report: dict[str, Any]) -> str:
         target = f" ({step['target']})" if step.get("target") else ""
         lines.append(f"- **{step['status']}** `{step['id']}`{target}: {step['detail']}")
     lines.extend(["", "## Restart", "", report["restart"]])
+    report_paths = report.get("report_paths")
+    if isinstance(report_paths, dict):
+        lines.extend(
+            [
+                "",
+                "## Saved reports",
+                "",
+                f"- JSON: `{report_paths.get('json')}`",
+                f"- Markdown: `{report_paths.get('markdown')}`",
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -399,15 +525,78 @@ def _render_plan(plan: dict[str, Any]) -> str:
         "",
         f"Plan: `{plan['plan_id']}`",
         "",
-        "## Selected harnesses",
+        "## Rote",
         "",
     ]
+    rote = plan["rote"]
+    if rote["path"]:
+        lines.append(f"- Installed: `{rote['version'] or 'unknown version'}` at `{rote['path']}`")
+    else:
+        lines.append("- Not installed")
+    update = rote["update"]
+    lines.append(
+        f"- Update check: **{update['status']}** — {update['detail']}"
+    )
+    lines.extend(["", "## Rote skills", ""])
+    for item in plan["rote_skills"]:
+        state = f"{item['skill_count']} installed" if item["installed"] else "not installed"
+        lines.append(
+            f"- {item['label']}: **{state}** at `{item['root']}`; "
+            f"suggested action: **{item['recommended_action']}**"
+        )
+    lines.extend(
+        [
+            "",
+        "## Selected harnesses",
+        "",
+        ]
+    )
     lines.extend(f"- {name}" for name in plan["selected_harnesses"])
     lines.extend(["", "## Actions", ""])
     for action in plan["actions"]:
         approval = "; explicit approval required" if action.get("approval_required") else ""
         lines.append(f"- `{action['id']}`: {action['effect']}{approval}")
     return "\n".join(lines) + "\n"
+
+
+def _confirm(question: str, *, default: bool) -> bool:
+    """Read an approval from the controlling terminal, even when the installer is piped."""
+
+    prompt = " [Y/n] " if default else " [y/N] "
+    stream = None
+    close_stream = False
+    if sys.stdin.isatty() and sys.stderr.isatty():
+        stream = sys.stdin
+    else:
+        try:
+            stream = open("/dev/tty", "r+", encoding="utf-8")
+            close_stream = True
+        except OSError as error:
+            raise BootstrapError(
+                "interactive approval is unavailable; rerun with --yes to approve the Play "
+                "plan and, if Rote is missing, --approve-remote-installer to separately "
+                "approve https://getrote.dev/install"
+            ) from error
+    try:
+        if stream is sys.stdin:
+            print(question + prompt, end="", file=sys.stderr, flush=True)
+        else:
+            stream.write(question + prompt)
+            stream.flush()
+        answer = stream.readline()
+    finally:
+        if close_stream:
+            stream.close()
+    if not answer:
+        raise BootstrapError("interactive approval ended before a choice was received")
+    normalized = answer.strip().lower()
+    if not normalized:
+        return default
+    if normalized in {"y", "yes"}:
+        return True
+    if normalized in {"n", "no"}:
+        return False
+    raise BootstrapError("approval must be yes or no")
 
 
 def write_report(report: dict[str, Any]) -> tuple[Path, Path]:
@@ -466,12 +655,23 @@ def apply(
             rote = resolve_rote()
             if result.returncode != 0 or rote is None:
                 return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
-    if initially_present and rote is not None:
+    update_status = plan["rote"]["update"]["status"]
+    if initially_present and rote is not None and update_status == "available":
         command = [rote, "self-update", "--yes"]
         result = runner(command)
         steps.append(_result_step("update_rote", result, command))
         if result.returncode != 0:
             return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
+    elif initially_present and rote is not None:
+        detail = plan["rote"]["update"]["detail"]
+        steps.append(
+            Step(
+                "check_rote_update",
+                "unchanged" if update_status == "current" else "review_required",
+                detail,
+                command=[rote, "self-update", "--check"],
+            )
+        )
 
     if rote is None:
         return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
@@ -485,9 +685,29 @@ def apply(
         "--personal",
         "--package",
         "*",
+        "--force",
     ]
     skill_result = runner(skill_command)
-    steps.append(_result_step("converge_rote_skills", skill_result, skill_command))
+    missing = [item["label"] for item in plan["rote_skills"] if not item["installed"]]
+    refreshed = [item["label"] for item in plan["rote_skills"] if item["installed"]]
+    coverage = []
+    if missing:
+        coverage.append("installed " + ", ".join(missing))
+    if refreshed:
+        coverage.append("refreshed " + ", ".join(refreshed))
+    skill_output = (skill_result.stdout or skill_result.stderr).strip()
+    detail = "; ".join(coverage)
+    if skill_output:
+        detail = f"{detail}. {skill_output}" if detail else skill_output
+    steps.append(
+        Step(
+            "converge_rote_skills",
+            "completed" if skill_result.returncode == 0 else "failed",
+            detail or f"exit {skill_result.returncode}",
+            command=skill_command,
+            changed=skill_result.returncode == 0,
+        )
+    )
     if skill_result.returncode != 0:
         return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
 
@@ -517,13 +737,26 @@ def apply(
             "Rote identity verified." if identity == "authenticated" else "Run the rote-setup skill to sign in and finish optional API setup.",
         )
     )
+    launcher = Path(
+        os.environ.get("PLAY_MACHINE_LAUNCHER", _home() / ".local" / "bin" / "play-machine")
+    ).expanduser()
+    verification_path = os.pathsep.join(
+        part for part in (str(launcher.parent), os.environ.get("PATH", "")) if part
+    )
     for harness in selected:
-        command = [str(installed_source / "scripts" / "bin" / "play-preflight"), "--harness", harness, "--json"]
+        command = [
+            "env",
+            f"PATH={verification_path}",
+            str(installed_source / "scripts" / "bin" / "play-preflight"),
+            "--harness",
+            harness,
+            "--json",
+        ]
         result = runner(command)
         steps.append(_result_step("verify", result, command))
     if any(step.status in {"failed", "approval_required"} for step in steps):
         status = "blocked"
-    elif any(step.status == "human_action_required" for step in steps):
+    elif any(step.status in {"human_action_required", "review_required"} for step in steps):
         status = "action_required"
     else:
         status = "completed"
@@ -549,6 +782,7 @@ def _finish_report(
         "selected_harnesses": plan["selected_harnesses"],
         "targets": plan["targets"],
         "rote": {"before": plan["rote"], "after": _rote_snapshot(runner)},
+        "rote_skills": {"before": plan["rote_skills"], "after": _rote_skills_snapshot()},
         "steps": [asdict(step) for step in steps],
         "restart": "Restart every selected running harness so it reloads skills and hooks.",
     }
@@ -559,7 +793,7 @@ def _finish_report(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("plan", "apply"):
+    for name in ("plan", "apply", "install"):
         command = subparsers.add_parser(name)
         command.add_argument("--top-k", type=int, default=3)
         command.add_argument("--harness", action="append", choices=SUPPORTED_HARNESSES)
@@ -568,11 +802,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     apply_parser.add_argument("--approve-remote-installer", action="store_true")
     apply_parser.add_argument("--run-id")
     apply_parser.add_argument("--plan-id")
+    install_parser = subparsers.choices["install"]
+    install_parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="apply the displayed Play plan without its interactive confirmation",
+    )
+    install_parser.add_argument(
+        "--approve-remote-installer",
+        action="store_true",
+        help="separately approve https://getrote.dev/install when Rote is missing",
+    )
+    install_parser.add_argument("--run-id")
     args = parser.parse_args(argv)
     try:
         if args.command == "plan":
             payload = build_plan(top_k=args.top_k, requested=args.harness)
-        else:
+        elif args.command == "apply":
             source = Path(__file__).resolve().parents[3]
             payload = apply(
                 source,
@@ -581,6 +827,30 @@ def main(argv: Sequence[str] | None = None) -> int:
                 approve_remote_installer=args.approve_remote_installer,
                 run_id=args.run_id,
                 expected_plan_id=args.plan_id,
+            )
+        else:
+            source = Path(__file__).resolve().parents[3]
+            plan = build_plan(top_k=args.top_k, requested=args.harness)
+            print(_render_plan(plan), file=sys.stderr if args.json else sys.stdout)
+            if not args.yes and not _confirm(
+                "Continue with this exact Play bootstrap plan?", default=True
+            ):
+                print("Play installation cancelled before any changes were made.")
+                return 0
+            approve_remote_installer = args.approve_remote_installer
+            if plan["rote"]["path"] is None and not approve_remote_installer:
+                approve_remote_installer = _confirm(
+                    "Rote is missing. Run the official installer from "
+                    "https://getrote.dev/install?",
+                    default=False,
+                )
+            payload = apply(
+                source,
+                top_k=args.top_k,
+                requested=args.harness,
+                approve_remote_installer=approve_remote_installer,
+                run_id=args.run_id,
+                expected_plan_id=plan["plan_id"],
             )
     except (BootstrapError, OSError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f"play-bootstrap: {error}\n")

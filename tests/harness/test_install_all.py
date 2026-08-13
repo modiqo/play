@@ -20,6 +20,26 @@ class InstallAllTest(unittest.TestCase):
         self.home = Path(self.temporary.name)
         self.bin = self.home / "bin"
         self.bin.mkdir()
+        rote = self.bin / "rote"
+        rote.write_text(
+            "#!/bin/sh\n"
+            "case \"${1:-}\" in\n"
+            "  version) echo 'version: 1.0.0' ;;\n"
+            "  whoami) echo 'ok: person@example.com' ;;\n"
+            "  self-update)\n"
+            "    if [ \"${2:-}\" = '--check' ]; then\n"
+            "      echo 'You are on the latest version!'\n"
+            "    else\n"
+            "      echo 'unexpected Rote update' >&2\n"
+            "      exit 41\n"
+            "    fi\n"
+            "    ;;\n"
+            "  install) echo 'Rote skills installed' ;;\n"
+            "  play) echo 'rote play' ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        rote.chmod(0o755)
         self.roots = {
             "codex": self.home / ".codex" / "skills",
             "claude": self.home / ".claude" / "skills",
@@ -52,6 +72,7 @@ class InstallAllTest(unittest.TestCase):
                     str(path) for path in self.roots.values()
                 ),
                 "PLAY_PROFILE_STATE": str(self.state),
+                "PLAY_BOOTSTRAP_STATE": str(self.home / "bootstrap-state"),
             }
         )
 
@@ -133,7 +154,7 @@ class InstallAllTest(unittest.TestCase):
 
         self.run_installer("install", "--copy")
         installed = install_home / "skill"
-        self.assertEqual("0.4.0", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.1", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():
@@ -160,6 +181,7 @@ class InstallAllTest(unittest.TestCase):
             **self.environment,
             "PLAY_INSTALL_HOME": str(install_home),
             "PLAY_INSTALL_SOURCE": str(ROOT),
+            "PLAY_INSTALL_YES": "1",
         }
         result = subprocess.run(
             ["/bin/sh", str(ROOT / "install.sh")],
@@ -170,9 +192,16 @@ class InstallAllTest(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertIn("# Play bootstrap plan", result.stdout)
+        self.assertIn("# Play bootstrap report", result.stdout)
         installed = install_home / "skill"
         self.assertTrue((installed / "SKILL.md").is_file())
+        reports = list((self.home / "bootstrap-state" / "runs").glob("*.json"))
+        self.assertEqual(1, len(reports))
+        report = json.loads(reports[0].read_text(encoding="utf-8"))
+        self.assertEqual("completed", report["status"])
+        self.assertEqual(["codex", "claude", "kimi"], report["selected_harnesses"])
         self.uninstall(installed)
 
 
