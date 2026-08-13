@@ -1,90 +1,156 @@
 # Play
 
-> Think in terms of Plays before thinking in terms of tools.
+**Reuse work that already works—without giving up visibility or control.**
 
-Play is the sidekick that makes reusable procedures — **Plays** — the center of gravity of agent
-work. It intervenes at exactly two moments and is invisible everywhere else:
+Play is a sidekick for Codex, Claude Code, Kimi, and Cursor. Before your agent starts a task, Play
+checks whether a saved procedure already produces the result you want. If one fits, you can inspect
+it and approve the exact run. If none fits, Play gets out of the way and your agent works normally.
+When that work turns out to be useful again, Play can help save it for next time.
 
-1. **Before work** — when you ask for an outcome, Play checks whether a saved Play already does it
-   and offers to run it.
-2. **After work** — when repeatable work settles, Play judges whether it is worth saving and offers
-   to preserve it as a Play.
+You do not need to learn a workflow language or replace your agent. Ask for outcomes in ordinary
+language.
 
-Everything else — one-off tasks, conversation, creative work — proceeds without Play saying a
-word. Stepping aside is a feature: when no adequate Play exists, Play exits silently, arms a save
-hook, and lets the agent work normally through the rote skills. A scoped preference ledger learns
-where you want Play active ("no Plays while I'm prototyping; always offer them for deploy chores")
-from your decisions, without a settings screen.
+## New here? Start in five minutes
 
-## The handoff chain: simple skill → state machine → rote skills
+### 1. Know the three names
 
-Play stays simple by making each layer own exactly one thing and hand the rest down:
+- **Play** is this sidekick. It finds, explains, runs, and saves reusable procedures.
+- A **Play** is one saved, inspectable procedure—for example, “retrieve recent emails” or “deploy
+  staging and post a summary.”
+- **Rote** is the local engine that runs Plays and connects them to tools and APIs. Your credentials
+  stay on your machine.
 
-| Layer | Owns | Size |
-|---|---|---|
-| **`SKILL.md`** (the harness contract) | How the agent enters the runtime and handles four yield boundaries: model, human, specialist, terminal. Nothing else. | ~74 lines |
-| **`play-machine`** (the typed state machine) | All control flow: classification, search, adequacy, inspection, approval, execution, verification, the save hook, and fail-closed blocking. Policy arrives just-in-time inside each state's projection — the agent never reads the machine. | 70 states, warm transitions <1 ms |
-| **rote specialist skills** | All execution with machinery: adapters (`rote-using-adapters`), shell (`rote-shell`), browser (`rote-browse`), workspaces (`rote-workspace`), adapter creation/repair (`rote-adapter-create`/`-config`), orgs (`rote-org`), crystallization (`rote-flow-crystallization`), release (`rote-flow-authoring`), registry (`rote-registry`), setup (`rote-setup`). Play invokes them through typed handoff packets and accepts only validated typed receipts — never prose. | |
-| **rote CLI + registry** | The universal Play runner (`rote play run` owns pull, convergence, credentials, execution) and the hub where Plays are shared. | |
+The docs sometimes say **harness**. That simply means the agent app you use, such as Codex or
+Claude Code.
 
-The agent's job at any moment is small and local: read one projection, do one bounded thing,
-return one declared event. The reasoning-and-reading tax lives in none of the layers.
+### 2. Install on a new machine
 
-Two intervention moments also get **structural triggers** — hooks, not prose — because field
-testing showed skill descriptions lose to a capable model's directness bias:
+The commands below are for macOS or Linux and require Python 3.10+ and
+[`uv`](https://docs.astral.sh/uv/). They download and execute the public Rote and Play installers,
+so inspect the linked scripts first if that is your policy.
 
-- `play-intercept prompt` (UserPromptSubmit): a local-only, ~60 ms match of your prompt against the
-  saved-Play index and the cached hub catalog. A hit injects one context line naming the Play; an
-  outcome-shaped prompt with no hit injects, at most hourly, one line advising a Play search;
-  everything else is silence.
-- `play-intercept settle-nudge` (Stop): when a save hook is still armed at turn end, one reminder —
-  once per hook per session — to `$play settle <summary>`.
-- `play-inbox line` (SessionStart): the zero-token "what's new" inbox line from a
-  stale-while-revalidate cache, refreshed in the background.
+```bash
+# Install the local Rote engine and runtimes.
+curl -fsSL https://getrote.dev/install | bash
 
-## Start here
+# Make every bundled Rote skill available to your personal agent installations.
+~/.local/bin/rote install skill --provider all --personal --package '*'
 
-You do not need to remember organization/name slugs or lower-level rote commands. Describe the
-outcome in ordinary language:
+# Install Play into the supported agent apps found on this machine.
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/main/install.sh | sh
+```
+
+Those commands install the Rote executable in `~/.local/bin`, distribute its bundled agent skills,
+and place a stable Play copy under `~/.local/share/modiqo/play`. They do not ask for API credentials;
+sign-in and optional provider connections happen afterward through guided browser or masked-terminal
+flows.
+
+Restart any running agent app after installation so it reloads its skills and hooks. Already have
+Rote? Run only the second and third commands. Prefer a pinned release, marketplace, or source
+checkout? See the [installation reference](#installation-reference).
+
+### 3. Say hello
+
+Start a new conversation and invoke Play:
 
 ```text
-$play
-/play
-$play https://play.modiqo.ai/chetan/list-my-github-repos@0.0.2
+$play    # Codex, Kimi, and other apps that use $skill invocation
+/play    # Claude Code
+```
+
+On first use, Play checks the local setup and guides you through Rote sign-in if needed. It then
+offers **Run Hello**, a low-risk example that uses public data, needs no account credentials, and
+declares no writes.
+
+### 4. Try a real outcome
+
+```text
 $play find a Play that retrieves recent emails
 $play run the PostHog daily active users report
-$play settle deployed staging and posted the summary
 $play whats new
-$play birth weekly customer report
-$play list my organizations and shared Plays
+```
+
+Before anything runs, Play shows the exact version, required inputs, local setup, credentials by
+name, and declared effects. Choosing a search result is not approval to execute it; running is a
+separate confirmation.
+
+### 5. Save useful work—or skip Play entirely
+
+If your agent worked something out and you expect to do it again:
+
+```text
+$play settle deployed staging and posted the summary
+```
+
+Play checks the recorded work rather than guessing from the conversation. If the procedure is
+actually reusable, you can keep it for a team, share it with the community, or skip saving it.
+
+For a one-off task, just ask normally. You can also be explicit:
+
+```text
 Handle this normally without Play
 ```
 
-Play keeps each decision separate so every prompt is small and honest:
+## What happens when you use Play?
 
-| You intend to… | Play does… | You choose… |
+| You do this | Play does this | You stay in control of |
 |---|---|---|
-| Ask for an outcome | Search local and authorized indexes; run an adequate Play through inspection and approval | Pull and run, or not now |
-| Ask for something with no adequate Play | Step aside silently and arm the save hook | Nothing — the agent works normally |
-| Settle finished repeatable work (`$play settle …`) | Judge the trace: parameterizable inputs, repeatable steps, stable output, recurrence | Team, Community, or Skip |
-| State a scope preference ("no Plays during prototyping") | Record it in the scoped preference ledger and honor it from the next request | Inspect or revise it any time |
-| See what's new | Pull the inbox grouped by organization; compare with the remembered SHA | Run, search, or finish |
-| Revisit how a Play was born | Open the owner-private, redacted birth certificate | A name, reference, or birth SHA |
+| Ask for an outcome | Searches your local and authorized Play collections | Whether to inspect or ignore a match |
+| Inspect a matching Play | Shows inputs, setup, credentials by name, and declared effects | Whether the exact version may run |
+| No adequate Play exists | Steps aside and lets your agent work normally | The task, corrections, and approvals |
+| Finish repeatable work | Checks whether the recorded steps are worth saving | Team, Community, or Skip |
+| Ask “what’s new” | Shows new and revised Plays grouped by organization | Whether to inspect one |
 
-Search selection is never execution approval. Before every run, Play shows what the exact version
-does, its parameters, adapters and credentials, what this machine must install or repair, declared
-operations and writes, and any unknown effect semantics. Only the next structured choice can
-authorize the exact inspected version and displayed parameters.
+Play is designed to be quiet. Conversation, creative work, and one-off tasks continue without a
+Play dialog. You can also teach it scoped preferences such as “no Plays while I’m prototyping” or
+“always offer Plays for deploy chores.”
 
-An empty `$play` or `/play` is a complete warm typed onboarding request, not an empty task. Play
-live-probes for Rote and reads the signed-in email with `rote whoami`. A returning user gets the
-short personal greeting. A first-time user gets a recommended **Run Hello** choice: public data, no
-account, no credentials, no declared writes. Missing or unauthenticated Rote is handed to the
-guided `rote-setup` skill. First-use memory is owner-private and deliberately small
-(`~/.rote-play/onboarding-state.json`: a hash of the email, orientation version, timestamp —
-nothing else).
+## Safety and privacy at a glance
 
-## The Play state machine
+- Nothing runs merely because search found a match.
+- Remote installer code and an exact Play run have separate approval boundaries.
+- Credentials stay in Rote’s local stores; Play reports credential names, never secret values.
+- Play fails closed when a version, receipt, declared effect, or publication check does not match.
+- Owner-private state lives under `~/.rote-play/`; Rote’s execution state remains under `~/.rote/`.
+- The cross-harness bootstrap preserves unrelated hooks and creates backups before changing
+  supported hook files.
+
+## Common commands
+
+```text
+$play                                      # Guided introduction
+$play find a Play that retrieves emails   # Find by outcome
+$play run the PostHog DAU report           # Find, inspect, then approve a run
+$play whats new                            # Open your Play inbox
+$play settle <what just worked>            # Consider saving repeatable work
+$play birth weekly customer report         # See how one of your Plays was made
+$play list my organizations and Plays      # Browse authorized collections
+Handle this normally without Play          # Explicitly skip Play
+```
+
+That is enough for everyday use. Jump to the section that matches what you need next:
+
+- [Installation reference](#installation-reference)—marketplaces, source checkouts, updates, and
+  multi-harness bootstrap.
+- [Everyday Play commands](#everyday-play-commands)—searching, running, saving, the inbox, and birth
+  certificates.
+- [Architecture and internals](#architecture-and-internals)—the state machine and typed runtime.
+- [Development checks](#development-checks)—package, test, benchmark, and UI validation commands.
+
+## Architecture and internals
+
+Play stays predictable by making each layer own one job:
+
+| Layer | Responsibility |
+|---|---|
+| **`SKILL.md`** | Teaches an agent how to enter the runtime and handle its next boundary. |
+| **`play-machine`** | Owns search, inspection, approval, execution control, verification, saving, and fail-closed behavior. |
+| **Rote skills** | Own setup, tools, browsers, adapters, workspaces, authoring, and publication. |
+| **Rote CLI and registry** | Run exact Plays locally and distribute authorized Plays. |
+
+The following sections are primarily for maintainers and integrators.
+
+### The Play state machine
 
 Play is driven by one declarative machine,
 [`references/controller/machine.yaml`](references/controller/machine.yaml) (`play.machine/v1`).
@@ -230,7 +296,9 @@ loop at 54 ms; the machine has since shrunk to 70 states and the ~4 KB activatio
 34.9 KB model-owned controller manual. Treat these as development baselines, not cross-machine
 guarantees.
 
-## Install Play everywhere
+## Installation reference
+
+### Install Play everywhere
 
 If Rote skills are already available to your harnesses, install Play with one command:
 
@@ -301,8 +369,14 @@ completes, generate and apply a fresh convergence plan. Bootstrap never puts cre
 report.
 
 The download uses HTTPS, rejects unsafe archive paths and links, and removes its temporary files.
-For a pinned release, set `PLAY_INSTALL_REF` to a tag when invoking the same script. To inspect the
-small bootstrap before running it:
+For a reproducible install, pin both the downloaded script and archive reference to the same tag:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.0/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.0 sh
+```
+
+To inspect the small bootstrap before running it:
 
 ```bash
 curl -fsSLo /tmp/install-play.sh \
