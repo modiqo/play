@@ -22,8 +22,12 @@ stable task key, and the unchanged user request:
 {"run_id":"<run-id>","task_key":"<task-key>","request":{"original":"<request>"}}
 ```
 
-The installer places `play-machine` on `PATH`; if it is unavailable, report that Play installation
-is incomplete and stop. An explicit `/play` or `$play` with no separate task is a complete
+The installer places `play-machine` on `PATH`. If it is unavailable, run the bundled
+`scripts/bin/play-preflight --harness <codex|claude|kimi|cursor|generic> --json` from this loaded
+skill directory, present its exact failed checks and multi-select install targets, report that the
+Play installation is incomplete, and stop before normal Play control flow. Do not try `rtk` or
+`rtk proxy`: `play-machine` is a Python entrypoint installed through a small executable launcher,
+not an RTK subcommand or compiled Python artifact. An explicit `/play` or `$play` with no separate task is a complete
 onboarding request: set `request.original` to `/play`. After a task Play stepped aside from
 settles, re-enter once with `request.original` set to `$play settle <one-line summary>`.
 
@@ -51,8 +55,18 @@ Present returned `presentations` in order, then act on `projection.state.boundar
 - `terminal`: present the terminal outcome and stop.
 
 If `instruction.preflight_required_for_events` names your selected event, run
-`play-machine preflight --harness <codex|claude|generic> --json` first and pass its complete
+`play-machine preflight --harness <codex|claude|kimi|cursor|generic> --json` first and pass its complete
 unchanged output as `preflight`. Missing Rote setup delegates to the `rote-setup` skill.
+
+## Cross-harness bootstrap
+
+For an explicit request to install or repair Play across harnesses, use the bundled
+`scripts/bin/play-bootstrap` only after the typed runtime returns the task to normal execution.
+Run `plan --json` first, present its multi-select top-K targets and effects, and obtain approval for
+that exact `plan_id`. Then run `apply --plan-id <id>`; add `--approve-remote-installer` only after
+the user separately approves the official Rote installer. If the receipt reports
+`human_action_required`, invoke the installed `rote-setup` skill through the harness, then rerun a
+fresh plan/apply convergence pass. Never collect credentials in bootstrap context or reports.
 
 ## Stay out of the way
 

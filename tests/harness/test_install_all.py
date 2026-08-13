@@ -101,13 +101,39 @@ class InstallAllTest(unittest.TestCase):
         self.uninstall(ROOT)
         self.assertFalse(launcher.exists())
 
+    def test_targets_exposes_multi_select_vendor_choices(self) -> None:
+        result = self.run_installer("targets", "--json")
+        payload = json.loads(result.stdout)
+
+        self.assertEqual("play.install-targets/v1", payload["schema"])
+        self.assertEqual("multiple", payload["selection"])
+        self.assertEqual(
+            ["codex", "claude", "kimi", "cursor"],
+            [target["id"] for target in payload["targets"]],
+        )
+        codex = payload["targets"][0]
+        self.assertTrue(codex["selected"])
+        self.assertTrue(codex["rote_skills_installed"])
+
+    def test_repeated_harness_flags_install_only_selected_roots(self) -> None:
+        result = self.run_installer(
+            "install", "--harness", "codex", "--harness", "kimi"
+        )
+
+        self.assertIn("Detected harnesses: codex, kimi", result.stdout)
+        self.assertTrue((self.roots["codex"] / "play").is_symlink())
+        self.assertTrue((self.roots["kimi"] / "play").is_symlink())
+        self.assertFalse((self.roots["claude"] / "play").exists())
+        self.assertIn("Python launcher", result.stdout)
+        self.uninstall(ROOT)
+
     def test_portable_copy_is_stable_and_idempotent(self) -> None:
         install_home = self.home / "portable"
         self.environment["PLAY_INSTALL_HOME"] = str(install_home)
 
         self.run_installer("install", "--copy")
         installed = install_home / "skill"
-        self.assertEqual("0.3.0", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.0", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():

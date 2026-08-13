@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import shutil
@@ -15,6 +16,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.play.preflight import REQUIRED_PLAY_EXECUTABLES
+
 COPY_MARKER_SCHEMA = "play.portable-install/v1"
 SUPPORTED_HARNESSES = ("codex", "claude", "kimi", "cursor")
 
@@ -55,24 +60,34 @@ def harness_catalog() -> dict[str, Harness]:
     }
 
 
-def detected_harnesses() -> list[Harness]:
+def selected_harnesses(
+    requested: list[str] | None = None, *, include_all: bool = False
+) -> list[Harness]:
     catalog = harness_catalog()
     override = os.environ.get("PLAY_INSTALL_HARNESSES")
-    if override is not None:
+    if requested and override is not None:
+        raise InstallError("use either --harness or PLAY_INSTALL_HARNESSES, not both")
+    if requested and include_all:
+        raise InstallError("use either --harness or --all-harnesses, not both")
+    if include_all:
+        names = list(SUPPORTED_HARNESSES)
+    elif requested:
+        names = requested
+    elif override is not None:
         names = [item.strip().lower() for item in override.split(",") if item.strip()]
-        unknown = sorted(set(names) - set(catalog))
         if not names:
             raise InstallError("PLAY_INSTALL_HARNESSES is set but empty")
-        if unknown:
-            raise InstallError(
-                "unsupported harness name(s): " + ", ".join(unknown)
-            )
-        return [catalog[name] for name in dict.fromkeys(names)]
-    return [
-        catalog[name]
-        for name in SUPPORTED_HARNESSES
-        if shutil.which(catalog[name].command)
-    ]
+    else:
+        names = [
+            name
+            for name in SUPPORTED_HARNESSES
+            if shutil.which(catalog[name].command)
+            or any(root_has_rote_provider(root) for root in catalog[name].skill_roots)
+        ]
+    unknown = sorted(set(names) - set(catalog))
+    if unknown:
+        raise InstallError("unsupported harness name(s): " + ", ".join(unknown))
+    return [catalog[name] for name in dict.fromkeys(names)]
 
 
 def package_source() -> Path:
@@ -110,6 +125,10 @@ def validate_source(source: Path) -> None:
         source / "scripts" / "harness" / "play-profile",
     )
     missing = [str(path) for path in required if not path.is_file()]
+    for name in REQUIRED_PLAY_EXECUTABLES:
+        executable = source / "scripts" / "bin" / name
+        if not executable.is_file() or not os.access(executable, os.X_OK):
+            missing.append(str(executable))
     if missing:
         raise InstallError("Play install source is incomplete:\n  " + "\n  ".join(missing))
 
@@ -185,10 +204,16 @@ def finish_portable_copy(backup: Path | None) -> None:
         shutil.rmtree(backup)
 
 
-def run_profile(source: Path, command: str) -> None:
+def run_profile(source: Path, command: str, harnesses: list[Harness]) -> None:
     validate_source(source)
     environment = os.environ.copy()
     environment["PLAY_PROFILE_SOURCE"] = str(source.resolve())
+    environment["PLAY_HARNESS_ROOTS"] = os.pathsep.join(
+        str(root)
+        for harness in harnesses
+        for root in harness.skill_roots
+        if root_has_rote_provider(root)
+    )
     if command == "plan":
         environment["PLAY_PROFILE_VERBOSE"] = "1"
     result = subprocess.run(
@@ -235,7 +260,8 @@ def verify_harness_prerequisites(harnesses: list[Harness]) -> None:
         raise InstallError(
             "the Rote skill provider is missing from detected harness(es): "
             + ", ".join(missing)
-            + ". Install rote-onboard there, then retry."
+            + ". Install rote-onboard there with the harness's rote-setup instructions, "
+            "then retry this same target selection."
         )
 
 
@@ -256,8 +282,91 @@ def verify_harness_coverage(harnesses: list[Harness], source: Path) -> None:
         print(f"  {harness.name}: {path}")
 
 
-def execute(command: str, *, copy_install: bool) -> None:
-    harnesses = detected_harnesses()
+def verify_play_runtime(source: Path) -> None:
+    validate_source(source)
+    launcher = Path(
+        os.environ.get("PLAY_MACHINE_LAUNCHER", _home() / ".local" / "bin" / "play-machine")
+    ).expanduser().resolve()
+    if not launcher.is_file() or not os.access(launcher, os.X_OK):
+        raise InstallError(f"Play runtime launcher is missing or not executable: {launcher}")
+    expected = source / "scripts" / "bin" / "play-machine"
+    try:
+        content = launcher.read_text(encoding="utf-8")
+    except OSError as error:
+        raise InstallError(f"cannot read Play runtime launcher {launcher}: {error}") from error
+    if str(expected) not in content:
+        raise InstallError(f"Play runtime launcher does not point at the installed skill: {launcher}")
+    if importlib.util.find_spec("statemachine") is None and shutil.which("uv") is None:
+        raise InstallError(
+            "Play needs uv or an environment containing its pinned Python dependencies"
+        )
+    print(
+        f"  runtime: {launcher} (Python launcher; {len(REQUIRED_PLAY_EXECUTABLES)} bundled entrypoints verified)"
+    )
+
+
+def target_payload() -> dict[str, object]:
+    targets = []
+    for harness in harness_catalog().values():
+        rote_roots = [
+            str(root) for root in harness.skill_roots if root_has_rote_provider(root)
+        ]
+        play_roots = [
+            str(root)
+            for root in harness.skill_roots
+            if (root / "play" / "SKILL.md").is_file()
+        ]
+        command = shutil.which(harness.command)
+        targets.append(
+            {
+                "id": harness.name,
+                "label": {
+                    "codex": "Codex",
+                    "claude": "Claude Code",
+                    "kimi": "Kimi",
+                    "cursor": "Cursor",
+                }[harness.name],
+                "harness_command": command,
+                "skill_roots": [str(root) for root in harness.skill_roots],
+                "rote_skills_installed": bool(rote_roots),
+                "rote_skill_roots": rote_roots,
+                "play_skill_installed": bool(play_roots),
+                "play_skill_roots": play_roots,
+                "selected": command is not None or bool(rote_roots) or bool(play_roots),
+            }
+        )
+    return {
+        "schema": "play.install-targets/v1",
+        "selection": "multiple",
+        "question": "Install the current Play skill in which harnesses?",
+        "targets": targets,
+        "command_template": "scripts/harness/install-all install --harness <id> [--harness <id> ...]",
+    }
+
+
+def render_targets(payload: dict[str, object]) -> None:
+    print(str(payload["question"]))
+    targets = payload["targets"]
+    if not isinstance(targets, list):
+        raise InstallError("install target payload is malformed")
+    for target in targets:
+        if not isinstance(target, dict):
+            raise InstallError("install target payload is malformed")
+        marker = "x" if target["selected"] else " "
+        rote = "Rote ready" if target["rote_skills_installed"] else "needs rote-setup"
+        installed = "Play installed" if target["play_skill_installed"] else "Play not installed"
+        print(f"  [{marker}] {target['label']} ({target['id']}): {rote}; {installed}")
+    print("Select explicitly with repeated --harness flags, or use --all-harnesses.")
+
+
+def execute(
+    command: str,
+    *,
+    copy_install: bool,
+    requested_harnesses: list[str] | None = None,
+    include_all: bool = False,
+) -> None:
+    harnesses = selected_harnesses(requested_harnesses, include_all=include_all)
     if not harnesses:
         raise InstallError(
             "no supported harness command was detected; expected Codex, Claude, Kimi, or Cursor"
@@ -269,7 +378,7 @@ def execute(command: str, *, copy_install: bool) -> None:
     verify_harness_prerequisites(harnesses)
 
     if command == "plan":
-        run_profile(ROOT, "plan")
+        run_profile(ROOT, "plan", harnesses)
         return
 
     source = ROOT
@@ -279,8 +388,9 @@ def execute(command: str, *, copy_install: bool) -> None:
         destination, backup = stage_portable_copy(package_source())
         source = destination
     try:
-        run_profile(source, "install" if command == "install" else "verify")
+        run_profile(source, "install" if command == "install" else "verify", harnesses)
         verify_harness_coverage(harnesses, source)
+        verify_play_runtime(source)
     except Exception:
         if destination is not None:
             restore_portable_copy(destination, backup)
@@ -316,17 +426,47 @@ def warm_inbox_cache(source: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("plan", "install", "verify"))
+    parser.add_argument("command", choices=("targets", "plan", "install", "verify"))
     parser.add_argument(
         "--copy",
         action="store_true",
         help="copy the packaged skill to a stable user data directory before activation",
     )
+    parser.add_argument(
+        "--harness",
+        action="append",
+        choices=SUPPORTED_HARNESSES,
+        dest="harnesses",
+        help="install/verify one target; repeat to make a multi-select choice",
+    )
+    parser.add_argument(
+        "--all-harnesses",
+        action="store_true",
+        help="target every supported harness, including ones whose command is not on PATH",
+    )
+    parser.add_argument("--json", action="store_true", help="emit machine-readable target choices")
     args = parser.parse_args(argv)
     if args.copy and args.command != "install":
         parser.error("--copy is available only with install")
+    if args.command == "targets":
+        if args.harnesses or args.all_harnesses or args.copy:
+            parser.error("targets does not accept install selection flags")
+        payload = target_payload()
+        print(json.dumps(payload, indent=2, sort_keys=True) if args.json else "", end="")
+        if not args.json:
+            render_targets(payload)
+        elif args.json:
+            print()
+        return 0
+    if args.json:
+        parser.error("--json is available only with targets")
     try:
-        execute(args.command, copy_install=args.copy)
+        execute(
+            args.command,
+            copy_install=args.copy,
+            requested_harnesses=args.harnesses,
+            include_all=args.all_harnesses,
+        )
     except (InstallError, OSError) as error:
         print(f"install-all: {error}", file=sys.stderr)
         return 1

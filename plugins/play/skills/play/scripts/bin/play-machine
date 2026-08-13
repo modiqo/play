@@ -184,7 +184,11 @@ def main() -> int:
     runtime_benchmark.add_argument("--json", action="store_true", dest="as_json")
 
     preflight = subparsers.add_parser("preflight")
-    preflight.add_argument("--harness", choices=("codex", "claude", "generic"), default="generic")
+    preflight.add_argument(
+        "--harness",
+        choices=("codex", "claude", "kimi", "cursor", "generic"),
+        default="generic",
+    )
     preflight.add_argument("--json", action="store_true", dest="as_json")
 
     args = parser.parse_args()

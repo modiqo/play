@@ -241,9 +241,64 @@ curl -fsSL https://raw.githubusercontent.com/modiqo/play/main/install.sh | sh
 The installer detects Codex, Claude Code, Kimi, and Cursor commands on the machine. It checks that
 each detected harness can see the Rote skill provider before writing anything, copies the packaged
 Play skill to `~/.local/share/modiqo/play/skill`, links it into every detected harness root, applies
-the reversible Play-first activation profile, and verifies every link. Existing unmanaged paths are
-never replaced. Updates keep the same stable install path so harness links do not drift between
-versions.
+the reversible Play-first activation profile, verifies every link, verifies the `play-machine`
+launcher, and checks every required bundled `play-*` entrypoint. Existing unmanaged paths are never
+replaced. Updates keep the same stable install path so harness links do not drift between versions.
+
+To get checkbox-ready target data for an agent harness, or a readable checklist in a terminal:
+
+```bash
+scripts/harness/install-all targets --json
+scripts/harness/install-all targets
+```
+
+The target payload is a multi-select over Codex, Claude Code, Kimi, and Cursor, including whether
+each harness command, Play skill, and Rote skill provider is present. Apply the exact selected set
+with repeated flags (unselected harnesses are outside the resulting activation profile):
+
+```bash
+scripts/harness/install-all install --harness codex --harness claude
+# Or intentionally target every supported vendor root:
+scripts/harness/install-all install --all-harnesses
+```
+
+If a selected target lacks `rote` or a `rote-*` skill, installation fails before writing and points
+back to that harness's `rote-setup` flow.
+
+### Full Play + Rote bootstrap
+
+For a fresh or partially configured machine, use the transactional, idempotently retryable
+bootstrap. Its read-only plan
+ranks detected harnesses, selects the top K, records the current Rote version and identity status,
+and assigns an immutable plan ID:
+
+```bash
+scripts/bin/play-bootstrap plan --top-k 3
+scripts/bin/play-bootstrap plan --top-k 3 --json
+```
+
+Apply the exact reviewed plan by ID:
+
+```bash
+scripts/bin/play-bootstrap apply --top-k 3 --plan-id sha256:<plan-id>
+```
+
+If Rote is absent, apply stops with an approval-required report. After the user approves executing
+the official remote installer, resume with `--approve-remote-installer`. If Rote is present, apply
+runs `rote self-update --yes`. It then converges the complete personal Rote skill distribution with
+`rote install skill --provider all --personal --package '*'`, installs the durable Play copy into
+the selected harnesses, and merges Play's pre-prompt, post-stop, and session-start hooks into
+Codex, Claude Code, and Cursor while preserving unrelated hooks. Kimi is reported as unsupported
+for native command hooks rather than treated as successful.
+
+Every hook file changed by bootstrap gets a run-specific backup. Every run writes owner-private
+JSON and Markdown reports under `~/.local/state/play-bootstrap/runs/` (or
+`PLAY_BOOTSTRAP_STATE`), including selected and skipped targets, Rote before/after state, commands,
+hook backups, verification results, human actions still required, and restart guidance. Login is a
+human/browser gate: when identity is not verified, the run finishes as `action_required` and
+directs the harness to continue through the now-installed `rote-setup` skill. After that handoff
+completes, generate and apply a fresh convergence plan. Bootstrap never puts credentials in the
+report.
 
 The download uses HTTPS, rejects unsafe archive paths and links, and removes its temporary files.
 For a pinned release, set `PLAY_INSTALL_REF` to a tag when invoking the same script. To inspect the
@@ -289,7 +344,13 @@ claude plugin install rote-onboard@rote-skills
 ```
 
 After Play is installed, the `play-machine` launcher is on `PATH`; harnesses invoke it directly
-without locating the skill directory or its Python environment. An empty `$play` or `/play` probes
+without locating the skill directory or its Python environment. `play-machine` is a Python
+entrypoint, not a compiled artifact: the installer writes a small executable launcher that uses the
+pinned environment (bootstrapping through `uv` when needed). The preflight distinguishes a missing
+launcher, an incomplete bundled runtime, an unavailable Python environment bootstrap (`uv` or an
+already active pinned environment), a missing Rote CLI, missing Rote skills in the active harness,
+authentication, and `rote play` capability; it also reports cross-harness coverage and
+multi-select repair targets. An empty `$play` or `/play` probes
 the local binary and identity. If either
 is missing, Play invokes `rote-setup`; that specialist asks before downloaded installer code, login,
 credentials, or optional onboarding. Ordinary requests are lexically classified and qualified
