@@ -55,6 +55,13 @@ class PluginPackageTest(unittest.TestCase):
         for manifest in manifests:
             self.assertEqual(expected, json.loads(manifest.read_text())["version"])
 
+    def test_claude_plugin_uses_bootstrap_for_rote_convergence(self) -> None:
+        manifest = json.loads(
+            (ROOT / "plugins/play/.claude-plugin/plugin.json").read_text()
+        )
+
+        self.assertNotIn("dependencies", manifest)
+
     def test_marketplace_session_hook_repairs_activation_before_inbox(self) -> None:
         hooks = json.loads((ROOT / "plugins/play/hooks/hooks.json").read_text())
         command = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]

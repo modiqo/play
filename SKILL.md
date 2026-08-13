@@ -27,7 +27,7 @@ contains executable `scripts/bin/play-machine`, first run bundled `scripts/bin/p
 repair the launcher and activation state, then enter the runtime through the bundled
 `scripts/bin/play-machine` for this turn. Do not wait for shell command hashing or a harness restart.
 If activation repair fails, run bundled
-`scripts/bin/play-preflight --harness <codex|claude|kimi|cursor|generic> --json`, present its exact
+`scripts/bin/play-preflight --harness <codex|claude|kimi|cursor|hermes|opencode|deepseek|generic> --json`, present its exact
 failed checks and multi-select install targets, report that the Play installation is incomplete,
 and stop before normal Play control flow. Do not try `rtk` or `rtk proxy`: `play-machine` is a Python
 entrypoint installed through a small executable launcher, not an RTK subcommand or compiled Python
@@ -59,7 +59,7 @@ Present returned `presentations` in order, then act on `projection.state.boundar
 - `terminal`: present the terminal outcome and stop.
 
 If `instruction.preflight_required_for_events` names your selected event, run
-`play-machine preflight --harness <codex|claude|kimi|cursor|generic> --json` first and pass its complete
+`play-machine preflight --harness <codex|claude|kimi|cursor|hermes|opencode|deepseek|generic> --json` first and pass its complete
 unchanged output as `preflight`. Missing Rote setup delegates to the `rote-setup` skill.
 
 ## Cross-harness bootstrap

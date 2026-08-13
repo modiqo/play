@@ -19,7 +19,33 @@ _OK_EMAIL = re.compile(r"(?im)^ok:\s*([^@\s]+@[^@\s]+\.[^@\s]+)$")
 
 SCHEMA = "play.preflight/v1"
 ROOT = Path(__file__).resolve().parents[3]
-SUPPORTED_HARNESSES = ("codex", "claude", "kimi", "cursor")
+SUPPORTED_HARNESSES = (
+    "codex",
+    "claude",
+    "kimi",
+    "cursor",
+    "hermes",
+    "opencode",
+    "deepseek",
+)
+HARNESS_COMMANDS = {
+    "codex": "codex",
+    "claude": "claude",
+    "kimi": "kimi",
+    "cursor": "cursor",
+    "hermes": "hermes",
+    "opencode": "opencode",
+    "deepseek": "dsh",
+}
+HARNESS_LABELS = {
+    "codex": "Codex",
+    "claude": "Claude Code",
+    "kimi": "Kimi",
+    "cursor": "Cursor",
+    "hermes": "Hermes Agent",
+    "opencode": "OpenCode",
+    "deepseek": "DeepSeek Harness (preview)",
+}
 REQUIRED_PLAY_EXECUTABLES = (
     "play-machine",
     "play-bootstrap",
@@ -60,11 +86,23 @@ SETUP_COMMANDS = {
     ],
     "kimi": [
         "Install the rote-onboard skill in ~/.agents/skills or ~/.kimi/skills.",
-        "Restart Kimi, then invoke $rote-setup.",
+        "Restart Kimi, then invoke /skill:rote-setup.",
     ],
     "cursor": [
         "Install the rote-onboard skill in ~/.cursor/skills.",
         "Restart Cursor, then invoke $rote-setup.",
+    ],
+    "hermes": [
+        "Install the rote-onboard skill in ~/.hermes/skills.",
+        "Restart Hermes, then invoke /rote-setup.",
+    ],
+    "opencode": [
+        "Install the rote-onboard skill in ~/.config/opencode/skills.",
+        "Restart OpenCode and ask it to use the rote-setup skill.",
+    ],
+    "deepseek": [
+        "Install the rote-onboard skill in ~/.agents/skills or ~/.dsh/skills.",
+        "Restart DeepSeek Harness, then invoke /rote-setup.",
     ],
     "generic": [
         "Install Rote from https://github.com/modiqo/rote-skills.",
@@ -84,6 +122,13 @@ PLAY_REPAIR_COMMANDS = {
     ],
     "kimi": ["Install Play in ~/.agents/skills or ~/.kimi/skills, then restart Kimi."],
     "cursor": ["Install Play in ~/.cursor/skills, then restart Cursor."],
+    "hermes": ["Install Play in ~/.hermes/skills, then restart Hermes."],
+    "opencode": [
+        "Install Play in ~/.config/opencode/skills and its managed /play command, then restart OpenCode."
+    ],
+    "deepseek": [
+        "Install Play in ~/.agents/skills or ~/.dsh/skills, then restart DeepSeek Harness."
+    ],
     "generic": ["Reinstall the current Play skill and restart the harness."],
 }
 
@@ -111,7 +156,15 @@ def harness_skill_roots() -> dict[str, tuple[Path, ...]]:
     cursor_home = Path(
         os.environ.get("CURSOR_CONFIG_DIR", home / ".cursor")
     ).expanduser()
+    hermes_home = Path(os.environ.get("HERMES_HOME", home / ".hermes")).expanduser()
+    opencode_home = Path(
+        os.environ.get("OPENCODE_CONFIG_DIR", home / ".config" / "opencode")
+    ).expanduser()
+    deepseek_home = Path(os.environ.get("DSH_HOME", home / ".dsh")).expanduser()
     agents_home = Path(os.environ.get("AGENTS_HOME", home / ".agents")).expanduser()
+    agents_config_home = Path(
+        os.environ.get("AGENTS_CONFIG_HOME", home / ".config" / "agents")
+    ).expanduser()
     codex_plugin_roots = tuple(
         sorted(
             {
@@ -128,8 +181,15 @@ def harness_skill_roots() -> dict[str, tuple[Path, ...]]:
     return {
         "codex": (codex_home / "skills", *codex_plugin_roots),
         "claude": (claude_home / "skills", *claude_plugin_roots),
-        "kimi": (agents_home / "skills", kimi_home / "skills"),
+        "kimi": (
+            kimi_home / "skills",
+            agents_config_home / "skills",
+            agents_home / "skills",
+        ),
         "cursor": (cursor_home / "skills",),
+        "hermes": (hermes_home / "skills",),
+        "opencode": (opencode_home / "skills", agents_home / "skills"),
+        "deepseek": (deepseek_home / "skills", agents_home / "skills"),
     }
 
 
@@ -150,7 +210,7 @@ def _has_skill(root: Path, name: str) -> bool:
 def inspect_harnesses(active: str) -> list[dict[str, object]]:
     statuses = []
     for name, roots in harness_skill_roots().items():
-        command = shutil.which(name)
+        command = shutil.which(HARNESS_COMMANDS[name])
         installed = command is not None
         rote_roots = [str(root) for root in roots if _has_skill(root, "rote")]
         play_roots = [str(root) for root in roots if _has_skill(root, "play")]
@@ -159,7 +219,7 @@ def inspect_harnesses(active: str) -> list[dict[str, object]]:
         statuses.append(
             {
                 "id": name,
-                "label": {"codex": "Codex", "claude": "Claude Code", "kimi": "Kimi", "cursor": "Cursor"}[name],
+                "label": HARNESS_LABELS[name],
                 "command": command,
                 "skill_roots": [str(root) for root in roots],
                 "rote_skills_installed": bool(rote_roots),

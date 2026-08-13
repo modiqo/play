@@ -2,7 +2,8 @@
 
 **Reuse work that already works—without giving up visibility or control.**
 
-Play is a sidekick for Codex, Claude Code, Kimi, and Cursor. Before your agent starts a task, Play
+Play is a sidekick for Codex, Claude Code, Kimi, Cursor, Hermes, OpenCode, and DeepSeek Harness.
+Before your agent starts a task, Play
 checks whether a saved procedure already produces the result you want. If one fits, you can inspect
 it and approve the exact run. If none fits, Play gets out of the way and your agent works normally.
 When that work turns out to be useful again, Play can help save it for next time.
@@ -28,12 +29,14 @@ Claude Code.
 On macOS or Linux, run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/main/install.sh | sh
+curl -fsSL https://getrote.dev/playoffs/install.sh | sh
 ```
 
 That is the whole setup. Play finds your agent apps, checks Rote and its skills, and shows what it
-will install, update, or refresh. Nothing changes until you approve the plan, and installing Rote
-from `getrote.dev` has its own confirmation.
+will install, update, or refresh. For Codex and Claude Code, it also refreshes the Play marketplace,
+removes any stale cached plugin, and reinstalls the current plugin before you launch the app.
+Nothing changes until you approve the plan, and installing Rote from `getrote.dev` has its own
+confirmation.
 
 When it finishes, Play verifies the setup and tells you where it saved the report. Restart your
 agent app, then continue to step 3. The installer requires Python 3.10+ and
@@ -45,8 +48,9 @@ agent app, then continue to step 3. The installer requires Python 3.10+ and
 Start a new conversation and invoke Play:
 
 ```text
-$play    # Codex, Kimi, and other apps that use $skill invocation
-/play    # Claude Code
+$play         # Codex and Cursor
+/play         # Claude Code, Hermes, OpenCode, and DeepSeek Harness
+/skill:play   # Kimi Code
 ```
 
 On first use, Play checks the local setup and guides you through Rote sign-in if needed. It then
@@ -57,8 +61,8 @@ declares no writes.
 
 ```text
 $play find a Play that retrieves recent emails
-$play run the PostHog daily active users report
-$play whats new
+/play run the PostHog daily active users report
+/skill:play whats new
 ```
 
 Before anything runs, Play shows the exact version, required inputs, local setup, credentials by
@@ -294,30 +298,43 @@ guarantees.
 Use the same command on a new machine or to bring an existing installation up to date:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/main/install.sh | sh
+curl -fsSL https://getrote.dev/playoffs/install.sh | sh
 ```
 
 Before making changes, the installer shows:
 
-- the detected Codex, Claude Code, Kimi, and Cursor installations;
+- the detected Codex, Claude Code, Kimi, Cursor, Hermes, OpenCode, and DeepSeek Harness installations;
 - whether Rote is missing, current, or has an update available;
-- whether Rote skills need to be installed or refreshed in Codex, Claude, and `.agents`;
+- whether Rote skills need to be installed or refreshed in each selected app;
 - the Play installations and hooks it will configure.
 
 After approval, it performs that plan, verifies each selected app, and saves a JSON and Markdown
-report under `~/.local/state/play-bootstrap/runs/`. If sign-in is still needed, open a new agent
-session and run `$play` (`/play` in Claude Code) to finish the guided setup.
+report under `~/.local/state/play-bootstrap/runs/`. The final status card gives each app's launch
+command, exact Play invocation, any remaining action, and a few starter prompts.
+
+Invocation differs by app:
+
+| App | Start | Invoke Play |
+|---|---|---|
+| Codex | `codex` | `$play` |
+| Claude Code | `claude` | `/play` |
+| Kimi Code | `kimi` | `/skill:play` |
+| Cursor | Open Cursor | `$play` |
+| Hermes Agent | `hermes` | `/play` |
+| OpenCode | `opencode` | `/play` (installed as a managed command bridge) |
+| DeepSeek Harness (developer preview) | `dsh web` | `/play` |
 
 ### Choose which apps receive Play
 
 By default, Play selects the top three detected apps. To choose explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/main/install.sh \
+curl -fsSL https://getrote.dev/playoffs/install.sh \
   | sh -s -- --harness codex --harness claude
 ```
 
-Repeat `--harness` with any of `codex`, `claude`, `kimi`, or `cursor`.
+Repeat `--harness` with any of `codex`, `claude`, `kimi`, `cursor`, `hermes`, `opencode`, or
+`deepseek`. DeepSeek Harness is still a developer preview upstream.
 
 ### Run unattended
 
@@ -325,7 +342,7 @@ For automation, approve the displayed Play plan with `PLAY_INSTALL_YES=1`. If Ro
 approve its separate official installer explicitly as well:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/main/install.sh \
+curl -fsSL https://getrote.dev/playoffs/install.sh \
   | env PLAY_INSTALL_YES=1 PLAY_APPROVE_REMOTE_INSTALLER=1 sh
 ```
 
@@ -355,16 +372,18 @@ scripts/bin/play-bootstrap apply --top-k 3 --plan-id sha256:<plan-id>
 
 Add `--approve-remote-installer` only after approving the official Rote download. The bootstrap is
 safe to retry: it updates Rote only when an update is available, refreshes existing Rote skills,
-preserves unrelated hooks, and backs up every hook file it changes. Reports never contain
-credentials.
+refreshes and reinstalls the Play marketplace plugin for selected Codex and Claude targets,
+preserves unrelated hooks, and backs up every hook file it changes. An explicitly disabled Codex
+Play skill remains a user choice: the report asks you to enable it in `/skills` before restarting.
+Reports never contain credentials.
 
 ### Pin or inspect the installer
 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.2/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.2 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.4/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.4 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -452,15 +471,17 @@ claude plugin install play@play-skills
 ```
 
 The public marketplace source is `modiqo/play`, so `.` can be replaced with that GitHub
-`owner/repository` from outside this checkout. Claude's manifest declares the `rote` plugin as a
-dependency from the separately trusted `rote-skills` marketplace; every harness still uses the same
-runtime preflight because plugin metadata alone cannot prove CLI installation or login state.
+`owner/repository` from outside this checkout. The guided installer converges the separately trusted
+Rote skill distribution before reinstalling Play; every harness still uses the same runtime
+preflight because plugin metadata alone cannot prove CLI installation or login state.
 
-### Kimi and other AGENTS.md-standard harnesses
+### Skill-directory harnesses
 
-Kimi has no plugin marketplace. It discovers skills from AGENTS.md-standard roots — the shared
-`~/.agents/skills` directory and per-harness `~/.<harness>/skills` roots. Install Play for Kimi
-from this checkout:
+Kimi, Hermes, OpenCode, and DeepSeek Harness have no Play plugin marketplace. The installer uses
+their native personal skill roots (and shared `~/.config/agents/skills` or `~/.agents/skills` where supported), then installs
+the invocation surface each app expects. For OpenCode, that includes a managed global `/play`
+command because its standard skill surface is tool-driven rather than a direct slash command.
+Install Play for them from this checkout with:
 
 ```bash
 just plan
@@ -501,6 +522,7 @@ For Codex:
 
 ```bash
 codex plugin marketplace upgrade play-skills
+codex plugin remove play@play-skills
 codex plugin add play@play-skills
 ```
 
@@ -508,7 +530,8 @@ For Claude Code:
 
 ```bash
 claude plugin marketplace update play-skills
-claude plugin update play@play-skills
+claude plugin uninstall play@play-skills --scope user --yes
+claude plugin install play@play-skills --scope user --yes
 ```
 
 Restart the harness and start a new conversation after updating so it loads the refreshed skill. If
@@ -520,8 +543,8 @@ just install
 just verify-profile
 ```
 
-Kimi and other AGENTS.md-standard roots (`~/.agents/skills`, `~/.<harness>/skills`) have no plugin
-cache to upgrade; they always follow the source-checkout path below. If you use a cloned source
+Skill-directory harnesses have no Play plugin cache to upgrade; rerun the installer to refresh
+their personal skill links and integrations. If you use a cloned source
 checkout instead of the GitHub marketplace — or need to refresh those AGENTS.md roots — update from
 the repository root with:
 

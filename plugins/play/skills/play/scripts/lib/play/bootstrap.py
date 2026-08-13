@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -20,24 +21,66 @@ from typing import Any, Callable, Sequence
 SCHEMA = "play.bootstrap/v1"
 PLAN_SCHEMA = "play.bootstrap-plan/v1"
 REPORT_SCHEMA = "play.bootstrap-report/v1"
-SUPPORTED_HARNESSES = ("codex", "claude", "kimi", "cursor")
+SUPPORTED_HARNESSES = (
+    "codex",
+    "claude",
+    "kimi",
+    "cursor",
+    "hermes",
+    "opencode",
+    "deepseek",
+)
 TARGET_IDS = {
     "codex": "codex",
     "claude": "claude-code",
     "kimi": "kimi-code-cli",
     "cursor": "cursor",
+    "hermes": "hermes-agent",
+    "opencode": "opencode",
+    # DeepSeek Harness consumes the shared Agent Skills root. Rote does not
+    # yet expose a dedicated target for this developer-preview harness.
+    "deepseek": "agents-md",
+}
+HARNESS_COMMANDS = {
+    "codex": "codex",
+    "claude": "claude",
+    "kimi": "kimi",
+    "cursor": "cursor",
+    "hermes": "hermes",
+    "opencode": "opencode",
+    "deepseek": "dsh",
 }
 LABELS = {
     "codex": "Codex",
     "claude": "Claude Code",
     "kimi": "Kimi",
     "cursor": "Cursor",
+    "hermes": "Hermes Agent",
+    "opencode": "OpenCode",
+    "deepseek": "DeepSeek Harness (preview)",
+}
+HARNESS_LAUNCH = {
+    "codex": ("codex", "$play"),
+    "claude": ("claude", "/play"),
+    "kimi": ("kimi", "/skill:play"),
+    "cursor": ("Open Cursor", "$play"),
+    "hermes": ("hermes", "/play"),
+    "opencode": ("opencode", "/play"),
+    "deepseek": ("dsh web", "/play"),
 }
 ROTE_SKILL_PROVIDERS = {
     "codex": ("Codex", "CODEX_HOME", ".codex"),
-    "claude": ("Claude Code", "CLAUDE_CONFIG_DIR", ".claude"),
+    "claude-code": ("Claude Code", "CLAUDE_CONFIG_DIR", ".claude"),
     "agents-md": ("Shared .agents", "AGENTS_HOME", ".agents"),
+    "cursor": ("Cursor", "CURSOR_CONFIG_DIR", ".cursor"),
+    "kimi-code-cli": ("Kimi Code", "KIMI_CONFIG_DIR", ".kimi"),
+    "hermes-agent": ("Hermes Agent", "HERMES_HOME", ".hermes"),
+    "opencode": ("OpenCode", "OPENCODE_CONFIG_DIR", ".config/opencode"),
+    "deepseek": ("DeepSeek Harness", "DSH_HOME", ".dsh"),
 }
+PLAY_MARKETPLACE = "play-skills"
+PLAY_PLUGIN = "play@play-skills"
+PLAY_REPOSITORY = "modiqo/play"
 
 
 class BootstrapError(RuntimeError):
@@ -82,12 +125,23 @@ def _roots() -> dict[str, tuple[Path, ...]]:
     claude = Path(os.environ.get("CLAUDE_CONFIG_DIR", home / ".claude")).expanduser()
     kimi = Path(os.environ.get("KIMI_CONFIG_DIR", home / ".kimi")).expanduser()
     cursor = Path(os.environ.get("CURSOR_CONFIG_DIR", home / ".cursor")).expanduser()
+    hermes = Path(os.environ.get("HERMES_HOME", home / ".hermes")).expanduser()
+    opencode = Path(
+        os.environ.get("OPENCODE_CONFIG_DIR", home / ".config" / "opencode")
+    ).expanduser()
+    deepseek = Path(os.environ.get("DSH_HOME", home / ".dsh")).expanduser()
     agents = Path(os.environ.get("AGENTS_HOME", home / ".agents")).expanduser()
+    agents_config = Path(
+        os.environ.get("AGENTS_CONFIG_HOME", home / ".config" / "agents")
+    ).expanduser()
     return {
         "codex": (codex / "skills",),
         "claude": (claude / "skills",),
-        "kimi": (agents / "skills", kimi / "skills"),
+        "kimi": (kimi / "skills", agents_config / "skills", agents / "skills"),
         "cursor": (cursor / "skills",),
+        "hermes": (hermes / "skills",),
+        "opencode": (opencode / "skills", agents / "skills"),
+        "deepseek": (deepseek / "skills", agents / "skills"),
     }
 
 
@@ -191,9 +245,12 @@ def _rote_skill_roots() -> dict[str, tuple[str, Path]]:
     return roots
 
 
-def _rote_skills_snapshot() -> list[dict[str, Any]]:
+def _rote_skills_snapshot(providers: Sequence[str] | None = None) -> list[dict[str, Any]]:
     result = []
-    for provider, (label, root) in _rote_skill_roots().items():
+    roots = _rote_skill_roots()
+    names = list(dict.fromkeys(providers or roots.keys()))
+    for provider in names:
+        label, root = roots[provider]
         try:
             names = sorted(
                 child.name
@@ -218,6 +275,14 @@ def _rote_skills_snapshot() -> list[dict[str, Any]]:
     return result
 
 
+def _rote_skill_command(rote: str, selected: Sequence[str]) -> list[str]:
+    command = [rote, "install", "skill"]
+    for target in dict.fromkeys(TARGET_IDS[name] for name in selected):
+        command.extend(["--target", target])
+    command.extend(["--personal", "--package", "*", "--force"])
+    return command
+
+
 def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> list[HarnessTarget]:
     if top_k < 1:
         raise BootstrapError("top-k must be at least 1")
@@ -228,7 +293,7 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
     candidates: list[dict[str, Any]] = []
     for order, name in enumerate(SUPPORTED_HARNESSES):
         roots = _roots()[name]
-        command = shutil.which(name)
+        command = shutil.which(HARNESS_COMMANDS[name])
         rote_ready = any(_has_skill(root, "rote") for root in roots)
         play_ready = any(_has_skill(root, "play") for root in roots)
         present = command is not None or rote_ready or play_ready
@@ -241,7 +306,7 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
                 "skill_roots": tuple(str(root) for root in roots),
                 "rote_skills_installed": rote_ready,
                 "play_skill_installed": play_ready,
-                "hooks": "managed" if name in {"codex", "claude", "cursor"} else "unsupported",
+                "hooks": "managed" if name in {"codex", "claude", "cursor"} else "not_required",
                 "score": score,
                 "present": present,
             }
@@ -308,7 +373,8 @@ def build_plan(
             "effect": f"Update availability could not be determined: {update['detail']}",
             "recommended": False,
         }
-    rote_skills = _rote_skills_snapshot()
+    rote_targets = list(dict.fromkeys(TARGET_IDS[name] for name in selected))
+    rote_skills = _rote_skills_snapshot(rote_targets)
     missing_skill_roots = [item["provider"] for item in rote_skills if not item["installed"]]
     existing_skill_roots = [item["provider"] for item in rote_skills if item["installed"]]
     actions = [
@@ -318,17 +384,25 @@ def build_plan(
             "effect": "installs missing and refreshes existing bundled Rote skills in personal harness roots",
             "missing_providers": missing_skill_roots,
             "refresh_providers": existing_skill_roots,
-            "command": [
-                "rote",
-                "install",
-                "skill",
-                "--provider",
-                "all",
-                "--personal",
-                "--package",
-                "*",
-                "--force",
-            ],
+            "command": _rote_skill_command("rote", selected),
+            "recommended": True,
+        },
+        {
+            "id": "converge_play_marketplaces",
+            "effect": "refreshes the Play marketplace, removes stale plugin caches, and reinstalls Play before Codex or Claude starts",
+            "targets": [name for name in selected if name in {"codex", "claude"}],
+            "commands": {
+                "codex": [
+                    ["codex", "plugin", "marketplace", "upgrade", PLAY_MARKETPLACE],
+                    ["codex", "plugin", "remove", PLAY_PLUGIN],
+                    ["codex", "plugin", "add", PLAY_PLUGIN],
+                ],
+                "claude": [
+                    ["claude", "plugin", "marketplace", "update", PLAY_MARKETPLACE],
+                    ["claude", "plugin", "uninstall", PLAY_PLUGIN, "--scope", "user", "--yes"],
+                    ["claude", "plugin", "install", PLAY_PLUGIN, "--scope", "user", "--yes"],
+                ],
+            },
             "recommended": True,
         },
         {
@@ -383,6 +457,382 @@ def _load_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise BootstrapError(f"hook configuration must contain an object: {path}")
     return value
+
+
+def _command_json(
+    result: subprocess.CompletedProcess[str], command: Sequence[str]
+) -> Any:
+    if result.returncode != 0:
+        output = (result.stderr or result.stdout).strip()
+        raise BootstrapError(
+            f"command failed ({shlex.join(command)}): {output or f'exit {result.returncode}'}"
+        )
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise BootstrapError(
+            f"command returned invalid JSON ({shlex.join(command)}): {error}"
+        ) from error
+
+
+def _marketplace_names(harness: str, value: Any) -> set[str]:
+    if harness == "codex":
+        if not isinstance(value, dict) or not isinstance(value.get("marketplaces"), list):
+            raise BootstrapError("Codex marketplace list returned an unexpected shape")
+        records = value["marketplaces"]
+    elif harness == "claude":
+        if not isinstance(value, list):
+            raise BootstrapError("Claude marketplace list returned an unexpected shape")
+        records = value
+    else:
+        raise BootstrapError(f"Play marketplace convergence is unsupported for {harness}")
+    return {
+        str(record.get("name"))
+        for record in records
+        if isinstance(record, dict) and isinstance(record.get("name"), str)
+    }
+
+
+def _play_plugin_record(
+    harness: str, value: Any, *, scope: str | None = None
+) -> dict[str, Any] | None:
+    if harness == "codex":
+        if not isinstance(value, dict) or not isinstance(value.get("installed"), list):
+            raise BootstrapError("Codex plugin list returned an unexpected shape")
+        records = value["installed"]
+        key = "pluginId"
+    elif harness == "claude":
+        if not isinstance(value, list):
+            raise BootstrapError("Claude plugin list returned an unexpected shape")
+        records = value
+        key = "id"
+    else:
+        raise BootstrapError(f"Play marketplace convergence is unsupported for {harness}")
+    matches = [
+        record
+        for record in records
+        if isinstance(record, dict) and record.get(key) == PLAY_PLUGIN
+    ]
+    if harness == "claude" and scope is not None:
+        return next((record for record in matches if record.get("scope") == scope), None)
+    return matches[0] if matches else None
+
+
+def _marketplace_list_command(harness: str, executable: str) -> list[str]:
+    return [executable, "plugin", "marketplace", "list", "--json"]
+
+
+def _plugin_list_command(harness: str, executable: str) -> list[str]:
+    if harness == "codex":
+        return [
+            executable,
+            "plugin",
+            "list",
+            "--marketplace",
+            PLAY_MARKETPLACE,
+            "--json",
+            "--available",
+        ]
+    return [executable, "plugin", "list", "--json"]
+
+
+def converge_play_marketplace(
+    harness: str,
+    executable: str,
+    *,
+    expected_version: str,
+    runner: Runner,
+) -> list[Step]:
+    """Refresh and reinstall the harness-native Play plugin before startup."""
+
+    steps: list[Step] = []
+    marketplace_list = _marketplace_list_command(harness, executable)
+    marketplace_result = runner(marketplace_list)
+    try:
+        marketplaces = _marketplace_names(
+            harness, _command_json(marketplace_result, marketplace_list)
+        )
+    except BootstrapError as error:
+        return [
+            Step(
+                "inspect_play_marketplace",
+                "failed",
+                str(error),
+                command=marketplace_list,
+                target=harness,
+            )
+        ]
+    steps.append(
+        Step(
+            "inspect_play_marketplace",
+            "completed",
+            f"Inspected configured {harness} marketplaces.",
+            command=marketplace_list,
+            target=harness,
+        )
+    )
+
+    if PLAY_MARKETPLACE in marketplaces:
+        refresh_command = [
+            executable,
+            "plugin",
+            "marketplace",
+            "upgrade" if harness == "codex" else "update",
+            PLAY_MARKETPLACE,
+        ]
+        refresh_id = "refresh_play_marketplace"
+    else:
+        refresh_command = [
+            executable,
+            "plugin",
+            "marketplace",
+            "add",
+            PLAY_REPOSITORY,
+        ]
+        refresh_id = "add_play_marketplace"
+    refresh_result = runner(refresh_command)
+    steps.append(
+        _result_step(refresh_id, refresh_result, refresh_command, target=harness)
+    )
+    if refresh_result.returncode != 0:
+        return steps
+
+    plugin_list = _plugin_list_command(harness, executable)
+    plugin_result = runner(plugin_list)
+    scope = "user"
+    try:
+        existing = _play_plugin_record(
+            harness,
+            _command_json(plugin_result, plugin_list),
+            scope=scope if harness == "claude" else None,
+        )
+    except BootstrapError as error:
+        steps.append(
+            Step(
+                "inspect_play_plugin",
+                "failed",
+                str(error),
+                command=plugin_list,
+                target=harness,
+            )
+        )
+        return steps
+    steps.append(
+        Step(
+            "inspect_play_plugin",
+            "completed",
+            (
+                f"Found Play {existing.get('version', 'unknown')} before reinstall."
+                if existing
+                else "Play was not installed before convergence."
+            ),
+            command=plugin_list,
+            target=harness,
+        )
+    )
+
+    if existing is not None:
+        if harness == "codex":
+            remove_command = [executable, "plugin", "remove", PLAY_PLUGIN]
+        else:
+            remove_command = [
+                executable,
+                "plugin",
+                "uninstall",
+                PLAY_PLUGIN,
+                "--scope",
+                scope,
+                "--yes",
+            ]
+        remove_result = runner(remove_command)
+        steps.append(
+            _result_step(
+                "remove_stale_play_plugin",
+                remove_result,
+                remove_command,
+                target=harness,
+            )
+        )
+        if remove_result.returncode != 0:
+            return steps
+    else:
+        steps.append(
+            Step(
+                "remove_stale_play_plugin",
+                "unchanged",
+                "No installed Play plugin needed removal.",
+                target=harness,
+            )
+        )
+
+    if harness == "codex":
+        install_command = [executable, "plugin", "add", PLAY_PLUGIN]
+    else:
+        install_command = [
+            executable,
+            "plugin",
+            "install",
+            PLAY_PLUGIN,
+            "--scope",
+            scope,
+            "--yes",
+        ]
+    install_result = runner(install_command)
+    steps.append(
+        _result_step(
+            "install_current_play_plugin",
+            install_result,
+            install_command,
+            target=harness,
+        )
+    )
+    if install_result.returncode != 0:
+        return steps
+
+    verify_result = runner(plugin_list)
+    try:
+        installed = _play_plugin_record(
+            harness,
+            _command_json(verify_result, plugin_list),
+            scope=scope if harness == "claude" else None,
+        )
+    except BootstrapError as error:
+        steps.append(
+            Step(
+                "verify_play_plugin",
+                "failed",
+                str(error),
+                command=plugin_list,
+                target=harness,
+            )
+        )
+        return steps
+    installed_version = installed.get("version") if installed else None
+    enabled = installed.get("enabled") if installed else None
+    plugin_errors = installed.get("errors") if installed else None
+    healthy = not plugin_errors
+    verified = installed_version == expected_version and enabled is not False and healthy
+    steps.append(
+        Step(
+            "verify_play_plugin",
+            "completed" if verified else "failed",
+            (
+                f"Play {installed_version} is installed, enabled, and healthy."
+                if verified
+                else (
+                    f"Expected Play {expected_version} enabled after reinstall; "
+                    f"found version={installed_version!r}, enabled={enabled!r}, "
+                    f"errors={plugin_errors!r}."
+                )
+            ),
+            command=plugin_list,
+            target=harness,
+            evidence=json.dumps(installed, sort_keys=True) if installed else None,
+        )
+    )
+    return steps
+
+
+def _is_play_skill_config(entry: dict[str, Any]) -> bool:
+    if entry.get("name") == "play":
+        return True
+    path = entry.get("path")
+    if not isinstance(path, str):
+        return False
+    normalized = path.replace("\\", "/").rstrip("/")
+    return normalized.endswith("/skills/play/SKILL.md") or normalized.endswith(
+        "/skills/play"
+    )
+
+
+def _fallback_skill_config_entries(text: str) -> list[dict[str, Any]]:
+    """Read the small [[skills.config]] surface on Python 3.10 without tomllib."""
+
+    entries: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line == "[[skills.config]]":
+            current = {}
+            entries.append(current)
+            continue
+        if line.startswith("["):
+            current = None
+            continue
+        if current is None or not line or line.startswith("#"):
+            continue
+        match = re.match(r"^(name|path|enabled)\s*=\s*(.+?)\s*$", line)
+        if not match:
+            continue
+        key, raw_value = match.groups()
+        if key == "enabled":
+            if raw_value in {"true", "false"}:
+                current[key] = raw_value == "true"
+            continue
+        if (
+            len(raw_value) >= 2
+            and raw_value[0] == raw_value[-1]
+            and raw_value[0] in {'"', "'"}
+        ):
+            current[key] = raw_value[1:-1]
+    return entries
+
+
+def _codex_skill_config_entries(text: str, path: Path) -> list[dict[str, Any]]:
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # Python 3.10 bootstrap path.
+        return _fallback_skill_config_entries(text)
+    try:
+        value = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as error:
+        raise BootstrapError(f"cannot safely read Codex configuration {path}: {error}") from error
+    skills = value.get("skills")
+    if not isinstance(skills, dict):
+        return []
+    entries = skills.get("config", [])
+    if isinstance(entries, dict):
+        entries = [entries]
+    if not isinstance(entries, list):
+        raise BootstrapError(f"Codex skills.config must be a list in {path}")
+    return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def codex_disabled_play_entries() -> list[str]:
+    codex_home = Path(os.environ.get("CODEX_HOME", _home() / ".codex")).expanduser()
+    path = codex_home / "config.toml"
+    if not path.is_file():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise BootstrapError(f"cannot safely read Codex configuration {path}: {error}") from error
+    entries = _codex_skill_config_entries(text, path)
+    return [
+        str(entry.get("path") or entry.get("name") or "play")
+        for entry in entries
+        if isinstance(entry, dict)
+        and entry.get("enabled") is False
+        and _is_play_skill_config(entry)
+    ]
+
+
+def codex_play_enablement_step() -> Step:
+    disabled_entries = codex_disabled_play_entries()
+    if disabled_entries:
+        return Step(
+            "enable_play_skill",
+            "human_action_required",
+            "Codex has an explicit disabled Play skill override. Open /skills, enable Play, then restart Codex.",
+            target="codex",
+            evidence=json.dumps(disabled_entries),
+        )
+    return Step(
+        "enable_play_skill",
+        "completed",
+        "No explicit disabled Play skill override was found in Codex.",
+        target="codex",
+    )
 
 
 def _is_play_hook(value: Any) -> bool:
@@ -467,13 +917,20 @@ def install_hooks(harness: str, source: Path, *, run_id: str) -> Step:
     )
 
 
-def _result_step(step_id: str, result: subprocess.CompletedProcess[str], command: Sequence[str]) -> Step:
+def _result_step(
+    step_id: str,
+    result: subprocess.CompletedProcess[str],
+    command: Sequence[str],
+    *,
+    target: str | None = None,
+) -> Step:
     output = (result.stdout or result.stderr).strip()
     return Step(
         step_id,
         "completed" if result.returncode == 0 else "failed",
         output or f"exit {result.returncode}",
         command=list(command),
+        target=target,
         changed=result.returncode == 0,
     )
 
@@ -517,6 +974,107 @@ def _markdown(report: dict[str, Any]) -> str:
             ]
         )
     return "\n".join(lines) + "\n"
+
+
+def _render_status_card(report: dict[str, Any]) -> str:
+    """Render the curl installer's concise, action-oriented final screen."""
+
+    status = str(report["status"])
+    status_label = {
+        "completed": "READY",
+        "action_required": "READY — ACTION REQUIRED",
+        "blocked": "INCOMPLETE",
+    }.get(status, status.upper())
+    steps = [step for step in report["steps"] if isinstance(step, dict)]
+    general_blocker = any(
+        step.get("status") in {"failed", "approval_required"}
+        and step.get("target") is None
+        for step in steps
+    )
+    lines = [
+        "",
+        "+------------------------------------------------------------+",
+        "| Play setup                                                 |",
+        "+------------------------------------------------------------+",
+        f"  Status: {status_label}",
+        f"  Run:    {report['run_id']}",
+        "",
+        "  Apps",
+    ]
+    for harness in report["selected_harnesses"]:
+        harness_steps = [step for step in steps if step.get("target") == harness]
+        if general_blocker or any(
+            step.get("status") in {"failed", "approval_required"}
+            for step in harness_steps
+        ):
+            state = "INCOMPLETE"
+        elif any(
+            step.get("status") in {"human_action_required", "review_required"}
+            for step in harness_steps
+        ):
+            state = "ACTION REQUIRED"
+        else:
+            state = "READY"
+        lines.append(f"    {LABELS.get(harness, harness):<14} {state}")
+
+    action_steps = [
+        step
+        for step in steps
+        if step.get("status")
+        in {"failed", "approval_required", "human_action_required", "review_required"}
+    ]
+    if action_steps:
+        lines.extend(["", "  Before you start"])
+        for step in action_steps:
+            target = step.get("target")
+            prefix = f"{LABELS.get(str(target), str(target))}: " if target else ""
+            lines.append(f"    - {prefix}{step.get('detail', 'Review the saved report.')}")
+
+    if status != "blocked":
+        lines.extend(["", "  Next steps"])
+        number = 1
+        for harness in report["selected_harnesses"]:
+            launch = HARNESS_LAUNCH.get(str(harness))
+            if launch is None:
+                continue
+            command, invocation = launch
+            lines.append(f"    {number}. Start {LABELS.get(str(harness), harness)}: {command}")
+            lines.append(f"       In a new conversation, type: {invocation}")
+            number += 1
+
+        invocations = list(
+            dict.fromkeys(
+                HARNESS_LAUNCH[str(harness)][1]
+                for harness in report["selected_harnesses"]
+                if str(harness) in HARNESS_LAUNCH
+            )
+        )
+        if invocations:
+            lines.extend(["", "  Try these"])
+            for invocation in invocations:
+                matching = [
+                    LABELS.get(str(harness), str(harness))
+                    for harness in report["selected_harnesses"]
+                    if HARNESS_LAUNCH.get(str(harness), (None, None))[1] == invocation
+                ]
+                label = " / ".join(matching)
+                lines.append(f"    {label}:")
+                lines.append(f"      {invocation} whats new")
+                lines.append(f"      {invocation} find a Play for my task")
+                lines.append(f"      {invocation} run <Play name>")
+
+    report_paths = report.get("report_paths")
+    if isinstance(report_paths, dict):
+        lines.extend(
+            [
+                "",
+                "  Detailed report",
+                f"    {report_paths.get('markdown')}",
+                f"    {report_paths.get('json')}",
+            ]
+        )
+    lines.extend(["+------------------------------------------------------------+", ""])
+    return "\n".join(lines)
 
 
 def _render_plan(plan: dict[str, Any]) -> str:
@@ -676,17 +1234,7 @@ def apply(
     if rote is None:
         return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
 
-    skill_command = [
-        rote,
-        "install",
-        "skill",
-        "--provider",
-        "all",
-        "--personal",
-        "--package",
-        "*",
-        "--force",
-    ]
+    skill_command = _rote_skill_command(rote, selected)
     skill_result = runner(skill_command)
     missing = [item["label"] for item in plan["rote_skills"] if not item["installed"]]
     refreshed = [item["label"] for item in plan["rote_skills"] if item["installed"]]
@@ -710,6 +1258,46 @@ def apply(
     )
     if skill_result.returncode != 0:
         return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
+
+    expected_version = (source / "VERSION").read_text(encoding="utf-8").strip()
+    plan_targets = {
+        str(target["id"]): target
+        for target in plan["targets"]
+        if isinstance(target, dict) and isinstance(target.get("id"), str)
+    }
+    for harness in selected:
+        target = plan_targets.get(harness, {})
+        executable = target.get("command") if isinstance(target, dict) else None
+        if not isinstance(executable, str) or not executable:
+            steps.append(
+                Step(
+                    "locate_harness",
+                    "human_action_required",
+                    f"{LABELS[harness]} is not on PATH as `{HARNESS_COMMANDS[harness]}`. Play files will be prepared, but install or expose the app command before launching it.",
+                    target=harness,
+                )
+            )
+    for harness in selected:
+        if harness not in {"codex", "claude"}:
+            continue
+        target = plan_targets.get(harness, {})
+        executable = target.get("command") if isinstance(target, dict) else None
+        if not isinstance(executable, str) or not executable:
+            continue
+        marketplace_steps = converge_play_marketplace(
+            harness,
+            executable,
+            expected_version=expected_version,
+            runner=runner,
+        )
+        steps.extend(marketplace_steps)
+        if any(step.status == "failed" for step in marketplace_steps):
+            return _finish_report(
+                plan, run_id, started, steps, status="blocked", runner=runner
+            )
+
+    if "codex" in selected:
+        steps.append(codex_play_enablement_step())
 
     installer = source / "scripts" / "harness" / "install-all"
     install_command = [str(installer), "install", "--copy"]
@@ -782,7 +1370,16 @@ def _finish_report(
         "selected_harnesses": plan["selected_harnesses"],
         "targets": plan["targets"],
         "rote": {"before": plan["rote"], "after": _rote_snapshot(runner)},
-        "rote_skills": {"before": plan["rote_skills"], "after": _rote_skills_snapshot()},
+        "rote_skills": {
+            "before": plan["rote_skills"],
+            "after": _rote_skills_snapshot(
+                [
+                    str(item["provider"])
+                    for item in plan["rote_skills"]
+                    if isinstance(item, dict) and item.get("provider") in ROTE_SKILL_PROVIDERS
+                ]
+            ),
+        },
         "steps": [asdict(step) for step in steps],
         "restart": "Restart every selected running harness so it reloads skills and hooks.",
     }
@@ -854,7 +1451,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
     except (BootstrapError, OSError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f"play-bootstrap: {error}\n")
-    rendered = _render_plan(payload) if args.command == "plan" else _markdown(payload)
+    rendered = (
+        _render_plan(payload)
+        if args.command == "plan"
+        else (_render_status_card(payload) if args.command == "install" else _markdown(payload))
+    )
     print(json.dumps(payload, indent=2, sort_keys=True) if args.json else rendered)
     return 0 if payload.get("status", "completed") == "completed" else 2
 

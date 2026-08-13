@@ -186,7 +186,16 @@ def main() -> int:
     preflight = subparsers.add_parser("preflight")
     preflight.add_argument(
         "--harness",
-        choices=("codex", "claude", "kimi", "cursor", "generic"),
+        choices=(
+            "codex",
+            "claude",
+            "kimi",
+            "cursor",
+            "hermes",
+            "opencode",
+            "deepseek",
+            "generic",
+        ),
         default="generic",
     )
     preflight.add_argument("--json", action="store_true", dest="as_json")

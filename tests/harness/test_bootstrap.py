@@ -9,7 +9,19 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from scripts.lib.play.bootstrap import apply, build_plan, install_hooks, main
+from scripts.lib.play.bootstrap import (
+    Step,
+    _fallback_skill_config_entries,
+    _render_status_card,
+    _rote_skill_command,
+    apply,
+    build_plan,
+    codex_disabled_play_entries,
+    codex_play_enablement_step,
+    converge_play_marketplace,
+    install_hooks,
+    main,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,6 +46,30 @@ class BootstrapTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.environment_patch.stop()
         self.temporary.cleanup()
+
+    def test_rote_skill_targets_cover_added_harnesses(self) -> None:
+        self.assertEqual(
+            [
+                "rote",
+                "install",
+                "skill",
+                "--target",
+                "kimi-code-cli",
+                "--target",
+                "hermes-agent",
+                "--target",
+                "opencode",
+                "--target",
+                "agents-md",
+                "--personal",
+                "--package",
+                "*",
+                "--force",
+            ],
+            _rote_skill_command(
+                "rote", ["kimi", "hermes", "opencode", "deepseek"]
+            ),
+        )
 
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
     @patch("scripts.lib.play.bootstrap.shutil.which")
@@ -62,8 +98,10 @@ class BootstrapTest(unittest.TestCase):
                 "rote",
                 "install",
                 "skill",
-                "--provider",
-                "all",
+                "--target",
+                "codex",
+                "--target",
+                "claude-code",
                 "--personal",
                 "--package",
                 "*",
@@ -72,11 +110,24 @@ class BootstrapTest(unittest.TestCase):
             convergence["command"],
         )
         self.assertEqual("keep_rote_current", plan["actions"][0]["id"])
+        marketplace = next(
+            action
+            for action in plan["actions"]
+            if action["id"] == "converge_play_marketplaces"
+        )
+        self.assertEqual(["codex", "claude"], marketplace["targets"])
+        self.assertEqual(
+            ["codex", "plugin", "marketplace", "upgrade", "play-skills"],
+            marketplace["commands"]["codex"][0],
+        )
+        self.assertEqual(
+            ["claude", "plugin", "marketplace", "update", "play-skills"],
+            marketplace["commands"]["claude"][0],
+        )
         self.assertEqual("current", plan["rote"]["update"]["status"])
         skill_status = {item["provider"]: item for item in plan["rote_skills"]}
         self.assertEqual("refresh", skill_status["codex"]["recommended_action"])
-        self.assertEqual("refresh", skill_status["claude"]["recommended_action"])
-        self.assertEqual("install", skill_status["agents-md"]["recommended_action"])
+        self.assertEqual("refresh", skill_status["claude-code"]["recommended_action"])
 
     def test_codex_hooks_replace_only_managed_play_entries_and_create_backup(self) -> None:
         path = self.home / ".codex" / "hooks.json"
@@ -134,9 +185,243 @@ class BootstrapTest(unittest.TestCase):
         self.assertTrue(Path(report["report_paths"]["json"]).is_file())
         self.assertTrue(Path(report["report_paths"]["markdown"]).is_file())
 
+    def test_codex_marketplace_convergence_refreshes_removes_and_reinstalls(self) -> None:
+        runner = MagicMock()
+        runner.side_effect = [
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps({"marketplaces": [{"name": "play-skills"}]}),
+                stderr="",
+            ),
+            MagicMock(returncode=0, stdout="updated\n", stderr=""),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "installed": [
+                            {
+                                "pluginId": "play@play-skills",
+                                "version": "0.3.0",
+                                "enabled": True,
+                            }
+                        ]
+                    }
+                ),
+                stderr="",
+            ),
+            MagicMock(returncode=0, stdout="removed\n", stderr=""),
+            MagicMock(returncode=0, stdout="installed\n", stderr=""),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "installed": [
+                            {
+                                "pluginId": "play@play-skills",
+                                "version": "0.4.4",
+                                "enabled": True,
+                            }
+                        ]
+                    }
+                ),
+                stderr="",
+            ),
+        ]
+
+        steps = converge_play_marketplace(
+            "codex", "/bin/codex", expected_version="0.4.4", runner=runner
+        )
+
+        commands = [call.args[0] for call in runner.call_args_list]
+        self.assertEqual(
+            [
+                "/bin/codex",
+                "plugin",
+                "marketplace",
+                "upgrade",
+                "play-skills",
+            ],
+            commands[1],
+        )
+        self.assertEqual(
+            ["/bin/codex", "plugin", "remove", "play@play-skills"], commands[3]
+        )
+        self.assertEqual(
+            ["/bin/codex", "plugin", "add", "play@play-skills"], commands[4]
+        )
+        self.assertEqual("completed", steps[-1].status)
+        self.assertIn("0.4.4", steps[-1].detail)
+
+    def test_claude_marketplace_convergence_refreshes_user_scope(self) -> None:
+        runner = MagicMock()
+        runner.side_effect = [
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps([{"name": "play-skills"}]),
+                stderr="",
+            ),
+            MagicMock(returncode=0, stdout="updated\n", stderr=""),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    [
+                        {
+                            "id": "play@play-skills",
+                            "version": "0.1.0",
+                            "enabled": True,
+                            "scope": "user",
+                        }
+                    ]
+                ),
+                stderr="",
+            ),
+            MagicMock(returncode=0, stdout="removed\n", stderr=""),
+            MagicMock(returncode=0, stdout="installed\n", stderr=""),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    [
+                        {
+                            "id": "play@play-skills",
+                            "version": "0.4.4",
+                            "enabled": True,
+                            "scope": "user",
+                        }
+                    ]
+                ),
+                stderr="",
+            ),
+        ]
+
+        steps = converge_play_marketplace(
+            "claude", "/bin/claude", expected_version="0.4.4", runner=runner
+        )
+
+        commands = [call.args[0] for call in runner.call_args_list]
+        self.assertEqual(
+            [
+                "/bin/claude",
+                "plugin",
+                "marketplace",
+                "update",
+                "play-skills",
+            ],
+            commands[1],
+        )
+        self.assertEqual(
+            [
+                "/bin/claude",
+                "plugin",
+                "uninstall",
+                "play@play-skills",
+                "--scope",
+                "user",
+                "--yes",
+            ],
+            commands[3],
+        )
+        self.assertEqual("completed", steps[-1].status)
+
+    def test_codex_disabled_play_skill_override_is_detected(self) -> None:
+        config = self.home / ".codex" / "config.toml"
+        config.parent.mkdir(parents=True)
+        config.write_text(
+            '[[skills.config]]\npath = "/tmp/plugins/cache/play-skills/play/0.3.0/skills/play/SKILL.md"\nenabled = false\n',
+            encoding="utf-8",
+        )
+
+        self.assertEqual(
+            ["/tmp/plugins/cache/play-skills/play/0.3.0/skills/play/SKILL.md"],
+            codex_disabled_play_entries(),
+        )
+        step = codex_play_enablement_step()
+        self.assertEqual("human_action_required", step.status)
+        self.assertIn("/skills", step.detail)
+
+    def test_python_310_fallback_reads_only_skills_config_tables(self) -> None:
+        entries = _fallback_skill_config_entries(
+            '[other]\nenabled = false\n\n'
+            '[[skills.config]]\nname = "play"\nenabled = false\n\n'
+            '[[skills.config]]\nname = "other"\nenabled = true\n'
+        )
+
+        self.assertEqual(
+            [
+                {"name": "play", "enabled": False},
+                {"name": "other", "enabled": True},
+            ],
+            entries,
+        )
+
+    def test_status_card_gives_harness_specific_first_steps(self) -> None:
+        rendered = _render_status_card(
+            {
+                "status": "action_required",
+                "run_id": "card-run",
+                "selected_harnesses": ["codex", "claude"],
+                "steps": [
+                    {
+                        "id": "enable_play_skill",
+                        "status": "human_action_required",
+                        "detail": "Open /skills, enable Play, then restart Codex.",
+                        "target": "codex",
+                    },
+                    {
+                        "id": "verify_play_plugin",
+                        "status": "completed",
+                        "detail": "Play is ready.",
+                        "target": "claude",
+                    },
+                ],
+                "report_paths": {
+                    "markdown": "/tmp/card-run.md",
+                    "json": "/tmp/card-run.json",
+                },
+            }
+        )
+
+        self.assertIn("Status: READY — ACTION REQUIRED", rendered)
+        self.assertIn("Codex          ACTION REQUIRED", rendered)
+        self.assertIn("Claude Code    READY", rendered)
+        self.assertIn("Start Codex: codex", rendered)
+        self.assertIn("type: $play", rendered)
+        self.assertIn("Start Claude Code: claude", rendered)
+        self.assertIn("type: /play", rendered)
+        self.assertIn("$play whats new", rendered)
+        self.assertIn("/play run <Play name>", rendered)
+        self.assertIn("/tmp/card-run.md", rendered)
+
+    def test_status_card_uses_native_invocations_for_added_harnesses(self) -> None:
+        rendered = _render_status_card(
+            {
+                "status": "completed",
+                "run_id": "more-harnesses",
+                "selected_harnesses": ["kimi", "hermes", "opencode", "deepseek"],
+                "steps": [],
+            }
+        )
+
+        self.assertIn("Start Kimi: kimi", rendered)
+        self.assertIn("type: /skill:play", rendered)
+        self.assertIn("Start Hermes Agent: hermes", rendered)
+        self.assertIn("Start OpenCode: opencode", rendered)
+        self.assertIn("Start DeepSeek Harness (preview): dsh web", rendered)
+        self.assertIn("type: /play", rendered)
+
+    @patch(
+        "scripts.lib.play.bootstrap.converge_play_marketplace",
+        return_value=[
+            Step(
+                "verify_play_plugin",
+                "completed",
+                "Play 0.4.4 is installed and enabled.",
+                target="codex",
+            )
+        ],
+    )
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
     def test_apply_existing_rote_updates_converges_installs_hooks_and_verifies(
-        self, _resolve_rote: MagicMock
+        self, _resolve_rote: MagicMock, _converge_marketplace: MagicMock
     ) -> None:
         runner = MagicMock()
         runner.side_effect = [
@@ -168,8 +453,8 @@ class BootstrapTest(unittest.TestCase):
                 "/bin/rote",
                 "install",
                 "skill",
-                "--provider",
-                "all",
+                "--target",
+                "codex",
                 "--personal",
                 "--package",
                 "*",
@@ -180,6 +465,14 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("1.0.0", report["rote"]["before"]["version"])
         self.assertEqual("1.1.0", report["rote"]["after"]["version"])
         self.assertTrue((self.home / ".codex" / "hooks.json").is_file())
+        step_ids = [step["id"] for step in report["steps"]]
+        self.assertLess(
+            step_ids.index("verify_play_plugin"), step_ids.index("install_play")
+        )
+        _converge_marketplace.assert_called_once()
+        self.assertEqual(
+            "0.4.4", _converge_marketplace.call_args.kwargs["expected_version"]
+        )
 
     @patch("scripts.lib.play.bootstrap._confirm", side_effect=[True, True])
     @patch("scripts.lib.play.bootstrap.apply")

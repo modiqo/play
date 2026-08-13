@@ -53,7 +53,42 @@ class InstallAllTest(unittest.TestCase):
                 encoding="utf-8",
             )
             command = self.bin / name
-            command.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            if name == "codex":
+                command.write_text(
+                    "#!/bin/sh\n"
+                    "marker=\"${CODEX_HOME}/play-plugin-installed\"\n"
+                    "if [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = marketplace ] && [ \"${3:-}\" = list ]; then\n"
+                    "  printf '%s\\n' '{\"marketplaces\":[]}'\n"
+                    "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
+                    "  if [ -f \"$marker\" ]; then\n"
+                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.4\",\"enabled\":true}],\"available\":[]}'\n"
+                    "  else\n"
+                    "    printf '%s\\n' '{\"installed\":[],\"available\":[]}'\n"
+                    "  fi\n"
+                    "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = add ]; then\n"
+                    "  : > \"$marker\"\n"
+                    "fi\n",
+                    encoding="utf-8",
+                )
+            elif name == "claude":
+                command.write_text(
+                    "#!/bin/sh\n"
+                    "marker=\"${CLAUDE_CONFIG_DIR}/play-plugin-installed\"\n"
+                    "if [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = marketplace ] && [ \"${3:-}\" = list ]; then\n"
+                    "  printf '%s\\n' '[]'\n"
+                    "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
+                    "  if [ -f \"$marker\" ]; then\n"
+                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.4\",\"enabled\":true,\"scope\":\"user\"}]'\n"
+                    "  else\n"
+                    "    printf '%s\\n' '[]'\n"
+                    "  fi\n"
+                    "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = install ]; then\n"
+                    "  : > \"$marker\"\n"
+                    "fi\n",
+                    encoding="utf-8",
+                )
+            else:
+                command.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             command.chmod(0o755)
 
         self.state = self.home / "state" / "activation.json"
@@ -67,6 +102,9 @@ class InstallAllTest(unittest.TestCase):
                 "CODEX_HOME": str(self.home / ".codex"),
                 "CLAUDE_CONFIG_DIR": str(self.home / ".claude"),
                 "KIMI_CONFIG_DIR": str(self.home / ".kimi"),
+                "HERMES_HOME": str(self.home / ".hermes"),
+                "OPENCODE_CONFIG_DIR": str(self.home / ".config" / "opencode"),
+                "DSH_HOME": str(self.home / ".dsh"),
                 "AGENTS_HOME": str(self.home / ".agents"),
                 "PLAY_HARNESS_ROOTS": os.pathsep.join(
                     str(path) for path in self.roots.values()
@@ -129,7 +167,15 @@ class InstallAllTest(unittest.TestCase):
         self.assertEqual("play.install-targets/v1", payload["schema"])
         self.assertEqual("multiple", payload["selection"])
         self.assertEqual(
-            ["codex", "claude", "kimi", "cursor"],
+            [
+                "codex",
+                "claude",
+                "kimi",
+                "cursor",
+                "hermes",
+                "opencode",
+                "deepseek",
+            ],
             [target["id"] for target in payload["targets"]],
         )
         codex = payload["targets"][0]
@@ -148,13 +194,37 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("Python launcher", result.stdout)
         self.uninstall(ROOT)
 
+    def test_opencode_install_adds_managed_slash_command_and_preserves_conflict(self) -> None:
+        skill_root = self.home / ".config" / "opencode" / "skills"
+        rote = skill_root / "rote"
+        rote.mkdir(parents=True)
+        (rote / "SKILL.md").write_text("---\nname: rote\n---\n", encoding="utf-8")
+        command = self.bin / "opencode"
+        command.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        command.chmod(0o755)
+        play_command = self.home / ".config" / "opencode" / "commands" / "play.md"
+        play_command.parent.mkdir(parents=True)
+        play_command.write_text("my existing command\n", encoding="utf-8")
+
+        result = self.run_installer("install", "--harness", "opencode")
+
+        self.assertIn("opencode command backup", result.stdout)
+        self.assertTrue((skill_root / "play").is_symlink())
+        self.assertIn("managed-by: modiqo/play", play_command.read_text(encoding="utf-8"))
+        self.assertEqual(
+            "my existing command\n",
+            play_command.with_name("play.md.pre-play-backup").read_text(encoding="utf-8"),
+        )
+        self.run_installer("verify", "--harness", "opencode")
+        self.uninstall(ROOT)
+
     def test_portable_copy_is_stable_and_idempotent(self) -> None:
         install_home = self.home / "portable"
         self.environment["PLAY_INSTALL_HOME"] = str(install_home)
 
         self.run_installer("install", "--copy")
         installed = install_home / "skill"
-        self.assertEqual("0.4.2", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.4", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():
@@ -194,7 +264,13 @@ class InstallAllTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
         self.assertIn("# Play bootstrap plan", result.stdout)
-        self.assertIn("# Play bootstrap report", result.stdout)
+        self.assertIn("| Play setup", result.stdout)
+        self.assertIn("Status: READY", result.stdout)
+        self.assertIn("Start Codex: codex", result.stdout)
+        self.assertIn("type: $play", result.stdout)
+        self.assertIn("Start Claude Code: claude", result.stdout)
+        self.assertIn("type: /play", result.stdout)
+        self.assertIn("whats new", result.stdout)
         installed = install_home / "skill"
         self.assertTrue((installed / "SKILL.md").is_file())
         reports = list((self.home / "bootstrap-state" / "runs").glob("*.json"))

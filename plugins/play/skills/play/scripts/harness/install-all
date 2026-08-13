@@ -21,7 +21,16 @@ sys.path.insert(0, str(ROOT))
 from scripts.lib.play.preflight import REQUIRED_PLAY_EXECUTABLES
 
 COPY_MARKER_SCHEMA = "play.portable-install/v1"
-SUPPORTED_HARNESSES = ("codex", "claude", "kimi", "cursor")
+OPENCODE_COMMAND_MARKER = "<!-- managed-by: modiqo/play -->"
+SUPPORTED_HARNESSES = (
+    "codex",
+    "claude",
+    "kimi",
+    "cursor",
+    "hermes",
+    "opencode",
+    "deepseek",
+)
 
 
 class InstallError(RuntimeError):
@@ -49,14 +58,31 @@ def harness_catalog() -> dict[str, Harness]:
     cursor_home = Path(
         os.environ.get("CURSOR_CONFIG_DIR", home / ".cursor")
     ).expanduser()
+    hermes_home = Path(os.environ.get("HERMES_HOME", home / ".hermes")).expanduser()
+    opencode_home = Path(
+        os.environ.get("OPENCODE_CONFIG_DIR", home / ".config" / "opencode")
+    ).expanduser()
+    deepseek_home = Path(os.environ.get("DSH_HOME", home / ".dsh")).expanduser()
     shared = Path(os.environ.get("AGENTS_HOME", home / ".agents")).expanduser()
+    shared_config = Path(
+        os.environ.get("AGENTS_CONFIG_HOME", home / ".config" / "agents")
+    ).expanduser()
     return {
         "codex": Harness("codex", "codex", (codex_home / "skills",)),
         "claude": Harness("claude", "claude", (claude_home / "skills",)),
         "kimi": Harness(
-            "kimi", "kimi", (shared / "skills", kimi_home / "skills")
+            "kimi",
+            "kimi",
+            (kimi_home / "skills", shared_config / "skills", shared / "skills"),
         ),
         "cursor": Harness("cursor", "cursor", (cursor_home / "skills",)),
+        "hermes": Harness("hermes", "hermes", (hermes_home / "skills",)),
+        "opencode": Harness(
+            "opencode", "opencode", (opencode_home / "skills", shared / "skills")
+        ),
+        "deepseek": Harness(
+            "deepseek", "dsh", (deepseek_home / "skills", shared / "skills")
+        ),
     }
 
 
@@ -305,6 +331,55 @@ def verify_play_runtime(source: Path) -> None:
     )
 
 
+def opencode_command_path() -> Path:
+    config = Path(
+        os.environ.get("OPENCODE_CONFIG_DIR", _home() / ".config" / "opencode")
+    ).expanduser()
+    return config / "commands" / "play.md"
+
+
+def install_opencode_command() -> None:
+    path = opencode_command_path()
+    content = (
+        "---\n"
+        "description: Find, run, and save reusable procedures with Play\n"
+        "---\n\n"
+        f"{OPENCODE_COMMAND_MARKER}\n"
+        "Load the `play` skill with the native skill tool, then handle this exact request through Play:\n\n"
+        "$ARGUMENTS\n"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_file():
+        existing = path.read_text(encoding="utf-8")
+        if existing == content:
+            print(f"  opencode command: {path} (current)")
+            return
+        if OPENCODE_COMMAND_MARKER not in existing:
+            backup = path.with_name("play.md.pre-play-backup")
+            index = 1
+            while backup.exists():
+                backup = path.with_name(f"play.md.pre-play-backup-{index}")
+                index += 1
+            shutil.copy2(path, backup)
+            print(f"  opencode command backup: {backup}")
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(content, encoding="utf-8")
+    os.replace(temporary, path)
+    print(f"  opencode command: {path} (installed)")
+
+
+def verify_harness_integrations(harnesses: list[Harness]) -> None:
+    if not any(harness.name == "opencode" for harness in harnesses):
+        return
+    path = opencode_command_path()
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise InstallError(f"OpenCode /play command is missing: {path}: {error}") from error
+    if OPENCODE_COMMAND_MARKER not in content:
+        raise InstallError(f"OpenCode /play command is not managed by Play: {path}")
+
+
 def target_payload() -> dict[str, object]:
     targets = []
     for harness in harness_catalog().values():
@@ -325,6 +400,9 @@ def target_payload() -> dict[str, object]:
                     "claude": "Claude Code",
                     "kimi": "Kimi",
                     "cursor": "Cursor",
+                    "hermes": "Hermes Agent",
+                    "opencode": "OpenCode",
+                    "deepseek": "DeepSeek Harness (preview)",
                 }[harness.name],
                 "harness_command": command,
                 "skill_roots": [str(root) for root in harness.skill_roots],
@@ -369,7 +447,7 @@ def execute(
     harnesses = selected_harnesses(requested_harnesses, include_all=include_all)
     if not harnesses:
         raise InstallError(
-            "no supported harness command was detected; expected Codex, Claude, Kimi, or Cursor"
+            "no supported harness command was detected; use --harness to select one explicitly"
         )
     print(
         "Detected harnesses: " + ", ".join(item.name for item in harnesses),
@@ -389,7 +467,10 @@ def execute(
         source = destination
     try:
         run_profile(source, "install" if command == "install" else "verify", harnesses)
+        if command == "install" and any(item.name == "opencode" for item in harnesses):
+            install_opencode_command()
         verify_harness_coverage(harnesses, source)
+        verify_harness_integrations(harnesses)
         verify_play_runtime(source)
     except Exception:
         if destination is not None:
@@ -398,7 +479,9 @@ def execute(
     finish_portable_copy(backup)
     if command == "install":
         warm_inbox_cache(source)
-        print(f"Play {version(source)} is ready. Restart each running harness, then type $play.")
+        print(
+            f"Play {version(source)} is ready. Restart each running harness and use its invocation shown in the final setup card."
+        )
 
 
 def warm_inbox_cache(source: Path) -> None:
