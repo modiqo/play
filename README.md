@@ -310,7 +310,9 @@ Before making changes, the installer shows:
 
 After approval, it performs that plan, verifies each selected app, and saves a JSON and Markdown
 report under `~/.local/state/play-bootstrap/runs/`. The final status card gives each app's launch
-command, exact Play invocation, any remaining action, and a few starter prompts.
+command, exact Play invocation, any remaining action, and a few starter prompts. Full structured
+command output stays in the saved JSON report; the terminal shows bounded human summaries unless
+you explicitly pass `--json`.
 
 Invocation differs by app:
 
@@ -382,8 +384,8 @@ Reports never contain credentials.
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.5/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.5 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.6/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.6 sh
 ```
 
 To inspect the small bootstrap before running it:

@@ -218,7 +218,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.5",
+                                "version": "0.4.6",
                                 "enabled": True,
                             }
                         ]
@@ -229,7 +229,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.5", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.6", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -250,7 +250,7 @@ class BootstrapTest(unittest.TestCase):
             ["/bin/codex", "plugin", "add", "play@play-skills"], commands[4]
         )
         self.assertEqual("completed", steps[-1].status)
-        self.assertIn("0.4.5", steps[-1].detail)
+        self.assertIn("0.4.6", steps[-1].detail)
 
     def test_claude_marketplace_convergence_refreshes_user_scope(self) -> None:
         runner = MagicMock()
@@ -283,7 +283,7 @@ class BootstrapTest(unittest.TestCase):
                     [
                         {
                             "id": "play@play-skills",
-                            "version": "0.4.5",
+                            "version": "0.4.6",
                             "enabled": True,
                             "scope": "user",
                         }
@@ -294,7 +294,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "claude", "/bin/claude", expected_version="0.4.5", runner=runner
+            "claude", "/bin/claude", expected_version="0.4.6", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -418,13 +418,46 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("Start DeepSeek Harness (preview): dsh web", rendered)
         self.assertIn("type: /play", rendered)
 
+    def test_status_card_keeps_structured_command_output_in_report(self) -> None:
+        verbose = json.dumps(
+            {
+                "error": "plugin failed",
+                "diagnostics": [{"line": index, "detail": "x" * 40} for index in range(20)],
+            },
+            indent=2,
+        )
+        rendered = _render_status_card(
+            {
+                "status": "blocked",
+                "run_id": "quiet-card",
+                "selected_harnesses": ["claude"],
+                "steps": [
+                    {
+                        "id": "install_current_play_plugin",
+                        "status": "failed",
+                        "detail": verbose,
+                        "target": "claude",
+                    }
+                ],
+                "report_paths": {
+                    "markdown": "/tmp/quiet-card.md",
+                    "json": "/tmp/quiet-card.json",
+                },
+            }
+        )
+
+        self.assertNotIn("diagnostics", rendered)
+        self.assertNotIn("plugin failed", rendered)
+        self.assertIn("see the detailed JSON report", rendered)
+        self.assertIn("/tmp/quiet-card.json", rendered)
+
     @patch(
         "scripts.lib.play.bootstrap.converge_play_marketplace",
         return_value=[
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.5 is installed and enabled.",
+                "Play 0.4.6 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -481,7 +514,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.5", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.6", _converge_marketplace.call_args.kwargs["expected_version"]
         )
 
     @patch("scripts.lib.play.bootstrap._confirm", side_effect=[True, True])

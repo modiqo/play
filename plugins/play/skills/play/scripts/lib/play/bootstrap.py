@@ -1033,7 +1033,7 @@ def _render_status_card(report: dict[str, Any]) -> str:
         for step in action_steps:
             target = step.get("target")
             prefix = f"{LABELS.get(str(target), str(target))}: " if target else ""
-            lines.append(f"    - {prefix}{step.get('detail', 'Review the saved report.')}")
+            lines.append(f"    - {prefix}{_human_step_detail(step)}")
 
     if status != "blocked":
         lines.extend(["", "  Next steps"])
@@ -1080,6 +1080,23 @@ def _render_status_card(report: dict[str, Any]) -> str:
         )
     lines.extend(["+------------------------------------------------------------+", ""])
     return "\n".join(lines)
+
+
+def _human_step_detail(step: dict[str, Any]) -> str:
+    detail = str(step.get("detail") or "Review the saved report.").strip()
+    try:
+        structured = json.loads(detail)
+    except (json.JSONDecodeError, TypeError):
+        structured = None
+    if isinstance(structured, (dict, list)):
+        return "Command output was captured; see the detailed JSON report."
+    nonempty = [line.strip() for line in detail.splitlines() if line.strip()]
+    if len(nonempty) > 3 or len(detail) > 240:
+        summary = nonempty[0] if nonempty else "Command output was captured."
+        if len(summary) > 180:
+            summary = summary[:177].rstrip() + "..."
+        return summary + " See the detailed report for complete output."
+    return " ".join(nonempty) if nonempty else "Review the saved report."
 
 
 def _render_plan(plan: dict[str, Any]) -> str:
