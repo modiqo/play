@@ -119,6 +119,12 @@ def _home() -> Path:
     return Path.home()
 
 
+def _play_version() -> str:
+    return (Path(__file__).resolve().parents[3] / "VERSION").read_text(
+        encoding="utf-8"
+    ).strip()
+
+
 def _roots() -> dict[str, tuple[Path, ...]]:
     home = _home()
     codex = Path(os.environ.get("CODEX_HOME", home / ".codex")).expanduser()
@@ -399,8 +405,8 @@ def build_plan(
                 ],
                 "claude": [
                     ["claude", "plugin", "marketplace", "update", PLAY_MARKETPLACE],
-                    ["claude", "plugin", "uninstall", PLAY_PLUGIN, "--scope", "user", "--yes"],
-                    ["claude", "plugin", "install", PLAY_PLUGIN, "--scope", "user", "--yes"],
+                    ["claude", "plugin", "uninstall", PLAY_PLUGIN, "--scope", "user"],
+                    ["claude", "plugin", "install", PLAY_PLUGIN, "--scope", "user"],
                 ],
             },
             "recommended": True,
@@ -419,6 +425,7 @@ def build_plan(
     ]
     body = {
         "schema": PLAN_SCHEMA,
+        "play_version": _play_version(),
         "top_k": top_k,
         "selected_harnesses": selected,
         "targets": [asdict(target) for target in targets],
@@ -642,7 +649,6 @@ def converge_play_marketplace(
                 PLAY_PLUGIN,
                 "--scope",
                 scope,
-                "--yes",
             ]
         remove_result = runner(remove_command)
         steps.append(
@@ -675,7 +681,6 @@ def converge_play_marketplace(
             PLAY_PLUGIN,
             "--scope",
             scope,
-            "--yes",
         ]
     install_result = runner(install_command)
     steps.append(
@@ -1079,42 +1084,53 @@ def _render_status_card(report: dict[str, Any]) -> str:
 
 def _render_plan(plan: dict[str, Any]) -> str:
     lines = [
-        "# Play bootstrap plan",
         "",
-        f"Plan: `{plan['plan_id']}`",
+        "+------------------------------------------------------------+",
+        "| Play setup plan                                            |",
+        "+------------------------------------------------------------+",
+        f"  Version: {plan.get('play_version', 'unknown')}",
+        f"  Plan:    {plan['plan_id']}",
         "",
-        "## Rote",
-        "",
+        "  Rote",
     ]
     rote = plan["rote"]
     if rote["path"]:
-        lines.append(f"- Installed: `{rote['version'] or 'unknown version'}` at `{rote['path']}`")
+        lines.append(f"    Installed: {rote['version'] or 'unknown version'}")
+        lines.append(f"    Path:      {rote['path']}")
     else:
-        lines.append("- Not installed")
+        lines.append("    Status:    NOT INSTALLED")
     update = rote["update"]
-    lines.append(
-        f"- Update check: **{update['status']}** — {update['detail']}"
-    )
-    lines.extend(["", "## Rote skills", ""])
-    for item in plan["rote_skills"]:
-        state = f"{item['skill_count']} installed" if item["installed"] else "not installed"
-        lines.append(
-            f"- {item['label']}: **{state}** at `{item['root']}`; "
-            f"suggested action: **{item['recommended_action']}**"
-        )
-    lines.extend(
-        [
-            "",
-        "## Selected harnesses",
-        "",
-        ]
-    )
-    lines.extend(f"- {name}" for name in plan["selected_harnesses"])
-    lines.extend(["", "## Actions", ""])
+    lines.append(f"    Update:    {str(update['status']).upper()}")
+    lines.extend(["", "  Apps"])
+    skill_states = {
+        str(item["provider"]): item
+        for item in plan["rote_skills"]
+        if isinstance(item, dict) and item.get("provider")
+    }
+    skill_labels = {
+        str(item["label"]): item
+        for item in plan["rote_skills"]
+        if isinstance(item, dict) and item.get("label")
+    }
+    for harness in plan["selected_harnesses"]:
+        target = TARGET_IDS[str(harness)]
+        label = LABELS.get(str(harness), str(harness))
+        item = skill_states.get(target, skill_labels.get(label, {}))
+        state = "REFRESH" if item.get("installed") else "INSTALL"
+        lines.append(f"    {label:<28} Rote skills: {state}")
+    lines.extend(["", "  Will do"])
+    number = 1
     for action in plan["actions"]:
-        approval = "; explicit approval required" if action.get("approval_required") else ""
-        lines.append(f"- `{action['id']}`: {action['effect']}{approval}")
-    return "\n".join(lines) + "\n"
+        if action["id"] == "keep_rote_current":
+            continue
+        lines.append(f"    {number}. {action['effect']}")
+        number += 1
+    approvals = [action for action in plan["actions"] if action.get("approval_required")]
+    if approvals:
+        lines.extend(["", "  Approval"])
+        lines.append("    Rote is missing, so its official installer needs separate approval.")
+    lines.extend(["+------------------------------------------------------------+", ""])
+    return "\n".join(lines)
 
 
 def _confirm(question: str, *, default: bool) -> bool:
@@ -1131,9 +1147,9 @@ def _confirm(question: str, *, default: bool) -> bool:
             close_stream = True
         except OSError as error:
             raise BootstrapError(
-                "interactive approval is unavailable; rerun with --yes to approve the Play "
-                "plan and, if Rote is missing, --approve-remote-installer to separately "
-                "approve https://getrote.dev/install"
+                "interactive approval is unavailable. For an unattended install, run: "
+                "curl -fsSL https://getrote.dev/playoffs/install.sh | "
+                "PLAY_INSTALL_YES=1 PLAY_APPROVE_REMOTE_INSTALLER=1 sh"
             ) from error
     try:
         if stream is sys.stdin:

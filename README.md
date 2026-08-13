@@ -382,8 +382,8 @@ Reports never contain credentials.
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.4/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.4 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.5/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.5 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -530,8 +530,8 @@ For Claude Code:
 
 ```bash
 claude plugin marketplace update play-skills
-claude plugin uninstall play@play-skills --scope user --yes
-claude plugin install play@play-skills --scope user --yes
+claude plugin uninstall play@play-skills --scope user
+claude plugin install play@play-skills --scope user
 ```
 
 Restart the harness and start a new conversation after updating so it loads the refreshed skill. If
