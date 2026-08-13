@@ -22,12 +22,16 @@ stable task key, and the unchanged user request:
 {"run_id":"<run-id>","task_key":"<task-key>","request":{"original":"<request>"}}
 ```
 
-The installer places `play-machine` on `PATH`. If it is unavailable, run the bundled
-`scripts/bin/play-preflight --harness <codex|claude|kimi|cursor|generic> --json` from this loaded
-skill directory, present its exact failed checks and multi-select install targets, report that the
-Play installation is incomplete, and stop before normal Play control flow. Do not try `rtk` or
-`rtk proxy`: `play-machine` is a Python entrypoint installed through a small executable launcher,
-not an RTK subcommand or compiled Python artifact. An explicit `/play` or `$play` with no separate task is a complete
+The installer normally places `play-machine` on `PATH`. If it is unavailable but this loaded skill
+contains executable `scripts/bin/play-machine`, first run bundled `scripts/bin/play-activate` to
+repair the launcher and activation state, then enter the runtime through the bundled
+`scripts/bin/play-machine` for this turn. Do not wait for shell command hashing or a harness restart.
+If activation repair fails, run bundled
+`scripts/bin/play-preflight --harness <codex|claude|kimi|cursor|generic> --json`, present its exact
+failed checks and multi-select install targets, report that the Play installation is incomplete,
+and stop before normal Play control flow. Do not try `rtk` or `rtk proxy`: `play-machine` is a Python
+entrypoint installed through a small executable launcher, not an RTK subcommand or compiled Python
+artifact. An explicit `/play` or `$play` with no separate task is a complete
 onboarding request: set `request.original` to `/play`. After a task Play stepped aside from
 settles, re-enter once with `request.original` set to `$play settle <one-line summary>`.
 

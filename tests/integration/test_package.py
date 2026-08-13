@@ -16,6 +16,8 @@ class PluginPackageTest(unittest.TestCase):
         self.assertTrue((TARGET / "scripts/harness/install-all").is_file())
         self.assertTrue((TARGET / "scripts/harness/play-profile").is_file())
         self.assertTrue((TARGET / "scripts/harness/start-harness").is_file())
+        self.assertTrue((TARGET / "scripts/bin/play-activate").is_file())
+        self.assertTrue((TARGET / "scripts/bin/play-activate").stat().st_mode & 0o111)
         self.assertTrue((TARGET / "scripts/bin/play-preflight").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-onboarding").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-presentation").is_file())
@@ -52,6 +54,15 @@ class PluginPackageTest(unittest.TestCase):
         self.assertEqual(expected, (TARGET / "VERSION").read_text().strip())
         for manifest in manifests:
             self.assertEqual(expected, json.loads(manifest.read_text())["version"])
+
+    def test_marketplace_session_hook_repairs_activation_before_inbox(self) -> None:
+        hooks = json.loads((ROOT / "plugins/play/hooks/hooks.json").read_text())
+        command = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+
+        self.assertIn("${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}", command)
+        self.assertIn("play-activate", command)
+        self.assertIn("Play activation incomplete", command)
+        self.assertLess(command.index("play-activate"), command.index("play-inbox"))
 
     def test_active_sources_have_no_legacy_flow_commands(self) -> None:
         files = [ROOT / "README.md", ROOT / "SKILL.md"]

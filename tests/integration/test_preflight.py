@@ -1,12 +1,31 @@
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from scripts.lib.play.preflight import SCHEMA, inspect
+from scripts.lib.play.preflight import SCHEMA, harness_skill_roots, inspect
 
 
 class PreflightTest(unittest.TestCase):
+    def test_codex_marketplace_skill_caches_are_discovered(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            codex_home = Path(temporary) / ".codex"
+            play = codex_home / "plugins/cache/play-skills/play/0.4.2/skills/play"
+            rote = codex_home / "plugins/cache/rote-skills/rote/0.68.0/skills/rote"
+            play.mkdir(parents=True)
+            rote.mkdir(parents=True)
+            (play / "SKILL.md").write_text("---\nname: play\n---\n")
+            (rote / "SKILL.md").write_text("---\nname: rote\n---\n")
+
+            with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}):
+                roots = harness_skill_roots()["codex"]
+
+            self.assertIn(play.parent, roots)
+            self.assertIn(rote.parent, roots)
+
     @patch("scripts.lib.play.preflight.shutil.which", return_value=None)
     def test_missing_rote_returns_harness_setup_commands(self, _which: MagicMock) -> None:
         payload = inspect("codex")
@@ -87,7 +106,10 @@ class PreflightTest(unittest.TestCase):
         self.assertFalse(launcher["ok"])
         self.assertEqual("python-entrypoint", payload["runtime"]["implementation"])
         self.assertEqual("multiple", payload["install_target_prompt"]["selection"])
-        self.assertIn("codex plugin add play@play-skills", payload["setup_commands"])
+        self.assertTrue(
+            any("play-activate" in command for command in payload["setup_commands"])
+        )
+        self.assertTrue(any("/skills" in command for command in payload["setup_commands"]))
 
     @patch("scripts.lib.play.preflight.importlib.util.find_spec", return_value=None)
     @patch("scripts.lib.play.preflight.inspect_harnesses")

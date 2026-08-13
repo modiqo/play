@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+play_skill_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+export PLAY_PROFILE_SOURCE="$play_skill_root"
+exec "$play_skill_root/scripts/harness/play-profile" install

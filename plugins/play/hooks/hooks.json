@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/skills/play/scripts/bin/play-intercept\" prompt 2>/dev/null || true",
+            "command": "PLAY_ROOT=\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}/skills/play\"; \"$PLAY_ROOT/scripts/bin/play-intercept\" prompt 2>/dev/null || true",
             "timeout": 5
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/skills/play/scripts/bin/play-intercept\" settle-nudge 2>/dev/null || true",
+            "command": "PLAY_ROOT=\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}/skills/play\"; \"$PLAY_ROOT/scripts/bin/play-intercept\" settle-nudge 2>/dev/null || true",
             "timeout": 5
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/skills/play/scripts/bin/play-inbox\" line 2>/dev/null; (\"${CLAUDE_PLUGIN_ROOT}/skills/play/scripts/bin/play-inbox\" refresh --if-older-than 6 >/dev/null 2>&1 &)",
+            "command": "PLAY_ROOT=\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}/skills/play\"; PLAY_ACTIVATION_OUTPUT=$(\"$PLAY_ROOT/scripts/bin/play-activate\" 2>&1) || printf 'Play activation incomplete: %s\\n' \"$PLAY_ACTIVATION_OUTPUT\"; \"$PLAY_ROOT/scripts/bin/play-inbox\" line 2>/dev/null; (\"$PLAY_ROOT/scripts/bin/play-inbox\" refresh --if-older-than 6 >/dev/null 2>&1 &)",
             "timeout": 5
           }
         ]

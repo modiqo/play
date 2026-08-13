@@ -216,6 +216,54 @@ class ActivationProfileTest(unittest.TestCase):
         self.run_profile("verify")
         self.run_profile("uninstall")
 
+    def test_marketplace_install_creates_launcher_before_rote_skills_exist(self) -> None:
+        plugin = Path(self.temporary.name) / "plugin-empty"
+        self.source = plugin / "skills" / "play"
+        (plugin / ".codex-plugin").mkdir(parents=True)
+        (plugin / ".codex-plugin" / "plugin.json").write_text("{}\n")
+        (self.source / "agents").mkdir(parents=True)
+        (self.source / "SKILL.md").write_bytes((ROOT / "SKILL.md").read_bytes())
+        (self.source / "agents" / "openai.yaml").write_bytes(
+            (ROOT / "agents" / "openai.yaml").read_bytes()
+        )
+        empty_root = Path(self.temporary.name) / "empty" / "skills"
+        empty_root.mkdir(parents=True)
+        self.roots = [empty_root]
+
+        result = self.run_profile("install")
+
+        self.assertIn("0 harness root(s)", result.stdout)
+        self.assertTrue(self.launcher.is_file())
+        self.assertIn(str(self.source / "scripts/bin/play-machine"), self.launcher.read_text())
+        state = json.loads(self.state.read_text())
+        self.assertEqual([], state["roots"])
+        self.assertEqual([], state["rote_skills"])
+
+    def test_marketplace_upgrade_retargets_managed_launcher(self) -> None:
+        plugin_v1 = Path(self.temporary.name) / "plugin-v1"
+        plugin_v2 = Path(self.temporary.name) / "plugin-v2"
+        for plugin in (plugin_v1, plugin_v2):
+            source = plugin / "skills" / "play"
+            (plugin / ".codex-plugin").mkdir(parents=True)
+            (plugin / ".codex-plugin" / "plugin.json").write_text("{}\n")
+            (source / "agents").mkdir(parents=True)
+            (source / "SKILL.md").write_bytes((ROOT / "SKILL.md").read_bytes())
+            (source / "agents" / "openai.yaml").write_bytes(
+                (ROOT / "agents" / "openai.yaml").read_bytes()
+            )
+
+        self.source = plugin_v1 / "skills" / "play"
+        self.run_profile("install")
+        self.assertIn(str(self.source), self.launcher.read_text())
+
+        self.source = plugin_v2 / "skills" / "play"
+        result = self.run_profile("install")
+
+        self.assertIn("reconciled", result.stdout)
+        self.assertIn(str(self.source), self.launcher.read_text())
+        state = json.loads(self.state.read_text())
+        self.assertEqual(str(self.source.resolve()), state["source"])
+
 
 if __name__ == "__main__":
     unittest.main()

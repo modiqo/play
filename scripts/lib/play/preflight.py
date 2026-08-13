@@ -24,6 +24,7 @@ REQUIRED_PLAY_EXECUTABLES = (
     "play-machine",
     "play-bootstrap",
     "play-birth",
+    "play-activate",
     "play-certificate",
     "play-delivery",
     "play-digest",
@@ -73,13 +74,12 @@ SETUP_COMMANDS = {
 
 PLAY_REPAIR_COMMANDS = {
     "codex": [
-        "codex plugin marketplace add modiqo/play",
-        "codex plugin add play@play-skills",
+        "Run this Play skill's bundled scripts/bin/play-activate to repair the launcher and activation state.",
+        "In Codex, use /skills to ensure Play is enabled.",
         "Restart Codex.",
     ],
     "claude": [
-        "claude plugin marketplace add modiqo/play",
-        "claude plugin install play@play-skills",
+        "Run this Play skill's bundled scripts/bin/play-activate to repair the launcher and activation state.",
         "Restart Claude Code.",
     ],
     "kimi": ["Install Play in ~/.agents/skills or ~/.kimi/skills, then restart Kimi."],
@@ -112,9 +112,22 @@ def harness_skill_roots() -> dict[str, tuple[Path, ...]]:
         os.environ.get("CURSOR_CONFIG_DIR", home / ".cursor")
     ).expanduser()
     agents_home = Path(os.environ.get("AGENTS_HOME", home / ".agents")).expanduser()
+    codex_plugin_roots = tuple(
+        sorted(
+            {
+                *codex_home.glob("plugins/cache/*/*/*/skills"),
+                *codex_home.glob(".tmp/marketplaces/*/plugins/*/skills"),
+                *codex_home.glob(".tmp/bundled-marketplaces/*/plugins/*/skills"),
+            },
+            key=str,
+        )
+    )
+    claude_plugin_roots = tuple(
+        sorted(claude_home.glob("plugins/cache/*/*/*/skills"), key=str)
+    )
     return {
-        "codex": (codex_home / "skills",),
-        "claude": (claude_home / "skills",),
+        "codex": (codex_home / "skills", *codex_plugin_roots),
+        "claude": (claude_home / "skills", *claude_plugin_roots),
         "kimi": (agents_home / "skills", kimi_home / "skills"),
         "cursor": (cursor_home / "skills",),
     }

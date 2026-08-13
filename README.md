@@ -363,8 +363,8 @@ credentials.
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.1/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.1 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.2/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.2 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -422,6 +422,13 @@ credentials, or optional onboarding. Ordinary requests are lexically classified 
 first; only Play-bound evaluator events run the full preflight, so excluded conversation and
 repository work do not pay the identity/capability probe.
 Public Play URIs can still show their read-only public card before the CLI exists.
+
+Marketplace installs repair this launcher automatically from Play's session-start hook. If a
+harness cached or enabled the plugin without completing activation, `$play` also runs the bundled
+`scripts/bin/play-activate` and continues through the bundled runtime in the same turn. This works
+before Rote skills are present; later sessions converge Rote skills discovered in Codex or Claude
+plugin caches. In Codex, an explicitly disabled Play skill remains a user preference: open
+`/skills`, enable Play, and restart the session.
 
 Install Play from its public marketplace after Rote setup:
 

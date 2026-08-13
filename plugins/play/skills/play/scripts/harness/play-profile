@@ -67,7 +67,9 @@ def iter_rote_skills(root: Path):
                 yield child
 
 
-def discover_roots(*, include_plugin_caches: bool | None = None) -> list[Path]:
+def discover_roots(
+    *, include_plugin_caches: bool | None = None, require_roots: bool = True
+) -> list[Path]:
     configured = configured_roots()
     candidates: set[Path] = set(configured or [])
 
@@ -107,7 +109,7 @@ def discover_roots(*, include_plugin_caches: bool | None = None) -> list[Path]:
         if root.is_dir() and any(iter_rote_skills(root)):
             roots.append(root.resolve())
     roots = list(dict.fromkeys(roots))
-    if not roots:
+    if not roots and require_roots:
         raise ProfileError(
             "no harness skill roots containing rote skills were found; "
             "run rote harness setup --yes or set PLAY_HARNESS_ROOTS"
@@ -272,7 +274,10 @@ def verify_state(state: dict[str, object]) -> list[str]:
     try:
         current_roots = {
             str(root)
-            for root in discover_roots(include_plugin_caches=expected_mode == "marketplace")
+            for root in discover_roots(
+                include_plugin_caches=expected_mode == "marketplace",
+                require_roots=expected_mode != "marketplace",
+            )
         }
     except ProfileError:
         current_roots = set()
@@ -291,7 +296,10 @@ def verify_state(state: dict[str, object]) -> list[str]:
 
 
 def desired_profile(mode: str) -> tuple[list[Path], list[Path], dict[Path, Path]]:
-    roots = discover_roots(include_plugin_caches=mode == "marketplace")
+    roots = discover_roots(
+        include_plugin_caches=mode == "marketplace",
+        require_roots=mode != "marketplace",
+    )
     play_links = [] if mode == "marketplace" else [root / "play" for root in roots]
     rote_skills: dict[Path, Path] = {}
     for root in roots:
@@ -306,10 +314,12 @@ def activation_paths(skill: Path) -> tuple[Path, Path]:
 
 def reconcile(state: dict[str, object]) -> None:
     source = Path(str(state["source"])).resolve()
-    if source != SOURCE:
-        raise ProfileError(f"profile state belongs to another Play source: {source}")
     mode = "marketplace" if marketplace_source() else "source-linked"
-    if state.get("mode", "source-linked") != mode:
+    previous_mode = state.get("mode", "source-linked")
+    source_changed = source != SOURCE
+    if source_changed and not (mode == "marketplace" and previous_mode == "marketplace"):
+        raise ProfileError(f"profile state belongs to another Play source: {source}")
+    if previous_mode != mode:
         raise ProfileError(f"activation mode changed; expected {mode}")
     if not play_is_implicit():
         raise ProfileError("Play source is not configured for implicit invocation")
@@ -319,7 +329,7 @@ def reconcile(state: dict[str, object]) -> None:
     old_link_set = set(old_links)
     desired_link_set = set(play_links)
     for link in old_links:
-        if link.is_symlink() and link.resolve() == source:
+        if link.is_symlink() and link.resolve() in {source, SOURCE}:
             continue
         if not link.exists() and not link.is_symlink():
             continue
@@ -412,6 +422,7 @@ def reconcile(state: dict[str, object]) -> None:
         profile_changed = bool(
             rebased_skills
             or launcher_changed
+            or source_changed
             or policy_changed
             or old_link_set != desired_link_set
             or previous_skills != desired_skills
@@ -423,6 +434,7 @@ def reconcile(state: dict[str, object]) -> None:
 
         updated = {
             **state,
+            "source": str(SOURCE),
             "activation_policy": ACTIVATION_POLICY,
             "mode": mode,
             "roots": [str(root) for root in roots],
@@ -612,7 +624,11 @@ def report(require_active: bool) -> None:
     if state is None:
         if require_active:
             raise ProfileError("Play-first profile is not installed")
-        roots = discover_roots(include_plugin_caches=marketplace_source())
+        marketplace = marketplace_source()
+        roots = discover_roots(
+            include_plugin_caches=marketplace,
+            require_roots=not marketplace,
+        )
         print(
             f"Play-first profile: inactive ({len(roots)} rote harness root(s) detected)"
         )
