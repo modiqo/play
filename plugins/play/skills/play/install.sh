@@ -20,6 +20,7 @@ trap cleanup EXIT HUP INT TERM
 
 if [ -n "${PLAY_INSTALL_SOURCE:-}" ]; then
   source_root=$PLAY_INSTALL_SOURCE
+  printf '%s\n' "✓ Using local Play source"
 else
   command -v curl >/dev/null 2>&1 || fail "curl is required"
   repository=${PLAY_INSTALL_REPOSITORY:-modiqo/play}
@@ -38,9 +39,11 @@ else
     https://*) ;;
     *) fail "PLAY_INSTALL_URL must use https" ;;
   esac
-  printf '%s\n' "Downloading Play from $repository@$reference..."
+  printf '%s\n' "◐ Downloading Play from $repository@$reference"
   curl --proto '=https' --tlsv1.2 -fsSL "$archive_url" -o "$archive"
+  printf '%s\n' "✓ Downloaded Play"
   mkdir "$source_root"
+  printf '%s\n' "◐ Verifying Play archive"
   python3 - "$archive" "$source_root" <<'PY'
 import sys
 import tarfile
@@ -68,6 +71,7 @@ with tarfile.open(archive, "r:gz") as bundle:
         raise SystemExit("play install: archive must contain one repository root")
     bundle.extractall(destination, members=safe)
 PY
+  printf '%s\n' "✓ Verified Play archive"
 fi
 
 [ -f "$source_root/scripts/bin/play-bootstrap" ] || fail "downloaded Play package is incomplete"

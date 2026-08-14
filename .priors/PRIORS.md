@@ -76,3 +76,5 @@
 | P-0070 | code-review | conclusion | fixed | . | play_run ignores output_policy and always buffers and embeds complete st |
 | P-0071 | code-review | conclusion | fixed | . | The $play settle path cannot accept any candidate_ready result because o |
 | P-0072 | code-review | conclusion | fixed | . | Play capture must be decided at prompt intake: capture creates and binds |
+| P-0073 | design-review | conclusion | open | scripts/lib/play/search.py | Use BM25 as an in-memory scorer over the owner-private authorized catalo |
+| P-0074 | installer-diagnosis | conclusion | fixed | scripts/lib/play/bootstrap.py | The Play curl installer appears stalled because bootstrap captures every |

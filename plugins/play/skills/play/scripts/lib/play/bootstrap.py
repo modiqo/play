@@ -11,7 +11,9 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -81,6 +83,7 @@ ROTE_SKILL_PROVIDERS = {
 PLAY_MARKETPLACE = "play-skills"
 PLAY_PLUGIN = "play@play-skills"
 PLAY_REPOSITORY = "modiqo/play"
+MAX_SELECTED_HARNESSES = 3
 
 
 class BootstrapError(RuntimeError):
@@ -113,6 +116,95 @@ class Step:
 
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
+
+
+@dataclass
+class ProgressToken:
+    label: str
+    started: float
+    stop: threading.Event | None = None
+    heartbeat: threading.Thread | None = None
+
+
+class Progress:
+    """Line-oriented, thread-safe install progress suitable for piped shells."""
+
+    def __init__(
+        self, stream=None, *, enabled: bool = True, heartbeat_seconds: float = 1.0
+    ) -> None:
+        self.stream = stream if stream is not None else sys.stderr
+        self.enabled = enabled
+        self.heartbeat_seconds = max(0.0, heartbeat_seconds)
+        self._lock = threading.Lock()
+
+    def _write(self, glyph: str, text: str) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            print(f"{glyph} {text}", file=self.stream, flush=True)
+
+    def begin(self, label: str) -> ProgressToken:
+        self._write("◐", label)
+        token = ProgressToken(label, time.monotonic())
+        if self.enabled and self.heartbeat_seconds:
+            token.stop = threading.Event()
+
+            def heartbeat() -> None:
+                assert token.stop is not None
+                while not token.stop.wait(self.heartbeat_seconds):
+                    elapsed = time.monotonic() - token.started
+                    self._write("◐", f"{token.label} · {elapsed:.0f}s")
+
+            token.heartbeat = threading.Thread(target=heartbeat, daemon=True)
+            token.heartbeat.start()
+        return token
+
+    def finish(self, token: ProgressToken, *, ok: bool = True) -> None:
+        if token.stop is not None:
+            token.stop.set()
+        if token.heartbeat is not None:
+            token.heartbeat.join(timeout=max(0.1, self.heartbeat_seconds * 2))
+        elapsed = time.monotonic() - token.started
+        self._write("✓" if ok else "✗", f"{token.label} ({elapsed:.1f}s)")
+
+    def call(self, label: str, operation: Callable[[], Any]) -> Any:
+        token = self.begin(label)
+        try:
+            result = operation()
+        except Exception:
+            self.finish(token, ok=False)
+            raise
+        self.finish(token)
+        return result
+
+    def command(
+        self, label: str, runner: Runner, command: Sequence[str]
+    ) -> subprocess.CompletedProcess[str]:
+        token = self.begin(label)
+        try:
+            result = runner(command)
+        except Exception:
+            self.finish(token, ok=False)
+            raise
+        self.finish(token, ok=result.returncode == 0)
+        return result
+
+
+def _progress(progress: Progress | None) -> Progress:
+    return progress if progress is not None else Progress(enabled=False)
+
+
+def _parallel_harness_work(
+    harnesses: Sequence[str], operation: Callable[[str], Any]
+) -> dict[str, Any]:
+    """Run independent harness work concurrently and return deterministic keyed results."""
+
+    ordered = list(dict.fromkeys(harnesses))
+    if not ordered:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(MAX_SELECTED_HARNESSES, len(ordered))) as executor:
+        futures = {harness: executor.submit(operation, harness) for harness in ordered}
+        return {harness: futures[harness].result() for harness in ordered}
 
 
 def _home() -> Path:
@@ -289,12 +381,36 @@ def _rote_skill_command(rote: str, selected: Sequence[str]) -> list[str]:
     return command
 
 
+def _rote_skill_harnesses(
+    selected: Sequence[str], skill_snapshot: Sequence[dict[str, Any]], update_status: str
+) -> list[str]:
+    """Refresh all targets after a Rote update; otherwise install only missing providers."""
+
+    if update_status == "available":
+        return list(dict.fromkeys(selected))
+    missing = {
+        str(item.get("provider"))
+        for item in skill_snapshot
+        if isinstance(item, dict) and not item.get("installed")
+    }
+    return [name for name in dict.fromkeys(selected) if TARGET_IDS[name] in missing]
+
+
 def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> list[HarnessTarget]:
     if top_k < 1:
         raise BootstrapError("top-k must be at least 1")
+    if top_k > MAX_SELECTED_HARNESSES:
+        raise BootstrapError(
+            f"top-k cannot exceed {MAX_SELECTED_HARNESSES}; install at most three harnesses per run"
+        )
     unknown = sorted(set(requested or ()) - set(SUPPORTED_HARNESSES))
     if unknown:
         raise BootstrapError("unsupported harness name(s): " + ", ".join(unknown))
+    requested_unique = list(dict.fromkeys(requested or ()))
+    if len(requested_unique) > MAX_SELECTED_HARNESSES:
+        raise BootstrapError(
+            f"select at most {MAX_SELECTED_HARNESSES} harnesses per install"
+        )
 
     candidates: list[dict[str, Any]] = []
     for order, name in enumerate(SUPPORTED_HARNESSES):
@@ -317,8 +433,8 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
                 "present": present,
             }
         )
-    if requested:
-        selected = set(requested)
+    if requested_unique:
+        selected = set(requested_unique)
     else:
         ranked = sorted(
             (item for item in candidates if item["present"]),
@@ -331,7 +447,7 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
             selected=item["id"] in selected,
             selection_reason=(
                 "explicitly selected"
-                if requested and item["id"] in selected
+                if requested_unique and item["id"] in selected
                 else (
                     f"selected in top {top_k}"
                     if item["id"] in selected
@@ -383,19 +499,35 @@ def build_plan(
     rote_skills = _rote_skills_snapshot(rote_targets)
     missing_skill_roots = [item["provider"] for item in rote_skills if not item["installed"]]
     existing_skill_roots = [item["provider"] for item in rote_skills if item["installed"]]
+    skill_harnesses = _rote_skill_harnesses(selected, rote_skills, update["status"])
+    targeted_skill_providers = {TARGET_IDS[name] for name in skill_harnesses}
+    rote_skills = [
+        {
+            **item,
+            "recommended_action": (
+                "refresh" if item["installed"] else "install"
+            ) if item["provider"] in targeted_skill_providers else "keep",
+        }
+        for item in rote_skills
+    ]
     actions = [
         rote_action,
         {
             "id": "converge_rote_skills",
-            "effect": "installs missing and refreshes existing bundled Rote skills in personal harness roots",
+            "effect": (
+                "installs missing or updated bundled Rote skills in personal harness roots"
+                if skill_harnesses
+                else "keeps current Rote skills unchanged"
+            ),
             "missing_providers": missing_skill_roots,
             "refresh_providers": existing_skill_roots,
-            "command": _rote_skill_command("rote", selected),
-            "recommended": True,
+            "targets": skill_harnesses,
+            "command": _rote_skill_command("rote", skill_harnesses) if skill_harnesses else None,
+            "recommended": bool(skill_harnesses),
         },
         {
             "id": "converge_play_marketplaces",
-            "effect": "refreshes the Play marketplace, removes stale plugin caches, and reinstalls Play before Codex or Claude starts",
+            "effect": "keeps current Play plugins and refreshes/reinstalls stale Codex or Claude integrations in parallel",
             "targets": [name for name in selected if name in {"codex", "claude"}],
             "commands": {
                 "codex": [
@@ -427,6 +559,7 @@ def build_plan(
         "schema": PLAN_SCHEMA,
         "play_version": _play_version(),
         "top_k": top_k,
+        "max_selected_harnesses": MAX_SELECTED_HARNESSES,
         "selected_harnesses": selected,
         "targets": [asdict(target) for target in targets],
         "rote": rote_state,
@@ -525,6 +658,15 @@ def _play_plugin_record(
     return matches[0] if matches else None
 
 
+def _play_plugin_is_current(record: dict[str, Any] | None, expected_version: str) -> bool:
+    return bool(
+        record
+        and record.get("version") == expected_version
+        and record.get("enabled") is not False
+        and not record.get("errors")
+    )
+
+
 def _marketplace_list_command(harness: str, executable: str) -> list[str]:
     return [executable, "plugin", "marketplace", "list", "--json"]
 
@@ -579,6 +721,54 @@ def converge_play_marketplace(
         )
     )
 
+    plugin_list = _plugin_list_command(harness, executable)
+    scope = "user"
+    existing: dict[str, Any] | None = None
+    if PLAY_MARKETPLACE in marketplaces:
+        plugin_result = runner(plugin_list)
+        try:
+            existing = _play_plugin_record(
+                harness,
+                _command_json(plugin_result, plugin_list),
+                scope=scope if harness == "claude" else None,
+            )
+        except BootstrapError as error:
+            steps.append(
+                Step(
+                    "inspect_play_plugin",
+                    "failed",
+                    str(error),
+                    command=plugin_list,
+                    target=harness,
+                )
+            )
+            return steps
+        steps.append(
+            Step(
+                "inspect_play_plugin",
+                "completed",
+                (
+                    f"Found Play {existing.get('version', 'unknown')} before convergence."
+                    if existing
+                    else "Play was not installed before convergence."
+                ),
+                command=plugin_list,
+                target=harness,
+            )
+        )
+        if _play_plugin_is_current(existing, expected_version):
+            steps.append(
+                Step(
+                    "verify_play_plugin",
+                    "unchanged",
+                    f"Play {expected_version} is already installed, enabled, and healthy.",
+                    command=plugin_list,
+                    target=harness,
+                    evidence=json.dumps(existing, sort_keys=True),
+                )
+            )
+            return steps
+
     if PLAY_MARKETPLACE in marketplaces:
         refresh_command = [
             executable,
@@ -604,39 +794,36 @@ def converge_play_marketplace(
     if refresh_result.returncode != 0:
         return steps
 
-    plugin_list = _plugin_list_command(harness, executable)
-    plugin_result = runner(plugin_list)
-    scope = "user"
-    try:
-        existing = _play_plugin_record(
-            harness,
-            _command_json(plugin_result, plugin_list),
-            scope=scope if harness == "claude" else None,
-        )
-    except BootstrapError as error:
+    if PLAY_MARKETPLACE not in marketplaces:
+        plugin_result = runner(plugin_list)
+        try:
+            existing = _play_plugin_record(
+                harness,
+                _command_json(plugin_result, plugin_list),
+                scope=scope if harness == "claude" else None,
+            )
+        except BootstrapError as error:
+            steps.append(
+                Step(
+                    "inspect_play_plugin",
+                    "failed",
+                    str(error),
+                    command=plugin_list,
+                    target=harness,
+                )
+            )
+            return steps
         steps.append(
             Step(
                 "inspect_play_plugin",
-                "failed",
-                str(error),
+                "completed",
+                "Play was not installed before convergence." if existing is None else (
+                    f"Found Play {existing.get('version', 'unknown')} before convergence."
+                ),
                 command=plugin_list,
                 target=harness,
             )
         )
-        return steps
-    steps.append(
-        Step(
-            "inspect_play_plugin",
-            "completed",
-            (
-                f"Found Play {existing.get('version', 'unknown')} before reinstall."
-                if existing
-                else "Play was not installed before convergence."
-            ),
-            command=plugin_list,
-            target=harness,
-        )
-    )
 
     if existing is not None:
         if harness == "codex":
@@ -1129,16 +1316,32 @@ def _render_plan(plan: dict[str, Any]) -> str:
         for item in plan["rote_skills"]
         if isinstance(item, dict) and item.get("label")
     }
+    skill_action = next(
+        (
+            action
+            for action in plan["actions"]
+            if action.get("id") == "converge_rote_skills"
+        ),
+        {},
+    )
+    targeted_skill_providers = {
+        TARGET_IDS[str(harness)]
+        for harness in skill_action.get("targets", [])
+        if str(harness) in TARGET_IDS
+    }
     for harness in plan["selected_harnesses"]:
         target = TARGET_IDS[str(harness)]
         label = LABELS.get(str(harness), str(harness))
         item = skill_states.get(target, skill_labels.get(label, {}))
-        state = "REFRESH" if item.get("installed") else "INSTALL"
+        if target in targeted_skill_providers:
+            state = "REFRESH" if item.get("installed") else "INSTALL"
+        else:
+            state = "CURRENT"
         lines.append(f"    {label:<28} Rote skills: {state}")
     lines.extend(["", "  Will do"])
     number = 1
     for action in plan["actions"]:
-        if action["id"] == "keep_rote_current":
+        if action["id"] == "keep_rote_current" or not action.get("recommended", True):
             continue
         lines.append(f"    {number}. {action['effect']}")
         number += 1
@@ -1211,11 +1414,17 @@ def apply(
     runner: Runner = run,
     run_id: str | None = None,
     expected_plan_id: str | None = None,
+    prepared_plan: dict[str, Any] | None = None,
+    progress: Progress | None = None,
 ) -> dict[str, Any]:
     source = source.resolve()
     run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     started = datetime.now(timezone.utc).isoformat()
-    plan = build_plan(top_k=top_k, requested=requested, runner=runner)
+    active_progress = _progress(progress)
+    plan = prepared_plan or active_progress.call(
+        "Checking the install plan",
+        lambda: build_plan(top_k=top_k, requested=requested, runner=runner),
+    )
     if expected_plan_id is not None and expected_plan_id != plan["plan_id"]:
         raise BootstrapError(
             f"plan changed: expected {expected_plan_id}, got {plan['plan_id']}"
@@ -1241,7 +1450,7 @@ def apply(
                 "-c",
                 'ROTE_YES=1 ROTE_FULL=1 bash -c "$(curl --proto \'=https\' --tlsv1.2 -fsSL https://getrote.dev/install)"',
             ]
-            result = runner(command)
+            result = active_progress.command("Installing Rote", runner, command)
             steps.append(_result_step("install_rote", result, command))
             rote = resolve_rote()
             if result.returncode != 0 or rote is None:
@@ -1249,7 +1458,7 @@ def apply(
     update_status = plan["rote"]["update"]["status"]
     if initially_present and rote is not None and update_status == "available":
         command = [rote, "self-update", "--yes"]
-        result = runner(command)
+        result = active_progress.command("Updating Rote", runner, command)
         steps.append(_result_step("update_rote", result, command))
         if result.returncode != 0:
             return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
@@ -1267,30 +1476,46 @@ def apply(
     if rote is None:
         return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
 
-    skill_command = _rote_skill_command(rote, selected)
-    skill_result = runner(skill_command)
+    skill_harnesses = _rote_skill_harnesses(
+        selected, plan["rote_skills"], update_status
+    )
+    skill_command = _rote_skill_command(rote, skill_harnesses) if skill_harnesses else None
     missing = [item["label"] for item in plan["rote_skills"] if not item["installed"]]
     refreshed = [item["label"] for item in plan["rote_skills"] if item["installed"]]
-    coverage = []
-    if missing:
-        coverage.append("installed " + ", ".join(missing))
-    if refreshed:
-        coverage.append("refreshed " + ", ".join(refreshed))
-    skill_output = (skill_result.stdout or skill_result.stderr).strip()
-    detail = "; ".join(coverage)
-    if skill_output:
-        detail = f"{detail}. {skill_output}" if detail else skill_output
-    steps.append(
-        Step(
-            "converge_rote_skills",
-            "completed" if skill_result.returncode == 0 else "failed",
-            detail or f"exit {skill_result.returncode}",
-            command=skill_command,
-            changed=skill_result.returncode == 0,
+    if skill_command is None:
+        steps.append(
+            Step(
+                "converge_rote_skills",
+                "unchanged",
+                "Selected harnesses already have current Rote skills.",
+            )
         )
-    )
-    if skill_result.returncode != 0:
-        return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
+    else:
+        skill_result = active_progress.command(
+            f"Converging Rote skills for {len(skill_harnesses)} harness{'es' if len(skill_harnesses) != 1 else ''}",
+            runner,
+            skill_command,
+        )
+        coverage = []
+        if missing:
+            coverage.append("installed " + ", ".join(missing))
+        if update_status == "available" and refreshed:
+            coverage.append("refreshed " + ", ".join(refreshed))
+        skill_output = (skill_result.stdout or skill_result.stderr).strip()
+        detail = "; ".join(coverage)
+        if skill_output:
+            detail = f"{detail}. {skill_output}" if detail else skill_output
+        steps.append(
+            Step(
+                "converge_rote_skills",
+                "completed" if skill_result.returncode == 0 else "failed",
+                detail or f"exit {skill_result.returncode}",
+                command=skill_command,
+                changed=skill_result.returncode == 0,
+            )
+        )
+        if skill_result.returncode != 0:
+            return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
 
     expected_version = (source / "VERSION").read_text(encoding="utf-8").strip()
     plan_targets = {
@@ -1310,24 +1535,45 @@ def apply(
                     target=harness,
                 )
             )
-    for harness in selected:
-        if harness not in {"codex", "claude"}:
-            continue
-        target = plan_targets.get(harness, {})
-        executable = target.get("command") if isinstance(target, dict) else None
-        if not isinstance(executable, str) or not executable:
-            continue
-        marketplace_steps = converge_play_marketplace(
-            harness,
-            executable,
-            expected_version=expected_version,
-            runner=runner,
-        )
-        steps.extend(marketplace_steps)
-        if any(step.status == "failed" for step in marketplace_steps):
-            return _finish_report(
-                plan, run_id, started, steps, status="blocked", runner=runner
+    marketplace_harnesses = [
+        harness
+        for harness in selected
+        if harness in {"codex", "claude"}
+        and isinstance(plan_targets.get(harness, {}).get("command"), str)
+        and plan_targets[harness]["command"]
+    ]
+
+    def converge_marketplace(harness: str) -> list[Step]:
+        executable = str(plan_targets[harness]["command"])
+        token = active_progress.begin(f"Integrating {LABELS[harness]}")
+        try:
+            result = converge_play_marketplace(
+                harness,
+                executable,
+                expected_version=expected_version,
+                runner=runner,
             )
+        except Exception:
+            active_progress.finish(token, ok=False)
+            raise
+        active_progress.finish(
+            token, ok=not any(step.status == "failed" for step in result)
+        )
+        return result
+
+    marketplace_results = _parallel_harness_work(
+        marketplace_harnesses, converge_marketplace
+    )
+    for harness in marketplace_harnesses:
+        steps.extend(marketplace_results[harness])
+    if any(
+        step.status == "failed"
+        for harness in marketplace_harnesses
+        for step in marketplace_results[harness]
+    ):
+        return _finish_report(
+            plan, run_id, started, steps, status="blocked", runner=runner
+        )
 
     if "codex" in selected:
         steps.append(codex_play_enablement_step())
@@ -1336,7 +1582,11 @@ def apply(
     install_command = [str(installer), "install", "--copy"]
     for harness in selected:
         install_command.extend(["--harness", harness])
-    install_result = runner(install_command)
+    install_result = active_progress.command(
+        f"Activating Play in {len(selected)} harness{'es' if len(selected) != 1 else ''}",
+        runner,
+        install_command,
+    )
     steps.append(_result_step("install_play", install_result, install_command))
     if install_result.returncode != 0:
         return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
@@ -1347,8 +1597,22 @@ def apply(
     else:
         data = Path(os.environ.get("XDG_DATA_HOME", _home() / ".local" / "share")).expanduser()
         installed_source = (data / "modiqo" / "play" / "skill").resolve()
+    hook_harnesses = [
+        harness
+        for harness in selected
+        if plan_targets.get(harness, {}).get("hooks") == "managed"
+    ]
+
+    def install_harness_hooks(harness: str) -> Step:
+        return active_progress.call(
+            f"Installing {LABELS[harness]} hooks",
+            lambda: install_hooks(harness, installed_source, run_id=run_id),
+        )
+
+    hook_results = _parallel_harness_work(hook_harnesses, install_harness_hooks)
     for harness in selected:
-        steps.append(install_hooks(harness, installed_source, run_id=run_id))
+        if harness in hook_results:
+            steps.append(hook_results[harness])
 
     identity = _probe_identity(rote, runner)
     steps.append(
@@ -1364,6 +1628,20 @@ def apply(
     verification_path = os.pathsep.join(
         part for part in (str(launcher.parent), os.environ.get("PATH", "")) if part
     )
+    def verify_harness(harness: str) -> subprocess.CompletedProcess[str]:
+        command = [
+            "env",
+            f"PATH={verification_path}",
+            str(installed_source / "scripts" / "bin" / "play-preflight"),
+            "--harness",
+            harness,
+            "--json",
+        ]
+        return active_progress.command(
+            f"Verifying {LABELS[harness]}", runner, command
+        )
+
+    verification_results = _parallel_harness_work(selected, verify_harness)
     for harness in selected:
         command = [
             "env",
@@ -1373,8 +1651,11 @@ def apply(
             harness,
             "--json",
         ]
-        result = runner(command)
-        steps.append(_result_step("verify", result, command))
+        steps.append(
+            _result_step(
+                "verify", verification_results[harness], command, target=harness
+            )
+        )
     if any(step.status in {"failed", "approval_required"} for step in steps):
         status = "blocked"
     elif any(step.status in {"human_action_required", "review_required"} for step in steps):
@@ -1402,7 +1683,10 @@ def _finish_report(
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "selected_harnesses": plan["selected_harnesses"],
         "targets": plan["targets"],
-        "rote": {"before": plan["rote"], "after": _rote_snapshot(runner)},
+        "rote": {
+            "before": plan["rote"],
+            "after": _rote_snapshot(runner, check_update=False),
+        },
         "rote_skills": {
             "before": plan["rote_skills"],
             "after": _rote_skills_snapshot(
@@ -1445,9 +1729,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     install_parser.add_argument("--run-id")
     args = parser.parse_args(argv)
+    progress = Progress(enabled=os.environ.get("PLAY_INSTALL_QUIET") != "1")
     try:
         if args.command == "plan":
-            payload = build_plan(top_k=args.top_k, requested=args.harness)
+            payload = progress.call(
+                "Checking the Play setup plan",
+                lambda: build_plan(top_k=args.top_k, requested=args.harness),
+            )
         elif args.command == "apply":
             source = Path(__file__).resolve().parents[3]
             payload = apply(
@@ -1457,10 +1745,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 approve_remote_installer=args.approve_remote_installer,
                 run_id=args.run_id,
                 expected_plan_id=args.plan_id,
+                progress=progress,
             )
         else:
             source = Path(__file__).resolve().parents[3]
-            plan = build_plan(top_k=args.top_k, requested=args.harness)
+            plan = progress.call(
+                "Checking the Play setup plan",
+                lambda: build_plan(top_k=args.top_k, requested=args.harness),
+            )
             print(_render_plan(plan), file=sys.stderr if args.json else sys.stdout)
             if not args.yes and not _confirm(
                 "Continue with this exact Play bootstrap plan?", default=True
@@ -1481,6 +1773,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 approve_remote_installer=approve_remote_installer,
                 run_id=args.run_id,
                 expected_plan_id=plan["plan_id"],
+                prepared_plan=plan,
+                progress=progress,
             )
     except (BootstrapError, OSError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f"play-bootstrap: {error}\n")

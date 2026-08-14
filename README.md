@@ -33,10 +33,16 @@ curl -fsSL https://getrote.dev/playoffs/install.sh | sh
 ```
 
 That is the whole setup. Play finds your agent apps, checks Rote and its skills, and shows what it
-will install, update, or refresh. For Codex and Claude Code, it also refreshes the Play marketplace,
-removes any stale cached plugin, and reinstalls the current plugin before you launch the app.
+will install, update, or refresh. For Codex and Claude Code, it keeps an already-current Play plugin
+and refreshes the marketplace plus reinstalls only when the installed plugin is missing or stale.
 Nothing changes until you approve the plan, and installing Rote from `getrote.dev` has its own
 confirmation.
+
+The installer selects at most three apps per run. During execution, `◐` marks active work, repeating
+heartbeats show elapsed time for long phases, `✓` marks completion, and `✗` marks failure. Independent
+app integration and verification run in parallel. A warm install with current Rote skills and Play
+plugins has a tested budget below five seconds; first-time downloads and available updates remain
+bounded by network and provider CLI latency.
 
 When it finishes, Play verifies the setup and tells you where it saved the report. Restart your
 agent app, then continue to step 3. The installer requires Python 3.10+ and
@@ -323,7 +329,8 @@ After approval, it performs that plan, verifies each selected app, and saves a J
 report under `~/.local/state/play-bootstrap/runs/`. The final status card gives each app's launch
 command, exact Play invocation, any remaining action, and a few starter prompts. Full structured
 command output stays in the saved JSON report; the terminal shows bounded human summaries unless
-you explicitly pass `--json`.
+you explicitly pass `--json`. Glyph progress is line-oriented so it remains readable through a
+piped shell: `◐` is active, `✓` completed, and `✗` failed. Long phases emit elapsed-time heartbeats.
 
 Invocation differs by app:
 
@@ -346,8 +353,9 @@ curl -fsSL https://getrote.dev/playoffs/install.sh \
   | sh -s -- --harness codex --harness claude
 ```
 
-Repeat `--harness` with any of `codex`, `claude`, `kimi`, `cursor`, `hermes`, `opencode`, or
-`deepseek`. DeepSeek Harness is still a developer preview upstream.
+Repeat `--harness` up to three times with any of `codex`, `claude`, `kimi`, `cursor`, `hermes`,
+`opencode`, or `deepseek`. A larger selection fails before changes. DeepSeek Harness is still a
+developer preview upstream.
 
 ### Run unattended
 
@@ -360,7 +368,7 @@ curl -fsSL https://getrote.dev/playoffs/install.sh \
 ```
 
 Omit `PLAY_APPROVE_REMOTE_INSTALLER=1` when Rote is known to be installed. Set
-`PLAY_INSTALL_TOP_K=<n>` to change the default number of selected apps.
+`PLAY_INSTALL_TOP_K=<n>` from 1 through 3 to change the default number of selected apps.
 
 ### Full Play + Rote bootstrap
 
@@ -384,11 +392,12 @@ scripts/bin/play-bootstrap apply --top-k 3 --plan-id sha256:<plan-id>
 ```
 
 Add `--approve-remote-installer` only after approving the official Rote download. The bootstrap is
-safe to retry: it updates Rote only when an update is available, refreshes existing Rote skills,
-refreshes and reinstalls the Play marketplace plugin for selected Codex and Claude targets,
-preserves unrelated hooks, and backs up every hook file it changes. An explicitly disabled Codex
-Play skill remains a user choice: the report asks you to enable it in `/skills` before restarting.
-Reports never contain credentials.
+safe to retry: it updates Rote only when an update is available, installs missing Rote skill
+providers, and skips already-current Play marketplace plugins. Outdated Codex and Claude plugins
+are refreshed and reinstalled in parallel; managed hooks and per-app preflight verification are
+also parallelized. It preserves unrelated hooks and backs up every hook file it changes. An
+explicitly disabled Codex Play skill remains a user choice: the report asks you to enable it in
+`/skills` before restarting. Reports never contain credentials.
 
 ### Pin or inspect the installer
 
@@ -987,7 +996,8 @@ just benchmark-runtime
 ```
 
 The tests exercise the declarative Play machine and the complete activation lifecycle in temporary
-harness roots, including installation, verification, idempotency, rollback, and conflict handling.
+harness roots, including installation, verification, idempotency, rollback, conflict handling,
+parallel three-harness convergence, progress rendering, and the sub-five-second warm-install budget.
 
 The foundation is Python-only. Commands under `scripts/bin/` and harness entrypoints under
 `scripts/harness/` are thin executables; reusable command, private-store, birth-certificate,

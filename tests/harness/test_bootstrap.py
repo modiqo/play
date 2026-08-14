@@ -3,14 +3,18 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
+import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from scripts.lib.play.bootstrap import (
     Step,
+    Progress,
+    _parallel_harness_work,
     _fallback_skill_config_entries,
     _render_status_card,
     _rote_skill_command,
@@ -73,7 +77,7 @@ class BootstrapTest(unittest.TestCase):
 
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
     @patch("scripts.lib.play.bootstrap.shutil.which")
-    def test_plan_selects_top_k_and_requires_complete_skill_convergence(
+    def test_plan_selects_top_k_and_skips_current_skill_providers(
         self, which: MagicMock, _resolve_rote: MagicMock
     ) -> None:
         which.side_effect = lambda name: f"/bin/{name}" if name in {"codex", "claude", "kimi"} else None
@@ -93,22 +97,8 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertEqual(["codex", "claude"], plan["selected_harnesses"])
         convergence = next(action for action in plan["actions"] if action["id"] == "converge_rote_skills")
-        self.assertEqual(
-            [
-                "rote",
-                "install",
-                "skill",
-                "--target",
-                "codex",
-                "--target",
-                "claude-code",
-                "--personal",
-                "--package",
-                "*",
-                "--force",
-            ],
-            convergence["command"],
-        )
+        self.assertIsNone(convergence["command"])
+        self.assertEqual([], convergence["targets"])
         self.assertEqual("keep_rote_current", plan["actions"][0]["id"])
         marketplace = next(
             action
@@ -126,8 +116,8 @@ class BootstrapTest(unittest.TestCase):
         )
         self.assertEqual("current", plan["rote"]["update"]["status"])
         skill_status = {item["provider"]: item for item in plan["rote_skills"]}
-        self.assertEqual("refresh", skill_status["codex"]["recommended_action"])
-        self.assertEqual("refresh", skill_status["claude-code"]["recommended_action"])
+        self.assertEqual("keep", skill_status["codex"]["recommended_action"])
+        self.assertEqual("keep", skill_status["claude-code"]["recommended_action"])
 
     def test_codex_hooks_replace_only_managed_play_entries_and_create_backup(self) -> None:
         path = self.home / ".codex" / "hooks.json"
@@ -193,7 +183,6 @@ class BootstrapTest(unittest.TestCase):
                 stdout=json.dumps({"marketplaces": [{"name": "play-skills"}]}),
                 stderr="",
             ),
-            MagicMock(returncode=0, stdout="updated\n", stderr=""),
             MagicMock(
                 returncode=0,
                 stdout=json.dumps(
@@ -209,6 +198,7 @@ class BootstrapTest(unittest.TestCase):
                 ),
                 stderr="",
             ),
+            MagicMock(returncode=0, stdout="updated\n", stderr=""),
             MagicMock(returncode=0, stdout="removed\n", stderr=""),
             MagicMock(returncode=0, stdout="installed\n", stderr=""),
             MagicMock(
@@ -241,7 +231,7 @@ class BootstrapTest(unittest.TestCase):
                 "upgrade",
                 "play-skills",
             ],
-            commands[1],
+            commands[2],
         )
         self.assertEqual(
             ["/bin/codex", "plugin", "remove", "play@play-skills"], commands[3]
@@ -260,7 +250,6 @@ class BootstrapTest(unittest.TestCase):
                 stdout=json.dumps([{"name": "play-skills"}]),
                 stderr="",
             ),
-            MagicMock(returncode=0, stdout="updated\n", stderr=""),
             MagicMock(
                 returncode=0,
                 stdout=json.dumps(
@@ -275,6 +264,7 @@ class BootstrapTest(unittest.TestCase):
                 ),
                 stderr="",
             ),
+            MagicMock(returncode=0, stdout="updated\n", stderr=""),
             MagicMock(returncode=0, stdout="removed\n", stderr=""),
             MagicMock(returncode=0, stdout="installed\n", stderr=""),
             MagicMock(
@@ -306,7 +296,7 @@ class BootstrapTest(unittest.TestCase):
                 "update",
                 "play-skills",
             ],
-            commands[1],
+            commands[2],
         )
         self.assertEqual(
             [
@@ -331,6 +321,84 @@ class BootstrapTest(unittest.TestCase):
             commands[4],
         )
         self.assertEqual("completed", steps[-1].status)
+
+    def test_current_plugin_uses_two_read_only_probes_without_reinstall(self) -> None:
+        runner = MagicMock()
+        runner.side_effect = [
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps({"marketplaces": [{"name": "play-skills"}]}),
+                stderr="",
+            ),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "installed": [
+                            {
+                                "pluginId": "play@play-skills",
+                                "version": "0.4.6",
+                                "enabled": True,
+                            }
+                        ]
+                    }
+                ),
+                stderr="",
+            ),
+        ]
+
+        steps = converge_play_marketplace(
+            "codex", "/bin/codex", expected_version="0.4.6", runner=runner
+        )
+
+        self.assertEqual(2, runner.call_count)
+        self.assertEqual("unchanged", steps[-1].status)
+        self.assertIn("already installed", steps[-1].detail)
+
+    def test_progress_emits_glyph_updates_with_elapsed_time(self) -> None:
+        stream = StringIO()
+        progress = Progress(stream, heartbeat_seconds=0.01)
+
+        def work() -> str:
+            time.sleep(0.025)
+            return "done"
+
+        self.assertEqual("done", progress.call("Checking things", work))
+
+        rendered = stream.getvalue()
+        self.assertIn("◐ Checking things", rendered)
+        self.assertIn("◐ Checking things ·", rendered)
+        self.assertRegex(rendered, r"✓ Checking things \(\d+\.\ds\)")
+
+    def test_parallel_harness_work_starts_jobs_concurrently(self) -> None:
+        barrier = threading.Barrier(3)
+
+        def work(harness: str) -> str:
+            barrier.wait(timeout=1)
+            time.sleep(0.02)
+            return harness
+
+        started = time.perf_counter()
+        results = _parallel_harness_work(["codex", "claude", "kimi"], work)
+
+        self.assertLess(time.perf_counter() - started, 0.5)
+        self.assertEqual(
+            {"codex": "codex", "claude": "claude", "kimi": "kimi"}, results
+        )
+
+    @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
+    @patch("scripts.lib.play.bootstrap.shutil.which")
+    def test_plan_rejects_more_than_three_harnesses(
+        self, which: MagicMock, _resolve_rote: MagicMock
+    ) -> None:
+        which.return_value = "/bin/harness"
+        with self.assertRaisesRegex(Exception, "at most 3 harnesses"):
+            build_plan(
+                requested=["codex", "claude", "kimi", "hermes"],
+                runner=MagicMock(),
+            )
+        with self.assertRaisesRegex(Exception, "top-k cannot exceed 3"):
+            build_plan(top_k=4, runner=MagicMock())
 
     def test_codex_disabled_play_skill_override_is_detected(self) -> None:
         config = self.home / ".codex" / "config.toml"
@@ -579,6 +647,8 @@ class BootstrapTest(unittest.TestCase):
             approve_remote_installer=True,
             run_id="guided-run",
             expected_plan_id="sha256:guided",
+            prepared_plan=build.return_value,
+            progress=ANY,
         )
 
 

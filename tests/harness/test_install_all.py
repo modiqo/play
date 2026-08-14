@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -253,6 +254,7 @@ class InstallAllTest(unittest.TestCase):
             "PLAY_INSTALL_SOURCE": str(ROOT),
             "PLAY_INSTALL_YES": "1",
         }
+        started = time.perf_counter()
         result = subprocess.run(
             ["/bin/sh", str(ROOT / "install.sh")],
             cwd=ROOT,
@@ -261,8 +263,13 @@ class InstallAllTest(unittest.TestCase):
             capture_output=True,
             check=False,
         )
+        elapsed = time.perf_counter() - started
 
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertLess(elapsed, 5.0, f"warm three-harness install took {elapsed:.3f}s")
+        self.assertIn("✓ Using local Play source", result.stdout)
+        self.assertIn("◐ Checking the Play setup plan", result.stderr)
+        self.assertIn("✓ Verifying Codex", result.stderr)
         self.assertIn("| Play setup plan", result.stdout)
         self.assertIn("Version: 0.4.6", result.stdout)
         self.assertIn("| Play setup", result.stdout)
