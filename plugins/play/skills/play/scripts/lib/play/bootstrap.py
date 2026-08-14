@@ -127,33 +127,74 @@ class ProgressToken:
 
 
 class Progress:
-    """Line-oriented, thread-safe install progress suitable for piped shells."""
+    """Thread-safe install progress with in-place terminal redraws."""
 
     def __init__(
-        self, stream=None, *, enabled: bool = True, heartbeat_seconds: float = 1.0
+        self,
+        stream=None,
+        *,
+        enabled: bool = True,
+        heartbeat_seconds: float = 1.0,
+        interactive: bool | None = None,
     ) -> None:
         self.stream = stream if stream is not None else sys.stderr
         self.enabled = enabled
         self.heartbeat_seconds = max(0.0, heartbeat_seconds)
+        if interactive is None:
+            try:
+                interactive = bool(self.stream.isatty())
+            except (AttributeError, OSError):
+                interactive = False
+        self.interactive = interactive
         self._lock = threading.Lock()
+        self._active: dict[int, ProgressToken] = {}
+        self._line_visible = False
 
-    def _write(self, glyph: str, text: str) -> None:
-        if not self.enabled:
+    def _clear_active_locked(self) -> None:
+        if not self._line_visible:
+            return
+        self.stream.write("\r\033[2K")
+        self.stream.flush()
+        self._line_visible = False
+
+    def _render_active_locked(self) -> None:
+        if not self.interactive or not self._active:
+            return
+        now = time.monotonic()
+        tokens = list(self._active.values())
+        if len(tokens) == 1:
+            token = tokens[0]
+            text = f"{token.label} · {now - token.started:.0f}s"
+        else:
+            labels = "; ".join(token.label for token in tokens)
+            elapsed = max(now - token.started for token in tokens)
+            text = f"{labels} · {elapsed:.0f}s"
+        self.stream.write(f"\r\033[2K◐ {text}")
+        self.stream.flush()
+        self._line_visible = True
+
+    def _refresh(self) -> None:
+        if not self.enabled or not self.interactive:
             return
         with self._lock:
-            print(f"{glyph} {text}", file=self.stream, flush=True)
+            self._render_active_locked()
 
     def begin(self, label: str) -> ProgressToken:
-        self._write("◐", label)
         token = ProgressToken(label, time.monotonic())
-        if self.enabled and self.heartbeat_seconds:
+        if self.enabled:
+            with self._lock:
+                if self.interactive:
+                    self._active[id(token)] = token
+                    self._render_active_locked()
+                else:
+                    print(f"◐ {label}", file=self.stream, flush=True)
+        if self.enabled and self.interactive and self.heartbeat_seconds:
             token.stop = threading.Event()
 
             def heartbeat() -> None:
                 assert token.stop is not None
                 while not token.stop.wait(self.heartbeat_seconds):
-                    elapsed = time.monotonic() - token.started
-                    self._write("◐", f"{token.label} · {elapsed:.0f}s")
+                    self._refresh()
 
             token.heartbeat = threading.Thread(target=heartbeat, daemon=True)
             token.heartbeat.start()
@@ -165,7 +206,17 @@ class Progress:
         if token.heartbeat is not None:
             token.heartbeat.join(timeout=max(0.1, self.heartbeat_seconds * 2))
         elapsed = time.monotonic() - token.started
-        self._write("✓" if ok else "✗", f"{token.label} ({elapsed:.1f}s)")
+        if not self.enabled:
+            return
+        glyph = "✓" if ok else "✗"
+        with self._lock:
+            if self.interactive:
+                self._active.pop(id(token), None)
+                self._clear_active_locked()
+                print(f"{glyph} {token.label} ({elapsed:.1f}s)", file=self.stream, flush=True)
+                self._render_active_locked()
+            else:
+                print(f"{glyph} {token.label} ({elapsed:.1f}s)", file=self.stream, flush=True)
 
     def call(self, label: str, operation: Callable[[], Any]) -> Any:
         token = self.begin(label)

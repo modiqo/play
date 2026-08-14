@@ -329,8 +329,9 @@ After approval, it performs that plan, verifies each selected app, and saves a J
 report under `~/.local/state/play-bootstrap/runs/`. The final status card gives each app's launch
 command, exact Play invocation, any remaining action, and a few starter prompts. Full structured
 command output stays in the saved JSON report; the terminal shows bounded human summaries unless
-you explicitly pass `--json`. Glyph progress is line-oriented so it remains readable through a
-piped shell: `◐` is active, `✓` completed, and `✗` failed. Long phases emit elapsed-time heartbeats.
+you explicitly pass `--json`. In a terminal, glyph progress redraws one active status line in
+place: `◐` is active, `✓` completed, and `✗` failed. Redirected output gets one start and one finish
+record per phase instead of repeating elapsed-time heartbeats.
 
 Invocation differs by app:
 

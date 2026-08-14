@@ -355,9 +355,9 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("unchanged", steps[-1].status)
         self.assertIn("already installed", steps[-1].detail)
 
-    def test_progress_emits_glyph_updates_with_elapsed_time(self) -> None:
+    def test_progress_redraws_one_terminal_line_with_elapsed_time(self) -> None:
         stream = StringIO()
-        progress = Progress(stream, heartbeat_seconds=0.01)
+        progress = Progress(stream, heartbeat_seconds=0.01, interactive=True)
 
         def work() -> str:
             time.sleep(0.025)
@@ -366,9 +366,37 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("done", progress.call("Checking things", work))
 
         rendered = stream.getvalue()
-        self.assertIn("◐ Checking things", rendered)
-        self.assertIn("◐ Checking things ·", rendered)
+        self.assertIn("\r\033[2K◐ Checking things ·", rendered)
         self.assertRegex(rendered, r"✓ Checking things \(\d+\.\ds\)")
+        self.assertEqual(1, rendered.count("\n"))
+
+    def test_progress_omits_repeating_heartbeats_when_redirected(self) -> None:
+        stream = StringIO()
+        progress = Progress(stream, heartbeat_seconds=0.01, interactive=False)
+
+        progress.call("Checking things", lambda: time.sleep(0.025))
+
+        rendered = stream.getvalue()
+        self.assertEqual(1, rendered.count("◐ Checking things"))
+        self.assertNotIn("Checking things ·", rendered)
+        self.assertEqual(2, rendered.count("\n"))
+
+    def test_parallel_progress_shares_one_transient_terminal_line(self) -> None:
+        stream = StringIO()
+        progress = Progress(stream, heartbeat_seconds=0, interactive=True)
+
+        codex = progress.begin("Integrating Codex")
+        claude = progress.begin("Integrating Claude Code")
+        progress.finish(codex)
+        progress.finish(claude)
+
+        rendered = stream.getvalue()
+        self.assertIn(
+            "◐ Integrating Codex; Integrating Claude Code · 0s", rendered
+        )
+        self.assertEqual(2, rendered.count("\n"))
+        self.assertEqual(1, rendered.count("✓ Integrating Codex"))
+        self.assertEqual(1, rendered.count("✓ Integrating Claude Code"))
 
     def test_parallel_harness_work_starts_jobs_concurrently(self) -> None:
         barrier = threading.Barrier(3)
