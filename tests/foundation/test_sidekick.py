@@ -9,13 +9,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.sidekick import record_standby
+from play.sidekick import capture_for_settle, record_standby
 
 
 class StandbyBatonPassTest(unittest.TestCase):
     def setUp(self) -> None:
         self._temporary = tempfile.TemporaryDirectory()
         base = Path(self._temporary.name)
+        self.base = base
         self._environment = {
             "PLAY_SIDEKICK_STANDBY_PATH": str(base / "standby.json"),
             "PLAY_SIDEKICK_LEDGER_PATH": str(base / "preferences.json"),
@@ -31,7 +32,12 @@ class StandbyBatonPassTest(unittest.TestCase):
                 os.environ[key] = value
         self._temporary.cleanup()
 
-    def test_armed_standby_presents_the_baton_pass(self) -> None:
+    def test_capture_starts_rote_trajectory_before_the_baton_pass(self) -> None:
+        def initialize(name: str) -> Path:
+            path = self.base / name
+            path.mkdir()
+            return path
+
         result = record_standby(
             {
                 "request": {
@@ -41,15 +47,24 @@ class StandbyBatonPassTest(unittest.TestCase):
                     "excluded": False,
                 },
                 "match": {"classification": "none"},
+                "capture": {
+                    "decision": "capture",
+                    "reason": "repeatable report",
+                    "task_class": "data-fetch-report",
+                },
                 "preferences": {},
-            }
+            },
+            workspace_initializer=initialize,
         )
         self.assertTrue(result["standby"]["armed"])
+        self.assertEqual("capture", result["capture"]["decision"])
+        self.assertTrue(result["capture"]["reference"].startswith("cap_"))
+        self.assertTrue(result["capture"]["workspace"].startswith("play-capture-"))
         presentation = result["presentation_markdown"]
         assert presentation is not None
-        self.assertIn("continuing with the task normally", presentation)
-        self.assertIn("rote skill", presentation)
-        self.assertIn("$play settle", presentation)
+        self.assertIn("started before execution", presentation)
+        self.assertIn("through Rote workspace", presentation)
+        self.assertIn(result["capture"]["reference"], presentation)
 
     def test_excluded_exit_stays_silent(self) -> None:
         result = record_standby(
@@ -61,11 +76,52 @@ class StandbyBatonPassTest(unittest.TestCase):
                     "excluded": True,
                 },
                 "match": {},
+                "capture": {
+                    "decision": "normal",
+                    "reason": "not reusable",
+                    "task_class": "unclassified",
+                },
                 "preferences": {},
             }
         )
         self.assertFalse(result["standby"]["armed"])
+        self.assertEqual("normal", result["capture"]["decision"])
         self.assertIsNone(result["presentation_markdown"])
+
+    def test_capture_can_be_settled_only_once_after_trajectory_verification(self) -> None:
+        def initialize(name: str) -> Path:
+            path = self.base / name
+            path.mkdir()
+            return path
+
+        result = record_standby(
+            {
+                "request": {
+                    "original": "deploy and verify",
+                    "intent": "deploy and verify",
+                    "requested_outcome": "deploy and verify",
+                    "excluded": False,
+                },
+                "match": {"classification": "none"},
+                "capture": {
+                    "decision": "capture",
+                    "reason": "repeatable",
+                    "task_class": "build-ship-chore",
+                },
+                "preferences": {},
+            },
+            workspace_initializer=initialize,
+        )
+        reference = result["capture"]["reference"]
+
+        capture = capture_for_settle(
+            reference, trajectory_validator=lambda _path: "sha256:trajectory"
+        )
+        self.assertEqual("verified", capture["status"])
+        with self.assertRaisesRegex(ValueError, "already settled"):
+            capture_for_settle(
+                reference, trajectory_validator=lambda _path: "sha256:trajectory"
+            )
 
 
 if __name__ == "__main__":

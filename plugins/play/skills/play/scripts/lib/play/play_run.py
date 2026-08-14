@@ -9,9 +9,14 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+from .private_store import ensure_private_directory
+from .state_home import state_path
 
 
 class PlayRunError(ValueError):
@@ -24,6 +29,18 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
     request = _mapping(payload.get("request"), "request")
     auth_repair = _mapping(payload.get("auth_repair"), "auth_repair")
     packet = _mapping(auth_repair.get("original_packet"), "auth_repair.original_packet")
+    output_policy = _mapping(payload.get("output_policy"), "output_policy")
+    if output_policy.get("mode") != "detailed":
+        raise PlayRunError("output_policy.mode must be detailed")
+    if output_policy.get("overflow") != "artifact":
+        raise PlayRunError("output_policy.overflow must be artifact")
+    max_inline_bytes = output_policy.get("max_inline_bytes")
+    if (
+        not isinstance(max_inline_bytes, int)
+        or isinstance(max_inline_bytes, bool)
+        or max_inline_bytes < 1
+    ):
+        raise PlayRunError("output_policy.max_inline_bytes must be a positive integer")
 
     reference = _string(match.get("reference"), "match.reference")
     exact_reference = _string(
@@ -62,32 +79,57 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
     environment = os.environ.copy()
     environment.setdefault("ROTE_FLOW_PROGRESS", "0")
     environment.setdefault("ROTE_NO_HINTS", "1")
-    try:
-        completed = subprocess.run(
-            arguments,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=3600,
-            env=environment,
+    with tempfile.TemporaryDirectory(prefix="play-run-") as directory:
+        stdout_path = Path(directory) / "stdout"
+        stderr_path = Path(directory) / "stderr"
+        try:
+            with stdout_path.open("wb") as stdout_handle, stderr_path.open("wb") as stderr_handle:
+                completed = subprocess.run(
+                    arguments,
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
+                    check=False,
+                    timeout=3600,
+                    env=environment,
+                )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            return _failed(str(error))
+
+        stdout_value = _completed_bytes(completed.stdout, stdout_path)
+        stderr_value = _completed_bytes(completed.stderr, stderr_path)
+        if completed.returncode != 0:
+            failure_output = _combined_output(
+                _bounded_text(stdout_value, stdout_path, 10_000),
+                _bounded_text(stderr_value, stderr_path, 10_000),
+            )
+            auth_failure = _typed_auth_failure(failure_output)
+            if auth_failure is not None:
+                return auth_failure
+            return _failed(failure_output or f"rote play run exited {completed.returncode}")
+
+        primary_value, primary_path = (
+            (stdout_value, stdout_path)
+            if _stream_size(stdout_value, stdout_path) > 0
+            else (stderr_value, stderr_path)
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return _failed(str(error))
+        primary_bytes = _stream_size(primary_value, primary_path)
+        if primary_bytes == 0:
+            return _failed("rote play run returned no output")
+        digest = _stream_sha256(primary_value, primary_path)
+        truncated = primary_bytes > max_inline_bytes
+        full_output_ref = None
+        artifact_refs: list[str] = []
+        if truncated:
+            artifact_path = _persist_full_output(primary_value, primary_path, digest)
+            full_output_ref = f"file:{artifact_path}"
+            artifact_refs.append(full_output_ref)
+            primary = _bounded_text(primary_value, primary_path, max_inline_bytes)
+        else:
+            primary = _bounded_text(primary_value, primary_path, max_inline_bytes)
 
-    if completed.returncode != 0:
-        failure_output = _combined_output(completed.stdout, completed.stderr)
-        auth_failure = _typed_auth_failure(failure_output)
-        if auth_failure is not None:
-            return auth_failure
-        return _failed(failure_output or f"rote play run exited {completed.returncode}")
-    primary = completed.stdout if completed.stdout else completed.stderr
-    if not primary:
-        return _failed("rote play run returned no output")
-
-    digest = hashlib.sha256(primary.encode()).hexdigest()
     version = exact_reference.rsplit("@", 1)[-1]
     local_change = inspection.get("local_change")
-    manifest = {"response_refs": [], "artifact_refs": [], "effects": []}
+    manifest = {"response_refs": [], "artifact_refs": artifact_refs, "effects": []}
     return {
         "schema": "play.run-result/v1",
         "ok": True,
@@ -100,7 +142,7 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
         },
         "result_ref": f"sha256:{digest}",
         "response_refs": [],
-        "artifact_refs": [],
+        "artifact_refs": artifact_refs,
         "effects": [],
         "output": {
             "mode": "detailed",
@@ -109,10 +151,65 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
             "format": "text",
             "primary": primary,
             "manifest": manifest,
-            "truncated": False,
-            "full_output_ref": None,
+            "truncated": truncated,
+            "full_output_ref": full_output_ref,
         },
     }
+
+
+def _completed_bytes(value: object, path: Path) -> bytes | None:
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    if isinstance(value, bytes):
+        return value
+    return None
+
+
+def _stream_size(value: bytes | None, path: Path) -> int:
+    return len(value) if value is not None else path.stat().st_size
+
+
+def _bounded_text(value: bytes | None, path: Path, limit: int) -> str:
+    if value is None:
+        with path.open("rb") as handle:
+            value = handle.read(limit)
+    else:
+        value = value[:limit]
+    return value.decode("utf-8", errors="ignore")
+
+
+def _stream_sha256(value: bytes | None, path: Path) -> str:
+    digest = hashlib.sha256()
+    if value is not None:
+        digest.update(value)
+    else:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _persist_full_output(value: bytes | None, path: Path, digest: str) -> Path:
+    root = state_path("run-output")
+    ensure_private_directory(root)
+    target = root / f"{digest}.txt"
+    temporary = root / f".{digest}.{os.getpid()}.tmp"
+    try:
+        with temporary.open("wb") as handle:
+            if value is not None:
+                handle.write(value)
+            else:
+                with path.open("rb") as source:
+                    shutil.copyfileobj(source, handle, length=1024 * 1024)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.chmod(0o600)
+        os.replace(temporary, target)
+        target.chmod(0o600)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return target
 
 
 _DRIFT_MARKERS = ("drift", "hash mismatch", "fingerprint mismatch", "disclosure mismatch")

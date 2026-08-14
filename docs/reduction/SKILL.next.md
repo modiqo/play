@@ -42,10 +42,10 @@ as complete results.
 
 ## Stay out of the way
 
-If qualification returns `conversation` or `play_excluded`, Play exits silently — no mention of
-Play, no search narration. Interrupt the user's task only for an adequate full match or a projected
-approval. When no adequate Play exists, exit to standby; after the task completes, re-enter with
-the `task_settled` event so the runtime can judge whether the work is worth saving. Saving,
+If qualification returns `conversation` or `play_excluded`, Play exits silently. When no adequate
+Play exists, classify the fallback before work as `capture` or `normal`. Capture creates and binds a
+Rote workspace; normal creates no trajectory. Re-enter only with the explicit capture handle after
+that Rote trajectory verifies. A post-hoc `task_settled` event is invalid. Saving,
 publication, and sharing run through the projected specialist handoffs — never through manual
 registry, adapter, or filesystem work.
 

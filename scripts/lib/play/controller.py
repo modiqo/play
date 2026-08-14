@@ -398,6 +398,11 @@ class ControllerRuntime:
                 "input_required": list(action.get("input_required", ())),
                 **({"command": action["command"]} if action.get("command") else {}),
                 **(
+                    {"timeout_seconds": action["timeout_seconds"]}
+                    if action.get("timeout_seconds") is not None
+                    else {}
+                ),
+                **(
                     {"command_policy": list(action["command_policy"])}
                     if action.get("command_policy")
                     else {}
@@ -803,7 +808,45 @@ def _resolve_guard_values(event: ControllerEvent) -> dict[GuardId, bool]:
         and isinstance(_path_value(event.payload, "play.version"), str)
         and isinstance(_path_value(event.payload, "index_ref"), str)
     )
+    private_org = _path_value(event.payload, "publication.private_org")
+    private_owner = event.payload.get("owner")
+    private_members = event.payload.get("members")
+    private_evidence = event.payload.get("evidence_refs")
+    private_receipt = event.payload.get("organization_receipt")
+    values[GuardId("private_org_policy_satisfied")] = (
+        event.id == EventId("private_org_ready")
+        and isinstance(private_org, str)
+        and bool(private_org)
+        and isinstance(private_owner, str)
+        and bool(private_owner)
+        and isinstance(private_members, list)
+        and _private_owner_is_member(private_owner, private_members)
+        and isinstance(private_evidence, list)
+        and any(isinstance(ref, str) and bool(ref) for ref in private_evidence)
+        and isinstance(private_receipt, Mapping)
+        and private_receipt.get("schema") == "play.rote-org-receipt/v1"
+        and private_receipt.get("specialist") == "rote-org"
+        and private_receipt.get("operation") == "ensure_private_org"
+        and private_receipt.get("ok") is True
+        and private_receipt.get("private_org") == private_org
+        and private_receipt.get("owner") == private_owner
+        and private_receipt.get("members") == private_members
+        and private_receipt.get("evidence_refs") == private_evidence
+    )
     return values
+
+
+def _private_owner_is_member(owner: str, members: list[Any]) -> bool:
+    for member in members:
+        if member == owner:
+            return True
+        if not isinstance(member, Mapping):
+            continue
+        identity = member.get("email") or member.get("handle") or member.get("owner")
+        role = member.get("role")
+        if identity == owner and role in {"owner", "admin"}:
+            return True
+    return False
 
 
 def _derive_session_guards(
@@ -852,8 +895,14 @@ def _derive_session_guards(
     budget = _path_value(context, "execution.budget")
     if isinstance(attempts, int) and isinstance(budget, int):
         values[GuardId("exploration_budget_remaining")] = attempts < budget
-    values[GuardId("outcome_is_verified")] = (
-        _path_value(context, "last_event.id") == "outcome_verified"
+    values[GuardId("captured_trajectory_is_verified")] = (
+        _path_value(context, "capture.status") == "verified"
+        and isinstance(_path_value(context, "capture.reference"), str)
+        and bool(_path_value(context, "capture.reference"))
+        and _path_value(context, "capture.workspace")
+        == _path_value(context, "execution.workspace")
+        and _path_value(context, "capture.trajectory_ref")
+        == _path_value(context, "evidence.verification")
     )
     values[GuardId("save_choice_private")] = (
         _path_value(context, "consent.save") == "private"
@@ -886,6 +935,29 @@ def _validate_event_payload(payload: Mapping[str, Any], required: tuple[str, ...
         raise ControllerRuntimeError(
             "event payload is missing required fields: " + ", ".join(missing)
         )
+    undeclared = sorted(
+        path
+        for path in _payload_leaf_paths(payload)
+        if not any(path == allowed or path.startswith(allowed + ".") for allowed in required)
+    )
+    if undeclared:
+        raise ControllerRuntimeError(
+            "event payload contains undeclared fields: " + ", ".join(undeclared)
+        )
+
+
+def _payload_leaf_paths(value: Any, prefix: str = "") -> list[str]:
+    """Return concrete payload paths while treating declared object roots as open values."""
+
+    if isinstance(value, Mapping):
+        if not value:
+            return [prefix] if prefix else []
+        paths: list[str] = []
+        for key, child in value.items():
+            child_path = f"{prefix}.{key}" if prefix else str(key)
+            paths.extend(_payload_leaf_paths(child, child_path))
+        return paths
+    return [prefix] if prefix else []
 
 
 def _has_path(payload: Mapping[str, Any], path: str) -> bool:

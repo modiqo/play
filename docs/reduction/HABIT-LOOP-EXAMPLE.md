@@ -10,8 +10,8 @@ with the machine path and the ledger effect.
 > **Maya:** make the onboarding modal feel less clunky — try a spring animation
 
 - `invoke → qualify`: task class `creative/exploratory`. Ledger: empty.
-- `search → classify`: no match → `standby_exit`, save hook armed.
-- Task settles → `save_judge`: one-off aesthetic tweak, no stable output → no offer.
+- `search → classify`: no match → `standby_exit`, classified `normal`; no trajectory exists.
+- Because it was normal, the task cannot be settled afterward.
 
 Maya never sees play. Interventions so far: **0**. This is a feature.
 
@@ -19,9 +19,10 @@ Maya never sees play. Interventions so far: **0**. This is a feature.
 
 > **Maya:** deploy this to staging, hit the health endpoint, then drop a summary in #ship
 
-- `qualify`: class `build-ship-chore`. `search`: no match → silent standby.
-- The agent does the work normally through rote (vercel + slack adapters).
-- Task settles → `save_judge`: parameterizable (branch, channel), repeatable
+- `qualify`: class `build-ship-chore`, decision `capture`. `search`: no match → standby creates
+  `cap_ship...` and a dedicated Rote workspace before any deployment command.
+- The agent does the work through that bound workspace (vercel + slack adapters).
+- `$play settle cap_ship... ...` verifies the trajectory, then `save_judge`: parameterizable (branch, channel), repeatable
   steps, stable output, plausibly recurring → **worth saving**.
 
 > **play:** That looked repeatable — deploy → health check → #ship summary.
@@ -87,7 +88,7 @@ private habit exists.
 
 | Element | Run side | Save side |
 |---|---|---|
-| Cue | outcome-shaped request in an `intervene`-classed task | `save_judge` fires after settled repeatable work |
+| Cue | outcome-shaped request in an `intervene`-classed task | `save_judge` accepts only a verified pre-work capture |
 | Routine | inspect → run → verify (3 yields) | one save question, one tap |
 | Reward | minutes → seconds, immediately | **deferred to Day 3's receipt** — which must attribute the save ("the play you saved Monday, 2nd use") |
 
@@ -105,7 +106,6 @@ interventions in a muted-worthy class cost the entire product.
 2. A partial match never opens a dialog — one line, at most, ever.
 3. An explicit scope statement writes the ledger immediately and is honored
    on the very next request.
-4. Save offers cost exactly one question; capture and registry mechanics are
-   delegated and silent.
+4. Capture is decided before execution; normal work has no post-hoc save path.
 5. The re-run receipt names the save moment and the use count.
 6. A saved play's class becomes an `intervene` prior without user configuration.

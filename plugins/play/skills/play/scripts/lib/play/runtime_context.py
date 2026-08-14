@@ -319,6 +319,15 @@ def initial_context(
             "hook_ref": None,
             "settle_summary": None,
         },
+        "capture": {
+            "decision": "unclassified",
+            "reason": None,
+            "task_class": None,
+            "reference": None,
+            "workspace": None,
+            "status": "unclassified",
+            "trajectory_ref": None,
+        },
         "save_judge": {"assessment": None, "parameters": [], "step_count": None},
         "preferences": {
             "policies": [],
@@ -359,8 +368,16 @@ def apply_event(
 
 
 _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
-    "start_greeting_onboarding": {"onboarding.intent": "greeting"},
-    "start_uri_onboarding": {"onboarding.intent": "play_uri"},
+    "start_greeting_onboarding": {
+        "onboarding.intent": "greeting",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
+    "start_uri_onboarding": {
+        "onboarding.intent": "play_uri",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
     "enter_uri_setup": {"onboarding.setup_status": "required"},
     "enter_onboarding_uri_use": {"mode": "use"},
     "enter_onboarding_starter_use": {
@@ -376,24 +393,58 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "record_team_invite_email": {"team.status": "inviting"},
     "finish_team_onboarding": {"team.status": "ready"},
     "set_request_contract": {"mode": "use"},
-    "set_search_request": {"mode": "awareness"},
-    "set_awareness_request": {"mode": "awareness"},
+    "set_search_request": {
+        "mode": "awareness",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
+    "set_awareness_request": {
+        "mode": "awareness",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
     "set_creator_request": {"mode": "create"},
     "enter_awareness_use": {"mode": "use"},
     "set_awareness_search": {"mode": "awareness"},
     "record_creator_standby": {"mode": "exited"},
     "enter_creator_use": {"mode": "use"},
-    "record_non_outcome_exit": {"mode": "exited"},
-    "record_explicit_exit": {"mode": "exited", "request.excluded": True},
-    "set_management_request": {"mode": "manage"},
-    "set_birth_request": {"mode": "manage"},
+    "record_non_outcome_exit": {
+        "mode": "exited",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
+    "record_explicit_exit": {
+        "mode": "exited",
+        "request.excluded": True,
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
+    "set_management_request": {
+        "mode": "manage",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
+    "set_birth_request": {
+        "mode": "manage",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
     "enter_search_use": {"mode": "use"},
-    "enter_use": {"mode": "use", "match.classification": "full"},
+    "enter_use": {
+        "mode": "use",
+        "match.classification": "full",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
     "downgrade_inadequate_match": {"match.classification": "partial"},
     "record_partial_match": {"match.classification": "partial"},
     "record_uncertain_match": {"match.classification": "uncertain"},
     "record_no_match": {"match.classification": "none"},
-    "enter_direct_use": {"mode": "use"},
+    "enter_direct_use": {
+        "mode": "use",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
     "attach_onboarding_starter_receipt": {"onboarding.starter_status": "completed"},
     "record_use_auth_repair_required": {"auth_repair.status": "required"},
     "record_save_hook": {"mode": "exited"},
@@ -516,9 +567,9 @@ def _apply_mutation_semantics(
         if isinstance(reference, str) and reference:
             context["creator"]["seed_reference"] = reference
     elif mutation == "record_save_worthiness":
-        refs = payload.get("evidence_refs")
-        if isinstance(refs, list) and refs:
-            context["evidence"]["verification"] = refs[0]
+        trajectory_ref = context["capture"].get("trajectory_ref")
+        if isinstance(trajectory_ref, str) and trajectory_ref:
+            context["evidence"]["verification"] = trajectory_ref
     elif mutation == "record_verification":
         refs = payload.get("evidence_refs")
         if isinstance(refs, list) and refs:
@@ -616,6 +667,9 @@ def _merge_event_aliases(context: dict[str, Any], payload: Mapping[str, Any]) ->
     owner = payload.get("owner")
     if isinstance(owner, str) and owner:
         context["publication"]["owner"] = owner
+    members = payload.get("members")
+    if isinstance(members, list):
+        context["team"]["members"] = copy.deepcopy(members)
     visibility = payload.get("visibility")
     if visibility in {"private", "public"}:
         context["publication"]["visibility"] = visibility

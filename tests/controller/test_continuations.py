@@ -76,6 +76,25 @@ class ContinuationTest(unittest.TestCase):
             self.assertEqual(24, len(payload["continuation_id"]))
             self.assertNotIn("session_token", payload)
 
+    def test_cli_rejects_the_removed_session_token_compatibility_route(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "bin" / "play-machine"),
+                "session-project",
+                "--stdin",
+                "--json",
+            ],
+            cwd=ROOT,
+            input=json.dumps({"session_token": "v1.forgeable.digest"}),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(0, completed.returncode)
+        self.assertIn("session_token is not supported", completed.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

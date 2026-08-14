@@ -85,6 +85,33 @@ def public_card() -> dict:
 
 
 class InvocationClassificationTest(unittest.TestCase):
+    def test_settle_without_a_prework_capture_handle_is_rejected(self) -> None:
+        result = classify_invocation("$play settle finished the work")
+
+        self.assertEqual("settle_rejected", result["invocation_kind"])
+        self.assertIn("capture handle", result["reason"])
+
+    @patch("play.onboarding.capture_for_settle")
+    def test_settle_binds_only_the_explicit_verified_capture(self, resolve) -> None:
+        resolve.return_value = {
+            "intent": "deploy staging",
+            "task_class": "build-ship-chore",
+            "reason": "repeatable deployment",
+            "workspace": "play-capture-abcdefghijklmnop",
+            "trajectory_ref": "sha256:trajectory",
+        }
+
+        result = classify_invocation(
+            "$play settle cap_abcdefghijklmnop deployment verified"
+        )
+
+        resolve.assert_called_once_with("cap_abcdefghijklmnop")
+        self.assertEqual("settled", result["invocation_kind"])
+        self.assertEqual("verified", result["capture"]["status"])
+        self.assertEqual(
+            "play-capture-abcdefghijklmnop", result["execution"]["workspace"]
+        )
+
     def test_empty_play_aliases_enter_greeting(self) -> None:
         for value in ("$play", "/play", "  $PLAY  "):
             with self.subTest(value=value):

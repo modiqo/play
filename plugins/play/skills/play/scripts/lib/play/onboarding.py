@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 
 from .private_store import PrivateStoreError, atomic_write_json, load_json, locked_store
 from .render import json_text
-from .sidekick import latest_hook, load_ledger
+from .sidekick import CAPTURE_REF, capture_for_settle, load_ledger
 from .state_home import state_path
 
 
@@ -213,10 +213,31 @@ def classify_invocation(original: str) -> dict[str, Any]:
 
 
 def _classify_settled(summary: str, *, started: int) -> dict[str, Any]:
-    """Classify the post-task save-hook re-entry without qualification or search."""
+    """Accept settle only for an explicit, already-recorded Rote capture."""
 
-    hook = latest_hook()
-    intent = summary or (hook or {}).get("intent") or "settled task"
+    reference, separator, settled_summary = summary.partition(" ")
+    if not CAPTURE_REF.fullmatch(reference):
+        return {
+            "schema": SCHEMA,
+            "kind": "invocation",
+            "ok": False,
+            "invocation_kind": "settle_rejected",
+            "reason": "$play settle requires the capture handle issued before execution",
+            "classify_ns": time.perf_counter_ns() - started,
+        }
+    try:
+        capture = capture_for_settle(reference)
+    except ValueError as error:
+        return {
+            "schema": SCHEMA,
+            "kind": "invocation",
+            "ok": False,
+            "invocation_kind": "settle_rejected",
+            "reason": str(error),
+            "classify_ns": time.perf_counter_ns() - started,
+        }
+    settled_summary = settled_summary.strip() if separator else ""
+    intent = settled_summary or str(capture.get("intent") or "captured task")
     return {
         "schema": SCHEMA,
         "kind": "invocation",
@@ -226,11 +247,22 @@ def _classify_settled(summary: str, *, started: int) -> dict[str, Any]:
         "parameters": {},
         "intent": intent,
         "standby": {
-            "armed": hook is not None,
-            "task_class": (hook or {}).get("task_class"),
-            "hook_ref": (hook or {}).get("hook_ref"),
-            "settle_summary": summary or None,
+            "armed": True,
+            "task_class": capture.get("task_class"),
+            "hook_ref": reference,
+            "settle_summary": settled_summary or None,
         },
+        "capture": {
+            "decision": "capture",
+            "reason": capture.get("reason"),
+            "task_class": capture.get("task_class"),
+            "reference": reference,
+            "workspace": capture.get("workspace"),
+            "status": "verified",
+            "trajectory_ref": capture.get("trajectory_ref"),
+        },
+        "execution": {"workspace": capture.get("workspace")},
+        "evidence_refs": [capture.get("trajectory_ref")],
         "preferences": {"policies": load_ledger()},
         "classify_ns": time.perf_counter_ns() - started,
     }

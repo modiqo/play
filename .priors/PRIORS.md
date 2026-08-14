@@ -68,3 +68,11 @@
 | P-0062 | skill-creator | conclusion | open | install.sh | The public curl bootstrap accepts only HTTPS archive URLs, rejects unsaf |
 | P-0063 | skill-creator | conclusion | open | scripts/harness/install-all | Cross-harness Play installation detects supported local harness commands |
 | P-0064 | skill-creator | conclusion | open | scripts/lib/play/package.py | The self-contained Play payload includes the canonical VERSION, curl boo |
+| P-0065 | code-review | conclusion | fixed | . | play-machine accepts a caller-provided session_token whose integrity is  |
+| P-0066 | code-review | conclusion | fixed | . | Event validation checks only required-field presence and apply_event the |
+| P-0067 | code-review | conclusion | fixed | . | The runtime kills every deterministic subprocess after 120 seconds even  |
+| P-0068 | code-review | conclusion | fixed | . | validate_bundle loads machine.schema.json but never applies it to machin |
+| P-0069 | code-review | conclusion | fixed | . | private_org_policy_satisfied is a live publication guard that is not der |
+| P-0070 | code-review | conclusion | fixed | . | play_run ignores output_policy and always buffers and embeds complete st |
+| P-0071 | code-review | conclusion | fixed | . | The $play settle path cannot accept any candidate_ready result because o |
+| P-0072 | code-review | conclusion | fixed | . | Play capture must be decided at prompt intake: capture creates and binds |

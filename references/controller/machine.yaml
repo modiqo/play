@@ -14,6 +14,7 @@ states:
       play_uri_invocation: [{target: onboarding_probe, mutate: start_uri_onboarding}]
       outcome_play_invocation: [{target: search, mutate: set_request_contract}]
       settled_task_invocation: [{target: save_judge, mutate: enter_settled_judgment}]
+      settled_task_rejected: [{target: blocked, mutate: record_blocker}]
       ordinary_play_invocation: [{target: qualify, mutate: record_ordinary_invocation}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -520,11 +521,11 @@ states:
   crystallize:
     owner: rote-specialist
     checkpoint: both
-    requires: [evidence.verification]
+    requires: [capture.reference, capture.workspace, capture.trajectory_ref, evidence.verification]
     entry: {action: prepare_candidate}
     "on":
       candidate_ready:
-        - {guard: outcome_is_verified, target: save_prepare, mutate: record_candidate}
+        - {guard: captured_trajectory_is_verified, target: save_prepare, mutate: record_candidate}
         - {target: blocked, mutate: record_verification_failure}
       not_reusable: [{target: completed, mutate: record_unpublished_result}]
       action_blocked: [{target: blocked, mutate: record_blocker}]

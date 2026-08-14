@@ -18,7 +18,7 @@ guards:
   - search_only_requested
   - match_satisfies_constraints
   - search_has_remaining_choices
-  - outcome_is_verified
+  - captured_trajectory_is_verified
   - save_choice_private
   - save_choice_public
   - public_owner_is_resolved
@@ -172,14 +172,15 @@ actions:
       - Bind `run hello`, `run the Hello Play`, and `$play run hello` directly to the pinned canonical Hello URI without model qualification or search.
       - Treat a bare or prefixed canonical HTTPS play.modiqo.ai owner/name URI, optionally followed by unique key=value parameters, as a Play URI invocation.
       - Route unambiguous retrieve, fetch, get, find, collect, download, export, list, summarize, check, monitor, calculate, and compare outcomes directly to search.
-      - Treat `$play settle` or `/play settle` (optionally followed by a settled-task summary) as the post-task save-hook re-entry; stamp the most recent armed standby hook and never send it to qualification or search.
+      - Treat `$play settle <capture-handle> [summary]` as re-entry only when the owner-private capture exists and its Rote workspace already contains trajectory evidence; never reconstruct capture after the work.
       - Read the owner-private scoped preference ledger and stamp its policies for downstream qualification; never fail the classification because the ledger is absent.
       - Send only requests outside these closed lexical routes unchanged to normal Play qualification.
     events:
       empty_play_invocation: [onboarding.intent, onboarding.classify_ns]
       play_uri_invocation: [onboarding.intent, onboarding.play_uri, match.reference, request.parameters, onboarding.classify_ns]
       outcome_play_invocation: [request.intent, request.requested_outcome, modality_policy, preferences.policies, onboarding.classify_ns]
-      settled_task_invocation: [standby.armed, standby.task_class, standby.hook_ref, standby.settle_summary, request.intent, request.requested_outcome, preferences.policies, onboarding.classify_ns]
+      settled_task_invocation: [standby.armed, standby.task_class, standby.hook_ref, standby.settle_summary, capture.decision, capture.reason, capture.task_class, capture.reference, capture.workspace, capture.status, capture.trajectory_ref, execution.workspace, evidence_refs, request.intent, request.requested_outcome, preferences.policies, onboarding.classify_ns]
+      settled_task_rejected: [reason]
       ordinary_play_invocation: [preferences.policies, onboarding.classify_ns]
 
   probe_rote_for_onboarding:
@@ -345,12 +346,13 @@ actions:
       - Classify explicit or inferred requests for what is new, popular public Plays, or trending Plays as play_awareness_request; the digest owns truthful metric labels and must not call cumulative totals a time-window trend.
       - Honor the scoped preference ledger; a request whose task class is ledgered silent must emit play_excluded without search, narration, or any mention of Play.
       - When the user states a scoped intervention preference (for example no Plays during prototyping, or always offer Plays for deploy chores), return the statement with its task class and policy on play_excluded so the ledger can record it; otherwise return null preference fields.
+      - Classify every novel outcome before execution as capture or normal. Capture only when the likely multi-step, parameterizable work may become reusable and therefore must begin through Rote; normal means no trajectory is created and the task can never be settled post hoc.
     events:
-      outcome_request: [request.intent, request.requested_outcome, modality_policy]
+      outcome_request: [request.intent, request.requested_outcome, modality_policy, capture.decision, capture.reason, capture.task_class]
       exact_play_request: [request.intent, request.requested_outcome, request.parameters, match.reference, modality_policy]
       play_search_request: [request.intent]
       play_awareness_request: [request.intent, awareness.window_days]
-      play_creation_request: [request.intent, request.requested_outcome, creator.intent, modality_policy]
+      play_creation_request: [request.intent, request.requested_outcome, creator.intent, modality_policy, capture.decision, capture.reason, capture.task_class]
       play_management_request: [request.intent, management.views]
       play_management_choice_required: [request.intent]
       play_birth_request: [request.intent, birth.selector]
@@ -361,28 +363,28 @@ actions:
     kind: deterministic
     owner: play
     effect: local-write
-    input_required: [request.original, request.intent, request.requested_outcome, match.classification, preferences.statement, preferences.task_class, preferences.policy]
+    input_required: [request.original, request.intent, request.requested_outcome, match.classification, capture.decision, capture.reason, capture.task_class, preferences.statement, preferences.task_class, preferences.policy]
     command: scripts/bin/play-standby record --stdin --json
     command_policy:
-      - Arm the owner-private save hook only when an unserved outcome intent exists; keep only a bounded intent, coarse task class, and UTC timestamp, never conversation prose.
+      - Execute the already-made capture/normal decision before any fallback work. Capture creates an owner-private handle and Rote workspace now; normal creates neither and cannot be settled later.
       - Append a scoped preference ledger entry only when the qualifier returned an explicit statement; record the statement, scope, task class, policy, and UTC time.
-      - A standby exit is a baton-pass, never a result. Present the single returned continuation line, then complete the user's still-unfulfilled request immediately through the normal path; the rote skill owns adapter catalog search and exploration for provider work.
+      - A standby exit is a baton-pass, never a result. When captured, complete the request only through the returned Rote workspace; when normal, complete it without a later settle option.
       - Explore in the shape of the play it may become. One reading per captured rote call (never a script that fetches five things), stages named as you go, upstream responses consumed through rote query @N before values move on, endpoint dialects recorded when discovered, and a clean happy-path rerun before any export. A tangled trace crystallizes into a monolith no formatting can rescue.
     events:
-      standby_recorded: [standby.armed, standby.task_class, standby.hook_ref, preferences.ledger_ref]
+      standby_recorded: [standby.armed, standby.task_class, standby.hook_ref, capture.decision, capture.reason, capture.task_class, capture.reference, capture.workspace, capture.status, capture.trajectory_ref, preferences.ledger_ref]
 
   judge_save_worthiness:
     kind: evaluator
     owner: play
     effect: none
-    input_required: [request.original, standby.armed, standby.task_class, standby.settle_summary, preferences.policies]
+    input_required: [request.original, capture.reference, capture.workspace, capture.status, capture.trajectory_ref, standby.settle_summary, preferences.policies]
     command_policy:
       - Judge the settled task's trace evidence, not conversation prose. Require at least two effect-bearing steps, at least one input that would vary on reuse, and a stable output shape.
-      - Require a recurrence prior; an armed standby hook, similar past work, or an explicit user signal. Without one, emit not_worth_saving.
+      - Require the verified capture handle and Rote trajectory created before execution. Similar prose or a retrospective summary can never substitute for that evidence.
       - Never emit worth_saving for a failed or abandoned task, or when the session or ledger classes this work silent.
-      - Name the rote workspace that produced the evidence so crystallization and birth capture can bind to it.
+      - Use the capture-bound Rote workspace; the judgment event may not replace it.
     events:
-      worth_saving: [save_judge.assessment, save_judge.parameters, save_judge.step_count, execution.workspace, evidence_refs]
+      worth_saving: [save_judge.assessment, save_judge.parameters, save_judge.step_count]
       not_worth_saving: [reason]
 
   collect_awareness_digest:
@@ -484,9 +486,9 @@ actions:
     events:
       full_match: [match.reference, match.covered, match.uncovered, confidence]
       remote_match_choice_required: [match.covered, match.uncovered, confidence]
-      partial_match: [match.reference, match.covered, match.uncovered, confidence]
-      uncertain_match: [match.reference, match.covered, match.uncovered, confidence]
-      no_match: [match.covered, match.uncovered, confidence]
+      partial_match: [match.reference, match.covered, match.uncovered, confidence, capture.decision, capture.reason, capture.task_class]
+      uncertain_match: [match.reference, match.covered, match.uncovered, confidence, capture.decision, capture.reason, capture.task_class]
+      no_match: [match.covered, match.uncovered, confidence, capture.decision, capture.reason, capture.task_class]
 
   route_inspected_play:
     kind: deterministic
@@ -535,6 +537,7 @@ actions:
     kind: deterministic
     owner: play
     effect: mixed
+    timeout_seconds: 3600
     input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, inspection.local_change, request.parameters, output_policy, auth_repair.original_packet, auth_repair.original_packet_sha256]
     command: scripts/bin/play-run --stdin --json
     command_policy:
@@ -559,8 +562,8 @@ actions:
     effect: none
     input_required: [request.requested_outcome, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
     command_policy:
-      - Accept only a detailed, full, non-truncated Play result with a non-empty primary output.
-      - Hash the unchanged primary output as verification evidence; do not interpret, summarize, or reformat it.
+      - Accept only a detailed, full Play result with a non-empty primary output; bounded inline output is valid only when full_output_ref points to the owner-private complete artifact.
+      - Hash the unchanged inline primary and bind any complete artifact reference as verification evidence; do not interpret, summarize, or reformat it.
     events:
       outcome_verified: [postconditions, evidence_refs]
       outcome_not_verified: [failed_postconditions, evidence_refs]
@@ -640,7 +643,7 @@ actions:
     owner: rote-specialist
     specialist: rote-flow-crystallization
     effect: local-write
-    input_required: [evidence.verification]
+    input_required: [capture.reference, capture.workspace, capture.trajectory_ref, evidence.verification]
     command_policy:
       - Crystallize to the play-shape standard, not just a valid file. One reading = one step; steps carry author-chosen intent names (probe_harnesses, never python3_2); independent steps are roots so the runner parallelizes; depends_on declares ordering and @step{...} refs declare every consumed value (scalar, piped through join when needed, with a self-sufficient fallback in the script).
       - Encode the failure contract at capture time. Expected absence prints {"ok":true,"warning":...} and exits zero so the presentation renders one labeled unknown; real faults write stderr and exit nonzero. Interactive subcommands inside steps carry their --yes equivalent because steps have no TTY.
@@ -679,8 +682,10 @@ actions:
     specialist: rote-org
     effect: external-write
     input_required: [consent.save]
+    command_policy:
+      - Return a play.rote-org-receipt/v1 for ensure_private_org containing the exact private organization, authenticated owner, complete current membership projection, and non-empty Rote evidence references; the runtime validates all receipt fields, derives policy satisfaction, and ignores caller guard claims.
     events:
-      private_org_ready: [publication.private_org, owner, members]
+      private_org_ready: [publication.private_org, owner, members, evidence_refs, organization_receipt]
 
   publish_private:
     kind: delegated

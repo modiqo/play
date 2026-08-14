@@ -239,6 +239,11 @@ class ControllerRuntimeTest(unittest.TestCase):
             payload={
                 "request": {"intent": "release notes", "requested_outcome": "notes"},
                 "modality_policy": session.context["modality_policy"],
+                "capture": {
+                    "decision": "normal",
+                    "reason": "one bounded lookup",
+                    "task_class": "data-fetch-report",
+                },
             },
             guards={},
         )
@@ -803,7 +808,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         session = self.runtime.initial_session(
             run_id="session-1",
             task_key="task-1",
-            request_original="$play settle deployed staging and posted the summary",
+            request_original="$play settle cap_abcdefghijklmnop deployed staging and posted the summary",
         )
 
         advanced = self.runtime.advance_session(
@@ -814,9 +819,20 @@ class ControllerRuntimeTest(unittest.TestCase):
                     "standby": {
                         "armed": True,
                         "task_class": "build-ship-chore",
-                        "hook_ref": "sha256:hook",
+                        "hook_ref": "cap_abcdefghijklmnop",
                         "settle_summary": "deployed staging and posted the summary",
                     },
+                    "capture": {
+                        "decision": "capture",
+                        "reason": "repeatable deployment",
+                        "task_class": "build-ship-chore",
+                        "reference": "cap_abcdefghijklmnop",
+                        "workspace": "play-capture-abcdefghijklmnop",
+                        "status": "verified",
+                        "trajectory_ref": "sha256:trajectory",
+                    },
+                    "execution": {"workspace": "play-capture-abcdefghijklmnop"},
+                    "evidence_refs": ["sha256:trajectory"],
                     "request": {
                         "intent": "deployed staging and posted the summary",
                         "requested_outcome": "deployed staging and posted the summary",
@@ -1190,6 +1206,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("run_registry_play", yielded.trace[3].action)
         self.assertEqual("verify_play_output", yielded.trace[4].action)
         self.assertEqual("build_receipt", yielded.trace[5].action)
+        self.assertEqual(3600, run.call_args_list[2].kwargs["timeout"])
         self.assertEqual(2, len(yielded.presentations))
         self.assertIn("#", yielded.presentations[0])
         self.assertEqual("hello result", yielded.presentations[1])
@@ -1465,6 +1482,120 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertIsNone(result.transition.guard)
         self.assertGreater(result.timing.step_ns, 0)
 
+    def test_event_contract_rejects_unrelated_context_mutation(self) -> None:
+        with self.assertRaisesRegex(
+            ControllerRuntimeError, "undeclared fields: consent.save"
+        ):
+            self.runtime.step(
+                self.cursor(),
+                ControllerEvent(
+                    id=EventId("outcome_request"),
+                    payload={
+                        "request": {"intent": "do work", "requested_outcome": "result"},
+                        "modality_policy": {},
+                        "capture": {
+                            "decision": "normal",
+                            "reason": "bounded",
+                            "task_class": "unclassified",
+                        },
+                        "consent": {"save": "public"},
+                    },
+                    guards={},
+                ),
+            )
+
+    def test_capture_guard_is_derived_from_bound_trajectory_not_caller(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="capture-run", task_key="capture-task", request_original="captured"
+        )
+        context = dict(session.context)
+        context["state"] = "crystallize"
+        context["capture"] = {
+            "decision": "capture",
+            "reason": "repeatable",
+            "task_class": "ops-maintenance",
+            "reference": "cap_abcdefghijklmnop",
+            "workspace": "play-capture-abcdefghijklmnop",
+            "status": "verified",
+            "trajectory_ref": "sha256:trajectory",
+        }
+        context["execution"] = {**context["execution"], "workspace": "play-capture-abcdefghijklmnop"}
+        context["evidence"] = {**context["evidence"], "verification": "sha256:trajectory"}
+        bound = replace(
+            session,
+            cursor=replace(session.cursor, state=StateId("crystallize")),
+            context=context,
+        )
+
+        advanced = self.runtime.advance_session(
+            bound,
+            ControllerEvent(
+                id=EventId("candidate_ready"),
+                payload={
+                    "candidate": {
+                        "reference": "candidate",
+                        "reusable": True,
+                        "contract": "contract",
+                    }
+                },
+                guards={GuardId("captured_trajectory_is_verified"): False},
+            ),
+        )
+
+        self.assertEqual("save_prepare", advanced.session.cursor.state)
+
+    def test_private_org_guard_requires_owner_membership_evidence(self) -> None:
+        cursor = replace(self.cursor(), state=StateId("private_org"))
+        invalid = self.runtime.step(
+            cursor,
+            ControllerEvent(
+                id=EventId("private_org_ready"),
+                payload={
+                    "publication": {"private_org": "ada-labs"},
+                    "owner": "ada@example.com",
+                    "members": [{"email": "other@example.com", "role": "admin"}],
+                    "evidence_refs": ["sha256:org"],
+                    "organization_receipt": {
+                        "schema": "play.rote-org-receipt/v1",
+                        "specialist": "rote-org",
+                        "operation": "ensure_private_org",
+                        "ok": True,
+                        "private_org": "ada-labs",
+                        "owner": "ada@example.com",
+                        "members": [{"email": "other@example.com", "role": "admin"}],
+                        "evidence_refs": ["sha256:org"],
+                    },
+                },
+                guards={GuardId("private_org_policy_satisfied"): True},
+            ),
+        )
+        self.assertEqual("blocked", invalid.cursor.state)
+
+        valid = self.runtime.step(
+            cursor,
+            ControllerEvent(
+                id=EventId("private_org_ready"),
+                payload={
+                    "publication": {"private_org": "ada-labs"},
+                    "owner": "ada@example.com",
+                    "members": [{"email": "ada@example.com", "role": "owner"}],
+                    "evidence_refs": ["sha256:org"],
+                    "organization_receipt": {
+                        "schema": "play.rote-org-receipt/v1",
+                        "specialist": "rote-org",
+                        "operation": "ensure_private_org",
+                        "ok": True,
+                        "private_org": "ada-labs",
+                        "owner": "ada@example.com",
+                        "members": [{"email": "ada@example.com", "role": "owner"}],
+                        "evidence_refs": ["sha256:org"],
+                    },
+                },
+                guards={GuardId("private_org_policy_satisfied"): False},
+            ),
+        )
+        self.assertEqual("private_publish", valid.cursor.state)
+
     def test_ordered_guard_selects_the_first_satisfied_branch(self) -> None:
         cursor = self.cursor()
         cursor = self.runtime.step(
@@ -1474,6 +1605,11 @@ class ControllerRuntimeTest(unittest.TestCase):
                 payload={
                     "request": {"intent": "do work", "requested_outcome": "result"},
                     "modality_policy": {},
+                    "capture": {
+                        "decision": "normal",
+                        "reason": "bounded",
+                        "task_class": "unclassified",
+                    },
                 },
                 guards={},
             ),
@@ -1522,6 +1658,11 @@ class ControllerRuntimeTest(unittest.TestCase):
                 payload={
                     "request": {"intent": "do work", "requested_outcome": "result"},
                     "modality_policy": {},
+                    "capture": {
+                        "decision": "normal",
+                        "reason": "bounded",
+                        "task_class": "unclassified",
+                    },
                 },
                 guards={},
             ),

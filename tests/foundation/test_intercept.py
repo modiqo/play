@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.intercept import best_match, intercept_prompt, load_index, settle_nudge
-from play.sidekick import append_ledger_entry, arm_hook
+from play.sidekick import append_ledger_entry, start_capture
 
 
 FRONTMATTER = """#!/usr/bin/env -S rote play run
@@ -125,11 +125,22 @@ class InterceptTest(unittest.TestCase):
     def test_no_match_no_verb_is_silent(self) -> None:
         self.assertIsNone(intercept_prompt("refactor the widget renderer for clarity"))
 
-    def test_settle_nudge_fires_once_per_hook_and_session(self) -> None:
-        arm_hook(intent="deploy staging and post summary", task_class="build-ship-chore", reason="no_match")
+    def test_settle_nudge_fires_once_per_capture_and_session(self) -> None:
+        def initialize(name: str) -> Path:
+            path = Path(self._temporary.name) / name
+            path.mkdir()
+            return path
+
+        capture = start_capture(
+            intent="deploy staging and post summary",
+            task_class="build-ship-chore",
+            reason="no_match",
+            workspace_initializer=initialize,
+        )
         first = settle_nudge("session-a")
         assert first is not None
         self.assertIn("$play settle", first)
+        self.assertIn(capture["reference"], first)
         self.assertIsNone(settle_nudge("session-a"))
         self.assertIsNotNone(settle_nudge("session-b"))
 

@@ -233,7 +233,7 @@ cases:
       - {state: save_judge, event: worth_saving, target: crystallize}
       - state: crystallize
         event: candidate_ready
-        guards: {outcome_is_verified: true}
+        guards: {captured_trajectory_is_verified: true}
         target: save_prepare
       - {state: save_prepare, event: public_owner_context_ready, target: save_offer}
       - {state: save_offer, event: save_skipped, target: completed}
@@ -276,7 +276,7 @@ cases:
       - {state: save_judge, event: worth_saving, target: crystallize}
       - state: crystallize
         event: candidate_ready
-        guards: {outcome_is_verified: true}
+        guards: {captured_trajectory_is_verified: true}
         target: save_prepare
       - {state: save_prepare, event: public_owner_context_ready, target: save_offer}
       - {state: save_offer, event: save_private, target: author_release}
@@ -329,7 +329,7 @@ cases:
       - {state: save_judge, event: worth_saving, target: crystallize}
       - state: crystallize
         event: candidate_ready
-        guards: {outcome_is_verified: true}
+        guards: {captured_trajectory_is_verified: true}
         target: save_prepare
       - {state: save_prepare, event: public_owner_context_ready, target: save_offer}
       - state: save_offer

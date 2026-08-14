@@ -7,6 +7,9 @@ import hashlib
 import json
 import os
 import re
+import secrets
+import shutil
+import subprocess
 import sys
 import time
 from collections.abc import Mapping
@@ -21,6 +24,7 @@ from .state_home import state_path
 
 SCHEMA = "play.sidekick/v1"
 STANDBY_SCHEMA = "play.standby/v1"
+CAPTURE_REF = re.compile(r"^cap_[A-Za-z0-9_-]{16,64}$")
 LEDGER_SCHEMA = "play.preferences/v1"
 def _default_standby_path() -> Path:
     override = os.environ.get("PLAY_SIDEKICK_STANDBY_PATH")
@@ -168,6 +172,37 @@ def _load_hooks(path: Path) -> list[dict[str, Any]]:
     return fresh
 
 
+def _load_captures(path: Path) -> list[dict[str, Any]]:
+    store = _read_store(path)
+    if not isinstance(store, Mapping) or store.get("schema") != STANDBY_SCHEMA:
+        return []
+    captures = store.get("captures")
+    if not isinstance(captures, list):
+        return []
+    fresh: list[dict[str, Any]] = []
+    now = time.time()
+    for capture in captures:
+        if not isinstance(capture, Mapping):
+            continue
+        created = capture.get("created_at_epoch")
+        if isinstance(created, (int, float)) and now - created <= HOOK_TTL_SECONDS:
+            fresh.append(dict(capture))
+    return fresh
+
+
+def _write_sidekick_store(
+    path: Path, *, hooks: list[dict[str, Any]], captures: list[dict[str, Any]]
+) -> None:
+    atomic_write_json(
+        path,
+        {
+            "schema": STANDBY_SCHEMA,
+            "hooks": hooks[-MAX_HOOKS:],
+            "captures": captures[-MAX_HOOKS:],
+        },
+    )
+
+
 def arm_hook(
     *,
     intent: str,
@@ -194,7 +229,7 @@ def arm_hook(
     hook_ref = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
     hook["hook_ref"] = hook_ref
     hooks.append(hook)
-    atomic_write_json(target, {"schema": STANDBY_SCHEMA, "hooks": hooks[-MAX_HOOKS:]})
+    _write_sidekick_store(target, hooks=hooks, captures=_load_captures(target))
     return hook_ref
 
 
@@ -205,8 +240,125 @@ def latest_hook(path: Path | None = None) -> dict[str, Any] | None:
     return hooks[-1] if hooks else None
 
 
-def record_standby(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """Handle the standby_exit action: arm the hook and honor explicit preferences."""
+def start_capture(
+    *,
+    intent: str,
+    task_class: str,
+    reason: str,
+    path: Path | None = None,
+    workspace_initializer: Any | None = None,
+) -> dict[str, Any]:
+    """Create an owner-private capture and its Rote workspace before work starts."""
+
+    target = path or _default_standby_path()
+    capture_ref = "cap_" + secrets.token_urlsafe(18)
+    workspace = "play-capture-" + capture_ref.removeprefix("cap_").lower()
+    initializer = workspace_initializer or _initialize_rote_workspace
+    workspace_path = initializer(workspace)
+    capture = {
+        "reference": capture_ref,
+        "intent": intent[:MAX_INTENT_CHARS],
+        "task_class": task_class,
+        "reason": reason[:MAX_INTENT_CHARS],
+        "workspace": workspace,
+        "workspace_path": str(workspace_path),
+        "status": "active",
+        "trajectory_ref": None,
+        "created_at": _utc_now(),
+        "created_at_epoch": time.time(),
+    }
+    captures = _load_captures(target)
+    captures.append(capture)
+    _write_sidekick_store(target, hooks=_load_hooks(target), captures=captures)
+    return capture
+
+
+def latest_capture(path: Path | None = None) -> dict[str, Any] | None:
+    captures = _load_captures(path or _default_standby_path())
+    active = [capture for capture in captures if capture.get("status") == "active"]
+    return active[-1] if active else None
+
+
+def capture_for_settle(
+    reference: str,
+    *,
+    path: Path | None = None,
+    trajectory_validator: Any | None = None,
+) -> dict[str, Any]:
+    """Resolve one explicit capture and prove its Rote trajectory already exists."""
+
+    if not CAPTURE_REF.fullmatch(reference):
+        raise ValueError("settle requires a valid capture handle")
+    captures = _load_captures(path or _default_standby_path())
+    capture_index = next(
+        (index for index, item in enumerate(captures) if item.get("reference") == reference),
+        None,
+    )
+    capture = captures[capture_index] if capture_index is not None else None
+    if capture is None or capture.get("status") != "active":
+        raise ValueError("capture handle is missing, expired, or already settled")
+    validator = trajectory_validator or _validate_rote_trajectory
+    trajectory_ref = validator(Path(str(capture.get("workspace_path"))))
+    if not isinstance(trajectory_ref, str) or not trajectory_ref:
+        raise ValueError("capture has no verified Rote trajectory")
+    captures[capture_index] = {
+        **capture,
+        "status": "settling",
+        "trajectory_ref": trajectory_ref,
+        "settle_started_at": _utc_now(),
+    }
+    target = path or _default_standby_path()
+    _write_sidekick_store(target, hooks=_load_hooks(target), captures=captures)
+    return {**capture, "status": "verified", "trajectory_ref": trajectory_ref}
+
+
+def _initialize_rote_workspace(workspace: str) -> Path:
+    executable = shutil.which("rote")
+    if executable is None:
+        raise ValueError("capture requires rote on PATH")
+    completed = subprocess.run(
+        [executable, "init", workspace, "--seq", "--force"],
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=120,
+    )
+    if completed.returncode != 0:
+        raise ValueError((completed.stderr or completed.stdout).strip() or "rote init failed")
+    match = re.search(r"^Location:\s+(.+)$", completed.stdout, re.MULTILINE)
+    if match is None:
+        raise ValueError("rote init did not return a workspace location")
+    workspace_path = Path(match.group(1).strip())
+    if not workspace_path.is_dir():
+        raise ValueError("rote capture workspace was not created")
+    return workspace_path
+
+
+def _validate_rote_trajectory(workspace_path: Path) -> str:
+    executable = shutil.which("rote")
+    if executable is None or not workspace_path.is_dir():
+        raise ValueError("capture Rote workspace is unavailable")
+    completed = subprocess.run(
+        [executable, "ls"],
+        cwd=workspace_path,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+    evidence = "\n".join(
+        part.rstrip() for part in (completed.stdout, completed.stderr) if part.strip()
+    )
+    if completed.returncode != 0 or "No responses yet" in evidence:
+        raise ValueError("capture has no verified Rote trajectory")
+    digest = hashlib.sha256(evidence.encode()).hexdigest()
+    return "sha256:" + digest
+
+
+def record_standby(
+    payload: Mapping[str, Any], *, workspace_initializer: Any | None = None
+) -> dict[str, Any]:
+    """Handle the pre-work capture/normal decision and explicit preferences."""
 
     request = payload.get("request")
     request = dict(request) if isinstance(request, Mapping) else {}
@@ -214,17 +366,30 @@ def record_standby(payload: Mapping[str, Any]) -> dict[str, Any]:
     preferences = dict(preferences) if isinstance(preferences, Mapping) else {}
     match = payload.get("match")
     match = dict(match) if isinstance(match, Mapping) else {}
+    capture_input = payload.get("capture")
+    capture_input = dict(capture_input) if isinstance(capture_input, Mapping) else {}
 
     outcome = request.get("requested_outcome") or request.get("intent")
     excluded = bool(request.get("excluded"))
     task_class = coarse_task_class(outcome or request.get("original"))
 
-    armed = False
-    hook_ref = None
-    if isinstance(outcome, str) and outcome.strip() and not excluded:
+    decision = capture_input.get("decision")
+    if decision not in {"capture", "normal"}:
+        decision = "normal"
+    capture: dict[str, Any] | None = None
+    if decision == "capture" and isinstance(outcome, str) and outcome.strip() and not excluded:
         reason = str(match.get("classification") or "no_match")
-        hook_ref = arm_hook(intent=outcome, task_class=task_class, reason=reason)
-        armed = True
+        capture = start_capture(
+            intent=outcome,
+            task_class=(
+                str(capture_input.get("task_class"))
+                if capture_input.get("task_class")
+                else task_class
+            ),
+            reason=str(capture_input.get("reason") or reason),
+            workspace_initializer=workspace_initializer,
+        )
+        task_class = str(capture["task_class"])
 
     ledger_ref = None
     statement = preferences.get("statement")
@@ -242,13 +407,11 @@ def record_standby(payload: Mapping[str, Any]) -> dict[str, Any]:
         )
 
     presentation = None
-    if armed:
+    if capture is not None:
         presentation = (
-            "No saved Play covers this yet — continuing with the task normally. "
-            "The agent should now complete the request itself (for API or provider work, "
-            "the rote skill owns adapter catalog search and exploration). If the finished "
-            "work turns out repeatable, settle it with `$play settle <one-line summary>` "
-            "to judge it for saving."
+            f"Capture `{capture['reference']}` started before execution. Complete the task "
+            f"through Rote workspace `{capture['workspace']}`. Only this recorded trajectory "
+            f"can later be settled with `$play settle {capture['reference']} <summary>`."
         )
     return {
         "schema": SCHEMA,
@@ -256,9 +419,18 @@ def record_standby(payload: Mapping[str, Any]) -> dict[str, Any]:
         "ok": True,
         "event": "standby_recorded",
         "standby": {
-            "armed": armed,
+            "armed": capture is not None,
             "task_class": task_class,
-            "hook_ref": hook_ref,
+            "hook_ref": capture.get("reference") if capture else None,
+        },
+        "capture": {
+            "decision": "capture" if capture else "normal",
+            "reason": (capture or capture_input).get("reason"),
+            "task_class": task_class,
+            "reference": capture.get("reference") if capture else None,
+            "workspace": capture.get("workspace") if capture else None,
+            "status": capture.get("status") if capture else "normal",
+            "trajectory_ref": None,
         },
         "preferences": {"ledger_ref": ledger_ref},
         "presentation_markdown": presentation,

@@ -48,9 +48,9 @@ invoke ──┬─ conversation / excluded ────────────
          │                                         │              ▼
          │                                         │            use_run ─► use_verify ─► receipt
          │                                         │              └─ auth failure ─► repair_delegate ─► use_run (once)
-         │                                         └─ no/partial ─► standby (arm save hook) ─► exited
+         │                                         └─ no/partial ─► standby (capture | normal) ─► exited
          ├─ explicit /play, URI, digest, manage ──► trajectory dispatch (separate machines)
-         └─ post-task re-entry ─► save_judge ─┬─ worth saving ─► save_offer ─► capture_delegate ─► saved
+         └─ verified capture re-entry ─► save_judge ─┬─ worth saving ─► save_offer ─► capture_delegate ─► saved
                                               └─ one-off ──────────────────────► exited
 ```
 
@@ -67,7 +67,7 @@ adequacy, outcome verification, and the new save-worthiness judgment.
 
 | Current lane (states) | Disposition |
 |---|---|
-| Explore orchestration, adapter discovery, modality/effect offers (15) | **Cut.** Rote skills own exploration; Play arms the save hook and exits. |
+| Explore orchestration, adapter discovery, modality/effect offers (15) | **Cut.** Rote skills own execution; Play first classifies capture vs normal and then exits. |
 | Explore-side auth repair (4) | **Cut** (duplicate). |
 | Use-side auth repair (4) | **Collapse to 1** delegate-and-retry state. |
 | Release → publish → birth → index → smoke (13 of the save chain) | **Delegate** to `rote-registry` / rote CLI. Play presents the receipt the specialist returns. Birth certificate becomes an explicit request (`birth_show` stays as a dispatch target). |
@@ -153,7 +153,8 @@ exists to remove.
    its evidence: parameterizable inputs are literals in the trace that would
    vary next time (branch, channel, date); repeatable steps are an
    effect-bearing step sequence without human improvisation forks; stable
-   output is a typed final artifact. Rubric gates, all required early:
+   output is a typed final artifact. The capture decision is made before execution and binds the
+   exact Rote workspace; normal work is ineligible for later settlement. Rubric gates:
    ≥2 effect-bearing steps, ≥1 identifiable parameter, a stable output
    contract, and a recurrence prior (similar past work, or explicit user
    signal). Negative gates: never offer after a failed or abandoned task,

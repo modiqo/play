@@ -21,7 +21,12 @@ def payload(reference: str = URI) -> dict:
             "local_change": "none",
         },
         "request": {"parameters": parameters},
-        "output_policy": {"mode": "detailed"},
+        "output_policy": {
+            "mode": "detailed",
+            "preferred_presentation": "human",
+            "max_inline_bytes": 200_000,
+            "overflow": "artifact",
+        },
         "auth_repair": {
             "original_packet": {
                 "exact_reference": EXACT,
@@ -129,6 +134,26 @@ class UniversalPlayRunTest(unittest.TestCase):
         self.assertEqual("play_auth_repair_required", result["event"])
         self.assertEqual("rote-adapter-config", result["auth_repair"]["owner"])
         run.assert_called_once()
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_large_output_is_bounded_and_preserved_as_private_artifact(self, run, _which) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="é" * 100, stderr=""
+        )
+        request = payload()
+        request["output_policy"]["max_inline_bytes"] = 21
+
+        with __import__("tempfile").TemporaryDirectory() as directory:
+            with patch.dict("os.environ", {"PLAY_STATE_HOME": directory}):
+                result = execute(request)
+
+        self.assertTrue(result["output"]["truncated"])
+        self.assertLessEqual(len(result["output"]["primary"].encode()), 21)
+        self.assertTrue(result["output"]["full_output_ref"].startswith("file:"))
+        self.assertEqual(
+            [result["output"]["full_output_ref"]], result["artifact_refs"]
+        )
 
 
 if __name__ == "__main__":

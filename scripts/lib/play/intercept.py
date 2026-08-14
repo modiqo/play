@@ -9,8 +9,8 @@ advising the agent to search preexisting Plays through the play skill. On
 everything else: silence, zero tokens. The scoped preference ledger applies —
 a silenced task class produces nothing.
 
-`play-intercept settle-nudge` runs on Stop. If a save hook armed this session
-is still unsettled, it shows the user one reminder line, once per hook.
+`play-intercept settle-nudge` runs on Stop. If a pre-work capture is active,
+it shows the exact settle handle once per session.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from typing import Any
 from .inbox_cache import read_cache as read_inbox_cache
 from .private_store import atomic_write_json, load_json
 from .state_home import state_path
-from .sidekick import coarse_task_class, latest_hook, load_ledger
+from .sidekick import coarse_task_class, latest_capture, load_ledger
 
 
 INDEX_SCHEMA = "play.intercept-index/v1"
@@ -293,13 +293,13 @@ def intercept_prompt(prompt: str) -> str | None:
 
 
 def settle_nudge(session_id: str | None) -> str | None:
-    """Return a one-time user-facing settle reminder for an armed, unsettled hook."""
+    """Return a one-time settle reminder only for an active pre-work capture."""
 
-    hook = latest_hook()
-    if hook is None:
+    capture = latest_capture()
+    if capture is None:
         return None
-    hook_ref = hook.get("hook_ref")
-    if not isinstance(hook_ref, str):
+    capture_ref = capture.get("reference")
+    if not isinstance(capture_ref, str):
         return None
     state_path = _state_path()
     try:
@@ -308,14 +308,14 @@ def settle_nudge(session_id: str | None) -> str | None:
         state = None
     nudged = state.get("nudged_hooks") if isinstance(state, Mapping) else None
     nudged = list(nudged) if isinstance(nudged, list) else []
-    marker = f"{session_id or 'session'}:{hook_ref}"
+    marker = f"{session_id or 'session'}:{capture_ref}"
     if marker in nudged:
         return None
     _record(state_path, nudged_hooks=[*nudged[-19:], marker])
-    intent = str(hook.get("intent") or "earlier work")[:80]
+    intent = str(capture.get("intent") or "earlier work")[:80]
     return (
-        f"Play: a save hook is armed for “{intent}” — if that work is done and repeatable, "
-        "type $play settle <one-line summary> to judge whether it is worth saving."
+        f"Play: capture `{capture_ref}` recorded “{intent}” through Rote — if it is now "
+        f"verified and repeatable, use `$play settle {capture_ref} <summary>`."
     )
 
 

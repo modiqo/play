@@ -45,6 +45,7 @@
     "receipt_ref",
     "last_event",
     "standby",
+    "capture",
     "save_judge",
     "preferences"
   ],
@@ -213,6 +214,32 @@
         "settle_summary": {
           "$ref": "#/$defs/nullableString"
         }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "required": [
+        "decision",
+        "reason",
+        "task_class",
+        "reference",
+        "workspace",
+        "status",
+        "trajectory_ref"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": ["unclassified", "capture", "normal"]
+        },
+        "reason": {"$ref": "#/$defs/nullableString"},
+        "task_class": {"$ref": "#/$defs/nullableString"},
+        "reference": {"$ref": "#/$defs/nullableString"},
+        "workspace": {"$ref": "#/$defs/nullableString"},
+        "status": {
+          "enum": ["unclassified", "normal", "active", "verified", "settled", "discarded"]
+        },
+        "trajectory_ref": {"$ref": "#/$defs/nullableString"}
       }
     },
     "save_judge": {

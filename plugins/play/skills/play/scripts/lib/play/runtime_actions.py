@@ -25,6 +25,7 @@ from .inspection import render_markdown as render_inspection_markdown
 from .digest import render_markdown as render_digest_markdown
 from .executors import RUNTIME_COMMANDLESS_ACTIONS
 from .search import render_markdown as render_search_markdown
+from .state_home import state_path
 
 
 _PLACEHOLDER = re.compile(r"<([a-z][a-z0-9_.-]*)>")
@@ -44,6 +45,9 @@ _SELECTOR_ACTIONS = {
     "run_registry_play",
     "verify_play_output",
 }
+
+_DEFAULT_ACTION_TIMEOUT_SECONDS = 120
+_MAX_ACTION_TIMEOUT_SECONDS = 3600
 @dataclass(frozen=True)
 class DeterministicTrace:
     state: str
@@ -157,6 +161,17 @@ def _execute_instruction(
         environment.setdefault("ROTE_FLOW_PROGRESS", "0")
         environment.setdefault("ROTE_NO_HINTS", "1")
         try:
+            timeout_seconds = instruction.get(
+                "timeout_seconds", _DEFAULT_ACTION_TIMEOUT_SECONDS
+            )
+            if (
+                not isinstance(timeout_seconds, int)
+                or isinstance(timeout_seconds, bool)
+                or not 1 <= timeout_seconds <= _MAX_ACTION_TIMEOUT_SECONDS
+            ):
+                raise ControllerRuntimeError(
+                    f"{instruction['id']} declares an invalid timeout_seconds"
+                )
             completed = subprocess.run(
                 argv,
                 cwd=root,
@@ -169,7 +184,7 @@ def _execute_instruction(
                 text=True,
                 capture_output=True,
                 check=False,
-                timeout=120,
+                timeout=timeout_seconds,
             )
         except (OSError, subprocess.TimeoutExpired) as error:
             reason = str(error)
@@ -291,11 +306,13 @@ def _commandless_result(
         if not isinstance(results, list):
             raise ControllerRuntimeError("adequacy results are malformed")
         outcome = request.get("requested_outcome") or request.get("intent") or "requested outcome"
+        capture = _capture_classification(context, str(outcome))
         if not results:
             return {
                 "event": "no_match",
                 "match": {"covered": [], "uncovered": [str(outcome)]},
                 "confidence": 1.0,
+                "capture": capture,
             }
         candidate = results[0]
         if not isinstance(candidate, Mapping):
@@ -319,11 +336,14 @@ def _commandless_result(
         }
         if event != "remote_match_choice_required":
             match["reference"] = reference
-        return {
+        result = {
             "event": event,
             "match": match,
             "confidence": float(candidate.get("coverage", 0.0)),
         }
+        if event in {"partial_match", "uncertain_match"}:
+            result["capture"] = capture
+        return result
     if action_id == "route_inspected_play":
         inspection_parameters = _path_value(context, "inspection.parameters")
         supplied_parameters = _path_value(context, "request.parameters")
@@ -362,20 +382,33 @@ def _commandless_result(
         if not isinstance(output, Mapping):
             raise ControllerRuntimeError("Play output context is malformed")
         primary = output.get("primary")
+        full_output_digest = _verified_full_output_digest(output)
         complete = (
             output.get("mode") == "detailed"
             and output.get("detail") == "full"
-            and output.get("truncated") is False
+            and (
+                output.get("truncated") is False
+                or (
+                    output.get("truncated") is True
+                    and isinstance(output.get("full_output_ref"), str)
+                    and bool(output.get("full_output_ref"))
+                    and full_output_digest is not None
+                )
+            )
             and primary is not None
             and primary != ""
         )
         try:
             encoded = (
-                primary.encode()
-                if isinstance(primary, str)
-                else json.dumps(
-                    primary, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-                ).encode()
+                full_output_digest.encode()
+                if full_output_digest is not None
+                else (
+                    primary.encode()
+                    if isinstance(primary, str)
+                    else json.dumps(
+                        primary, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+                    ).encode()
+                )
             )
         except (TypeError, ValueError) as error:
             raise ControllerRuntimeError("Play output is not serializable") from error
@@ -392,6 +425,64 @@ def _commandless_result(
             "evidence_refs": [evidence_ref],
         }
     raise ControllerRuntimeError(f"no deterministic renderer for {action_id}")
+
+
+def _capture_classification(
+    context: Mapping[str, Any], outcome: str
+) -> dict[str, Any]:
+    existing = context.get("capture")
+    if isinstance(existing, Mapping) and existing.get("decision") in {"capture", "normal"}:
+        return {
+            "decision": existing.get("decision"),
+            "reason": existing.get("reason"),
+            "task_class": existing.get("task_class"),
+        }
+    normalized = outcome.casefold()
+    capture_markers = (
+        "implement",
+        "build",
+        "deploy",
+        "release",
+        "migrate",
+        "automate",
+        "audit",
+        "report",
+        "workflow",
+        "fix all",
+        "update docs",
+        "test",
+    )
+    capture = len(outcome) >= 100 or sum(marker in normalized for marker in capture_markers) >= 2
+    return {
+        "decision": "capture" if capture else "normal",
+        "reason": (
+            "multi-step reusable outcome should be proxied through Rote"
+            if capture
+            else "bounded outcome does not justify a reusable trajectory"
+        ),
+        "task_class": "unclassified",
+    }
+
+
+def _verified_full_output_digest(output: Mapping[str, Any]) -> str | None:
+    if output.get("truncated") is not True:
+        return None
+    reference = output.get("full_output_ref")
+    if not isinstance(reference, str) or not reference.startswith("file:"):
+        return None
+    path = Path(reference.removeprefix("file:")).resolve()
+    root = state_path("run-output").resolve()
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return None
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _parse_action_output(
@@ -553,6 +644,7 @@ def _select_event(
             "play_uri": "play_uri_invocation",
             "outcome": "outcome_play_invocation",
             "settled": "settled_task_invocation",
+            "settle_rejected": "settled_task_rejected",
             "ordinary": "ordinary_play_invocation",
         }.get(str(raw.get("invocation_kind")), "action_blocked")
     if action_id == "probe_rote_for_onboarding":

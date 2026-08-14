@@ -45,8 +45,6 @@ from play.controller import (
     ControllerRuntimeError,
     RuntimeSession,
     cursor_from_dict,
-    decode_session,
-    encode_session,
     event_from_dict,
     session_from_dict,
 )
@@ -83,9 +81,10 @@ def _continuation_session(
     continuation_id = request.get("continuation_id")
     if isinstance(continuation_id, str) and continuation_id:
         return load_continuation(continuation_id), continuation_id
-    session_token = request.get("session_token")
-    if isinstance(session_token, str) and session_token:
-        return decode_session(session_token), None
+    if "session_token" in request:
+        raise ControllerRuntimeError(
+            "session_token is not supported; resume with the owner-private continuation_id"
+        )
     return None, None
 
 

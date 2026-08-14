@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 import yaml
@@ -11,7 +12,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.machine import validate_bundle
+from play.machine import MachineValidationError, validate_bundle
 from play.handoff import capability_policy
 from play.executors import action_executor
 
@@ -72,6 +73,24 @@ class MachineConformanceTest(unittest.TestCase):
         summary = validate_bundle(ROOT)
         self.assertGreaterEqual(summary.states, 34)
         self.assertGreater(summary.transitions, summary.states)
+
+    def test_json_schema_is_applied_before_semantic_validation(self) -> None:
+        documents = {
+            "machine": deepcopy(MACHINE),
+            "actions": ACTIONS_DOC,
+            "prompts": {"schema": "play.prompts/v1", "prompts": PROMPTS},
+            "machine_schema": json.loads((CONTROLLER / "machine.schema.json").read_text()),
+            "context_schema": CONTEXT,
+            "handoff_schema": json.loads((CONTROLLER / "handoff.schema.json").read_text()),
+        }
+        documents["machine"]["states"]["invoke"]["requires"] = [123]
+
+        with self.assertRaises(MachineValidationError) as caught:
+            validate_bundle(ROOT, documents=documents)
+
+        self.assertTrue(
+            any("machine.yaml:states.invoke.requires.0" in error for error in caught.exception.errors)
+        )
 
     def test_unknown_event_is_rejected(self) -> None:
         with self.assertRaises(KeyError):
@@ -593,7 +612,8 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertEqual("evaluator", judge["kind"])
         policy = " ".join(judge["command_policy"])
         self.assertIn("trace evidence, not conversation prose", policy)
-        self.assertIn("recurrence prior", policy)
+        self.assertIn("verified capture handle", policy)
+        self.assertIn("retrospective summary", policy)
         self.assertIn("failed or abandoned task", policy)
         self.assertEqual(
             "crystallize",
@@ -666,6 +686,7 @@ class MachineConformanceTest(unittest.TestCase):
 
     def test_run_output_policy_forbids_summary_results(self) -> None:
         policy = " ".join(ACTIONS["run_registry_play"]["command_policy"])
+        self.assertEqual(3600, ACTIONS["run_registry_play"]["timeout_seconds"])
         self.assertIn("Never request summary output", policy)
         self.assertIn("compact Play summary cannot prove full detail", policy)
         self.assertIn("exactly one rote play run", policy)

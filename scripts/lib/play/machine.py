@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from jsonschema import Draft202012Validator
 
 from .executors import action_executor
 
@@ -102,6 +103,13 @@ def validate_bundle(
     if not isinstance(handoff_schema, dict):
         raise MachineValidationError(["controller schema documents are missing or invalid"])
     errors: list[str] = []
+
+    for error in sorted(
+        Draft202012Validator(machine_schema).iter_errors(machine),
+        key=lambda item: [str(part) for part in item.absolute_path],
+    ):
+        location = ".".join(str(part) for part in error.absolute_path) or "machine"
+        errors.append(f"machine.yaml:{location}: {error.message}")
 
     def check(condition: bool, message: str) -> None:
         if not condition:
@@ -333,6 +341,13 @@ def validate_bundle(
 
     context_roots = set(context_schema.get("required", []))
     for name, action in actions.items():
+        timeout_seconds = action.get("timeout_seconds", 120)
+        check(
+            isinstance(timeout_seconds, int)
+            and not isinstance(timeout_seconds, bool)
+            and 1 <= timeout_seconds <= 3600,
+            f"action {name}: timeout_seconds must be an integer from 1 to 3600",
+        )
         for required in action.get("input_required", []):
             root_name = required.split(".", 1)[0]
             check(root_name in context_roots,
@@ -576,7 +591,7 @@ def validate_bundle(
     check(_target(states, "qualify", "play_creation_request") == "creator_search", "explicit creator intent must search before exploration")
     check(
         _target(states, "creator_classify", "creator_no_match") == "standby_exit",
-        "creator intent without a match must arm the save hook and step aside",
+        "creator intent without a match must apply the pre-work capture decision and step aside",
     )
     check(
         _target(states, "invoke", "settled_task_invocation") == "save_judge",
@@ -595,12 +610,12 @@ def validate_bundle(
     check(
         states.get("standby_exit", {}).get("entry", {}).get("action") == "record_standby"
         and _target(states, "standby_exit", "standby_recorded") == "exited",
-        "standby must record the save hook and scoped preferences, then exit quietly",
+        "standby must record the capture/normal decision and scoped preferences, then exit",
     )
     check(
         actions.get("record_standby", {}).get("command")
         == "scripts/bin/play-standby record --stdin --json",
-        "the save hook and preference ledger must use the deterministic standby recorder",
+        "the capture decision and preference ledger must use the deterministic standby recorder",
     )
     check(
         states.get("save_judge", {}).get("entry", {}).get("action")
@@ -914,17 +929,17 @@ def validate_bundle(
     )
     check(
         "trace evidence, not conversation prose" in judge_policy_text
-        and "recurrence prior" in judge_policy_text
+        and "capture handle" in judge_policy_text
         and "failed or abandoned task" in judge_policy_text,
-        "save worthiness must be judged from trace evidence with a recurrence prior and failure gate",
+        "save worthiness must require captured trace evidence and a failure gate",
     )
     standby_policy_text = " ".join(
         actions.get("record_standby", {}).get("command_policy", [])
     )
     check(
-        "unserved outcome intent" in standby_policy_text
+        "capture/normal decision" in standby_policy_text
         and "explicit statement" in standby_policy_text,
-        "standby must arm hooks only for unserved outcomes and ledger only explicit statements",
+        "standby must apply capture policy and ledger only explicit statements",
     )
     check(
         "One reading per captured rote call" in standby_policy_text

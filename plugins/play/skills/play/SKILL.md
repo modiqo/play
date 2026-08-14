@@ -32,8 +32,10 @@ failed checks and multi-select install targets, report that the Play installatio
 and stop before normal Play control flow. Do not try `rtk` or `rtk proxy`: `play-machine` is a Python
 entrypoint installed through a small executable launcher, not an RTK subcommand or compiled Python
 artifact. An explicit `/play` or `$play` with no separate task is a complete
-onboarding request: set `request.original` to `/play`. After a task Play stepped aside from
-settles, re-enter once with `request.original` set to `$play settle <one-line summary>`.
+onboarding request: set `request.original` to `/play`. When the terminal presentation returns a
+capture handle, do all subsequent work through its named Rote workspace. Only after that captured
+trajectory verifies may you re-enter with `$play settle <capture-handle> <one-line summary>`.
+Never settle normal/uncaptured work or reconstruct a trajectory after the fact.
 
 The command executes every eligible deterministic action and stops only at a model, human,
 specialist, or terminal boundary, returning a short `continuation_id`. Keep that value opaque in
@@ -76,10 +78,10 @@ fresh plan/apply convergence pass. Never collect credentials in bootstrap contex
 
 Play interrupts only for an adequate saved Play or a projected approval. When qualification
 returns conversation or exclusion, or no adequate Play exists, Play exits quietly — no search
-narration, no explore offers; the runtime arms its save hook on the way out. **A standby exit is
-a baton-pass, never a result**: the user's request is still unfulfilled, so complete it yourself
-immediately through the normal path — the rote skill owns adapter catalog search, exploration,
-shell, and browser work — and after repeatable work finishes, re-enter with `$play settle`. Saving, publication,
+narration, no explore offers. Before novel outcome work starts, the runtime classifies it as
+`capture` or `normal`. Capture creates a Rote workspace and handle; normal creates neither.
+**A standby exit is a baton-pass, never a result**: complete a captured request only through the
+returned workspace, or complete a normal request without a future settle option. Saving, publication,
 adapter repair, and team invites run only through the projected specialist handoffs. Never
 decompose `rote play run` into registry pulls, adapter setup, or local-path execution, and never
 treat its failure as authorization for a manual fallback. Preserve every primary payload exactly

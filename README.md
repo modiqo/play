@@ -69,16 +69,18 @@ Before anything runs, Play shows the exact version, required inputs, local setup
 name, and declared effects. Choosing a search result is not approval to execute it; running is a
 separate confirmation.
 
-### 5. Save useful work—or skip Play entirely
+### 5. Capture useful work—or keep it normal
 
-If your agent worked something out and you expect to do it again:
+When no saved Play covers a likely reusable outcome, Play classifies it **before work starts**.
+`capture` creates a Rote workspace and returns a capture handle; `normal` creates no trajectory and
+can never be converted into a Play afterward. After captured work is verified, the agent may run:
 
 ```text
-$play settle deployed staging and posted the summary
+$play settle cap_xxxxxxxxxxxxxxxx deployed staging and posted the summary
 ```
 
-Play checks the recorded work rather than guessing from the conversation. If the procedure is
-actually reusable, you can keep it for a team, share it with the community, or skip saving it.
+Play checks that exact pre-work capture and its Rote evidence rather than guessing from the
+conversation. Settle is optional, but it is never retrospective.
 
 For a one-off task, just ask normally. You can also be explicit:
 
@@ -92,7 +94,7 @@ Handle this normally without Play
 |---|---|---|
 | Ask for an outcome | Searches your local and authorized Play collections | Whether to inspect or ignore a match |
 | Inspect a matching Play | Shows inputs, setup, credentials by name, and declared effects | Whether the exact version may run |
-| No adequate Play exists | Steps aside and lets your agent work normally | The task, corrections, and approvals |
+| No adequate Play exists | Classifies the fallback as capture or normal before execution | Whether captured work should later settle |
 | Finish repeatable work | Checks whether the recorded steps are worth saving | Team, Community, or Skip |
 | Ask “what’s new” | Shows new and revised Plays grouped by organization | Whether to inspect one |
 
@@ -117,7 +119,7 @@ $play                                      # Guided introduction
 $play find a Play that retrieves emails   # Find by outcome
 $play run the PostHog DAU report           # Find, inspect, then approve a run
 $play whats new                            # Open your Play inbox
-$play settle <what just worked>            # Consider saving repeatable work
+$play settle <capture-handle> <summary>    # Settle an existing Rote capture
 $play birth weekly customer report         # See how one of your Plays was made
 $play list my organizations and Plays      # Browse authorized collections
 Handle this normally without Play          # Explicitly skip Play
@@ -163,7 +165,8 @@ stateDiagram-v2
     %% ── Typed invocation ──
     invoke --> onboarding : empty $play, /play, or canonical URI
     invoke --> search : unambiguous outcome (fast lane)
-    invoke --> save_judge : $play settle (post-task re-entry)
+    invoke --> save_judge : $play settle <capture> (verified re-entry)
+    invoke --> blocked : settle without valid capture
     invoke --> qualify : ordinary request
 
     %% ── Qualify routes each request to one trajectory ──
@@ -199,9 +202,10 @@ stateDiagram-v2
     use_verify --> standby_exit : not verified
     use_receipt --> receipt
 
-    %% ── Stay out of the way + the save hook ──
-    standby_exit --> exited : hook armed, ledger updated, silence
-    save_judge --> crystallize : worth saving (trace evidence)
+    %% ── Pre-work capture gate ──
+    standby_exit --> exited : capture => Rote workspace + handle
+    standby_exit --> exited : normal => no trajectory, no settle
+    save_judge --> crystallize : worth saving (bound capture evidence)
     save_judge --> exited : one-off
 
     %% ── Save lifecycle (delegated to rote specialists) ──
@@ -225,7 +229,7 @@ stateDiagram-v2
     awareness_collect --> completed : unchanged
     awareness_offer --> use_inspect : play selected
     creator_search --> creator_offer : related Play exists
-    creator_search --> standby_exit : no match — hook armed
+    creator_search --> standby_exit : no match — apply capture decision
     creator_offer --> use_inspect : use existing
     creator_offer --> standby_exit : adapt / create outside the machine
     management --> completed
@@ -242,9 +246,16 @@ readability; [`machine.yaml`](references/controller/machine.yaml) is the exact a
 
 There is deliberately **no Explore lane**. Earlier versions of this machine orchestrated
 exploration — modality routing, adapter discovery, effect approvals — re-implementing what the
-rote skills already own. Today, when no adequate Play exists, Play arms the save hook and steps
-aside; the agent works normally through rote; and `$play settle` re-enters for the save judgment.
-Fewer states, fewer bespoke entry paths, fewer places for bugs to hide.
+rote skills already own. Today, when no adequate Play exists, Play classifies the fallback before
+execution. Captured work starts in a dedicated Rote workspace and may later settle by its explicit
+handle; normal work has no capture and no retrospective save path.
+
+The runtime enforces this boundary rather than relying on caller prose: continuation state is
+resumed only by owner-private opaque IDs; boundary events reject undeclared fields; settle guards
+are derived from the bound capture; private-org policy is derived from membership evidence; the
+machine is checked against its Draft 2020-12 schema before semantic validation; approved Play runs
+inherit a 3600-second budget; and oversized output streams to an owner-private artifact with only a
+bounded preview in the continuation.
 
 State ownership is explicit: `play` owns invocation classification, prompts, evaluators,
 deterministic verification, and the standby/ledger writes; `rote-specialist` states
@@ -665,16 +676,16 @@ Create, save, and share without memorizing lifecycle commands:
 
 ```text
 $play create a reusable weekly customer report
-$play settle built the weekly customer report end to end
+$play settle cap_xxxxxxxxxxxxxxxx built the weekly customer report end to end
 Handle this normally without Play
 ```
 
-Play always searches before creating. If an adequate Play exists it offers **Inspect existing** or
-lets you adapt outside the machine. If none exists, Play arms the save hook and steps aside — the
-agent does the work normally through the rote skills, with rote's own workspace capture recording
-the evidence. When the work settles, `$play settle <one-line summary>` re-enters the machine and
-the save-worthiness judge examines the **trace, not the conversation**: at least two effect-bearing
-steps, at least one input that would vary on reuse, a stable output shape, and a recurrence prior.
+Play always searches before creating. If an adequate Play exists it offers **Inspect existing**.
+If none exists, the request is classified before execution. A capture starts and binds a Rote
+workspace; normal work remains uncaptured. Only `$play settle <capture-handle> <summary>` can
+re-enter the save path, and the save-worthiness judge examines the **bound trace, not the
+conversation**: at least two effect-bearing steps, at least one input that would vary on reuse,
+and a stable output shape.
 A worth-saving verdict leads to one offer:
 
 - **Team** — release and publish to an authorized private organization, then offer colleague
