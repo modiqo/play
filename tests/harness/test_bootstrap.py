@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import threading
 import time
@@ -14,9 +15,11 @@ from unittest.mock import ANY, MagicMock, patch
 from scripts.lib.play.bootstrap import (
     Step,
     Progress,
+    _accept_identity_only_preflight,
     _parallel_harness_work,
     _fallback_skill_config_entries,
     _render_status_card,
+    _result_step,
     _rote_skill_command,
     apply,
     build_plan,
@@ -357,7 +360,13 @@ class BootstrapTest(unittest.TestCase):
 
     def test_progress_redraws_one_terminal_line_with_elapsed_time(self) -> None:
         stream = StringIO()
-        progress = Progress(stream, heartbeat_seconds=0.01, interactive=True)
+        progress = Progress(
+            stream,
+            heartbeat_seconds=0.01,
+            interactive=True,
+            insights=("Workflow fit first.", "Immediate value wins."),
+            insight_seconds=0.01,
+        )
 
         def work() -> str:
             time.sleep(0.025)
@@ -366,24 +375,37 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("done", progress.call("Checking things", work))
 
         rendered = stream.getvalue()
-        self.assertIn("\r\033[2K◐ Checking things ·", rendered)
+        self.assertIn("✦ Workflow fit first.\n◐ Checking things ·", rendered)
+        self.assertIn("✦ Immediate value wins.", rendered)
+        self.assertIn("\033[1A\r\033[2K", rendered)
         self.assertRegex(rendered, r"✓ Checking things \(\d+\.\ds\)")
-        self.assertEqual(1, rendered.count("\n"))
+        self.assertEqual(1, rendered.count("✓ Checking things"))
 
     def test_progress_omits_repeating_heartbeats_when_redirected(self) -> None:
         stream = StringIO()
-        progress = Progress(stream, heartbeat_seconds=0.01, interactive=False)
+        progress = Progress(
+            stream,
+            heartbeat_seconds=0.01,
+            interactive=False,
+            insights=("This should stay out of redirected logs.",),
+        )
 
         progress.call("Checking things", lambda: time.sleep(0.025))
 
         rendered = stream.getvalue()
         self.assertEqual(1, rendered.count("◐ Checking things"))
         self.assertNotIn("Checking things ·", rendered)
+        self.assertNotIn("redirected logs", rendered)
         self.assertEqual(2, rendered.count("\n"))
 
     def test_parallel_progress_shares_one_transient_terminal_line(self) -> None:
         stream = StringIO()
-        progress = Progress(stream, heartbeat_seconds=0, interactive=True)
+        progress = Progress(
+            stream,
+            heartbeat_seconds=0,
+            interactive=True,
+            insights=("A workflow should pay rent quickly.",),
+        )
 
         codex = progress.begin("Integrating Codex")
         claude = progress.begin("Integrating Claude Code")
@@ -394,7 +416,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn(
             "◐ Integrating Codex; Integrating Claude Code · 0s", rendered
         )
-        self.assertEqual(2, rendered.count("\n"))
+        self.assertIn("✦ A workflow should pay rent quickly.", rendered)
         self.assertEqual(1, rendered.count("✓ Integrating Codex"))
         self.assertEqual(1, rendered.count("✓ Integrating Claude Code"))
 
@@ -514,6 +536,29 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("Start DeepSeek Harness (preview): dsh web", rendered)
         self.assertIn("type: /play", rendered)
 
+    def test_status_card_frames_missing_identity_as_guided_onboarding(self) -> None:
+        rendered = _render_status_card(
+            {
+                "status": "onboarding_required",
+                "run_id": "sign-in-run",
+                "selected_harnesses": ["codex"],
+                "steps": [
+                    {
+                        "id": "rote_identity",
+                        "status": "onboarding_required",
+                        "detail": "Sign in or create a Rote account.",
+                    }
+                ],
+            }
+        )
+
+        self.assertIn("Status: READY — SIGN IN TO CONTINUE", rendered)
+        self.assertIn("Codex          READY", rendered)
+        self.assertIn("Sign in to start", rendered)
+        self.assertIn("rote login --provider google", rendered)
+        self.assertIn("rote login --provider github", rendered)
+        self.assertNotIn("INCOMPLETE", rendered)
+
     def test_status_card_keeps_structured_command_output_in_report(self) -> None:
         verbose = json.dumps(
             {
@@ -546,6 +591,49 @@ class BootstrapTest(unittest.TestCase):
         self.assertNotIn("plugin failed", rendered)
         self.assertIn("see the detailed JSON report", rendered)
         self.assertIn("/tmp/quiet-card.json", rendered)
+
+    def test_failed_command_report_preserves_stdout_and_stderr(self) -> None:
+        step = _result_step(
+            "install_play",
+            subprocess.CompletedProcess(
+                ["install-all"], 1, "activation started\n", "launcher missing\n"
+            ),
+            ["install-all"],
+        )
+
+        self.assertEqual("failed", step.status)
+        self.assertIn("stdout:\nactivation started", step.detail)
+        self.assertIn("stderr:\nlauncher missing", step.detail)
+
+    def test_identity_only_preflight_is_onboarding_eligible(self) -> None:
+        payload = {
+            "checks": [
+                {"id": "play_machine_on_path", "ok": True},
+                {"id": "authenticated", "ok": False},
+            ]
+        }
+        result = subprocess.CompletedProcess(
+            ["play-preflight"], 2, json.dumps(payload), ""
+        )
+
+        normalized = _accept_identity_only_preflight(result)
+
+        self.assertEqual(0, normalized.returncode)
+
+    def test_preflight_with_activation_failure_remains_failed(self) -> None:
+        payload = {
+            "checks": [
+                {"id": "play_machine_on_path", "ok": False},
+                {"id": "authenticated", "ok": False},
+            ]
+        }
+        result = subprocess.CompletedProcess(
+            ["play-preflight"], 2, json.dumps(payload), ""
+        )
+
+        normalized = _accept_identity_only_preflight(result)
+
+        self.assertEqual(2, normalized.returncode)
 
     @patch(
         "scripts.lib.play.bootstrap.converge_play_marketplace",

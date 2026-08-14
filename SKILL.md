@@ -63,6 +63,12 @@ Present returned `presentations` in order, then act on `projection.state.boundar
 If `instruction.preflight_required_for_events` names your selected event, run
 `play-machine preflight --harness <codex|claude|kimi|cursor|hermes|opencode|deepseek|generic> --json` first and pass its complete
 unchanged output as `preflight`. Missing Rote setup delegates to the `rote-setup` skill.
+When the preflight is structurally healthy and its only failed check is `authenticated`, treat that
+as the normal first-use entrance, not an error or blocker: keep the Play continuation opaque, invoke
+`rote-setup`, and lead with sign in or create an account through Google or GitHub. After the setup
+specialist verifies `rote whoami`, rerun the complete preflight and resume the same declared event
+with the now-ready output. If the user pauses setup, preserve the original request and say how to
+resume it; do not replace the requested outcome with a generic installation failure.
 
 ## Cross-harness bootstrap
 

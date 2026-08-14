@@ -329,9 +329,17 @@ After approval, it performs that plan, verifies each selected app, and saves a J
 report under `~/.local/state/play-bootstrap/runs/`. The final status card gives each app's launch
 command, exact Play invocation, any remaining action, and a few starter prompts. Full structured
 command output stays in the saved JSON report; the terminal shows bounded human summaries unless
-you explicitly pass `--json`. In a terminal, glyph progress redraws one active status line in
-place: `◐` is active, `✓` completed, and `✗` failed. Redirected output gets one start and one finish
-record per phase instead of repeating elapsed-time heartbeats.
+you explicitly pass `--json`. In a terminal, one short workflow-design insight rotates above one
+active progress line: `◐` is active, `✓` completed, and `✗` failed. The notes emphasize immediate
+value, real recurring needs, low review cost, and permission to redesign or retire experiments.
+Redirected output gets one start and one finish record per phase without rotating copy or repeated
+elapsed-time heartbeats.
+
+An installed but unsigned Rote is a successful first-use state. The final card says **READY — SIGN
+IN TO CONTINUE**, offers Google and GitHub sign-in/account creation, and exits successfully. The
+next Play request preserves its original intent while `rote-setup` guides authentication, verifies
+the live identity, and resumes. Managed activation also self-repairs a launcher whose recorded Play
+source no longer exists; it will not take over a different source that is still present.
 
 Invocation differs by app:
 

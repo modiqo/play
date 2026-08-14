@@ -84,6 +84,16 @@ PLAY_MARKETPLACE = "play-skills"
 PLAY_PLUGIN = "play@play-skills"
 PLAY_REPOSITORY = "modiqo/play"
 MAX_SELECTED_HARNESSES = 3
+SETUP_INSIGHTS = (
+    "Build for Tuesday-you, not your imaginary ten-times-more-productive clone.",
+    "A workflow should pay rent quickly: one useful result beats a distant promise.",
+    "New queue detected? That may be maintenance wearing a productivity costume.",
+    "Try three manual wins before automation; let the recurring need prove itself.",
+    "If–then plans strengthen goals you already want—they cannot manufacture the need.",
+    "Unused workflows are field notes, not character references.",
+    "Keep, redesign, revisit, or retire: even a misfit workflow can teach you something.",
+    "The best trigger is work you already do; meet yourself there and return value fast.",
+)
 
 
 class BootstrapError(RuntimeError):
@@ -136,6 +146,8 @@ class Progress:
         enabled: bool = True,
         heartbeat_seconds: float = 1.0,
         interactive: bool | None = None,
+        insights: Sequence[str] = SETUP_INSIGHTS,
+        insight_seconds: float = 4.0,
     ) -> None:
         self.stream = stream if stream is not None else sys.stderr
         self.enabled = enabled
@@ -146,6 +158,9 @@ class Progress:
             except (AttributeError, OSError):
                 interactive = False
         self.interactive = interactive
+        self.insights = tuple(item.strip() for item in insights if item.strip())
+        self.insight_seconds = max(0.001, insight_seconds)
+        self._insight_offset = -1
         self._lock = threading.Lock()
         self._active: dict[int, ProgressToken] = {}
         self._line_visible = False
@@ -154,8 +169,16 @@ class Progress:
         if not self._line_visible:
             return
         self.stream.write("\r\033[2K")
+        if self.insights:
+            self.stream.write("\033[1A\r\033[2K")
         self.stream.flush()
         self._line_visible = False
+
+    def _fit_terminal_line(self, text: str) -> str:
+        width = max(20, shutil.get_terminal_size(fallback=(100, 24)).columns - 1)
+        if len(text) <= width:
+            return text
+        return text[: max(1, width - 1)].rstrip() + "…"
 
     def _render_active_locked(self) -> None:
         if not self.interactive or not self._active:
@@ -169,7 +192,13 @@ class Progress:
             labels = "; ".join(token.label for token in tokens)
             elapsed = max(now - token.started for token in tokens)
             text = f"{labels} · {elapsed:.0f}s"
-        self.stream.write(f"\r\033[2K◐ {text}")
+        self._clear_active_locked()
+        if self.insights:
+            oldest = min(token.started for token in tokens)
+            rotation = int((now - oldest) // self.insight_seconds)
+            insight = self.insights[(self._insight_offset + rotation) % len(self.insights)]
+            self.stream.write(f"✦ {self._fit_terminal_line(insight)}\n")
+        self.stream.write(f"◐ {self._fit_terminal_line(text)}")
         self.stream.flush()
         self._line_visible = True
 
@@ -184,6 +213,10 @@ class Progress:
         if self.enabled:
             with self._lock:
                 if self.interactive:
+                    if not self._active:
+                        self._insight_offset = (self._insight_offset + 1) % max(
+                            1, len(self.insights)
+                        )
                     self._active[id(token)] = token
                     self._render_active_locked()
                 else:
@@ -1167,7 +1200,12 @@ def _result_step(
     *,
     target: str | None = None,
 ) -> Step:
-    output = (result.stdout or result.stderr).strip()
+    stdout = result.stdout.strip()
+    stderr = result.stderr.strip()
+    if result.returncode != 0 and stdout and stderr:
+        output = f"stdout:\n{stdout}\n\nstderr:\n{stderr}"
+    else:
+        output = stdout or stderr
     return Step(
         step_id,
         "completed" if result.returncode == 0 else "failed",
@@ -1175,6 +1213,35 @@ def _result_step(
         command=list(command),
         target=target,
         changed=result.returncode == 0,
+    )
+
+
+def _accept_identity_only_preflight(
+    result: subprocess.CompletedProcess[str],
+) -> subprocess.CompletedProcess[str]:
+    """Treat an unsigned identity as onboarding, not an installation failure."""
+
+    if result.returncode == 0:
+        return result
+    try:
+        payload = json.loads(result.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return result
+    checks = payload.get("checks") if isinstance(payload, dict) else None
+    if not isinstance(checks, list):
+        return result
+    failed = {
+        str(check.get("id"))
+        for check in checks
+        if isinstance(check, dict) and check.get("ok") is False
+    }
+    if failed != {"authenticated"}:
+        return result
+    return subprocess.CompletedProcess(
+        args=result.args,
+        returncode=0,
+        stdout=result.stdout,
+        stderr=result.stderr,
     )
 
 
@@ -1225,6 +1292,7 @@ def _render_status_card(report: dict[str, Any]) -> str:
     status = str(report["status"])
     status_label = {
         "completed": "READY",
+        "onboarding_required": "READY — SIGN IN TO CONTINUE",
         "action_required": "READY — ACTION REQUIRED",
         "blocked": "INCOMPLETE",
     }.get(status, status.upper())
@@ -1252,7 +1320,8 @@ def _render_status_card(report: dict[str, Any]) -> str:
         ):
             state = "INCOMPLETE"
         elif any(
-            step.get("status") in {"human_action_required", "review_required"}
+            step.get("status")
+            in {"human_action_required", "review_required", "onboarding_required"}
             for step in harness_steps
         ):
             state = "ACTION REQUIRED"
@@ -1260,12 +1329,26 @@ def _render_status_card(report: dict[str, Any]) -> str:
             state = "READY"
         lines.append(f"    {LABELS.get(harness, harness):<14} {state}")
 
+    onboarding_steps = [
+        step for step in steps if step.get("status") == "onboarding_required"
+    ]
     action_steps = [
         step
         for step in steps
         if step.get("status")
         in {"failed", "approval_required", "human_action_required", "review_required"}
     ]
+    if onboarding_steps:
+        lines.extend(
+            [
+                "",
+                "  Sign in to start",
+                "    Your Play library follows your Rote identity. Sign in or create an account:",
+                "    - Google: rote login --provider google",
+                "    - GitHub: rote login --provider github",
+                "    Complete the browser step, then ask Play what’s new.",
+            ]
+        )
     if action_steps:
         lines.extend(["", "  Before you start"])
         for step in action_steps:
@@ -1398,8 +1481,10 @@ def _render_plan(plan: dict[str, Any]) -> str:
         number += 1
     approvals = [action for action in plan["actions"] if action.get("approval_required")]
     if approvals:
-        lines.extend(["", "  Approval"])
-        lines.append("    Rote is missing, so its official installer needs separate approval.")
+        lines.extend(["", "  Safety check"])
+        lines.append(
+            "    Installing Rote uses its official remote installer; approval is checked before execution."
+        )
     lines.extend(["+------------------------------------------------------------+", ""])
     return "\n".join(lines)
 
@@ -1669,8 +1754,10 @@ def apply(
     steps.append(
         Step(
             "rote_identity",
-            "completed" if identity == "authenticated" else "human_action_required",
-            "Rote identity verified." if identity == "authenticated" else "Run the rote-setup skill to sign in and finish optional API setup.",
+            "completed" if identity == "authenticated" else "onboarding_required",
+            "Rote identity verified."
+            if identity == "authenticated"
+            else "Sign in or create a Rote account with Google or GitHub; the browser keeps credentials out of the installer.",
         )
     )
     launcher = Path(
@@ -1689,7 +1776,9 @@ def apply(
             "--json",
         ]
         return active_progress.command(
-            f"Verifying {LABELS[harness]}", runner, command
+            f"Verifying {LABELS[harness]}",
+            lambda requested: _accept_identity_only_preflight(runner(requested)),
+            command,
         )
 
     verification_results = _parallel_harness_work(selected, verify_harness)
@@ -1711,6 +1800,8 @@ def apply(
         status = "blocked"
     elif any(step.status in {"human_action_required", "review_required"} for step in steps):
         status = "action_required"
+    elif any(step.status == "onboarding_required" for step in steps):
+        status = "onboarding_required"
     else:
         status = "completed"
     return _finish_report(plan, run_id, started, steps, status=status, runner=runner)
@@ -1835,7 +1926,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         else (_render_status_card(payload) if args.command == "install" else _markdown(payload))
     )
     print(json.dumps(payload, indent=2, sort_keys=True) if args.json else rendered)
-    return 0 if payload.get("status", "completed") == "completed" else 2
+    return (
+        0
+        if payload.get("status", "completed")
+        in {"completed", "onboarding_required", "action_required"}
+        else 2
+    )
 
 
 if __name__ == "__main__":

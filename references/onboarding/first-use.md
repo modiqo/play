@@ -3,6 +3,19 @@
 Use this guidance only after an empty `$play` or `/play` invocation has live-verified an installed,
 authenticated Rote identity. Keep canonical URI onboarding separate.
 
+## Identity entrance
+
+Every Play request is identity-gated, including `whats new`. If live preflight is structurally
+healthy and only the `authenticated` check is false, this is normal onboarding—not an error path.
+Keep the original request and continuation intact, hand off to `rote-setup`, and offer Google or
+GitHub sign in/account creation. After the browser flow, require a live `rote whoami`, rerun the
+complete preflight, and continue the original request. A paused login explains how to resume; it
+must not be relabeled as an installation failure.
+
+Repair activation before evaluating identity. A managed launcher that names a missing recorded
+Play source may migrate to the currently loaded marketplace source. Never take over a different
+source that still exists, and never ask login to compensate for a broken launcher.
+
 ## Promise
 
 Lead with: **Start small. See what happens. Stay in control.**

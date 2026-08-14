@@ -317,9 +317,16 @@ def reconcile(state: dict[str, object]) -> None:
     mode = "marketplace" if marketplace_source() else "source-linked"
     previous_mode = state.get("mode", "source-linked")
     source_changed = source != SOURCE
-    if source_changed and not (mode == "marketplace" and previous_mode == "marketplace"):
+    recorded_source_available = (source / "SKILL.md").is_file() and (
+        source / "scripts" / "bin" / "play-machine"
+    ).is_file()
+    orphaned_source_repair = source_changed and not recorded_source_available
+    if source_changed and not (
+        orphaned_source_repair
+        or (mode == "marketplace" and previous_mode == "marketplace")
+    ):
         raise ProfileError(f"profile state belongs to another Play source: {source}")
-    if previous_mode != mode:
+    if previous_mode != mode and not orphaned_source_repair:
         raise ProfileError(f"activation mode changed; expected {mode}")
     if not play_is_implicit():
         raise ProfileError("Play source is not configured for implicit invocation")
@@ -463,6 +470,8 @@ def reconcile(state: dict[str, object]) -> None:
         f"reconciled Play-first {mode} profile across {len(roots)} harness root(s); "
         f"rebased {len(rebased_skills)} refreshed/new rote skill(s)"
     )
+    if orphaned_source_repair:
+        print(f"repaired activation from missing Play source: {source}")
     print("restart the harness to reload the reconciled activation profile")
 
 

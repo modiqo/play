@@ -111,19 +111,21 @@ modalities, constraints, inputs, effect policy, evidence contract, and idempoten
 the original packet SHA, repair receipt reference, adapter id, and classified rung as resume
 provenance. The original CALL must execute and pass normal receipt and outcome verification.
 
-## Empty-invocation setup handoff
+## Play-request setup handoff
 
-An empty `$play` or `/play` invocation may hand off to `rote-setup` only after the typed live probe
-reports the binary missing, or a sequential `rote whoami` reports no authenticated email. This is
-an onboarding handoff, not an Explore execution owner and not a CALL authentication-repair packet.
+Any `$play` or `/play` request may hand off to `rote-setup` after typed live preflight reports the
+binary missing, or reports a structurally healthy installation whose only failed check is an
+unauthenticated identity. This is normal onboarding, not an Explore execution owner, a CALL
+authentication-repair packet, or an installation-error presentation. Preserve the original request
+and opaque continuation while setup runs.
 
 Pass the onboarding intent, live Rote status, resolved command when present, and expected closed
 events. `rote-setup` owns its sequential binary/state probes, install choice, remote-code approval,
 login, and optional remaining onboarding. Play must not inline an installer or login command. Accept
 only `rote_setup_completed`, `rote_setup_paused`, or `setup_specialist_unavailable` with the declared
-payload. A completed result always returns to `onboarding_probe`; Play rechecks the binary and then
-`whoami` rather than trusting a prose success claim. A pause or unavailable specialist blocks with
-its recovery direction.
+payload. A completed result reruns the complete live preflight rather than trusting a prose success
+claim, then resumes the original declared event. A pause preserves the request and gives its
+recovery direction; an unavailable specialist remains a real blocker.
 
 ## Ownership map
 
@@ -138,7 +140,7 @@ its recovery direction.
   directly; never hand these operations to `rote-flow-run`.
 - Registry publication and sharing: `rote-registry`.
 - Registry inspection, organization summaries, and grouped Play inventories: `rote-registry`.
-- Empty Play onboarding when Rote is missing or unauthenticated: `rote-setup`.
+- Play onboarding when Rote is missing or unauthenticated: `rote-setup`.
 - Private organization creation and invitations: `rote-org`.
 - Repeated failures: `rote-troubleshooting`.
 

@@ -462,11 +462,13 @@ def execute(
     source = ROOT
     destination: Path | None = None
     backup: Path | None = None
+    profile_activated = False
     if copy_install:
         destination, backup = stage_portable_copy(package_source())
         source = destination
     try:
         run_profile(source, "install" if command == "install" else "verify", harnesses)
+        profile_activated = command == "install"
         if command == "install" and any(item.name == "opencode" for item in harnesses):
             install_opencode_command()
         verify_harness_coverage(harnesses, source)
@@ -474,7 +476,12 @@ def execute(
         verify_play_runtime(source)
     except Exception:
         if destination is not None:
-            restore_portable_copy(destination, backup)
+            if profile_activated:
+                # The activation profile and launcher now own this stable source path.
+                # Retain it so a later verification failure cannot create a stale launcher.
+                finish_portable_copy(backup)
+            else:
+                restore_portable_copy(destination, backup)
         raise
     finish_portable_copy(backup)
     if command == "install":

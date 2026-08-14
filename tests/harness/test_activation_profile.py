@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -263,6 +264,63 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertIn(str(self.source), self.launcher.read_text())
         state = json.loads(self.state.read_text())
         self.assertEqual(str(self.source.resolve()), state["source"])
+
+    def test_marketplace_activation_repairs_a_missing_portable_source(self) -> None:
+        portable = Path(self.temporary.name) / "portable" / "skill"
+        (portable / "agents").mkdir(parents=True)
+        (portable / "scripts" / "bin").mkdir(parents=True)
+        (portable / "SKILL.md").write_bytes((ROOT / "SKILL.md").read_bytes())
+        (portable / "agents" / "openai.yaml").write_bytes(
+            (ROOT / "agents" / "openai.yaml").read_bytes()
+        )
+        (portable / "scripts" / "bin" / "play-machine").write_text("#!/bin/sh\n")
+        self.source = portable
+        self.run_profile("install")
+        self.assertIn(str(portable / "scripts/bin/play-machine"), self.launcher.read_text())
+
+        shutil.rmtree(portable)
+        plugin = Path(self.temporary.name) / "plugin-repair"
+        repaired_source = plugin / "skills" / "play"
+        (plugin / ".codex-plugin").mkdir(parents=True)
+        (plugin / ".codex-plugin" / "plugin.json").write_text("{}\n")
+        (repaired_source / "agents").mkdir(parents=True)
+        (repaired_source / "SKILL.md").write_bytes((ROOT / "SKILL.md").read_bytes())
+        (repaired_source / "agents" / "openai.yaml").write_bytes(
+            (ROOT / "agents" / "openai.yaml").read_bytes()
+        )
+        self.source = repaired_source
+
+        result = self.run_profile("install")
+
+        self.assertIn("repaired activation from missing Play source", result.stdout)
+        self.assertIn(
+            str(repaired_source / "scripts/bin/play-machine"), self.launcher.read_text()
+        )
+        state = json.loads(self.state.read_text())
+        self.assertEqual("marketplace", state["mode"])
+        self.assertEqual(str(repaired_source.resolve()), state["source"])
+        for root in self.roots:
+            self.assertFalse((root / "play").exists())
+
+    def test_activation_does_not_take_over_an_available_different_source(self) -> None:
+        first = Path(self.temporary.name) / "first" / "skill"
+        second = Path(self.temporary.name) / "second" / "skill"
+        for source in (first, second):
+            (source / "agents").mkdir(parents=True)
+            (source / "scripts" / "bin").mkdir(parents=True)
+            (source / "SKILL.md").write_bytes((ROOT / "SKILL.md").read_bytes())
+            (source / "agents" / "openai.yaml").write_bytes(
+                (ROOT / "agents" / "openai.yaml").read_bytes()
+            )
+            (source / "scripts" / "bin" / "play-machine").write_text("#!/bin/sh\n")
+        self.source = first
+        self.run_profile("install")
+        self.source = second
+
+        result = self.run_profile("install", expected=1)
+
+        self.assertIn("profile state belongs to another Play source", result.stderr)
+        self.assertIn(str(first / "scripts/bin/play-machine"), self.launcher.read_text())
 
 
 if __name__ == "__main__":

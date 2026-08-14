@@ -26,7 +26,13 @@ class InstallAllTest(unittest.TestCase):
             "#!/bin/sh\n"
             "case \"${1:-}\" in\n"
             "  version) echo 'version: 1.0.0' ;;\n"
-            "  whoami) echo 'ok: person@example.com' ;;\n"
+            "  whoami)\n"
+            "    if [ \"${ROTE_TEST_LOGGED_OUT:-}\" = 1 ]; then\n"
+            "      echo 'error: Not logged in'\n"
+            "      exit 1\n"
+            "    fi\n"
+            "    echo 'ok: person@example.com'\n"
+            "    ;;\n"
             "  self-update)\n"
             "    if [ \"${2:-}\" = '--check' ]; then\n"
             "      echo 'You are on the latest version!'\n"
@@ -287,6 +293,70 @@ class InstallAllTest(unittest.TestCase):
         self.assertEqual("completed", report["status"])
         self.assertEqual(["codex", "claude", "kimi"], report["selected_harnesses"])
         self.uninstall(installed)
+
+    def test_local_bootstrap_guides_first_time_sign_in_without_error_state(self) -> None:
+        install_home = self.home / "curl-first-use"
+        environment = {
+            **self.environment,
+            "PLAY_INSTALL_HOME": str(install_home),
+            "PLAY_INSTALL_SOURCE": str(ROOT),
+            "PLAY_INSTALL_YES": "1",
+            "ROTE_TEST_LOGGED_OUT": "1",
+        }
+
+        result = subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh")],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertIn("Status: READY — SIGN IN TO CONTINUE", result.stdout)
+        self.assertIn("Sign in to start", result.stdout)
+        self.assertIn("rote login --provider google", result.stdout)
+        self.assertIn("rote login --provider github", result.stdout)
+        self.assertNotIn("Status: INCOMPLETE", result.stdout)
+        reports = list((self.home / "bootstrap-state" / "runs").glob("*.json"))
+        self.assertEqual(1, len(reports))
+        report = json.loads(reports[0].read_text(encoding="utf-8"))
+        self.assertEqual("onboarding_required", report["status"])
+        identity = next(step for step in report["steps"] if step["id"] == "rote_identity")
+        self.assertEqual("onboarding_required", identity["status"])
+        self.uninstall(install_home / "skill")
+
+    def test_sign_in_and_disabled_codex_are_actionable_not_install_errors(self) -> None:
+        config = self.home / ".codex" / "config.toml"
+        config.write_text(
+            '[[skills.config]]\nname = "play"\nenabled = false\n',
+            encoding="utf-8",
+        )
+        install_home = self.home / "curl-first-use-disabled"
+        environment = {
+            **self.environment,
+            "PLAY_INSTALL_HOME": str(install_home),
+            "PLAY_INSTALL_SOURCE": str(ROOT),
+            "PLAY_INSTALL_YES": "1",
+            "ROTE_TEST_LOGGED_OUT": "1",
+        }
+
+        result = subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh")],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertIn("Status: READY — ACTION REQUIRED", result.stdout)
+        self.assertIn("Sign in to start", result.stdout)
+        self.assertIn("Codex: Codex has an explicit disabled Play skill override", result.stdout)
+        self.assertNotIn("Status: INCOMPLETE", result.stdout)
+        self.uninstall(install_home / "skill")
 
 
 if __name__ == "__main__":
