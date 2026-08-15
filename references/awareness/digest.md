@@ -53,9 +53,11 @@ return candidate, fetched, and omitted counts; never call it exhaustive.
 New and revised cards use a separate registry metadata budget (100 by default) to retrieve released
 version, lifetime totals, and `version.metadata.provenance.author`. Treat that author as publication
 display metadata, not proof that it maps to the current signed-in identity. A second, separate update
-inspection budget (four by default) pins successful cards to `owner/name@version` and displays exact
-defaults. A card omitted from or failed by Play inspection remains visible for awareness but is not
-an exact Use choice until a later inspect succeeds.
+inspection budget (four by default) resolves successful cards to the current release for disclosure
+and displays exact defaults. Catalog and execution choices remain unversioned `owner/name`; the
+resolved `owner/name@version` is traceability metadata, never the execution selector. A card omitted
+from or failed by Play inspection remains visible for awareness but is not a Use choice until a
+later inspect succeeds.
 
 - New means first publication occurred inside the window.
 - Revised means a newer released version occurred inside the window. Require

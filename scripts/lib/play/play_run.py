@@ -59,9 +59,11 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
     if packet.get("parameters") != dict(parameters):
         raise PlayRunError("prepared parameters differ from approved parameters")
 
-    target = reference if _canonical_play_uri(reference) else exact_reference
-    if not _canonical_play_uri(target) and not _exact_registry_reference(target):
-        raise PlayRunError("approved Play target is not a canonical URI or exact registry reference")
+    target = _latest_execution_target(reference)
+    if target is None:
+        target = _latest_execution_target(exact_reference)
+    if target is None:
+        raise PlayRunError("approved Play target is not a canonical URI or registry reference")
     executable = shutil.which("rote")
     if executable is None:
         raise PlayRunError("rote is not available on PATH")
@@ -315,9 +317,21 @@ def _canonical_play_uri(value: str) -> bool:
     )
 
 
-def _exact_registry_reference(value: str) -> bool:
-    owner_name, separator, version = value.rpartition("@")
-    return bool(separator and version and owner_name.count("/") == 1)
+def _latest_execution_target(value: str) -> str | None:
+    """Return the canonical latest-release selector for a Play reference."""
+
+    if _canonical_play_uri(value):
+        parsed = urlparse(value)
+        owner, name = [segment for segment in parsed.path.split("/") if segment]
+        name = name.partition("@")[0]
+        return f"https://play.modiqo.ai/{owner}/{name}"
+    owner_name = value.partition("@")[0]
+    if owner_name.count("/") != 1:
+        return None
+    owner, name = owner_name.split("/", 1)
+    if not owner or not name:
+        return None
+    return owner_name
 
 
 def _parameter(value: object) -> str:

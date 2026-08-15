@@ -48,18 +48,19 @@ using one source.
 
 For registry-addressable results, emit:
 
-- exact URI: `https://play.modiqo.ai/<owner>/<name>@<version>`;
+- latest-release URI: `https://play.modiqo.ai/<owner>/<name>`;
+- the currently resolved `<owner>/<name>@<version>` only as inspection metadata;
 - sources: `local`, `remote_private`, `remote_public`, or a combination;
 - local availability and whether a pull/install is expected;
-- next command: `rote play inspect <owner>/<name>@<version> --json`.
+- next command: `rote play inspect <owner>/<name> --json`.
 
 For a local-only DAG Play, emit its canonical `owner/name` URI and use that reference for inspection
 and execution; filesystem paths remain internal evidence only.
 
 ## Present choices
 
-Show the normalized query and that both sources completed. For each result show name, sources,
-version, fused score, URI, local availability, and next inspection command. If a Play is available
+Show the normalized query and that both sources completed. For each result show name, currently
+resolved version, fused score, unversioned URI, local availability, and next inspection command. If a Play is available
 only in an authorized organization, state that a local pull/install is expected before it can run.
 For an outcome request, deterministically select the first adequate result by that priority. Inspect
 it read-only. If inspection proves the exact Play is already local, continue immediately to

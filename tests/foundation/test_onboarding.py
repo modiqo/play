@@ -373,10 +373,10 @@ class FirstUseOrientationTest(unittest.TestCase):
         self.assertIn("Approve — set the boundary", result["presentation_markdown"])
         self.assertIn("Verify — prove the outcome", result["presentation_markdown"])
         self.assertIn(
-            "rote play inspect modiqo/hello@0.2.0 --json",
+            "rote play inspect modiqo/hello --json",
             result["presentation_markdown"],
         )
-        self.assertIn("rote play run modiqo/hello@0.2.0", result["presentation_markdown"])
+        self.assertIn("rote play run modiqo/hello", result["presentation_markdown"])
         self.assertIn("cannot be turned into a Play afterward", result["presentation_markdown"])
 
     def test_team_loop_is_reusable_and_does_not_claim_external_sharing(self) -> None:

@@ -8,7 +8,9 @@ from scripts.lib.play.play_run import PlayRunError, execute
 
 
 URI = "https://play.modiqo.ai/modiqo/hello@0.1.0"
+LATEST_URI = "https://play.modiqo.ai/modiqo/hello"
 EXACT = "modiqo/hello@0.1.0"
+LATEST = "modiqo/hello"
 
 
 def payload(reference: str = URI) -> dict:
@@ -41,7 +43,7 @@ def payload(reference: str = URI) -> dict:
 class UniversalPlayRunTest(unittest.TestCase):
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")
-    def test_uses_approved_uri_once_and_preserves_output(self, run, _which) -> None:
+    def test_versioned_uri_executes_latest_unversioned_selector_once(self, run, _which) -> None:
         run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="hello output\n", stderr=""
         )
@@ -49,27 +51,27 @@ class UniversalPlayRunTest(unittest.TestCase):
         result = execute(payload())
 
         self.assertEqual("play_run_ready", result["event"])
-        self.assertEqual(URI, result["target"])
+        self.assertEqual(LATEST_URI, result["target"])
         self.assertEqual("hello output\n", result["output"]["primary"])
         self.assertEqual("full", result["output"]["detail"])
         run.assert_called_once()
         arguments = run.call_args.args[0]
         self.assertEqual(
-            ["/usr/bin/rote", "play", "run", URI, "region=us", "--yes"],
+            ["/usr/bin/rote", "play", "run", LATEST_URI, "region=us", "--yes"],
             arguments,
         )
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")
-    def test_non_uri_selection_uses_exact_registry_reference(self, run, _which) -> None:
+    def test_non_uri_selection_uses_latest_registry_reference(self, run, _which) -> None:
         run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="result", stderr=""
         )
 
         result = execute(payload("modiqo/hello"))
 
-        self.assertEqual(EXACT, result["target"])
-        self.assertEqual(EXACT, run.call_args.args[0][3])
+        self.assertEqual(LATEST, result["target"])
+        self.assertEqual(LATEST, run.call_args.args[0][3])
 
     @patch("scripts.lib.play.play_run.subprocess.run")
     def test_packet_mismatch_blocks_before_execution(self, run) -> None:

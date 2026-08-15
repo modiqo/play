@@ -596,7 +596,7 @@ def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, An
                     parameters = item.get("parameters")
                     play_choices.append(
                         {
-                            "reference": reference,
+                            "reference": reference.partition("@")[0],
                             "label": name,
                             "description": description,
                             "parameters": dict(parameters) if isinstance(parameters, Mapping) else {},

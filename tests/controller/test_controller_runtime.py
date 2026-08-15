@@ -1373,6 +1373,12 @@ class ControllerRuntimeTest(unittest.TestCase):
             "engineering-workflows",
             yielded.session.context["awareness"]["domain_choices"][0]["slug"],
         )
+        self.assertEqual(
+            "engineering-workflows/release-notes",
+            yielded.session.context["awareness"]["domain_groups"][0]["plays"][0][
+                "reference"
+            ],
+        )
 
     def test_awareness_domain_selection_reveals_only_that_domains_plays(self) -> None:
         from play.runtime_context import apply_event, initial_context
@@ -1390,7 +1396,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "count": 1,
                 "plays": [
                     {
-                        "reference": "engineering/release@1.0.0",
+                        "reference": "engineering/release",
                         "label": "release",
                         "description": "Prepare a release.",
                         "parameters": {},
@@ -1403,7 +1409,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "count": 1,
                 "plays": [
                     {
-                        "reference": "workplace/inbox@1.0.0",
+                        "reference": "workplace/inbox",
                         "label": "inbox",
                         "description": "Review an inbox.",
                         "parameters": {},
@@ -1421,7 +1427,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         self.assertEqual("engineering", updated["awareness"]["selected_domain"])
         self.assertEqual(
-            ["engineering/release@1.0.0"],
+            ["engineering/release"],
             [choice["reference"] for choice in updated["awareness"]["play_choices"]],
         )
 

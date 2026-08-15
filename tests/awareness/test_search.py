@@ -218,8 +218,12 @@ class SearchTest(unittest.TestCase):
         )
         self.assertEqual(1, len(results))
         self.assertEqual(
-            "workplace-automation/retrieve-recent-emails@0.1.3",
+            "workplace-automation/retrieve-recent-emails",
             results[0]["reference"],
+        )
+        self.assertEqual(
+            "workplace-automation/retrieve-recent-emails@0.1.3",
+            results[0]["exact_reference"],
         )
         self.assertIn(
             "modiqo/retrieve-recent-emails", results[0]["selection_description"]
@@ -439,15 +443,15 @@ class SearchTest(unittest.TestCase):
                 "version": "0.1.0",
                 "sources": ["local", "registry"],
                 "score": 1.0,
-                "uri": "https://play.modiqo.ai/warsaw-rust/hello@0.1.0",
-                "run_command": "rote play run warsaw-rust/hello@0.1.0",
-                "inspect_command": "rote play inspect warsaw-rust/hello@0.1.0 --json",
+                "uri": "https://play.modiqo.ai/warsaw-rust/hello",
+                "run_command": "rote play run warsaw-rust/hello",
+                "inspect_command": "rote play inspect warsaw-rust/hello --json",
                 "hint_kind": "play",
                 "execution_resolution": "run_local",
             }
         ]
         output = PLAY_SEARCH.render_markdown("hello?", "hello", results)
-        self.assertIn("URI: https://play.modiqo.ai/warsaw-rust/hello@0.1.0", output)
+        self.assertIn("URI: https://play.modiqo.ai/warsaw-rust/hello", output)
         self.assertIn("Next: inspect with `rote play inspect", output)
         self.assertIn("runs it immediately", output)
 

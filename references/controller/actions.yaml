@@ -173,7 +173,7 @@ actions:
     command_policy:
       - Treat only a trimmed `$play` or `/play` with no arguments as an empty greeting invocation.
       - Treat the harness's exact Play activation-without-a-task boilerplate as the same greeting; never send it to model qualification.
-      - Bind `run hello`, `run the Hello Play`, and `$play run hello` directly to the pinned canonical Hello URI without model qualification or search.
+      - Bind `run hello`, `run the Hello Play`, and `$play run hello` directly to the unversioned canonical Hello URI without model qualification or search.
       - Treat a bare or prefixed canonical HTTPS play.modiqo.ai owner/name URI, optionally followed by unique key=value parameters, as a Play URI invocation.
       - Route unambiguous retrieve, fetch, get, find, collect, download, export, list, summarize, check, monitor, calculate, and compare outcomes directly to search.
       - Treat `$play settle <capture-handle> [summary]` as re-entry only when the owner-private capture exists and its Rote workspace already contains trajectory evidence; never reconstruct capture after the work.
@@ -547,7 +547,7 @@ actions:
     input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, inspection.local_change, request.parameters, output_policy, auth_repair.original_packet, auth_repair.original_packet_sha256]
     command: scripts/bin/play-run --stdin --json
     command_policy:
-      - Execute exactly one rote play run using the approved canonical URI when present, otherwise the inspected exact registry reference.
+      - Execute exactly one rote play run using the approved canonical unversioned URI or owner/name reference; retain the inspected exact version only as disclosure and receipt evidence.
       - Never run info, search, list, a local path, or a second capture run; the prior inspection and prepared packet are the complete execution contract.
       - Use --yes only after local readiness is proven, or after approve_play_run binds a remote pull to the exact inspection digest, reference, and displayed parameters.
       - Never pull, install, replace, or repair a remote Play without the post-inspection approval.
@@ -593,7 +593,7 @@ actions:
     input_required: [onboarding.starter_status, onboarding.email_handle, receipt_ref]
     command: scripts/bin/play-onboarding present-activation --stdin --json
     command_policy:
-      - Run only after the pinned starter traverses inspect, approval, detailed output, verification, and receipt.
+      - Run only after the unversioned starter traverses inspect, approval, detailed output, verification, and receipt.
       - Explain in plain language that the user approved a checked method, Rote ran it locally, and the verified result can lead to another Play or a newly preserved method.
       - Do not hide, repeat, or summarize away the complete primary result shown before this presentation.
     events:

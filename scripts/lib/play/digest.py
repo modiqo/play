@@ -108,7 +108,8 @@ def _eligible_public(flows: list[tuple[str, dict]]) -> list[dict[str, Any]]:
         )
         eligible.append(
             {
-                "reference": exact_reference,
+                "reference": base_reference,
+                "exact_reference": exact_reference,
                 "base_reference": base_reference,
                 "name": flow["name"],
                 "owner": slug,
@@ -250,7 +251,8 @@ def build_digest(
             item["creator_status"] = metadata.get("creator_status", "unavailable")
             item["version"] = metadata.get("version")
         if inspected is not None:
-            item["reference"] = inspected["exact_reference"]
+            item["reference"] = base_reference
+            item["resolved_reference"] = inspected.get("exact_reference")
             item["version"] = inspected.get("version")
             item["parameters"] = inspected.get("default_parameters", {})
     revision_complete = all(
@@ -542,6 +544,17 @@ def supports_domain_discovery(digest: object) -> bool:
             or not isinstance(plays, list)
         ):
             return False
+        for play in plays:
+            if not isinstance(play, dict):
+                return False
+            reference = play.get("reference")
+            if (
+                not isinstance(reference, str)
+                or not reference
+                or "@" in reference
+                or reference.count("/") != 1
+            ):
+                return False
         seen.add(owner)
         projected_count += count
     return projected_count == public_count

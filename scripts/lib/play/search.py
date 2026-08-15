@@ -429,13 +429,13 @@ def merge_results(
         elif reference:
             selected_version = hit["versions_by_scope"].get(primary_scope) or hit["version"]
             exact_reference = f"{reference}@{selected_version}" if selected_version else reference
-            uri = f"https://play.modiqo.ai/{exact_reference}"
-            run_command = shlex.join(["rote", "play", "run", exact_reference])
-            inspect_command = shlex.join(["rote", "play", "inspect", exact_reference, "--json"])
+            uri = f"https://play.modiqo.ai/{reference}"
+            run_command = shlex.join(["rote", "play", "run", reference])
+            inspect_command = shlex.join(["rote", "play", "inspect", reference, "--json"])
             hint_kind = "play"
             local_availability = "found" if "local" in hit["sources"] else "not_found"
             execution_resolution = "pull_required"
-            candidate_reference = exact_reference
+            candidate_reference = reference
         else:
             raise SearchError("search result has neither a local path nor registry reference")
         output.append(

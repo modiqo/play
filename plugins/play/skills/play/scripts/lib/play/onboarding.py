@@ -33,8 +33,8 @@ ONBOARDING_ORIENTATION_VERSION = 3
 def default_onboarding_state_path() -> Path:
     return state_path("onboarding-state.json")
 
-STARTER_PLAY_REFERENCE = "modiqo/hello@0.2.0"
-STARTER_PLAY_URI = "https://play.modiqo.ai/modiqo/hello@0.2.0"
+STARTER_PLAY_REFERENCE = "modiqo/hello"
+STARTER_PLAY_URI = "https://play.modiqo.ai/modiqo/hello"
 _PLAY_PREFIX = re.compile(r"^(?:\$play|/play)(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL)
 _SETTLE_REQUEST = re.compile(
     r"^(?:\$play|/play)\s+settle\b(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL
@@ -524,7 +524,7 @@ def render_first_play_activation(human_name: str) -> str:
             "",
             "1. **Inspect — see the X-ray.** Before anything runs, inspect reveals the exact version, inputs, dependencies, operations, and declared effects. You can understand the method instead of trusting a black box.",
             "2. **Approve — set the boundary.** Your approval is tied to what was inspected, including any remote pull or declared writes. A changed method needs a new decision.",
-            "3. **Run — execute the checked method.** Rote runs that exact Play on this computer, where local credentials stay local.",
+            "3. **Run — execute the checked method.** Rote runs the latest release through its unversioned reference on this computer, where local credentials stay local.",
             "4. **Verify — prove the outcome.** Play checks the result against the requested outcome and keeps a receipt; a process merely exiting is not treated as success.",
             "",
             "Hello used public data, needed no account credentials, and declared no writes.",

@@ -103,7 +103,7 @@ class DigestTest(unittest.TestCase):
         self.assertIn("No new publications were found", render_markdown(digest))
         self.assertIn("released-version timestamps", render_markdown(digest))
 
-    def test_inspected_update_is_version_pinned_and_actionable(self) -> None:
+    def test_inspected_update_keeps_latest_selector_and_resolved_version(self) -> None:
         grouped = {
             "alpha": [
                 {
@@ -132,7 +132,8 @@ class DigestTest(unittest.TestCase):
         )
         item = digest["org_updates"]["new"][0]
         self.assertTrue(item["actionable"])
-        self.assertEqual("alpha/new-play@1.1.0", item["reference"])
+        self.assertEqual("alpha/new-play", item["reference"])
+        self.assertEqual("alpha/new-play@1.1.0", item["resolved_reference"])
         self.assertEqual({"days": "7"}, item["parameters"])
 
     def test_whats_new_defers_individual_cards_until_a_domain_is_selected(self) -> None:
@@ -214,6 +215,10 @@ class DigestTest(unittest.TestCase):
         self.assertEqual(1, digest["ranking"]["organization_count"])
         self.assertEqual(1, digest["public_domains"][0]["count"])
         self.assertEqual("modiqo/hello", digest["public_top"][0]["base_reference"])
+        self.assertEqual("modiqo/hello", digest["public_top"][0]["reference"])
+        self.assertEqual(
+            "modiqo/hello@0.1.0", digest["public_top"][0]["exact_reference"]
+        )
         self.assertEqual("parallel", digest["ranking"]["fetch"]["mode"])
         self.assertEqual(15.25, digest["ranking"]["fetch"]["elapsed_ms"])
         rendered = render_markdown(digest)
@@ -277,6 +282,29 @@ class DigestTest(unittest.TestCase):
         )
         self.assertTrue(supports_domain_discovery(digest))
         digest.pop("public_domains")
+        self.assertFalse(supports_domain_discovery(digest))
+
+    def test_cached_digest_with_version_pinned_catalog_choice_is_refreshed(self) -> None:
+        digest = build_digest(
+            [Organization("modiqo", "Modiqo")],
+            {"modiqo": []},
+            [
+                (
+                    "modiqo",
+                    {
+                        "name": "hello",
+                        "visibility": "public",
+                        "exact_reference": "modiqo/hello@0.2.0",
+                        "download_count": 1,
+                    },
+                )
+            ],
+            start=self.start,
+            end=self.end,
+            public_limit=10,
+        )
+        self.assertTrue(supports_domain_discovery(digest))
+        digest["public_domains"][0]["plays"][0]["reference"] = "modiqo/hello@0.2.0"
         self.assertFalse(supports_domain_discovery(digest))
 
     def test_domain_choices_keep_total_count_but_offer_most_recent_plays(self) -> None:

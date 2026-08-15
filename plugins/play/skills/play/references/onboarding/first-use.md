@@ -44,16 +44,17 @@ knowledge becomes memory.
 
 After the orientation is presented and remembered, offer:
 
-1. **Run Hello** — use the pinned canonical URI
-   `https://play.modiqo.ai/modiqo/hello@0.2.0`; disclose it, then run locally or request the exact
-   remote pull approval.
+1. **Run Hello** — use the latest-release canonical URI
+   `https://play.modiqo.ai/modiqo/hello`; disclose the version it currently resolves to, then run
+   the unversioned reference locally or request remote pull approval.
 2. **Tell me your goal** — accept ordinary language and route it through normal Play invocation.
 3. **See useful Plays** — open the normal remembered awareness inbox.
 4. **Not now** — finish without inspection or execution.
 
-The starter choice selects the exact Play for read-only inspection. A proven local copy proceeds to
-execution; a remote copy preserves the normal `approve_play_run` pull gate. Pin the exact starter
-version; replacing it requires a deliberate source change and tests.
+The starter choice selects the canonical unversioned Play for read-only inspection. A proven local
+copy proceeds to execution; a remote copy preserves the normal `approve_play_run` pull gate. Keep
+the resolved version in the inspection and receipt for traceability, but never turn it into the
+execution selector.
 
 After a verified starter receipt, explain what happened without replacing or summarizing the full
 result. Teach the reason for every stage:
@@ -70,8 +71,8 @@ result. Teach the reason for every stage:
 Show the equivalent outside-agent commands without `--yes`, so normal Rote approval remains intact:
 
 ```bash
-rote play inspect modiqo/hello@0.2.0 --json
-rote play run modiqo/hello@0.2.0
+rote play inspect modiqo/hello --json
+rote play run modiqo/hello
 ```
 
 Then offer another Play by domain, creation from a useful outcome, a team space, or Finish. Explain

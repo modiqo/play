@@ -535,7 +535,7 @@ def validate_bundle(
             states, "onboarding_first_offer", "onboarding_awareness_selected"
         )
         == "awareness_collect",
-        "first use must offer the pinned inspected starter, a goal, awareness, or dismissal",
+        "first use must offer the latest-release inspected starter, a goal, awareness, or dismissal",
     )
     check(
         _target(states, "use_receipt", "receipt_ready")
