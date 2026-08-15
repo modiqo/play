@@ -12,6 +12,13 @@ LATEST_URI = "https://play.modiqo.ai/modiqo/hello"
 EXACT = "modiqo/hello@0.1.0"
 LATEST = "modiqo/hello"
 
+AUTH_PROTOCOLS = {
+    "static": "paste a static credential",
+    "oauth": "adapter OAuth reauthorization",
+    "oauth_dcr": "browser OAuth with dynamic registration",
+    "google_discovery": "browser Google authorization",
+}
+
 
 def payload(reference: str = URI) -> dict:
     parameters = {"region": "us"}
@@ -40,6 +47,54 @@ def payload(reference: str = URI) -> dict:
     }
 
 
+def auth_markers(protocol: str, *, adapter_calls_started: bool = False) -> str:
+    return "\n".join(
+        (
+            "@@status",
+            "error: authentication required",
+            "@@authentication",
+            "Adapter: crucible",
+            "Credential: ADAPTER_CRUCIBLE_TOKEN",
+            "State: missing",
+            f"Protocol: {AUTH_PROTOCOLS[protocol]}",
+            "Repair interaction: browser",
+            "Network required: yes",
+            "Remediation: retry in an interactive terminal to authorize",
+            f"Adapter calls started: {str(adapter_calls_started).lower()}",
+            "@@next",
+            "- retry interactively",
+        )
+    )
+
+
+def auth_json(protocol: str) -> str:
+    return __import__("json").dumps(
+        {
+            "schema": 1,
+            "ok": False,
+            "data": {
+                "play_auth_required": {
+                    "schema": "play.auth-required/v1",
+                    "adapter": "crucible",
+                    "auth_type": "bearer",
+                    "protocol": protocol,
+                    "credential": "ADAPTER_CRUCIBLE_TOKEN",
+                    "state": "missing",
+                    "remedy": "browser_authorize",
+                    "automatic_authorization": True,
+                    "required_capability": "browser_loopback",
+                    "interactive_required": True,
+                    "repair_interaction": "browser",
+                    "interaction_mode": "non_interactive",
+                    "network_required": True,
+                    "remediation": "retry in an interactive terminal to authorize",
+                    "adapter_calls_started": False,
+                }
+            },
+        }
+    )
+
+
 class UniversalPlayRunTest(unittest.TestCase):
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")
@@ -60,6 +115,7 @@ class UniversalPlayRunTest(unittest.TestCase):
             ["/usr/bin/rote", "play", "run", LATEST_URI, "region=us", "--yes"],
             arguments,
         )
+        self.assertEqual("structured", run.call_args.kwargs["env"]["ROTE_OUTPUT_MODE"])
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")
@@ -123,19 +179,69 @@ class UniversalPlayRunTest(unittest.TestCase):
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")
-    def test_structured_auth_failure_routes_to_adapter_config(self, run, _which) -> None:
+    def test_marker_auth_failure_routes_every_protocol_to_adapter_config(
+        self, run, _which
+    ) -> None:
+        for protocol in AUTH_PROTOCOLS:
+            with self.subTest(protocol=protocol):
+                run.return_value = subprocess.CompletedProcess(
+                    args=[], returncode=1, stdout="", stderr=auth_markers(protocol)
+                )
+
+                result = execute(payload())
+
+                self.assertEqual("play_auth_repair_required", result["event"])
+                repair = result["auth_repair"]
+                self.assertEqual("rote-adapter-config", repair["owner"])
+                self.assertEqual("crucible", repair["adapter_id"])
+                self.assertEqual("ADAPTER_CRUCIBLE_TOKEN", repair["env_var"])
+                self.assertEqual(protocol, repair["classified_rung"])
+                self.assertIn("missing:", repair["distinguishing_error"])
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_json_auth_failure_routes_every_protocol_to_adapter_config(
+        self, run, _which
+    ) -> None:
+        for protocol in AUTH_PROTOCOLS:
+            with self.subTest(protocol=protocol):
+                run.return_value = subprocess.CompletedProcess(
+                    args=[], returncode=1, stdout="", stderr=auth_json(protocol)
+                )
+
+                result = execute(payload())
+
+                self.assertEqual("play_auth_repair_required", result["event"])
+                self.assertEqual(protocol, result["auth_repair"]["classified_rung"])
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_unknown_auth_protocol_fails_closed(self, run, _which) -> None:
+        output = auth_markers("oauth_dcr").replace(
+            AUTH_PROTOCOLS["oauth_dcr"], "future magic auth"
+        )
         run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=1,
-            stdout="",
-            stderr='{"auth_repair":{"adapter_id":"github","env_var":"GITHUB_TOKEN","classified_rung":"static","distinguishing_error":"expired"}}',
+            args=[], returncode=1, stdout="", stderr=output
         )
 
         result = execute(payload())
 
-        self.assertEqual("play_auth_repair_required", result["event"])
-        self.assertEqual("rote-adapter-config", result["auth_repair"]["owner"])
-        run.assert_called_once()
+        self.assertEqual("action_blocked", result["event"])
+        self.assertIn("future magic auth", result["reason"])
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_auth_after_adapter_calls_does_not_enter_repair_loop(self, run, _which) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr=auth_markers("oauth_dcr", adapter_calls_started=True),
+        )
+
+        result = execute(payload())
+
+        self.assertEqual("action_blocked", result["event"])
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")

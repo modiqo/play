@@ -773,6 +773,18 @@ class MachineConformanceTest(unittest.TestCase):
             ][0]["target"],
         )
         self.assertIn("Never place raw credentials", SKILL_TEXT)
+        prompt = PROMPTS["approve_auth_repair"]
+        self.assertEqual(
+            ["auth_repair.adapter_id", "auth_repair.classified_rung"],
+            prompt["template_fields"],
+        )
+        run_policy = " ".join(ACTIONS["run_registry_play"]["command_policy"])
+        for protocol in ("static", "oauth", "oauth_dcr", "google_discovery"):
+            self.assertIn(protocol, run_policy)
+        self.assertEqual(
+            "blocked",
+            MACHINE["states"]["use_run"]["on"]["action_blocked"][0]["target"],
+        )
 
     def test_search_selection_is_inspection_only(self) -> None:
         self.assertEqual(

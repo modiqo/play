@@ -431,7 +431,7 @@ states:
       play_run_ready: [{target: use_verify, mutate: record_controller_run}]
       play_drifted: [{target: standby_exit, mutate: record_failed_receipt}]
       play_auth_repair_required: [{target: use_auth_repair_offer, mutate: record_use_auth_repair_required}]
-      action_blocked: [{target: standby_exit, mutate: record_failed_receipt}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_auth_repair_offer:
     owner: play

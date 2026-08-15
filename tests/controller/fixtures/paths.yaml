@@ -463,9 +463,8 @@ cases:
 
   - name: incomplete run output cannot reach verification
     steps:
-      - {state: use_run, event: action_blocked, target: standby_exit}
-      - {state: standby_exit, event: standby_recorded, target: exited}
-    terminal: exited
+      - {state: use_run, event: action_blocked, target: blocked}
+    terminal: blocked
     excludes: [use_verify, use_receipt, receipt]
 
   - name: unverified use output steps aside for ordinary work

@@ -81,6 +81,10 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
     environment = os.environ.copy()
     environment.setdefault("ROTE_FLOW_PROGRESS", "0")
     environment.setdefault("ROTE_NO_HINTS", "1")
+    # `rote play run` owns no JSON flag. Pin its documented structured marker
+    # mode so an inherited human-output preference cannot hide the typed
+    # @@authentication section from this non-interactive controller boundary.
+    environment["ROTE_OUTPUT_MODE"] = "structured"
     with tempfile.TemporaryDirectory(prefix="play-run-") as directory:
         stdout_path = Path(directory) / "stdout"
         stderr_path = Path(directory) / "stderr"
@@ -256,47 +260,157 @@ def _failed(reason: str) -> dict[str, Any]:
 
 
 def _typed_auth_failure(output: str) -> dict[str, Any] | None:
-    records: list[Mapping[str, Any]] = []
-    for candidate in (output, *reversed(output.splitlines())):
+    sources: list[Mapping[str, Any]] = []
+    candidates = dict.fromkeys((output, *reversed(output.splitlines())))
+    for candidate in candidates:
         try:
             value = json.loads(candidate)
         except json.JSONDecodeError:
             continue
-        if isinstance(value, Mapping):
-            records.append(value)
-    for record in records:
-        repair = record.get("auth_repair")
-        source = repair if isinstance(repair, Mapping) else record
-        adapter_id = source.get("adapter_id")
-        env_var = source.get("env_var")
-        classified_rung = source.get("classified_rung")
-        distinguishing_error = source.get("distinguishing_error") or source.get("error")
-        if all(
-            isinstance(value, str) and value
-            for value in (
-                adapter_id,
-                env_var,
-                classified_rung,
-                distinguishing_error,
-            )
+        if (
+            not isinstance(value, Mapping)
+            or value.get("schema") != 1
+            or value.get("ok") is not False
         ):
-            digest = hashlib.sha256(output.encode()).hexdigest()
-            return {
-                "schema": "play.run-result/v1",
-                "ok": False,
-                "event": "play_auth_repair_required",
-                "auth_repair": {
-                    "source": "rote_play_run",
-                    "owner": "rote-adapter-config",
-                    "recoverable": True,
-                    "adapter_id": adapter_id,
-                    "env_var": env_var,
-                    "classified_rung": classified_rung,
-                    "distinguishing_error": distinguishing_error,
-                    "evidence_refs": [f"sha256:{digest}"],
-                },
-            }
-    return None
+            continue
+        data = value.get("data")
+        if not isinstance(data, Mapping):
+            continue
+        source = data.get("play_auth_required")
+        if isinstance(source, Mapping):
+            sources.append(source)
+
+    marker_source = _marker_auth_failure(output)
+    if marker_source is not None:
+        sources.append(marker_source)
+
+    # Multiple typed failures in one invocation are ambiguous. Refuse to guess
+    # which adapter or credential should be repaired.
+    if len(sources) != 1:
+        return None
+    source = sources[0]
+    if source.get("schema") != "play.auth-required/v1":
+        return None
+
+    adapter_id = source.get("adapter")
+    env_var = source.get("credential")
+    classified_rung = _auth_protocol(source.get("protocol"))
+    state = source.get("state")
+    remediation = source.get("remediation")
+    adapter_calls_started = source.get("adapter_calls_started")
+    if (
+        not isinstance(adapter_id, str)
+        or not adapter_id.strip()
+        or not isinstance(env_var, str)
+        or not env_var.strip()
+        or not isinstance(state, str)
+        or not state.strip()
+        or not isinstance(remediation, str)
+        or not remediation.strip()
+        or classified_rung is None
+        or state not in _AUTH_FAILURE_STATES
+        or adapter_calls_started is not False
+    ):
+        return None
+
+    digest = hashlib.sha256(output.encode()).hexdigest()
+    return {
+        "schema": "play.run-result/v1",
+        "ok": False,
+        "event": "play_auth_repair_required",
+        "auth_repair": {
+            "source": "rote_play_run",
+            "owner": "rote-adapter-config",
+            "recoverable": True,
+            "adapter_id": adapter_id.strip(),
+            "env_var": env_var.strip(),
+            "classified_rung": classified_rung,
+            "distinguishing_error": f"{state}: {remediation.strip()}",
+            "evidence_refs": [f"sha256:{digest}"],
+        },
+    }
+
+
+_AUTH_PROTOCOLS = {
+    "static": "static",
+    "oauth": "oauth",
+    "oauth_dcr": "oauth_dcr",
+    "google_discovery": "google_discovery",
+    # Rote's marker/prose renderer deliberately uses human labels. Keep this
+    # list synchronized with CredentialAcquisitionProtocol::as_str; unknown
+    # values fail closed instead of being treated as a static token.
+    "paste a static credential": "static",
+    "adapter OAuth reauthorization": "oauth",
+    "browser OAuth with dynamic registration": "oauth_dcr",
+    "browser Google authorization": "google_discovery",
+}
+_AUTH_FAILURE_STATES = {
+    "missing",
+    "unreadable",
+    "refresh_required",
+    "reauth_required",
+    "transient",
+    "indeterminate",
+    "unsupported",
+}
+_AUTH_MARKER_FIELDS = {
+    "Adapter": "adapter",
+    "Credential": "credential",
+    "State": "state",
+    "Protocol": "protocol",
+    "Repair interaction": "repair_interaction",
+    "Network required": "network_required",
+    "Remediation": "remediation",
+    "Adapter calls started": "adapter_calls_started",
+}
+
+
+def _auth_protocol(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return _AUTH_PROTOCOLS.get(value.strip())
+
+
+def _marker_auth_failure(output: str) -> Mapping[str, Any] | None:
+    """Project Rote's documented ``@@authentication`` section onto its v1 wire.
+
+    The Play run command currently owns a marker/prose shell rather than a
+    ``--json`` switch. Only the exact documented fields are accepted, and the
+    adapter-call safety bit must be present so ordinary Play output cannot be
+    mistaken for a pre-execution authentication refusal.
+    """
+
+    lines = output.splitlines()
+    starts = [
+        index
+        for index, line in enumerate(lines)
+        if line.strip() == "@@authentication"
+    ]
+    if len(starts) != 1:
+        return None
+    fields: dict[str, Any] = {}
+    for line in lines[starts[0] + 1 :]:
+        stripped = line.strip()
+        if stripped.startswith("@@"):
+            break
+        if not stripped or ": " not in stripped:
+            continue
+        label, value = stripped.split(": ", 1)
+        field = _AUTH_MARKER_FIELDS.get(label)
+        if field is None or field in fields:
+            continue
+        fields[field] = value.strip()
+    required = set(_AUTH_MARKER_FIELDS.values())
+    if set(fields) != required:
+        return None
+    if fields["network_required"] not in {"yes", "no"}:
+        return None
+    if fields["adapter_calls_started"] not in {"true", "false"}:
+        return None
+    fields["network_required"] = fields["network_required"] == "yes"
+    fields["adapter_calls_started"] = fields["adapter_calls_started"] == "true"
+    fields["schema"] = "play.auth-required/v1"
+    return fields
 
 
 def _canonical_play_uri(value: str) -> bool:
