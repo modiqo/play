@@ -213,6 +213,12 @@ def _execute_instruction(
         reason = payload.get("reason")
         if isinstance(reason, str) and reason.strip():
             presentation = reason.strip()
+    if event_id == "auth_repair_receipt_invalid" and presentation is None:
+        auth_repair = payload.get("auth_repair")
+        if isinstance(auth_repair, Mapping):
+            reason = auth_repair.get("blocked_reason")
+            if isinstance(reason, str) and reason.strip():
+                presentation = reason.strip()
     if (
         instruction.get("id") == "inspect_registry_play"
         and event_id in {"play_inspected", "play_not_runnable"}

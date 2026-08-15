@@ -541,6 +541,12 @@ def prepare_auth_repair_handoff(payload: dict[str, Any]) -> dict[str, Any]:
         for key in repair_fields
         if key in auth_repair_record
     }
+    if auth_repair.get("status") != "approved":
+        raise HandoffError("auth repair must be approved before specialist handoff")
+    # Context records the completed human decision. The outgoing packet is a
+    # fresh request to the specialist, whose closed contract correctly uses
+    # `required` until a validated repair receipt returns `repaired`.
+    auth_repair["status"] = "required"
     repair_reasons = _validate_auth_repair_required(auth_repair)
     if repair_reasons:
         raise HandoffError("; ".join(repair_reasons))
@@ -900,6 +906,26 @@ def verify_auth_repair_receipt(payload: dict[str, Any]) -> dict[str, Any]:
 
     packet = payload.get("packet")
     receipt = payload.get("receipt")
+    # Direct CLI callers use top-level packet/receipt fields. The controller's
+    # deterministic action projection preserves context paths, so it supplies
+    # the same values under auth_repair.packet/auth_repair.receipt. Accept both
+    # closed shapes and fail if a caller tries to provide conflicting copies.
+    auth_repair_context = payload.get("auth_repair")
+    if isinstance(auth_repair_context, dict):
+        nested_packet = auth_repair_context.get("packet")
+        nested_receipt = auth_repair_context.get("receipt")
+        if packet is not None and nested_packet is not None and packet != nested_packet:
+            return _invalid_auth_repair_receipt(
+                "top-level and context auth repair packets differ"
+            )
+        if receipt is not None and nested_receipt is not None and receipt != nested_receipt:
+            return _invalid_auth_repair_receipt(
+                "top-level and context auth repair receipts differ"
+            )
+        if packet is None:
+            packet = nested_packet
+        if receipt is None:
+            receipt = nested_receipt
     if not isinstance(packet, dict) or not isinstance(receipt, dict):
         return _invalid_auth_repair_receipt("packet and receipt must be objects")
     if packet.get("schema") != AUTH_REPAIR_PACKET_SCHEMA:

@@ -24,6 +24,7 @@ from play.controller import (
 )
 from play.runtime_actions import advance_until_yield
 from play.runtime_context import RuntimeContextError, validate_mutation_contract
+from play.handoff import prepare_play_run_handoff, verify_auth_repair_receipt
 
 
 class ControllerRuntimeTest(unittest.TestCase):
@@ -231,6 +232,128 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("required", advanced.session.context["auth_repair"]["status"])
         self.assertEqual("human", advanced.projection.as_dict()["state"]["boundary"])
         self.assertIn("oauth_dcr", advanced.projection.as_dict()["instruction"]["question"])
+
+    def test_approved_auth_repair_redirects_harness_to_adapter_specialist(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-auth-redirect",
+            task_key="task-auth-redirect",
+            request_original="Run the Crucible landing-page assessment",
+        )
+        prepared = prepare_play_run_handoff(
+            {
+                "run_id": "session-auth-redirect",
+                "request": {
+                    "requested_outcome": "Assess https://www.modiqo.ai",
+                    "parameters": {"source": "https://www.modiqo.ai"},
+                },
+                "inspection": {
+                    "exact_reference": "crucible-heavybit/landing-page-assessment@0.2.0",
+                    "disclosure_sha256": "a" * 64,
+                },
+            }
+        )
+        context = dict(session.context)
+        context["state"] = "use_auth_repair_offer"
+        context["request"] = {
+            **context["request"],
+            "requested_outcome": "Assess https://www.modiqo.ai",
+        }
+        context["auth_repair"] = {
+            **context["auth_repair"],
+            "source": "rote_auth_repair_required",
+            "status": "required",
+            "owner": "rote-adapter-config",
+            "recoverable": True,
+            "adapter_id": "crucible",
+            "env_var": "ADAPTER_CRUCIBLE_TOKEN",
+            "classified_rung": "oauth_dcr",
+            "distinguishing_error": "missing: browser authorization required",
+            "original_packet": prepared["auth_repair"]["original_packet"],
+            "original_packet_sha256": prepared["auth_repair"][
+                "original_packet_sha256"
+            ],
+            "evidence_refs": ["sha256:auth-required"],
+        }
+        bound = replace(
+            session,
+            cursor=replace(session.cursor, state=StateId("use_auth_repair_offer")),
+            context=context,
+        )
+        approved = self.runtime.advance_session(
+            bound,
+            ControllerEvent(
+                id=EventId("auth_repair_approved"),
+                payload={
+                    "prompt_version": "approve_auth_repair/v1",
+                    "selected_at": "2026-08-15T23:59:00-07:00",
+                    "auth_repair": {
+                        "adapter_id": "crucible",
+                        "env_var": "ADAPTER_CRUCIBLE_TOKEN",
+                        "classified_rung": "oauth_dcr",
+                        "distinguishing_error": "missing: browser authorization required",
+                        "original_packet_sha256": prepared["auth_repair"][
+                            "original_packet_sha256"
+                        ],
+                    },
+                },
+                guards={},
+            ),
+        )
+
+        yielded = advance_until_yield(self.runtime, approved.session, root=ROOT)
+
+        self.assertEqual("use_auth_repair_execute", yielded.projection["state"]["id"])
+        self.assertEqual("specialist", yielded.projection["state"]["boundary"])
+        self.assertEqual(
+            "rote-adapter-config", yielded.projection["instruction"]["specialist"]
+        )
+        self.assertEqual(
+            "required",
+            yielded.projection["instruction"]["input"]["auth_repair"]["packet"][
+                "auth_repair"
+            ]["status"],
+        )
+
+        repair_input = yielded.projection["instruction"]["input"]["auth_repair"]
+        repair_packet = repair_input["packet"]
+        evidence_refs = ["rote:adapter-health/crucible:fresh"]
+        receipt = {
+            "schema": "play.auth-repair-receipt/v1",
+            "packet_sha256": repair_input["packet_sha256"],
+            "run_id": repair_packet["run_id"],
+            "state": repair_packet["state"],
+            "action": repair_packet["action"],
+            "owner": repair_packet["owner"],
+            "executor": {"kind": "skill", "name": "rote-adapter-config"},
+            "event": "auth_repair_ready",
+            "payload": {
+                "auth_repair": {
+                    "source": "rote_auth_repair_result",
+                    "status": "repaired",
+                    "adapter_id": "crucible",
+                    "env_var": "ADAPTER_CRUCIBLE_TOKEN",
+                    "classified_rung": "oauth_dcr",
+                    "repair_action": "reauth",
+                    "evidence_refs": evidence_refs,
+                }
+            },
+            "evidence_refs": evidence_refs,
+        }
+        received = self.runtime.advance_session(
+            yielded.session,
+            ControllerEvent(
+                id=EventId("auth_repair_ready"),
+                payload={"auth_repair": {"receipt": receipt}},
+                guards={},
+            ),
+        )
+
+        self.assertEqual("use_auth_repair_receipt", received.session.context["state"])
+        validation = verify_auth_repair_receipt(
+            received.projection.as_dict()["instruction"]["input"]
+        )
+        self.assertTrue(validation["ok"])
+        self.assertEqual("specialist_auth_repair_ready", validation["event"])
 
     def test_session_advance_applies_event_and_checkpoints_context(self) -> None:
         session = self.runtime.initial_session(
@@ -1215,6 +1338,52 @@ class ControllerRuntimeTest(unittest.TestCase):
             yielded.presentations,
         )
         self.assertEqual("action_blocked", yielded.trace[0].event)
+
+    @patch("play.runtime_actions.subprocess.run")
+    def test_invalid_auth_repair_receipt_surfaces_its_reason_at_terminal(
+        self, run
+    ) -> None:
+        run.return_value = SimpleNamespace(
+            returncode=0,
+            stderr="",
+            stdout=json.dumps(
+                {
+                    "schema": "play.auth-repair-handoff-verification/v1",
+                    "ok": False,
+                    "event": "auth_repair_receipt_invalid",
+                    "receipt_valid": False,
+                    "blocked_reason": "packet and receipt must be objects",
+                    "evidence_refs": [],
+                    "reasons": ["packet and receipt must be objects"],
+                }
+            ),
+        )
+        session = self.runtime.initial_session(
+            run_id="session-invalid-auth-receipt",
+            task_key="task-invalid-auth-receipt",
+            request_original="Run Crucible assessment",
+        )
+        context = dict(session.context)
+        context["state"] = "use_auth_repair_receipt"
+        context["auth_repair"] = {
+            **context["auth_repair"],
+            "packet": {"schema": "play.auth-repair-handoff/v1"},
+            "packet_sha256": "a" * 64,
+            "receipt": {"schema": "play.auth-repair-receipt/v1"},
+        }
+        bound = replace(
+            session,
+            cursor=replace(session.cursor, state=StateId("use_auth_repair_receipt")),
+            context=context,
+        )
+
+        yielded = advance_until_yield(self.runtime, bound, root=ROOT)
+
+        self.assertEqual("blocked", yielded.projection["state"]["id"])
+        self.assertEqual(
+            ("packet and receipt must be objects",), yielded.presentations
+        )
+        self.assertEqual("auth_repair_receipt_invalid", yielded.trace[0].event)
 
     @patch("play.runtime_actions.subprocess.run")
     def test_advance_until_yield_auto_inspects_and_routes_local_play(self, run) -> None:
