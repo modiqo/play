@@ -413,8 +413,9 @@ class BootstrapTest(unittest.TestCase):
         progress.finish(claude)
 
         rendered = stream.getvalue()
-        self.assertIn(
-            "◐ Integrating Codex; Integrating Claude Code · 0s", rendered
+        self.assertRegex(
+            rendered,
+            r"[◐◓◑◒] Integrating Codex; Integrating Claude Code · 0s",
         )
         self.assertIn("✦ A workflow should pay rent quickly.", rendered)
         self.assertEqual(1, rendered.count("✓ Integrating Codex"))
@@ -701,10 +702,10 @@ class BootstrapTest(unittest.TestCase):
             "0.4.7", _converge_marketplace.call_args.kwargs["expected_version"]
         )
 
-    @patch("scripts.lib.play.bootstrap._confirm", side_effect=[True, True])
+    @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
     @patch("scripts.lib.play.bootstrap.apply")
     @patch("scripts.lib.play.bootstrap.build_plan")
-    def test_guided_install_separately_confirms_plan_and_missing_rote(
+    def test_guided_install_uses_one_consent_for_plan_and_missing_rote(
         self,
         build: MagicMock,
         apply_plan: MagicMock,
@@ -749,13 +750,15 @@ class BootstrapTest(unittest.TestCase):
             "restart": "Restart Codex.",
         }
 
-        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+        output = StringIO()
+        with redirect_stdout(output), redirect_stderr(StringIO()):
             result = main(["install", "--harness", "codex", "--run-id", "guided-run"])
 
         self.assertEqual(0, result)
-        self.assertEqual(2, confirm.call_count)
-        self.assertIn("exact Play bootstrap plan", confirm.call_args_list[0].args[0])
-        self.assertIn("https://getrote.dev/install", confirm.call_args_list[1].args[0])
+        confirm.assert_called_once()
+        self.assertIn("Install Rote and Play", confirm.call_args.args[0])
+        self.assertIn("Your setup", output.getvalue())
+        self.assertNotIn("Play setup plan", output.getvalue())
         apply_plan.assert_called_once_with(
             ROOT,
             top_k=3,

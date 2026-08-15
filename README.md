@@ -32,17 +32,18 @@ On macOS or Linux, run:
 curl -fsSL https://getrote.dev/playoffs/install.sh | sh
 ```
 
-That is the whole setup. Play finds your agent apps, checks Rote and its skills, and shows what it
-will install, update, or refresh. For Codex and Claude Code, it keeps an already-current Play plugin
-and refreshes the marketplace plus reinstalls only when the installed plugin is missing or stale.
-Nothing changes until you approve the plan, and installing Rote from `getrote.dev` has its own
-confirmation.
+That is the whole setup. The installer opens a small terminal wizard: press Enter for a concise
+guided walkthrough, or choose **Review details** to inspect every planned change. Play finds your
+agent apps, checks Rote and its skills, and explains what it will install, update, or refresh. One
+approval covers the displayed setup, including the official Rote installer when Rote is missing.
+For Codex and Claude Code, it keeps an already-current Play plugin and refreshes the marketplace
+plus reinstalls only when the installed plugin is missing or stale.
 
-The installer selects at most three apps per run. During execution, `◐` marks active work, repeating
-heartbeats show elapsed time for long phases, `✓` marks completion, and `✗` marks failure. Independent
-app integration and verification run in parallel. A warm install with current Rote skills and Play
-plugins has a tested budget below five seconds; first-time downloads and available updates remain
-bounded by network and provider CLI latency.
+The installer selects at most three apps per run. During execution, `◐ ◓ ◑ ◒` animate on one
+progress line, `✓` marks completion, and `✗` marks failure. A short workflow-design insight rotates
+above the progress line. Independent app integration and verification run in parallel. A warm
+install with current Rote skills and Play plugins has a tested budget below five seconds; first-time
+downloads and available updates remain bounded by network and provider CLI latency.
 
 When it finishes, Play verifies the setup and tells you where it saved the report. Restart your
 agent app, then continue to step 3. The installer requires Python 3.10+ and
@@ -111,7 +112,7 @@ Play dialog. You can also teach it scoped preferences such as “no Plays while 
 ## Safety and privacy at a glance
 
 - Nothing runs merely because search found a match.
-- Remote installer code and an exact Play run have separate approval boundaries.
+- Setup has one explicit approval; later, every exact Play run keeps its own approval boundary.
 - Credentials stay in Rote’s local stores; Play reports credential names, never secret values.
 - Play fails closed when a version, receipt, declared effect, or publication check does not match.
 - Owner-private state lives under `~/.rote-play/`; Rote’s execution state remains under `~/.rote/`.
@@ -318,7 +319,13 @@ Use the same command on a new machine or to bring an existing installation up to
 curl -fsSL https://getrote.dev/playoffs/install.sh | sh
 ```
 
-Before making changes, the installer shows:
+The wizard offers two views of the same safe plan:
+
+- **Guided setup** is the default: a short summary of Rote, the selected apps, and the three setup
+  phases.
+- **Review details** shows detected apps, Rote status, skill changes, hooks, and every planned action.
+
+Nothing changes until you approve the selected view. The plan includes:
 
 - the detected Codex, Claude Code, Kimi, Cursor, Hermes, OpenCode, and DeepSeek Harness installations;
 - whether Rote is missing, current, or has an update available;
@@ -330,7 +337,7 @@ report under `~/.local/state/play-bootstrap/runs/`. The final status card gives 
 command, exact Play invocation, any remaining action, and a few starter prompts. Full structured
 command output stays in the saved JSON report; the terminal shows bounded human summaries unless
 you explicitly pass `--json`. In a terminal, one short workflow-design insight rotates above one
-active progress line: `◐` is active, `✓` completed, and `✗` failed. The notes emphasize immediate
+active progress line: `◐ ◓ ◑ ◒` animate while active, `✓` means completed, and `✗` means failed. The notes emphasize immediate
 value, real recurring needs, low review cost, and permission to redesign or retire experiments.
 Redirected output gets one start and one finish record per phase without rotating copy or repeated
 elapsed-time heartbeats.
@@ -368,8 +375,9 @@ developer preview upstream.
 
 ### Run unattended
 
-For automation, approve the displayed Play plan with `PLAY_INSTALL_YES=1`. If Rote may be missing,
-approve its separate official installer explicitly as well:
+The simple command above is the only command people need. CI has no controlling terminal, so
+automation must record both approvals explicitly: the displayed Play plan and, when Rote may be
+missing, its official installer.
 
 ```bash
 curl -fsSL https://getrote.dev/playoffs/install.sh \

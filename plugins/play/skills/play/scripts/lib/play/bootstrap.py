@@ -94,6 +94,7 @@ SETUP_INSIGHTS = (
     "Keep, redesign, revisit, or retire: even a misfit workflow can teach you something.",
     "The best trigger is work you already do; meet yourself there and return value fast.",
 )
+SPINNER_FRAMES = ("◐", "◓", "◑", "◒")
 
 
 class BootstrapError(RuntimeError):
@@ -164,6 +165,7 @@ class Progress:
         self._lock = threading.Lock()
         self._active: dict[int, ProgressToken] = {}
         self._line_visible = False
+        self._frame = 0
 
     def _clear_active_locked(self) -> None:
         if not self._line_visible:
@@ -198,7 +200,9 @@ class Progress:
             rotation = int((now - oldest) // self.insight_seconds)
             insight = self.insights[(self._insight_offset + rotation) % len(self.insights)]
             self.stream.write(f"✦ {self._fit_terminal_line(insight)}\n")
-        self.stream.write(f"◐ {self._fit_terminal_line(text)}")
+        glyph = SPINNER_FRAMES[self._frame % len(SPINNER_FRAMES)]
+        self._frame += 1
+        self.stream.write(f"{glyph} {self._fit_terminal_line(text)}")
         self.stream.flush()
         self._line_visible = True
 
@@ -1489,6 +1493,41 @@ def _render_plan(plan: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _render_guided_plan(plan: dict[str, Any]) -> str:
+    rote = plan["rote"]
+    update_status = str(rote["update"]["status"]).lower()
+    if rote["path"] is None:
+        rote_summary = "Install the official Rote engine"
+    elif update_status in {"available", "update_available", "outdated"}:
+        rote_summary = "Update the Rote engine"
+    else:
+        rote_summary = "Keep the current Rote engine"
+    apps = " · ".join(
+        LABELS.get(str(harness), str(harness))
+        for harness in plan["selected_harnesses"]
+    )
+    app_count = len(plan["selected_harnesses"])
+    app_word = "app" if app_count == 1 else "apps"
+    return "\n".join(
+        [
+            "",
+            "  Your setup",
+            "",
+            f"    Rote   {rote_summary}",
+            f"    Apps   {apps}",
+            "",
+            "  What happens next",
+            "",
+            f"    1. Prepare Rote and its skills for {app_count} {app_word}",
+            "    2. Activate Play without replacing unrelated settings",
+            "    3. Verify every app and save a detailed receipt",
+            "",
+            "  Credentials stay on this machine. Plays disclose writes before they run.",
+            "",
+        ]
+    )
+
+
 def _confirm(question: str, *, default: bool) -> bool:
     """Read an approval from the controlling terminal, even when the installer is piped."""
 
@@ -1503,9 +1542,10 @@ def _confirm(question: str, *, default: bool) -> bool:
             close_stream = True
         except OSError as error:
             raise BootstrapError(
-                "interactive approval is unavailable. For an unattended install, run: "
-                "curl -fsSL https://getrote.dev/playoffs/install.sh | "
-                "PLAY_INSTALL_YES=1 PLAY_APPROVE_REMOTE_INSTALLER=1 sh"
+                "guided setup needs an interactive terminal. Run "
+                "'curl -fsSL https://getrote.dev/playoffs/install.sh | sh' in a "
+                "terminal; CI may explicitly set PLAY_INSTALL_YES=1 and "
+                "PLAY_APPROVE_REMOTE_INSTALLER=1"
             ) from error
     try:
         if stream is sys.stdin:
@@ -1867,7 +1907,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_parser.add_argument(
         "--approve-remote-installer",
         action="store_true",
-        help="separately approve https://getrote.dev/install when Rote is missing",
+        help="approve https://getrote.dev/install for unattended setup",
+    )
+    install_parser.add_argument(
+        "--mode",
+        choices=("guided", "details"),
+        default="guided",
+        help="show a concise guided setup or the complete change plan",
     )
     install_parser.add_argument("--run-id")
     args = parser.parse_args(argv)
@@ -1895,19 +1941,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "Checking the Play setup plan",
                 lambda: build_plan(top_k=args.top_k, requested=args.harness),
             )
-            print(_render_plan(plan), file=sys.stderr if args.json else sys.stdout)
-            if not args.yes and not _confirm(
-                "Continue with this exact Play bootstrap plan?", default=True
-            ):
-                print("Play installation cancelled before any changes were made.")
-                return 0
             approve_remote_installer = args.approve_remote_installer
-            if plan["rote"]["path"] is None and not approve_remote_installer:
-                approve_remote_installer = _confirm(
-                    "Rote is missing. Run the official installer from "
-                    "https://getrote.dev/install?",
-                    default=False,
+            renderer = _render_guided_plan if args.mode == "guided" else _render_plan
+            print(renderer(plan), file=sys.stderr if args.json else sys.stdout)
+            if not args.yes:
+                question = (
+                    "Install Rote and Play with this setup?"
+                    if plan["rote"]["path"] is None
+                    else "Set up Play with these apps?"
                 )
+                if not _confirm(question, default=True):
+                    print("Play installation cancelled before any changes were made.")
+                    return 0
+                if plan["rote"]["path"] is None:
+                    approve_remote_installer = True
             payload = apply(
                 source,
                 top_k=args.top_k,

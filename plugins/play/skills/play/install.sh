@@ -8,7 +8,92 @@ fail() {
   exit 1
 }
 
+print_banner() {
+  if [ "${PLAY_INSTALL_NO_BANNER:-0}" = 1 ]; then
+    return
+  fi
+  if [ ! -t 1 ]; then
+    printf '\n%s\n%s\n\n' 'Modiqo Rote' 'Where useful interactions become Plays—inspectable, composable, ready to run again.'
+    return
+  fi
+  if [ -z "${NO_COLOR:-}" ]; then
+    accent=$(printf '\033[38;5;141m')
+    bright=$(printf '\033[1;97m')
+    muted=$(printf '\033[38;5;245m')
+    reset=$(printf '\033[0m')
+  else
+    accent=""
+    bright=""
+    muted=""
+    reset=""
+  fi
+  printf '\n%s' "$accent"
+  printf '%s\n' '  ███╗   ███╗  ██████╗  ██████╗  ██╗  ██████╗   ██████╗ '
+  printf '%s\n' '  ████╗ ████║ ██╔═══██╗ ██╔══██╗ ██║ ██╔═══██╗ ██╔═══██╗'
+  printf '%s\n' '  ██╔████╔██║ ██║   ██║ ██║  ██║ ██║ ██║   ██║ ██║   ██║'
+  printf '%s\n' '  ██║╚██╔╝██║ ██║   ██║ ██║  ██║ ██║ ██║▄▄ ██║ ██║   ██║'
+  printf '%s\n' '  ██║ ╚═╝ ██║ ╚██████╔╝ ██████╔╝ ██║ ╚██████╔╝ ╚██████╔╝'
+  printf '%s\n' '  ╚═╝     ╚═╝  ╚═════╝  ╚═════╝  ╚═╝  ╚══▀▀═╝   ╚═════╝ '
+  printf '%s%s%34s%s\n' "$reset" "$bright" 'R O T E' "$reset"
+  printf '\n  %sWhere useful interactions become Plays—inspectable, composable, ready to run again.%s\n\n' "$muted" "$reset"
+}
+
+choose_install_mode() {
+  install_mode=${PLAY_INSTALL_MODE:-}
+  case "$install_mode" in
+    guided|details) return ;;
+    "") ;;
+    *) fail "PLAY_INSTALL_MODE must be guided or details" ;;
+  esac
+  if [ "${PLAY_INSTALL_YES:-0}" = 1 ]; then
+    install_mode=details
+    return
+  fi
+  if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
+    install_mode=guided
+    return
+  fi
+
+  printf '%s\n' '  How would you like to set up?'
+  printf '%s\n' '    [Enter] Guided setup    A quick walkthrough with one clear approval.'
+  printf '%s\n' '    [d]     Review details  See every planned change before approval.'
+  printf '%s' '  > ' > /dev/tty
+  if ! IFS= read -r install_choice < /dev/tty; then
+    fail "setup choice ended before a selection was received"
+  fi
+  case "$install_choice" in
+    ""|g|G|guided) install_mode=guided ;;
+    d|D|details) install_mode=details ;;
+    n|N|q|Q|quit)
+      printf '%s\n' 'Setup cancelled before any changes were made.'
+      exit 0
+      ;;
+    *) fail "choose Enter for guided setup or d to review details" ;;
+  esac
+  printf '\n'
+}
+
+stage_start() {
+  stage_label=$1
+  if [ -t 2 ]; then
+    printf '\r\033[2K◐ %s' "$stage_label" >&2
+  else
+    printf '%s\n' "◐ $stage_label" >&2
+  fi
+}
+
+stage_finish() {
+  if [ -t 2 ]; then
+    printf '\r\033[2K✓ %s\n' "$stage_label" >&2
+  else
+    printf '%s\n' "✓ $stage_label" >&2
+  fi
+}
+
 command -v python3 >/dev/null 2>&1 || fail "python3 is required"
+
+print_banner
+choose_install_mode
 
 temporary=""
 cleanup() {
@@ -39,11 +124,9 @@ else
     https://*) ;;
     *) fail "PLAY_INSTALL_URL must use https" ;;
   esac
-  printf '%s\n' "◐ Downloading Play from $repository@$reference"
+  stage_start "Preparing Play from $repository@$reference"
   curl --proto '=https' --tlsv1.2 -fsSL "$archive_url" -o "$archive"
-  printf '%s\n' "✓ Downloaded Play"
   mkdir "$source_root"
-  printf '%s\n' "◐ Verifying Play archive"
   python3 - "$archive" "$source_root" <<'PY'
 import sys
 import tarfile
@@ -74,7 +157,7 @@ with tarfile.open(archive, "r:gz") as bundle:
     extract_options = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
     bundle.extractall(destination, members=safe, **extract_options)
 PY
-  printf '%s\n' "✓ Verified Play archive"
+  stage_finish
 fi
 
 [ -f "$source_root/scripts/bin/play-bootstrap" ] || fail "downloaded Play package is incomplete"
@@ -92,5 +175,6 @@ esac
 if [ -n "${PLAY_INSTALL_TOP_K:-}" ]; then
   set -- "$@" --top-k "$PLAY_INSTALL_TOP_K"
 fi
+set -- "$@" --mode "$install_mode"
 
 python3 "$source_root/scripts/bin/play-bootstrap" install "$@"

@@ -274,6 +274,9 @@ class InstallAllTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
         self.assertLess(elapsed, 5.0, f"warm three-harness install took {elapsed:.3f}s")
+        self.assertIn("Modiqo Rote", result.stdout)
+        self.assertIn("Where useful interactions become Plays", result.stdout)
+        self.assertIn("Play setup plan", result.stdout)
         self.assertIn("✓ Using local Play source", result.stdout)
         self.assertIn("◐ Checking the Play setup plan", result.stderr)
         self.assertIn("✓ Verifying Codex", result.stderr)
@@ -294,6 +297,17 @@ class InstallAllTest(unittest.TestCase):
         self.assertEqual("completed", report["status"])
         self.assertEqual(["codex", "claude", "kimi"], report["selected_harnesses"])
         self.uninstall(installed)
+
+    def test_portable_installer_is_valid_posix_shell(self) -> None:
+        result = subprocess.run(
+            ["/bin/sh", "-n", str(ROOT / "install.sh")],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
 
     def test_remote_archive_extraction_selects_a_safe_python_policy(self) -> None:
         installer = (ROOT / "install.sh").read_text(encoding="utf-8")
