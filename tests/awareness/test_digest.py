@@ -9,7 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.digest import build_digest, classify_updates, rank_public, render_markdown
+from play.digest import (
+    build_digest,
+    classify_updates,
+    rank_public,
+    render_markdown,
+    supports_domain_discovery,
+)
 from play.registry import Organization
 
 
@@ -250,6 +256,70 @@ class DigestTest(unittest.TestCase):
             ranking_omitted_count=1,
         )
         self.assertIn("at least **1 runnable public Play**", render_markdown(digest))
+
+    def test_legacy_cached_digest_without_domains_is_not_discovery_compatible(self) -> None:
+        digest = build_digest(
+            [Organization("modiqo", "Modiqo")],
+            {"modiqo": []},
+            [
+                (
+                    "modiqo",
+                    {
+                        "name": "hello",
+                        "visibility": "public",
+                        "download_count": 1,
+                    },
+                )
+            ],
+            start=self.start,
+            end=self.end,
+            public_limit=10,
+        )
+        self.assertTrue(supports_domain_discovery(digest))
+        digest.pop("public_domains")
+        self.assertFalse(supports_domain_discovery(digest))
+
+    def test_domain_choices_keep_total_count_but_offer_most_recent_plays(self) -> None:
+        grouped = {
+            "engineering": [
+                {
+                    "name": "older",
+                    "visibility": "public",
+                    "created_at": "2026-07-01T00:00:00+00:00",
+                    "latest_version_created_at": "2026-07-02T00:00:00+00:00",
+                },
+                {
+                    "name": "newer",
+                    "visibility": "public",
+                    "created_at": "2026-07-03T00:00:00+00:00",
+                    "latest_version_created_at": "2026-08-03T00:00:00+00:00",
+                },
+            ]
+        }
+        public = [
+            (
+                "engineering",
+                {
+                    "name": name,
+                    "visibility": "public",
+                    "download_count": downloads,
+                },
+            )
+            for name, downloads in (("older", 100), ("newer", 1))
+        ]
+        digest = build_digest(
+            [Organization("engineering", "Engineering")],
+            grouped,
+            public,
+            start=self.start,
+            end=self.end,
+            public_limit=10,
+        )
+
+        domain = digest["public_domains"][0]
+        self.assertEqual(2, domain["count"])
+        self.assertEqual(5, domain["recent_play_limit"])
+        self.assertEqual(["newer", "older"], [play["name"] for play in domain["plays"]])
 
     def test_awareness_sha_is_stable_across_windows_but_changes_with_source_state(self) -> None:
         grouped = {

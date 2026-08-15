@@ -50,6 +50,7 @@ def _digest(new: int, revised: int) -> dict:
             "label": "Popular public Plays",
             "complete": True,
             "eligible_count": 1,
+            "organization_count": 1,
         },
         "public_top": [],
         "public_groups": [],
@@ -150,6 +151,23 @@ class InboxCacheTest(unittest.TestCase):
         stored = read_cache(cache_path=self.cache_path)
         assert stored is not None
         self.assertEqual(1, stored["counts"]["new"])
+
+    def test_if_older_than_refreshes_a_fresh_legacy_digest_without_domains(self) -> None:
+        self._refresh(_digest(1, 0))
+        stored = read_cache(cache_path=self.cache_path)
+        assert stored is not None
+        stored["digest"].pop("public_domains")
+        from play.private_store import atomic_write_json
+
+        atomic_write_json(self.cache_path, stored)
+        refreshed = self._refresh(_digest(3, 0), if_older_than_hours=6)
+
+        self.assertTrue(refreshed["refreshed"])
+        latest = read_cache(cache_path=self.cache_path)
+        assert latest is not None
+        self.assertEqual(3, latest["counts"]["new"])
+        self.assertEqual(1, latest["digest"]["ranking"]["organization_count"])
+        self.assertEqual("acme", latest["digest"]["public_domains"][0]["owner"])
 
     def test_if_older_than_refreshes_a_stale_cache(self) -> None:
         self._refresh(_digest(1, 0))

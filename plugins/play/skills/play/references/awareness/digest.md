@@ -86,7 +86,13 @@ Present `# What’s new in Plays` progressively:
 3. List organization/domain display names with their Play counts, but do not dump individual cards.
 4. Recommend Hello and explain that inspection is an X-ray of the exact method and declared effects.
 5. Use `select_awareness_domain` to ask for a domain. After selection, populate only that domain’s
-   bounded `awareness.play_choices` and use `select_awareness_play`.
+   five most recently published or released Plays in `awareness.play_choices`, then use
+   `select_awareness_play`. Keep the organization count as the complete eligible total rather than
+   the shortlist length.
+
+A cached digest is discovery-compatible only when its organization/domain projection is present
+and its organization counts reconcile exactly to the runnable public Play total. Refresh a fresh
+legacy cache that lacks this projection instead of rendering a misleading zero-organization count.
 
 Complete inspection coverage supports an exact scoped count. Partial coverage must say “at least”
 and disclose that the scope is the user’s authorized organizations, not the global registry.

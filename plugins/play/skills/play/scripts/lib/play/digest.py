@@ -33,6 +33,7 @@ from .timewindow import TimeWindowError, next_checkpoint, parse_timestamp, resol
 
 
 SCHEMA = "play.digest/v1"
+DOMAIN_RECENT_LIMIT = 5
 FINGERPRINT_FIELDS = (
     "name",
     "visibility",
@@ -277,10 +278,60 @@ def build_digest(
     for item in public_top:
         grouped_public.setdefault((item["owner"], item["owner_kind"]), []).append(item)
     all_public = _eligible_public(public_flows)
+    registry_flows = {
+        f"{owner}/{flow['name']}": flow
+        for owner, flows in grouped.items()
+        for flow in flows
+    }
+    for item in all_public:
+        registry_flow = registry_flows.get(item["base_reference"])
+        if registry_flow is None:
+            item["recent_at"] = None
+            item["recent_kind"] = None
+            continue
+        latest_version_created_at = registry_flow.get("latest_version_created_at")
+        recent_at = latest_version_created_at or registry_flow.get("created_at")
+        item["recent_at"] = recent_at if isinstance(recent_at, str) else None
+        item["recent_kind"] = (
+            "release" if isinstance(latest_version_created_at, str) else "publication"
+        )
     domain_public: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for item in all_public:
         domain_public.setdefault((item["owner"], item["owner_kind"]), []).append(item)
+    for plays in domain_public.values():
+        plays.sort(key=lambda item: item["reference"])
+        plays.sort(
+            key=lambda item: (
+                parse_timestamp(item["recent_at"], field=f"{item['reference']}.recent_at")
+                if item.get("recent_at")
+                else datetime.min.replace(tzinfo=timezone.utc)
+            ),
+            reverse=True,
+        )
     display_names = {org.slug: org.display_name for org in organizations}
+    public_domains = [
+        {
+            "owner": owner,
+            "owner_kind": owner_kind,
+            "display_name": display_names.get(owner, owner),
+            "count": len(plays),
+            "recent_play_limit": DOMAIN_RECENT_LIMIT,
+            "plays": plays[:DOMAIN_RECENT_LIMIT],
+        }
+        for (owner, owner_kind), plays in domain_public.items()
+    ]
+    public_domains.sort(key=lambda domain: domain["owner"])
+    public_domains.sort(
+        key=lambda domain: (
+            parse_timestamp(
+                domain["plays"][0]["recent_at"],
+                field=f"{domain['owner']}.recent_at",
+            )
+            if domain["plays"] and domain["plays"][0].get("recent_at")
+            else datetime.min.replace(tzinfo=timezone.utc)
+        ),
+        reverse=True,
+    )
     return {
         "schema": SCHEMA,
         "complete": True,
@@ -309,16 +360,7 @@ def build_digest(
             {"owner": owner, "owner_kind": owner_kind, "plays": plays}
             for (owner, owner_kind), plays in sorted(grouped_public.items())
         ],
-        "public_domains": [
-            {
-                "owner": owner,
-                "owner_kind": owner_kind,
-                "display_name": display_names.get(owner, owner),
-                "count": len(plays),
-                "plays": plays[:5],
-            }
-            for (owner, owner_kind), plays in sorted(domain_public.items())
-        ],
+        "public_domains": public_domains,
         "ranking": ranking,
         "capabilities": {
             "organization_updates": {
@@ -461,6 +503,50 @@ def render_markdown(digest: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def supports_domain_discovery(digest: object) -> bool:
+    """Reject legacy v1 snapshots that predate organization/domain projection."""
+
+    if not isinstance(digest, dict) or digest.get("schema") != SCHEMA:
+        return False
+    ranking = digest.get("ranking")
+    domains = digest.get("public_domains")
+    if not isinstance(ranking, dict) or not isinstance(domains, list):
+        return False
+    public_count = ranking.get("eligible_count")
+    organization_count = ranking.get("organization_count")
+    if (
+        not isinstance(public_count, int)
+        or isinstance(public_count, bool)
+        or public_count < 0
+        or not isinstance(organization_count, int)
+        or isinstance(organization_count, bool)
+        or organization_count < 0
+        or organization_count != len(domains)
+    ):
+        return False
+    projected_count = 0
+    seen: set[str] = set()
+    for domain in domains:
+        if not isinstance(domain, dict):
+            return False
+        owner = domain.get("owner")
+        count = domain.get("count")
+        plays = domain.get("plays")
+        if (
+            not isinstance(owner, str)
+            or not owner
+            or owner in seen
+            or not isinstance(count, int)
+            or isinstance(count, bool)
+            or count < 1
+            or not isinstance(plays, list)
+        ):
+            return False
+        seen.add(owner)
+        projected_count += count
+    return projected_count == public_count
+
+
 def collect_digest(
     *,
     days: int = 1,
@@ -554,8 +640,9 @@ def _fresh_cached_digest(*, days: int, max_age_hours: float = 6.0) -> dict[str, 
     if age < 0 or age > max_age_hours * 3600:
         return None
     digest = cache.get("digest")
-    if not isinstance(digest, dict) or digest.get("schema") != SCHEMA:
+    if not supports_domain_discovery(digest):
         return None
+    assert isinstance(digest, dict)
     return copy.deepcopy(digest)
 
 

@@ -587,6 +587,12 @@ def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, An
                     downloads = item.get("download_count")
                     if isinstance(downloads, int):
                         description = f"{description} · {downloads} lifetime downloads"
+                    recent_at = item.get("recent_at")
+                    recent_kind = item.get("recent_kind")
+                    if isinstance(recent_at, str) and recent_at:
+                        date = recent_at.split("T", 1)[0]
+                        label = "released" if recent_kind == "release" else "published"
+                        description = f"{description} · {label} {date}"
                     parameters = item.get("parameters")
                     play_choices.append(
                         {
@@ -600,7 +606,7 @@ def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, An
                 noun = "Play" if count == 1 else "Plays"
                 description = f"{count} public {noun}"
                 if sample:
-                    description += f" · including {sample}"
+                    description += f" · recent: {sample}"
                 domain_choices.append(
                     {"slug": slug, "label": label, "description": description}
                 )
