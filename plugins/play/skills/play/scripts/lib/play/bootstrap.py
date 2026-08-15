@@ -1534,7 +1534,7 @@ def _confirm(question: str, *, default: bool) -> bool:
     prompt = " [Y/n] " if default else " [y/N] "
     stream = None
     close_stream = False
-    if sys.stdin.isatty() and sys.stderr.isatty():
+    if sys.stdin.isatty():
         stream = sys.stdin
     else:
         try:

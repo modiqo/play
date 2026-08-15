@@ -177,4 +177,8 @@ if [ -n "${PLAY_INSTALL_TOP_K:-}" ]; then
 fi
 set -- "$@" --mode "$install_mode"
 
-python3 "$source_root/scripts/bin/play-bootstrap" install "$@"
+if [ "${PLAY_INSTALL_YES:-0}" != 1 ] && [ -r /dev/tty ]; then
+  python3 "$source_root/scripts/bin/play-bootstrap" install "$@" < /dev/tty
+else
+  python3 "$source_root/scripts/bin/play-bootstrap" install "$@"
+fi

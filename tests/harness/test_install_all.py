@@ -299,6 +299,7 @@ class InstallAllTest(unittest.TestCase):
         self.uninstall(installed)
 
     def test_portable_installer_is_valid_posix_shell(self) -> None:
+        installer = (ROOT / "install.sh").read_text(encoding="utf-8")
         result = subprocess.run(
             ["/bin/sh", "-n", str(ROOT / "install.sh")],
             cwd=ROOT,
@@ -308,6 +309,7 @@ class InstallAllTest(unittest.TestCase):
         )
 
         self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn('install "$@" < /dev/tty', installer)
 
     def test_remote_archive_extraction_selects_a_safe_python_policy(self) -> None:
         installer = (ROOT / "install.sh").read_text(encoding="utf-8")
