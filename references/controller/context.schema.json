@@ -1745,6 +1745,7 @@
           ],
           "enum": [
             "rote_auth_repair_required",
+            "rote_auth_repair_result",
             null
           ]
         },

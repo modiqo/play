@@ -22,7 +22,7 @@ from play.controller import (
     decode_session,
     encode_session,
 )
-from play.runtime_actions import advance_until_yield
+from play.runtime_actions import _execute_instruction, advance_until_yield
 from play.runtime_context import RuntimeContextError, validate_mutation_contract
 from play.handoff import prepare_play_run_handoff, verify_auth_repair_receipt
 
@@ -258,6 +258,10 @@ class ControllerRuntimeTest(unittest.TestCase):
             **context["request"],
             "requested_outcome": "Assess https://www.modiqo.ai",
         }
+        context["match"] = {
+            **context["match"],
+            "reference": "crucible-heavybit/landing-page-assessment",
+        }
         context["auth_repair"] = {
             **context["auth_repair"],
             "source": "rote_auth_repair_required",
@@ -354,6 +358,22 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         self.assertTrue(validation["ok"])
         self.assertEqual("specialist_auth_repair_ready", validation["event"])
+
+        receipt_projection = received.projection.as_dict()
+        receipt_event, _ = _execute_instruction(
+            receipt_projection["instruction"],
+            projection=receipt_projection,
+            context=received.session.context,
+            root=ROOT,
+        )
+        validated = self.runtime.advance_session(received.session, receipt_event)
+
+        self.assertEqual("use_inspect", validated.session.context["state"])
+        self.assertEqual("specialist_auth_repair_ready", receipt_event.id)
+        self.assertTrue(validated.session.context["auth_repair"]["receipt_valid"])
+        self.assertIsInstance(
+            validated.session.context["auth_repair"]["receipt_ref"], str
+        )
 
     def test_session_advance_applies_event_and_checkpoints_context(self) -> None:
         session = self.runtime.initial_session(

@@ -762,7 +762,12 @@ def _build_payload(
     required: list[str], raw: Mapping[str, Any], context: Mapping[str, Any]
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {}
-    for path in required:
+    # A contract may require both an object and fields nested beneath it. Build
+    # parents first so a later child assignment cannot be erased by assigning
+    # the parent object afterward (for example auth_repair plus its validated
+    # receipt_ref and receipt_valid fields).
+    ordered = sorted(enumerate(required), key=lambda item: (item[1].count("."), item[0]))
+    for _, path in ordered:
         value = _result_value(raw, context, path)
         if value is _MISSING:
             raise ControllerRuntimeError(
