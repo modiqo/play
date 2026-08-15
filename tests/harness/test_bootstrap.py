@@ -544,12 +544,10 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("Status: READY — ACTION REQUIRED", rendered)
         self.assertIn("Codex          ACTION REQUIRED", rendered)
         self.assertIn("Claude Code    READY", rendered)
-        self.assertIn("Start Codex: codex", rendered)
-        self.assertIn("type: $play", rendered)
-        self.assertIn("Start Claude Code: claude", rendered)
-        self.assertIn("type: /play", rendered)
-        self.assertIn("$play whats new", rendered)
-        self.assertIn("/play run <Play name>", rendered)
+        self.assertIn("Complete the action above", rendered)
+        self.assertIn('Codex: codex "\\$play what\'s new"', rendered)
+        self.assertIn('Claude Code: claude "/play what\'s new"', rendered)
+        self.assertNotIn("run <Play name>", rendered)
         self.assertIn("/tmp/card-run.md", rendered)
 
     def test_status_card_uses_native_invocations_for_added_harnesses(self) -> None:
@@ -562,12 +560,16 @@ class BootstrapTest(unittest.TestCase):
             }
         )
 
-        self.assertIn("Start Kimi: kimi", rendered)
-        self.assertIn("type: /skill:play", rendered)
-        self.assertIn("Start Hermes Agent: hermes", rendered)
-        self.assertIn("Start OpenCode: opencode", rendered)
-        self.assertIn("Start DeepSeek Harness (preview): dsh web", rendered)
-        self.assertIn("type: /play", rendered)
+        self.assertIn("Congratulations — step 1", rendered)
+        self.assertIn("becoming a Playmaster", rendered)
+        self.assertIn("mind-meld with your agent", rendered)
+        self.assertIn("Kimi: start `kimi`, then type `/skill:play what's new`", rendered)
+        self.assertIn("Hermes Agent: start `hermes`, then type `/play what's new`", rendered)
+        self.assertIn("OpenCode: start `opencode`, then type `/play what's new`", rendered)
+        self.assertIn(
+            "DeepSeek Harness (preview): start `dsh web`, then type `/play what's new`",
+            rendered,
+        )
 
     def test_status_card_frames_missing_identity_as_guided_onboarding(self) -> None:
         rendered = _render_status_card(

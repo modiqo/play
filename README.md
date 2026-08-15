@@ -232,9 +232,12 @@ stateDiagram-v2
     birth_present --> completed : certificate presented
 
     %% ── Awareness, creator, management ──
-    awareness_collect --> awareness_offer : new items
-    awareness_collect --> completed : unchanged
-    awareness_offer --> use_inspect : play selected
+    awareness_collect --> awareness_present : current snapshot (new, changed, or unchanged)
+    awareness_present --> awareness_offer : catalog summary + domain counts
+    awareness_offer --> awareness_domain_offer : domain selected
+    awareness_offer --> use_inspect : Hello selected
+    awareness_domain_offer --> awareness_offer : choose another domain
+    awareness_domain_offer --> use_inspect : exact Play selected
     creator_search --> creator_offer : related Play exists
     creator_search --> standby_exit : no match — apply capture decision
     creator_offer --> use_inspect : use existing
@@ -359,6 +362,16 @@ Invocation differs by app:
 | Hermes Agent | `hermes` | `/play` |
 | OpenCode | `opencode` | `/play` (installed as a managed command bridge) |
 | DeepSeek Harness (developer preview) | `dsh web` | `/play` |
+
+A successful guided install ends at **step 1** on the path to becoming a Playmaster and prints a
+copy-paste first prompt. Start the mind-meld with either supported interactive CLI directly:
+
+```bash
+codex "\$play what's new"
+claude "/play what's new"
+```
+
+These launch a new harness conversation with the discovery request already entered.
 
 ### Choose which apps receive Play
 
@@ -819,14 +832,17 @@ scripts/bin/play-public-trends --play modiqo/hello@0.2.0 --json
 scripts/bin/play-public-trends --org modiqo --workers 8 --json
 ```
 
-“What’s new” is intentionally framed like an inbox. It groups new and revised Plays by organization
-and shows each Play’s title, publication author when provenance supplies one, short description,
-visibility, timestamp, and canonical reference. It then shows the top 10 public Plays in authorized
-organizations ranked by lifetime downloads. Public JSON cards are fetched concurrently, grouped by
-their declared organization or user owner kind, and show both lifetime downloads and installs.
-Registry and public cards do not currently expose run counts or windowed counter changes, so the UI
-never calls cumulative totals runs or trending activity. The reusable report records per-card and
-batch fetch latency.
+“What’s new” is a stepwise discovery funnel, not a wall of Play cards. On the first view it begins by
+congratulating the user for taking the first step. It then reports the live, coverage-aware count of
+runnable public Plays visible through the user’s authorized organizations, lists each organization
+with its Play count, and asks the user to choose a domain. Only then does it reveal a bounded short
+list of Plays in that domain. Hello remains the recommended low-risk first move.
+
+Public JSON cards are fetched concurrently and grouped by their declared organization or user owner
+kind. The total is derived from inspected runnable cards, never hard-coded: complete coverage uses an
+exact count; partial coverage says “at least.” Registry and public cards do not currently expose run
+counts or windowed counter changes, so the UI never calls cumulative totals runs or trending activity.
+The reusable report records per-card and batch fetch latency.
 
 Selecting a card enters read-only inspection before execution approval. Publication authors are
 display metadata; Play does not equate an author string with the current signed-in identity. Ranking
@@ -836,8 +852,9 @@ does not write host state unless `--remember` is explicit.
 
 On normal `$play whats new` requests, Play uses remembered mode. It stores only a stable awareness SHA,
 UTC checkpoint, and authorized-scope contract in `~/.rote-play/digest-state.json`. If the current
-snapshot has the same SHA, the next response is simply “Nothing new since your last Play check.”
-The moving time window is excluded from the SHA, and no inbox contents or credentials are stored.
+snapshot has the same SHA, Play says nothing changed and still presents the current catalog summary
+and domain choices. The moving time window is excluded from the SHA, and no inbox contents or
+credentials are stored.
 
 ### The zero-token inbox and structural hooks
 

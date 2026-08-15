@@ -28,8 +28,9 @@ snapshot; it excludes the moving digest window. Compare it with the previous SHA
 
 - `initial`: present the complete first digest.
 - `changed`: present the new/revised window and current public ranking.
-- `unchanged`: emit `awareness_unchanged`, say only “Nothing new since your last Play check.”,
-  and finish without the action selector.
+- `unchanged`: emit `awareness_unchanged`, say that nothing changed, and still present the current
+  catalog summary and domain selector. “What’s new” is also the discovery entrance, so an unchanged
+  acknowledgment must not become a dead end.
 
 Advance memory only after stdout has been flushed successfully. A failed collection never changes
 the stored SHA or checkpoint. Different authorized organization sets or digest configurations use
@@ -76,17 +77,25 @@ an exact Use choice until a later inspect succeeds.
 
 ## Present
 
-Present `# What’s new in Plays` as an inbox. Group New and Revised cards by organization; show title,
-publication author or “Creator unavailable”, a short description, visibility, timestamp, and
-canonical reference. Follow with the top 10 public Plays, grouped by organization or user and
-showing both lifetime downloads and installs, by the explicitly named ranking metric, and then
-Your impact. Each actionable card must carry the canonical reference, owner, visibility, version
-when known, and displayed parameters in structured output even when compact prose omits defaults.
+Present `# What’s new in Plays` progressively:
 
-Use the `select_awareness_action` elicitation. Selecting a card carries only its exact displayed
-reference and parameters into read-only inspection. After the dependencies, local convergence,
-operations, and effects are disclosed, `approve_play_run` is the sole execution gate. Selecting
-Describe a need enters normal Play search. Selecting Create a Play enters creator discovery.
+1. On an `initial` remembered view, put “Nice—you’ve taken the first step” before any heading or
+   catalog data.
+2. Show the number of inspected runnable public Plays and the number of organizations/domains that
+   own them. Derive both from the current cards. Never hard-code a marketing total.
+3. List organization/domain display names with their Play counts, but do not dump individual cards.
+4. Recommend Hello and explain that inspection is an X-ray of the exact method and declared effects.
+5. Use `select_awareness_domain` to ask for a domain. After selection, populate only that domain’s
+   bounded `awareness.play_choices` and use `select_awareness_play`.
+
+Complete inspection coverage supports an exact scoped count. Partial coverage must say “at least”
+and disclose that the scope is the user’s authorized organizations, not the global registry.
+
+Selecting a Play carries only its exact displayed reference and parameters into read-only
+inspection. After dependencies, local convergence, operations, and effects are disclosed,
+`approve_play_run` is the sole execution gate. Hello uses the same path. Selecting Find by outcome
+enters normal Play search; selecting Create your own enters creator discovery, where capture must be
+classified before exploratory work begins.
 
 The skill cannot invent a scheduler. Without `--remember`, `$play whats new` (or `$play digest`)
 emits a

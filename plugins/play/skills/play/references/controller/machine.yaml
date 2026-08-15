@@ -214,7 +214,7 @@ states:
     entry: {action: collect_awareness_digest}
     "on":
       awareness_ready: [{target: awareness_present, mutate: record_awareness_digest}]
-      awareness_unchanged: [{target: completed, mutate: record_awareness_digest}]
+      awareness_unchanged: [{target: awareness_present, mutate: record_awareness_digest}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   awareness_present:
@@ -229,9 +229,23 @@ states:
   awareness_offer:
     owner: play
     checkpoint: after
-    prompt: select_awareness_action
+    prompt: select_awareness_domain
+    "on":
+      awareness_domain_selected: [{target: awareness_domain_offer, mutate: select_awareness_domain}]
+      awareness_hello_selected: [{target: use_inspect, mutate: enter_awareness_starter_use}]
+      awareness_search_selected: [{target: awareness_need, mutate: record_awareness_search_choice}]
+      awareness_create_selected: [{target: creator_need, mutate: record_awareness_create_choice}]
+      awareness_dismissed: [{target: completed, mutate: record_awareness_dismissal}]
+
+  awareness_domain_offer:
+    owner: play
+    checkpoint: after
+    requires: [awareness.selected_domain, awareness.play_choices]
+    prompt: select_awareness_play
     "on":
       awareness_play_selected: [{target: use_inspect, mutate: enter_awareness_use}]
+      awareness_domain_change_selected: [{target: awareness_offer, mutate: return_awareness_domains}]
+      awareness_hello_selected: [{target: use_inspect, mutate: enter_awareness_starter_use}]
       awareness_search_selected: [{target: awareness_need, mutate: record_awareness_search_choice}]
       awareness_create_selected: [{target: creator_need, mutate: record_awareness_create_choice}]
       awareness_dismissed: [{target: completed, mutate: record_awareness_dismissal}]
@@ -482,7 +496,7 @@ states:
   onboarding_activation_present:
     owner: play
     checkpoint: both
-    requires: [onboarding.starter_status, onboarding.email_handle, receipt_ref]
+    requires: [onboarding.starter_status, receipt_ref]
     entry: {action: present_first_play_activation}
     "on":
       onboarding_activation_presented: [{target: onboarding_activation_offer, mutate: record_onboarding_activation}]
@@ -496,7 +510,9 @@ states:
     "on":
       onboarding_team_selected: [{target: onboarding_team_handle, mutate: enter_onboarding_team}]
       onboarding_goal_selected: [{target: onboarding_need, mutate: enter_onboarding_goal}]
-      onboarding_awareness_selected: [{target: awareness_collect, mutate: enter_onboarding_awareness}]
+      onboarding_awareness_selected:
+        - {guard: awareness_snapshot_ready, target: awareness_offer, mutate: return_awareness_domains}
+        - {target: awareness_collect, mutate: enter_onboarding_awareness}
       onboarding_finished: [{target: receipt, mutate: finish_onboarding_activation}]
 
   standby_exit:

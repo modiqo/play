@@ -1396,37 +1396,36 @@ def _render_status_card(report: dict[str, Any]) -> str:
             lines.append(f"    - {prefix}{_human_step_detail(step)}")
 
     if status != "blocked":
-        lines.extend(["", "  Next steps"])
-        number = 1
+        if status in {"completed", "onboarding_required"}:
+            lines.extend(
+                [
+                    "",
+                    "  Congratulations — step 1",
+                    "    You are on your way to becoming a Playmaster.",
+                    "    Begin the mind-meld with your agent of choice.",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "",
+                    "  Your first step",
+                    "    Complete the action above, then begin the mind-meld with your agent.",
+                ]
+            )
+        lines.extend(["", "  Fire up your harness and begin the journey"])
         for harness in report["selected_harnesses"]:
             launch = HARNESS_LAUNCH.get(str(harness))
             if launch is None:
                 continue
             command, invocation = launch
-            lines.append(f"    {number}. Start {LABELS.get(str(harness), harness)}: {command}")
-            lines.append(f"       In a new conversation, type: {invocation}")
-            number += 1
-
-        invocations = list(
-            dict.fromkeys(
-                HARNESS_LAUNCH[str(harness)][1]
-                for harness in report["selected_harnesses"]
-                if str(harness) in HARNESS_LAUNCH
-            )
-        )
-        if invocations:
-            lines.extend(["", "  Try these"])
-            for invocation in invocations:
-                matching = [
-                    LABELS.get(str(harness), str(harness))
-                    for harness in report["selected_harnesses"]
-                    if HARNESS_LAUNCH.get(str(harness), (None, None))[1] == invocation
-                ]
-                label = " / ".join(matching)
-                lines.append(f"    {label}:")
-                lines.append(f"      {invocation} whats new")
-                lines.append(f"      {invocation} find a Play for my task")
-                lines.append(f"      {invocation} run <Play name>")
+            label = LABELS.get(str(harness), str(harness))
+            if harness == "codex":
+                lines.append(f'    {label}: codex "\\$play what\'s new"')
+            elif harness == "claude":
+                lines.append(f'    {label}: claude "/play what\'s new"')
+            else:
+                lines.append(f"    {label}: start `{command}`, then type `{invocation} what's new`")
 
     report_paths = report.get("report_paths")
     if isinstance(report_paths, dict):

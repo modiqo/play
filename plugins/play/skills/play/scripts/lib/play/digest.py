@@ -86,15 +86,7 @@ def classify_updates(
     return new, revised
 
 
-def rank_public(
-    flows: list[tuple[str, dict]],
-    limit: int,
-    *,
-    source_complete: bool = True,
-    source_errors: list[str] | None = None,
-    candidate_count: int | None = None,
-    omitted_count: int = 0,
-) -> tuple[list[dict], dict[str, Any]]:
+def _eligible_public(flows: list[tuple[str, dict]]) -> list[dict[str, Any]]:
     eligible: list[dict] = []
     for slug, flow in flows:
         if flow.get("visibility") != "public" or flow.get("deleted_at"):
@@ -131,6 +123,22 @@ def rank_public(
             }
         )
     eligible.sort(key=lambda item: (-item["download_count"], item["reference"]))
+    return eligible
+
+
+def rank_public(
+    flows: list[tuple[str, dict]],
+    limit: int,
+    *,
+    source_complete: bool = True,
+    source_errors: list[str] | None = None,
+    candidate_count: int | None = None,
+    omitted_count: int = 0,
+) -> tuple[list[dict], dict[str, Any]]:
+    eligible = _eligible_public(flows)
+    owner_counts: dict[str, int] = {}
+    for item in eligible:
+        owner_counts[item["owner"]] = owner_counts.get(item["owner"], 0) + 1
     ranking = {
         "metric": "lifetime_downloads",
         "label": (
@@ -140,6 +148,11 @@ def rank_public(
         ),
         "scope": "authorized_organizations",
         "eligible_count": len(eligible),
+        "organization_count": len(owner_counts),
+        "owner_counts": [
+            {"owner": owner, "count": count}
+            for owner, count in sorted(owner_counts.items())
+        ],
         "candidate_count": candidate_count if candidate_count is not None else len(flows),
         "inspected_count": len(flows),
         "omitted_count": omitted_count,
@@ -263,6 +276,11 @@ def build_digest(
     grouped_public: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for item in public_top:
         grouped_public.setdefault((item["owner"], item["owner_kind"]), []).append(item)
+    all_public = _eligible_public(public_flows)
+    domain_public: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for item in all_public:
+        domain_public.setdefault((item["owner"], item["owner_kind"]), []).append(item)
+    display_names = {org.slug: org.display_name for org in organizations}
     return {
         "schema": SCHEMA,
         "complete": True,
@@ -290,6 +308,16 @@ def build_digest(
         "public_groups": [
             {"owner": owner, "owner_kind": owner_kind, "plays": plays}
             for (owner, owner_kind), plays in sorted(grouped_public.items())
+        ],
+        "public_domains": [
+            {
+                "owner": owner,
+                "owner_kind": owner_kind,
+                "display_name": display_names.get(owner, owner),
+                "count": len(plays),
+                "plays": plays[:5],
+            }
+            for (owner, owner_kind), plays in sorted(domain_public.items())
         ],
         "ranking": ranking,
         "capabilities": {
@@ -359,89 +387,77 @@ def build_digest(
 
 def render_markdown(digest: dict[str, Any]) -> str:
     memory = digest.get("memory")
-    if isinstance(memory, dict) and memory.get("status") == "unchanged":
-        return "Nothing new since your last Play check."
     window = digest["window"]
     new_items = digest["org_updates"]["new"]
     revised_items = digest["org_updates"]["revised"]
-    display_names = {org["slug"]: org["display_name"] for org in digest["organizations"]}
-    lines = [
+    ranking = digest["ranking"]
+    public_count = ranking.get("eligible_count", 0)
+    domains = digest.get("public_domains", [])
+    domain_count = len(domains) if isinstance(domains, list) else 0
+    coverage_prefix = "" if ranking.get("complete") is True else "at least "
+    public_noun = "Play" if public_count == 1 else "Plays"
+    organizations_only = isinstance(domains, list) and all(
+        isinstance(domain, dict) and domain.get("owner_kind") == "org"
+        for domain in domains
+    )
+    if organizations_only:
+        domain_noun = "organization" if domain_count == 1 else "organizations"
+    else:
+        domain_noun = "publisher domain" if domain_count == 1 else "publisher domains"
+    lines = []
+    if isinstance(memory, dict) and memory.get("status") == "initial":
+        lines.extend(
+            [
+                "**Nice—you’ve taken the first step. Play is connected, and you’re ready to use a reusable workflow.**",
+                "",
+            ]
+        )
+    lines.extend([
         "# What’s new in Plays",
         "",
-        f"Window: `{window['start']}` → `{window['end']}` (UTC)",
+        f"You can explore {coverage_prefix}**{public_count} runnable public {public_noun}** across **{domain_count} {domain_noun}** visible to you.",
         "",
-    ]
+    ])
+    if isinstance(memory, dict) and memory.get("status") == "unchanged":
+        lines.extend(["Nothing has changed since your last check; this is the current catalog.", ""])
+    if isinstance(domains, list) and domains:
+        lines.extend(["## Domains", ""])
+        for domain in domains:
+            if not isinstance(domain, dict):
+                continue
+            name = domain.get("display_name") or domain.get("owner") or "Unknown"
+            count = domain.get("count", 0)
+            noun = "Play" if count == 1 else "Plays"
+            lines.append(f"- **{name}** — {count} {noun}")
+        lines.append("")
+    lines.extend(
+        [
+            "**Recommended first move: Run Hello.** It is a low-risk proof using public data, no account credentials, and no declared writes. Inspect acts like an X-ray: it shows the exact method and effects before you approve Rote to run it locally.",
+            "",
+            "Choose a domain for a short list, run Hello, or start with a useful outcome of your own.",
+            "",
+            f"Recent-publication window: `{window['start']}` → `{window['end']}` (UTC)",
+            "",
+        ]
+    )
     if not digest["org_updates"]["revised_complete"]:
         lines.append(
             "Revisions are unavailable: registry list lacks released-version timestamps."
         )
         lines.append("")
-
-    def base_reference(value: str) -> str:
-        return value.rsplit("@", 1)[0]
-
-    def link(reference: str) -> str:
-        return f"[{reference}](https://play.modiqo.ai/{reference})"
-
-    rows: dict[str, dict[str, Any]] = {}
-    for item in [*new_items, *revised_items]:
-        base = base_reference(item["reference"])
-        state = "New" if item["kind"] == "new" else "Revised"
-        badge = "" if item.get("actionable") else " · inspect first"
-        author = item.get("creator_name") or display_names.get(
-            item["owner"], item["owner"]
-        )
-        rows[base] = {
-            "play": f"**{item['name']}** · {state}{badge}",
-            "scope": item["visibility"],
-            "author": author,
-            "downloads": "—",
-            "link": link(base),
-        }
-    for item in digest["public_top"]:
-        base = item.get("base_reference") or base_reference(item.get("reference", ""))
-        if not base:
-            continue
-        downloads = str(item.get("download_count", 0))
-        if base in rows:
-            rows[base]["downloads"] = downloads
-            continue
-        owner = base.split("/", 1)[0]
-        rows[base] = {
-            "play": f"**{item['name']}**",
-            "scope": "public",
-            "author": display_names.get(owner, owner),
-            "downloads": downloads,
-            "link": link(base),
-        }
-
     inbox_count = len(new_items) + len(revised_items)
-    lines.extend([f"## Inbox and rankings ({inbox_count} new or revised)", ""])
-    if rows:
-        lines.append("| Play | Scope | Author | Downloads | Link |")
-        lines.append("|---|---|---|---|---|")
-        for row in rows.values():
-            lines.append(
-                f"| {row['play']} | {row['scope']} | {row['author']} "
-                f"| {row['downloads']} | {row['link']} |"
-            )
+    if inbox_count:
+        lines.append(
+            f"There {'is' if inbox_count == 1 else 'are'} **{inbox_count} new or revised "
+            f"{'Play' if inbox_count == 1 else 'Plays'}** in this window. Choose a domain to see a short list."
+        )
     elif digest["org_updates"]["revised_complete"]:
-        lines.append("— Your Play inbox is clear")
+        lines.append("Your recent-publication inbox is clear.")
     else:
-        lines.append("— No new publications were found")
-    lines.extend(
-        [
-            "",
-            "Downloads are lifetime counts across your authorized organizations; global "
-            "rankings and run counts are unavailable. Selecting a Play opens read-only "
-            "inspection before any run approval.",
-        ]
-    )
-    ranking = digest["ranking"]
+        lines.append("No new publications were found; revision coverage is unavailable.")
+    lines.extend(["", "Counts cover runnable public cards visible through your authorized organizations; they are not a claim about the global registry."])
     if not ranking["complete"]:
         lines.append("Coverage is partial because one or more public Plays could not be read.")
-    stats = digest["personal_stats"]
-    lines.extend(["", f"Your impact: unavailable — {stats['reason']}"])
     return "\n".join(lines)
 
 

@@ -46,9 +46,22 @@ def _digest(new: int, revised: int) -> dict:
             "revised": [item(i, "revised") for i in range(revised)],
             "revised_complete": True,
         },
-        "ranking": {"label": "Popular public Plays", "complete": True},
+        "ranking": {
+            "label": "Popular public Plays",
+            "complete": True,
+            "eligible_count": 1,
+        },
         "public_top": [],
         "public_groups": [],
+        "public_domains": [
+            {
+                "owner": "acme",
+                "owner_kind": "org",
+                "display_name": "Acme",
+                "count": 1,
+                "plays": [],
+            }
+        ],
         "personal_stats": {"reason": "run analytics are not collected"},
     }
 
@@ -107,7 +120,7 @@ class InboxCacheTest(unittest.TestCase):
         assert stored is not None
         self.assertEqual(2, stored["counts"]["new"])
         self.assertEqual(stored["summary_line"], cached_line(cache_path=self.cache_path))
-        self.assertIn("acme", stored["markdown"])
+        self.assertIn("**Acme** — 1 Play", stored["markdown"])
         self.assertEqual(
             "acme/play-new-0",
             stored["digest"]["org_updates"]["new"][0]["reference"],

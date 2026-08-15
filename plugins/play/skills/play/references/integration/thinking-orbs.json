@@ -130,7 +130,11 @@
     },
     "awareness_offer": {
       "orb": "listening",
-      "label": "Waiting for a digest choice…"
+      "label": "Waiting for a domain choice…"
+    },
+    "awareness_domain_offer": {
+      "orb": "listening",
+      "label": "Waiting for a Play choice in this domain…"
     },
     "awareness_need": {
       "orb": "listening",

@@ -862,6 +862,11 @@ def _derive_session_guards(
     values[GuardId("use_is_onboarding_starter")] = (
         _path_value(context, "onboarding.starter_status") == "selected"
     )
+    values[GuardId("awareness_snapshot_ready")] = (
+        _path_value(context, "awareness.complete") is True
+        and isinstance(_path_value(context, "awareness.domain_choices"), list)
+        and bool(_path_value(context, "awareness.domain_choices"))
+    )
     values[GuardId("search_is_complete")] = (
         _path_value(event.payload, "search.complete") is True
     )

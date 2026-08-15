@@ -56,7 +56,28 @@ execution; a remote copy preserves the normal `approve_play_run` pull gate. Pin 
 version; replacing it requires a deliberate source change and tests.
 
 After a verified starter receipt, explain what happened without replacing or summarizing the full
-result. Offer a goal, useful Plays, or Finish.
+result. Teach the reason for every stage:
+
+1. **Inspect — see the X-ray.** Reveal the exact version, inputs, dependencies, operations, and
+   declared effects before execution.
+2. **Approve — set the boundary.** Bind consent to the inspected method, parameters, remote pull,
+   and any declared writes; a changed method requires another decision.
+3. **Run — execute the checked method.** Rote runs the exact inspected version locally and keeps
+   local credentials local.
+4. **Verify — prove the outcome.** Compare output with the requested result and retain a receipt;
+   process completion alone is not success.
+
+Show the equivalent outside-agent commands without `--yes`, so normal Rote approval remains intact:
+
+```bash
+rote play inspect modiqo/hello@0.2.0 --json
+rote play run modiqo/hello@0.2.0
+```
+
+Then offer another Play by domain, creation from a useful outcome, a team space, or Finish. Explain
+the creation boundary precisely: begin with `$play <do something useful>` so capture classification
+happens before exploration; steer the work; after verification, ask to save the captured method.
+Never suggest that uncaptured work can be converted into a Play retrospectively.
 
 ## Owner-private memory
 

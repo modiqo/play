@@ -129,7 +129,7 @@ class DigestTest(unittest.TestCase):
         self.assertEqual("alpha/new-play@1.1.0", item["reference"])
         self.assertEqual({"days": "7"}, item["parameters"])
 
-    def test_whats_new_groups_cards_by_org_with_creator_and_description(self) -> None:
+    def test_whats_new_defers_individual_cards_until_a_domain_is_selected(self) -> None:
         grouped = {
             "alpha": [
                 {
@@ -159,10 +159,9 @@ class DigestTest(unittest.TestCase):
         )
         rendered = render_markdown(digest)
         self.assertIn("# What’s new in Plays", rendered)
-        self.assertIn("| Play | Scope | Author | Downloads | Link |", rendered)
-        self.assertIn("**weekly-report** · New", rendered)
-        self.assertIn("| Alice Example |", rendered)
-        self.assertIn("https://play.modiqo.ai/alpha/weekly-report", rendered)
+        self.assertIn("1 new or revised Play", rendered)
+        self.assertNotIn("weekly-report", rendered)
+        self.assertNotIn("| Play |", rendered)
         self.assertEqual("unavailable", digest["capabilities"]["run_metrics"]["status"])
 
     def test_ranking_reports_partial_inspection_without_inventing_global_coverage(self) -> None:
@@ -205,13 +204,52 @@ class DigestTest(unittest.TestCase):
         )
         self.assertEqual("modiqo", digest["public_groups"][0]["owner"])
         self.assertEqual("org", digest["public_groups"][0]["owner_kind"])
+        self.assertEqual(1, digest["ranking"]["eligible_count"])
+        self.assertEqual(1, digest["ranking"]["organization_count"])
+        self.assertEqual(1, digest["public_domains"][0]["count"])
         self.assertEqual("modiqo/hello", digest["public_top"][0]["base_reference"])
         self.assertEqual("parallel", digest["ranking"]["fetch"]["mode"])
         self.assertEqual(15.25, digest["ranking"]["fetch"]["elapsed_ms"])
         rendered = render_markdown(digest)
-        self.assertIn("https://play.modiqo.ai/modiqo/hello", rendered)
-        self.assertIn("| 7 |", rendered)
-        self.assertIn("lifetime counts across your authorized organizations", rendered)
+        self.assertIn("1 runnable public Play", rendered)
+        self.assertIn("**Modiqo** — 1 Play", rendered)
+        self.assertIn("Counts cover runnable public cards", rendered)
+
+    def test_first_digest_congratulates_before_the_summary(self) -> None:
+        digest = build_digest(
+            [Organization("modiqo", "Modiqo")],
+            {"modiqo": []},
+            [],
+            start=self.start,
+            end=self.end,
+            public_limit=10,
+        )
+        digest["memory"] = {"status": "initial"}
+        rendered = render_markdown(digest)
+        self.assertTrue(rendered.startswith("**Nice—you’ve taken the first step."))
+        self.assertLess(rendered.index("taken the first step"), rendered.index("What’s new"))
+
+    def test_partial_catalog_uses_at_least_language(self) -> None:
+        digest = build_digest(
+            [Organization("modiqo", "Modiqo")],
+            {"modiqo": []},
+            [
+                (
+                    "modiqo",
+                    {
+                        "name": "hello",
+                        "visibility": "public",
+                        "download_count": 1,
+                    },
+                )
+            ],
+            start=self.start,
+            end=self.end,
+            public_limit=10,
+            ranking_complete=False,
+            ranking_omitted_count=1,
+        )
+        self.assertIn("at least **1 runnable public Play**", render_markdown(digest))
 
     def test_awareness_sha_is_stable_across_windows_but_changes_with_source_state(self) -> None:
         grouped = {

@@ -586,8 +586,20 @@ def validate_bundle(
     check(_target(states, "qualify", "play_awareness_request") == "awareness_collect", "an awareness request must enter the digest path")
     check(actions.get("collect_awareness_digest", {}).get("effect") == "local-write", "awareness collection may write only remembered local state")
     check(actions.get("collect_awareness_digest", {}).get("command") == "scripts/bin/play-digest --remember --days <awareness.window_days> --json", "awareness must invoke the remembered digest command")
-    check(_target(states, "awareness_collect", "awareness_unchanged") == "completed", "unchanged awareness must finish without an action prompt")
-    check(_target(states, "awareness_offer", "awareness_play_selected") == "use_inspect", "an exact awareness selection must enter inspection")
+    check(
+        _target(states, "awareness_collect", "awareness_unchanged") == "awareness_present",
+        "unchanged awareness must still present the current catalog summary",
+    )
+    check(
+        _target(states, "awareness_offer", "awareness_domain_selected")
+        == "awareness_domain_offer",
+        "awareness must reveal Play choices only after a domain selection",
+    )
+    check(
+        _target(states, "awareness_domain_offer", "awareness_play_selected")
+        == "use_inspect",
+        "an exact awareness selection must enter inspection",
+    )
     check(_target(states, "qualify", "play_creation_request") == "creator_search", "explicit creator intent must search before exploration")
     check(
         _target(states, "creator_classify", "creator_no_match") == "standby_exit",
