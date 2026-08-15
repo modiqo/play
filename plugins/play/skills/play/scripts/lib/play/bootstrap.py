@@ -199,7 +199,7 @@ class Progress:
             oldest = min(token.started for token in tokens)
             rotation = int((now - oldest) // self.insight_seconds)
             insight = self.insights[(self._insight_offset + rotation) % len(self.insights)]
-            self.stream.write(f"✦ {self._fit_terminal_line(insight)}\n")
+            self.stream.write(f"✦ {self._fit_terminal_line(insight)}\r\n")
         glyph = SPINNER_FRAMES[self._frame % len(SPINNER_FRAMES)]
         self._frame += 1
         self.stream.write(f"{glyph} {self._fit_terminal_line(text)}")
@@ -259,6 +259,9 @@ class Progress:
         token = self.begin(label)
         try:
             result = operation()
+        except KeyboardInterrupt:
+            self.finish(token, ok=False)
+            raise
         except Exception:
             self.finish(token, ok=False)
             raise
@@ -271,6 +274,9 @@ class Progress:
         token = self.begin(label)
         try:
             result = runner(command)
+        except KeyboardInterrupt:
+            self.finish(token, ok=False)
+            raise
         except Exception:
             self.finish(token, ok=False)
             raise
@@ -357,6 +363,27 @@ def resolve_rote() -> str | None:
 def run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         list(command), text=True, capture_output=True, check=False, timeout=900
+    )
+
+
+def _run_visible(
+    command: Sequence[str], runner: Runner
+) -> subprocess.CompletedProcess[str]:
+    """Let long interactive installers own the terminal while preserving test injection."""
+
+    if runner is not run:
+        return runner(command)
+    completed = subprocess.run(
+        list(command),
+        text=True,
+        check=False,
+        timeout=900,
+    )
+    return subprocess.CompletedProcess(
+        completed.args,
+        completed.returncode,
+        stdout="",
+        stderr="",
     )
 
 
@@ -1204,8 +1231,8 @@ def _result_step(
     *,
     target: str | None = None,
 ) -> Step:
-    stdout = result.stdout.strip()
-    stderr = result.stderr.strip()
+    stdout = (result.stdout or "").strip()
+    stderr = (result.stderr or "").strip()
     if result.returncode != 0 and stdout and stderr:
         output = f"stdout:\n{stdout}\n\nstderr:\n{stderr}"
     else:
@@ -1626,7 +1653,19 @@ def apply(
                 "-c",
                 'ROTE_YES=1 ROTE_FULL=1 bash -c "$(curl --proto \'=https\' --tlsv1.2 -fsSL https://getrote.dev/install)"',
             ]
-            result = active_progress.command("Installing Rote", runner, command)
+            if active_progress.enabled:
+                print("", file=active_progress.stream)
+                print("  Installing Rote components", file=active_progress.stream)
+                print(
+                    "    CLI · Node and Deno runtimes · browser automation · harness skills",
+                    file=active_progress.stream,
+                )
+                print(
+                    "    Live component progress follows; details are also saved to ~/.rote/log/install.log.",
+                    file=active_progress.stream,
+                    flush=True,
+                )
+            result = _run_visible(command, runner)
             steps.append(_result_step("install_rote", result, command))
             rote = resolve_rote()
             if result.returncode != 0 or rote is None:
@@ -1965,6 +2004,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 prepared_plan=plan,
                 progress=progress,
             )
+    except KeyboardInterrupt:
+        parser.exit(
+            130,
+            "\nPlay setup cancelled. Re-run the same command to reuse completed checkpoints.\n",
+        )
     except (BootstrapError, OSError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f"play-bootstrap: {error}\n")
     rendered = (

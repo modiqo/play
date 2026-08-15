@@ -20,6 +20,7 @@ from scripts.lib.play.bootstrap import (
     _fallback_skill_config_entries,
     _render_status_card,
     _result_step,
+    _run_visible,
     _rote_skill_command,
     apply,
     build_plan,
@@ -28,6 +29,7 @@ from scripts.lib.play.bootstrap import (
     converge_play_marketplace,
     install_hooks,
     main,
+    run,
 )
 
 
@@ -375,7 +377,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("done", progress.call("Checking things", work))
 
         rendered = stream.getvalue()
-        self.assertIn("✦ Workflow fit first.\n◐ Checking things ·", rendered)
+        self.assertIn("✦ Workflow fit first.\r\n◐ Checking things ·", rendered)
         self.assertIn("✦ Immediate value wins.", rendered)
         self.assertIn("\033[1A\r\033[2K", rendered)
         self.assertRegex(rendered, r"✓ Checking things \(\d+\.\ds\)")
@@ -397,6 +399,25 @@ class BootstrapTest(unittest.TestCase):
         self.assertNotIn("Checking things ·", rendered)
         self.assertNotIn("redirected logs", rendered)
         self.assertEqual(2, rendered.count("\n"))
+
+    def test_progress_cleans_up_terminal_line_when_interrupted(self) -> None:
+        stream = StringIO()
+        progress = Progress(
+            stream,
+            heartbeat_seconds=0,
+            interactive=True,
+            insights=("Interruptions should stay readable.",),
+        )
+
+        def interrupt() -> None:
+            raise KeyboardInterrupt
+
+        with self.assertRaises(KeyboardInterrupt):
+            progress.call("Installing something", interrupt)
+
+        rendered = stream.getvalue()
+        self.assertIn("✗ Installing something", rendered)
+        self.assertFalse(progress._line_visible)
 
     def test_parallel_progress_shares_one_transient_terminal_line(self) -> None:
         stream = StringIO()
@@ -605,6 +626,21 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("failed", step.status)
         self.assertIn("stdout:\nactivation started", step.detail)
         self.assertIn("stderr:\nlauncher missing", step.detail)
+
+    @patch("scripts.lib.play.bootstrap.subprocess.run")
+    def test_visible_runner_inherits_terminal_output(self, subprocess_run: MagicMock) -> None:
+        subprocess_run.return_value = subprocess.CompletedProcess(["bash"], 0)
+
+        result = _run_visible(["bash", "installer.sh"], run)
+
+        subprocess_run.assert_called_once_with(
+            ["bash", "installer.sh"],
+            text=True,
+            check=False,
+            timeout=900,
+        )
+        self.assertEqual("", result.stdout)
+        self.assertEqual("", result.stderr)
 
     def test_identity_only_preflight_is_onboarding_eligible(self) -> None:
         payload = {
