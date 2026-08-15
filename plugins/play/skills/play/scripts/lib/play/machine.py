@@ -62,6 +62,62 @@ def _target(states: dict, state: str, event: str, branch: int = 0) -> str | None
         return None
 
 
+def _local_schema_ref(root: dict[str, Any], reference: object) -> dict[str, Any] | None:
+    if not isinstance(reference, str) or not reference.startswith("#/"):
+        return None
+    current: object = root
+    for encoded in reference[2:].split("/"):
+        part = encoded.replace("~1", "/").replace("~0", "~")
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current if isinstance(current, dict) else None
+
+
+def _schema_property(
+    root: dict[str, Any], node: object, name: str, seen: set[int] | None = None
+) -> dict[str, Any] | None:
+    if not isinstance(node, dict):
+        return None
+    visited = set() if seen is None else set(seen)
+    identity = id(node)
+    if identity in visited:
+        return None
+    visited.add(identity)
+
+    referenced = _local_schema_ref(root, node.get("$ref"))
+    if referenced is not None:
+        resolved = _schema_property(root, referenced, name, visited)
+        if resolved is not None:
+            return resolved
+
+    properties = node.get("properties")
+    if isinstance(properties, dict):
+        candidate = properties.get(name)
+        if isinstance(candidate, dict):
+            return candidate
+
+    for keyword in ("allOf", "anyOf", "oneOf"):
+        branches = node.get(keyword)
+        if not isinstance(branches, list):
+            continue
+        for branch in branches:
+            resolved = _schema_property(root, branch, name, visited)
+            if resolved is not None:
+                return resolved
+    return None
+
+
+def _context_schema_resolves(root: dict[str, Any], path: str) -> bool:
+    node: dict[str, Any] = root
+    for part in path.split("."):
+        resolved = _schema_property(root, node, part)
+        if resolved is None:
+            return False
+        node = resolved
+    return True
+
+
 def validate_bundle(
     root: Path,
     *,
@@ -183,6 +239,14 @@ def validate_bundle(
         unknown = set(state) - state_keys
         check(not unknown, f"{state_name}: unknown state keys {', '.join(sorted(unknown))}")
         check(state.get("owner") in owners, f"{state_name}: invalid owner {state.get('owner')!r}")
+        required_paths = state.get("requires", [])
+        if isinstance(required_paths, list):
+            for required_path in required_paths:
+                if isinstance(required_path, str):
+                    check(
+                        _context_schema_resolves(context_schema, required_path),
+                        f"{state_name}: required context path {required_path!r} is absent from context schema",
+                    )
         if state_name in terminals:
             check(set(state) <= {"owner"}, f"{state_name}: terminal states may declare only owner")
             continue

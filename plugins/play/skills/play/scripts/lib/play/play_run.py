@@ -319,7 +319,7 @@ def _typed_auth_failure(output: str) -> dict[str, Any] | None:
         "ok": False,
         "event": "play_auth_repair_required",
         "auth_repair": {
-            "source": "rote_play_run",
+            "source": "rote_auth_repair_required",
             "owner": "rote-adapter-config",
             "recoverable": True,
             "adapter_id": adapter_id.strip(),

@@ -192,6 +192,7 @@ class UniversalPlayRunTest(unittest.TestCase):
 
                 self.assertEqual("play_auth_repair_required", result["event"])
                 repair = result["auth_repair"]
+                self.assertEqual("rote_auth_repair_required", repair["source"])
                 self.assertEqual("rote-adapter-config", repair["owner"])
                 self.assertEqual("crucible", repair["adapter_id"])
                 self.assertEqual("ADAPTER_CRUCIBLE_TOKEN", repair["env_var"])

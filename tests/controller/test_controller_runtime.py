@@ -167,12 +167,70 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("play.context/v1", session.context["schema"])
         self.assertEqual("invoke", session.context["state"])
         self.assertEqual("detailed", session.context["output_policy"]["mode"])
+        self.assertIsNone(session.context["auth_repair"]["source"])
         self.assertEqual("unknown", session.context["candidate"]["publication_status"])
         projection = self.runtime.project_session(session).as_dict()
         self.assertEqual(
             {"request": {"original": "Find a Play for release notes"}},
             projection["instruction"]["input"],
         )
+
+    def test_use_run_auth_failure_preserves_source_for_guided_repair(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-auth-source",
+            task_key="task-auth-source",
+            request_original="Run the Crucible landing-page assessment",
+        )
+        context = dict(session.context)
+        context["state"] = "use_run"
+        context["match"] = {
+            **context["match"],
+            "reference": "crucible-heavybit/landing-page-assessment",
+        }
+        context["inspection"] = {
+            **context["inspection"],
+            "exact_reference": "crucible-heavybit/landing-page-assessment@0.2.0",
+            "disclosure_sha256": "a" * 64,
+        }
+        context["auth_repair"] = {
+            **context["auth_repair"],
+            "original_packet": {"schema": "play.run-handoff/v1"},
+            "original_packet_sha256": "b" * 64,
+        }
+        bound = replace(
+            session,
+            cursor=replace(session.cursor, state=StateId("use_run")),
+            context=context,
+        )
+
+        advanced = self.runtime.advance_session(
+            bound,
+            ControllerEvent(
+                id=EventId("play_auth_repair_required"),
+                payload={
+                    "auth_repair": {
+                        "source": "rote_auth_repair_required",
+                        "owner": "rote-adapter-config",
+                        "recoverable": True,
+                        "adapter_id": "crucible",
+                        "env_var": "ADAPTER_CRUCIBLE_TOKEN",
+                        "classified_rung": "oauth_dcr",
+                        "distinguishing_error": "missing: browser authorization required",
+                        "evidence_refs": ["sha256:auth-required"],
+                    }
+                },
+                guards={},
+            ),
+        )
+
+        self.assertEqual("use_auth_repair_offer", advanced.session.context["state"])
+        self.assertEqual(
+            "rote_auth_repair_required",
+            advanced.session.context["auth_repair"]["source"],
+        )
+        self.assertEqual("required", advanced.session.context["auth_repair"]["status"])
+        self.assertEqual("human", advanced.projection.as_dict()["state"]["boundary"])
+        self.assertIn("oauth_dcr", advanced.projection.as_dict()["instruction"]["question"])
 
     def test_session_advance_applies_event_and_checkpoints_context(self) -> None:
         session = self.runtime.initial_session(

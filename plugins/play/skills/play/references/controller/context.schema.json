@@ -1717,6 +1717,7 @@
     "authRepair": {
       "type": "object",
       "required": [
+        "source",
         "status",
         "owner",
         "recoverable",
@@ -1737,6 +1738,16 @@
       ],
       "additionalProperties": false,
       "properties": {
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "rote_auth_repair_required",
+            null
+          ]
+        },
         "status": {
           "enum": [
             "none",

@@ -92,6 +92,27 @@ class MachineConformanceTest(unittest.TestCase):
             any("machine.yaml:states.invoke.requires.0" in error for error in caught.exception.errors)
         )
 
+    def test_every_state_requirement_must_resolve_in_context_schema(self) -> None:
+        documents = {
+            "machine": deepcopy(MACHINE),
+            "actions": ACTIONS_DOC,
+            "prompts": {"schema": "play.prompts/v1", "prompts": PROMPTS},
+            "machine_schema": json.loads((CONTROLLER / "machine.schema.json").read_text()),
+            "context_schema": CONTEXT,
+            "handoff_schema": json.loads((CONTROLLER / "handoff.schema.json").read_text()),
+        }
+        documents["machine"]["states"]["use_auth_repair_offer"]["requires"].append(
+            "auth_repair.undeclared"
+        )
+
+        with self.assertRaises(MachineValidationError) as caught:
+            validate_bundle(ROOT, documents=documents)
+
+        self.assertIn(
+            "use_auth_repair_offer: required context path 'auth_repair.undeclared' is absent from context schema",
+            caught.exception.errors,
+        )
+
     def test_unknown_event_is_rejected(self) -> None:
         with self.assertRaises(KeyError):
             transition("use_run", "invented_event")

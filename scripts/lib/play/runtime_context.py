@@ -196,6 +196,7 @@ def initial_context(
             "blocked_reason": None,
         },
         "auth_repair": {
+            "source": None,
             "status": "none",
             "owner": None,
             "recoverable": None,
