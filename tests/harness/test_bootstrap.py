@@ -544,6 +544,8 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("Status: READY — ACTION REQUIRED", rendered)
         self.assertIn("Codex          ACTION REQUIRED", rendered)
         self.assertIn("Claude Code    READY", rendered)
+        self.assertIn("Congratulations — step 1", rendered)
+        self.assertIn("becoming a Playmaster", rendered)
         self.assertIn("Complete the action above", rendered)
         self.assertIn('Codex: codex "\\$play what\'s new"', rendered)
         self.assertIn('Claude Code: claude "/play what\'s new"', rendered)

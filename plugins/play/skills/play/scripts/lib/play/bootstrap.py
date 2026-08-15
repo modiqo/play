@@ -1400,23 +1400,19 @@ def _render_status_card(report: dict[str, Any]) -> str:
             lines.append(f"    - {prefix}{_human_step_detail(step)}")
 
     if status != "blocked":
-        if status in {"completed", "onboarding_required"}:
-            lines.extend(
-                [
-                    "",
-                    "  Congratulations — step 1",
-                    "    You are on your way to becoming a Playmaster.",
-                    "    Begin the mind-meld with your agent of choice.",
-                ]
+        lines.extend(
+            [
+                "",
+                "  Congratulations — step 1",
+                "    You are on your way to becoming a Playmaster.",
+            ]
+        )
+        if status == "action_required":
+            lines.append(
+                "    Complete the action above, then begin the mind-meld with your agent."
             )
         else:
-            lines.extend(
-                [
-                    "",
-                    "  Your first step",
-                    "    Complete the action above, then begin the mind-meld with your agent.",
-                ]
-            )
+            lines.append("    Begin the mind-meld with your agent of choice.")
         lines.extend(["", "  Fire up your harness and begin the journey"])
         for harness in report["selected_harnesses"]:
             launch = HARNESS_LAUNCH.get(str(harness))
