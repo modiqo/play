@@ -627,6 +627,30 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("see the detailed JSON report", rendered)
         self.assertIn("/tmp/quiet-card.json", rendered)
 
+    def test_status_card_surfaces_stderr_instead_of_a_stdout_heading(self) -> None:
+        rendered = _render_status_card(
+            {
+                "status": "blocked",
+                "run_id": "activation-failed",
+                "selected_harnesses": ["codex", "claude", "kimi"],
+                "steps": [
+                    {
+                        "id": "install_play",
+                        "status": "failed",
+                        "detail": (
+                            "stdout:\nDetected harnesses: codex, claude, kimi\n\n"
+                            "stderr:\ninstall-all: managed Play links are missing"
+                        ),
+                    }
+                ],
+            }
+        )
+
+        self.assertIn(
+            "Install Play: install-all: managed Play links are missing", rendered
+        )
+        self.assertNotIn("- stdout:", rendered)
+
     def test_failed_command_report_preserves_stdout_and_stderr(self) -> None:
         step = _result_step(
             "install_play",

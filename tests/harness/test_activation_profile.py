@@ -131,6 +131,20 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertEqual(refreshed_markdown, markdown.read_bytes())
         self.assertEqual(refreshed_metadata, metadata.read_bytes())
 
+    def test_reconcile_restores_managed_play_links_removed_by_skill_refresh(self) -> None:
+        self.run_profile("install")
+        for root in self.roots:
+            (root / "play").unlink()
+
+        result = self.run_profile("install")
+
+        self.assertIn("restored 2 managed Play link(s)", result.stdout)
+        for root in self.roots:
+            play = root / "play"
+            self.assertTrue(play.is_symlink())
+            self.assertEqual(ROOT, play.resolve())
+        self.run_profile("verify")
+
     def test_install_converges_a_new_harness_root(self) -> None:
         self.run_profile("install")
         new_root = Path(self.temporary.name) / "new-harness" / "skills"

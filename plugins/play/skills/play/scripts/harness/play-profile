@@ -356,6 +356,7 @@ def reconcile(state: dict[str, object]) -> None:
     rollback_files: dict[Path, dict[str, object]] = {}
     created_links: list[Path] = []
     removed_links: list[Path] = []
+    repaired_links: dict[Path, Path | None] = {}
     rebased_skills: set[Path] = set()
     previous_skills = {Path(str(value)) for value in state["rote_skills"]}
     desired_skills = set(rote_skills)
@@ -422,6 +423,14 @@ def reconcile(state: dict[str, object]) -> None:
             if link.is_symlink():
                 link.unlink()
                 removed_links.append(link)
+        for link in sorted(old_link_set & desired_link_set, key=str):
+            if link.is_symlink() and link.resolve() == SOURCE:
+                continue
+            previous_target = link.readlink() if link.is_symlink() else None
+            if link.is_symlink():
+                link.unlink()
+            link.symlink_to(SOURCE, target_is_directory=True)
+            repaired_links[link] = previous_target
         for link in sorted(desired_link_set - old_link_set, key=str):
             link.symlink_to(SOURCE, target_is_directory=True)
             created_links.append(link)
@@ -431,6 +440,7 @@ def reconcile(state: dict[str, object]) -> None:
             or launcher_changed
             or source_changed
             or policy_changed
+            or repaired_links
             or old_link_set != desired_link_set
             or previous_skills != desired_skills
             or list(map(str, roots)) != list(map(str, state["roots"]))
@@ -459,6 +469,11 @@ def reconcile(state: dict[str, object]) -> None:
         for link in reversed(created_links):
             if link.is_symlink():
                 link.unlink()
+        for link, previous_target in reversed(list(repaired_links.items())):
+            if link.is_symlink():
+                link.unlink()
+            if previous_target is not None:
+                link.symlink_to(previous_target, target_is_directory=True)
         for link in removed_links:
             if not link.exists() and not link.is_symlink():
                 link.symlink_to(SOURCE, target_is_directory=True)
@@ -468,7 +483,8 @@ def reconcile(state: dict[str, object]) -> None:
 
     print(
         f"reconciled Play-first {mode} profile across {len(roots)} harness root(s); "
-        f"rebased {len(rebased_skills)} refreshed/new rote skill(s)"
+        f"rebased {len(rebased_skills)} refreshed/new rote skill(s); "
+        f"restored {len(repaired_links)} managed Play link(s)"
     )
     if orphaned_source_repair:
         print(f"repaired activation from missing Play source: {source}")

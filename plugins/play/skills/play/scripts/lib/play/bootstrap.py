@@ -1392,7 +1392,11 @@ def _render_status_card(report: dict[str, Any]) -> str:
         lines.extend(["", "  Before you start"])
         for step in action_steps:
             target = step.get("target")
-            prefix = f"{LABELS.get(str(target), str(target))}: " if target else ""
+            if target:
+                prefix = f"{LABELS.get(str(target), str(target))}: "
+            else:
+                step_id = str(step.get("id") or "setup")
+                prefix = step_id.replace("_", " ").title() + ": "
             lines.append(f"    - {prefix}{_human_step_detail(step)}")
 
     if status != "blocked":
@@ -1449,6 +1453,11 @@ def _human_step_detail(step: dict[str, Any]) -> str:
         structured = None
     if isinstance(structured, (dict, list)):
         return "Command output was captured; see the detailed JSON report."
+    stderr_marker = "stderr:\n"
+    if detail.startswith(stderr_marker) or f"\n\n{stderr_marker}" in detail:
+        stderr = detail.rsplit(stderr_marker, 1)[1].strip()
+        if stderr:
+            detail = stderr
     nonempty = [line.strip() for line in detail.splitlines() if line.strip()]
     if len(nonempty) > 3 or len(detail) > 240:
         summary = nonempty[0] if nonempty else "Command output was captured."
