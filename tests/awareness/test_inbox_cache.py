@@ -88,6 +88,8 @@ class InboxCacheTest(unittest.TestCase):
             load_flows=lambda slugs: {
                 "acme": [
                     {
+                        "id": "play-123",
+                        "owner_id": "org-456",
                         "name": "ship-and-tell",
                         "description": "Deploy, smoke, and post a summary.",
                         "visibility": "private",
@@ -117,6 +119,8 @@ class InboxCacheTest(unittest.TestCase):
                     "name": "ship-and-tell",
                     "description": "Deploy, smoke, and post a summary.",
                     "visibility": "private",
+                    "skill_id": "play-123",
+                    "owner_id": "org-456",
                 }
             ],
             stored["catalog"],

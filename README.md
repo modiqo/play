@@ -807,7 +807,7 @@ scripts/bin/play-digest --remember --days 1 --json
 scripts/bin/play-digest --since 2026-08-03T00:00:00Z --json
 scripts/bin/play-digest --checkpoint host-checkpoint.json --json
 scripts/bin/play-digest --org modiqo --days 7 --json
-scripts/bin/play-public-trends --play modiqo/hello@0.1.0 --json
+scripts/bin/play-public-trends --play modiqo/hello@0.2.0 --json
 scripts/bin/play-public-trends --org modiqo --workers 8 --json
 ```
 
@@ -890,7 +890,7 @@ request presents both views as structured choices supported by the active harnes
 For diagnostics or integrations, the same reusable building blocks are available directly:
 
 ```bash
-scripts/bin/play-public-trends --play modiqo/hello@0.1.0 --json
+scripts/bin/play-public-trends --play modiqo/hello@0.2.0 --json
 scripts/bin/play-search recent emails --json
 scripts/bin/play-inspect warsaw-rust/posthog-dau-report@0.0.3 --json
 scripts/bin/play-run --stdin --json

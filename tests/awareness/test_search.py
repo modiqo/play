@@ -133,7 +133,8 @@ class SearchTest(unittest.TestCase):
                     "skill_name": "retrieve-rideshare-receipts",
                     "skill_description": "Retrieve rideshare receipts",
                     "version": "0.1.0",
-                    "storage_path": "community_public/retrieve/0.1.0/item.flow",
+                    "visibility": "public",
+                    "storage_path": "organization_public/retrieve/0.1.0/item.flow",
                 },
             ],
             pathlib.Path("/tmp/example-flows"),
@@ -145,6 +146,87 @@ class SearchTest(unittest.TestCase):
             "modiqo/retrieve-rideshare-receipts@0.1.0",
             results[0]["exact_reference"],
         )
+
+    def test_catalog_reconciles_live_visibility_by_stable_play_id(self):
+        reconciled = PLAY_SEARCH.reconcile_registry_items(
+            [
+                {
+                    "skill_id": "play-123",
+                    "owner_slug": "workplace-automation",
+                    "skill_name": "retrieve-recent-emails",
+                    "skill_description": "Retrieve recent email",
+                    "version": "0.1.3",
+                    "storage_path": "organization_759/retrieve/0.1.3/item.flow",
+                }
+            ],
+            [
+                {
+                    "skill_id": "play-123",
+                    "owner_id": "org-759",
+                    "owner_slug": "workplace-automation",
+                    "skill_name": "retrieve-recent-emails",
+                    "skill_description": "Retrieve recent email",
+                    "visibility": "public",
+                }
+            ],
+        )
+        self.assertEqual(1, len(reconciled))
+        self.assertEqual("public", reconciled[0]["visibility"])
+        self.assertEqual("org-759", reconciled[0]["owner_id"])
+        self.assertEqual("remote_public", PLAY_SEARCH.registry_scope(reconciled[0]))
+
+    def test_storage_path_never_grants_public_visibility(self):
+        self.assertEqual(
+            "remote_private",
+            PLAY_SEARCH.registry_scope(
+                {"storage_path": "community_legacy/a-play/1.0.0/item.flow"}
+            ),
+        )
+
+    def test_reorganized_registry_owner_supersedes_stale_local_owner(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        description = "Retrieve recent Gmail messages."
+        results = PLAY_SEARCH.merge_results(
+            {
+                "flows": [
+                    {
+                        "name": "retrieve-recent-emails",
+                        "path": str(
+                            flow_root
+                            / "modiqo"
+                            / "retrieve-recent-emails"
+                            / "main.ts"
+                        ),
+                        "description": description,
+                        "score": 20.0,
+                    }
+                ]
+            },
+            [
+                {
+                    "skill_id": "play-123",
+                    "owner_slug": "workplace-automation",
+                    "skill_name": "retrieve-recent-emails",
+                    "skill_description": description,
+                    "visibility": "public",
+                    "version": "0.1.3",
+                }
+            ],
+            flow_root,
+            10,
+            "retrieve recent emails",
+        )
+        self.assertEqual(1, len(results))
+        self.assertEqual(
+            "workplace-automation/retrieve-recent-emails@0.1.3",
+            results[0]["reference"],
+        )
+        self.assertIn(
+            "modiqo/retrieve-recent-emails", results[0]["selection_description"]
+        )
+        self.assertEqual("remote_public", results[0]["primary_scope"])
+        self.assertEqual("not_found", results[0]["local_availability"])
+        self.assertEqual("pull_required", results[0]["execution_resolution"])
 
     def test_local_dag_path_is_exposed_only_as_canonical_reference(self):
         flow_root = pathlib.Path("/tmp/example-flows")
@@ -293,6 +375,7 @@ class SearchTest(unittest.TestCase):
                 "version": "2.0.0",
                 "rank": 10.0,
                 "status": "approved",
+                "visibility": "public",
                 "storage_path": "community_123/public-receipts/2.0.0/flow",
             },
             {
@@ -302,6 +385,7 @@ class SearchTest(unittest.TestCase):
                 "version": "1.0.0",
                 "rank": 1.0,
                 "status": "approved",
+                "visibility": "private",
                 "storage_path": "organization_123/private-receipts/1.0.0/flow",
             },
         ]

@@ -45,7 +45,7 @@ knowledge becomes memory.
 After the orientation is presented and remembered, offer:
 
 1. **Run Hello** — use the pinned canonical URI
-   `https://play.modiqo.ai/modiqo/hello@0.1.0`; disclose it, then run locally or request the exact
+   `https://play.modiqo.ai/modiqo/hello@0.2.0`; disclose it, then run locally or request the exact
    remote pull approval.
 2. **Tell me your goal** — accept ordinary language and route it through normal Play invocation.
 3. **See useful Plays** — open the normal remembered awareness inbox.

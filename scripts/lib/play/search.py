@@ -87,8 +87,7 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
 
     local_flows = []
     seen_paths = set()
-    registry_items = []
-    seen_registry = set()
+    live_registry_items = []
     for index in range(len(queries)):
         local = results[("local", index)]
         flows = local.get("flows") if isinstance(local, dict) else None
@@ -102,24 +101,81 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
         registry = results[("registry", index)]
         if not isinstance(registry, list):
             raise SearchError("registry search result is not an array")
-        for item in registry:
-            key = (
-                item.get("owner_slug"), item.get("skill_name"), item.get("version"),
-                item.get("storage_path"),
-            ) if isinstance(item, dict) else None
-            if key not in seen_registry:
-                seen_registry.add(key)
-                registry_items.append(item)
+        live_registry_items.extend(registry)
     # The registry's lexical search can miss an exactly-named Play the user is
     # authorized to run. The cached hub catalog is the authoritative bounded
     # enumeration of authorized-org Plays, so merge it as a recall backstop;
     # live results keep rank priority, and adequacy scoring decides matches.
-    for item in _catalog_items():
-        key = (item.get("owner_slug"), item.get("skill_name"), None, None)
-        if key not in seen_registry:
-            seen_registry.add(key)
-            registry_items.append(item)
-    return {"flows": local_flows}, registry_items
+    return {"flows": local_flows}, reconcile_registry_items(
+        live_registry_items, _catalog_items()
+    )
+
+
+def _registry_reference(item: dict) -> tuple[str, str] | None:
+    owner = item.get("owner_slug")
+    name = item.get("skill_name")
+    if isinstance(owner, str) and owner and isinstance(name, str) and name:
+        return owner, name
+    return None
+
+
+def _registry_skill_id(item: dict) -> str | None:
+    value = item.get("skill_id")
+    return value if isinstance(value, str) and value else None
+
+
+def reconcile_registry_items(live_items: list, catalog_items: list[dict]) -> list[dict]:
+    """Overlay authoritative catalog identity and visibility onto live search hits."""
+
+    catalog_by_id = {
+        skill_id: item
+        for item in catalog_items
+        if (skill_id := _registry_skill_id(item)) is not None
+    }
+    catalog_by_reference = {
+        reference: item
+        for item in catalog_items
+        if (reference := _registry_reference(item)) is not None
+    }
+    reconciled: list[dict] = []
+    seen: set[tuple] = set()
+    covered_catalog: set[int] = set()
+    for raw_item in live_items:
+        if not isinstance(raw_item, dict):
+            raise SearchError("registry search contains an invalid item")
+        item = dict(raw_item)
+        catalog_item = None
+        skill_id = _registry_skill_id(item)
+        if skill_id is not None:
+            catalog_item = catalog_by_id.get(skill_id)
+        if catalog_item is None:
+            reference = _registry_reference(item)
+            if reference is not None:
+                catalog_item = catalog_by_reference.get(reference)
+        if catalog_item is not None:
+            covered_catalog.add(id(catalog_item))
+            # Organization enumeration is authoritative for mutable ownership and
+            # visibility. Live search still supplies version, rank, and status.
+            for field in ("owner_slug", "skill_name", "skill_id", "owner_id", "visibility"):
+                value = catalog_item.get(field)
+                if value is not None:
+                    item[field] = value
+            if not item.get("skill_description"):
+                item["skill_description"] = catalog_item.get("skill_description") or ""
+        identity = _registry_skill_id(item) or _registry_reference(item)
+        key = (identity, item.get("version"))
+        if key not in seen:
+            seen.add(key)
+            reconciled.append(item)
+    for item in catalog_items:
+        if id(item) in covered_catalog:
+            continue
+        identity = _registry_skill_id(item) or _registry_reference(item)
+        key = (identity, item.get("version"))
+        if key not in seen:
+            seen.add(key)
+            reconciled.append(item)
+    return reconciled
 
 
 def _catalog_items() -> list[dict]:
@@ -147,18 +203,18 @@ def _catalog_items() -> list[dict]:
                 "skill_name": name,
                 "skill_description": entry.get("description") or "",
                 "visibility": entry.get("visibility"),
+                "skill_id": entry.get("skill_id"),
+                "owner_id": entry.get("owner_id"),
             }
         )
     return items
 
 
 def registry_scope(item: dict) -> str:
-    visibility = item.get("visibility")
-    storage_path = item.get("storage_path")
-    if visibility == "public" or (
-        isinstance(storage_path, str) and storage_path.startswith("community_")
-    ):
+    if item.get("visibility") == "public":
         return "remote_public"
+    # Search responses can omit visibility. Never infer it from an internal
+    # storage path: those paths are not identity or authorization contracts.
     return "remote_private"
 
 
@@ -201,6 +257,8 @@ def new_hit(name: str, description: str, reference: str | None) -> dict:
         "source_ranks": {},
         "source_scores": {},
         "versions_by_scope": {},
+        "reconciled_from": set(),
+        "stale_local_paths": set(),
     }
 
 
@@ -250,6 +308,13 @@ def merge_results(
             hit["version"] = version
             hit["status"] = item.get("status")
 
+    registry_references = set(canonical)
+    registry_references_by_fingerprint: dict[str, list[str]] = {}
+    for reference, hit in canonical.items():
+        registry_references_by_fingerprint.setdefault(
+            fingerprint(hit["name"], hit["description"]), []
+        ).append(reference)
+
     for rank, item in enumerate(local_flows, 1):
         if not isinstance(item, dict):
             raise SearchError("local search contains an invalid item")
@@ -260,6 +325,17 @@ def merge_results(
         description = bounded_description(item.get("description"))
         reference = local_reference(path_value, flow_root)
         if reference:
+            relocated_matches = registry_references_by_fingerprint.get(
+                fingerprint(name, description), []
+            )
+            if reference not in registry_references and len(relocated_matches) == 1:
+                # A local directory preserves the owner at pull time. If the
+                # authorized registry now has one unambiguous canonical match,
+                # do not let that stale path masquerade as the current identity.
+                hit = canonical[relocated_matches[0]]
+                hit["reconciled_from"].add(reference)
+                hit["stale_local_paths"].add(path_value)
+                continue
             hit = canonical.setdefault(reference, new_hit(name, description, reference))
             hit["sources"].add("local")
             hit["local_paths"].add(path_value)
@@ -384,6 +460,8 @@ def merge_results(
                 "selection_description": (
                     f"{hit['description']} Already local; inspect and run without a pull prompt."
                     if execution_resolution == "run_local"
+                    else f"{hit['description']} Registry ownership supersedes the stale local reference(s) {', '.join(sorted(hit['reconciled_from']))}; pulling the canonical Play requires your approval."
+                    if hit["reconciled_from"]
                     else f"{hit['description']} Remote {primary_scope.removeprefix('remote_').replace('_', ' ')} match; pulling requires your approval."
                 ),
             }

@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import unittest
@@ -293,6 +294,36 @@ class InstallAllTest(unittest.TestCase):
         self.assertEqual("completed", report["status"])
         self.assertEqual(["codex", "claude", "kimi"], report["selected_harnesses"])
         self.uninstall(installed)
+
+    def test_remote_archive_extraction_selects_a_safe_python_policy(self) -> None:
+        installer = (ROOT / "install.sh").read_text(encoding="utf-8")
+        start_marker = "python3 - \"$archive\" \"$source_root\" <<'PY'\n"
+        extraction = installer.split(start_marker, 1)[1].split("\nPY\n", 1)[0]
+        source = self.home / "archive-source"
+        source.mkdir()
+        (source / "VERSION").write_text("test\n", encoding="utf-8")
+        archive = self.home / "play.tar.gz"
+        with tarfile.open(archive, "w:gz") as bundle:
+            bundle.add(source, arcname="play-main")
+        destination = self.home / "extracted"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-W",
+                "error::DeprecationWarning",
+                "-",
+                str(archive),
+                str(destination),
+            ],
+            input=extraction,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("test", (destination / "VERSION").read_text().strip())
 
     def test_local_bootstrap_guides_first_time_sign_in_without_error_state(self) -> None:
         install_home = self.home / "curl-first-use"

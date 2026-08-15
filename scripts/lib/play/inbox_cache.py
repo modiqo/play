@@ -52,9 +52,11 @@ def summary_line(digest: Mapping[str, Any]) -> str | None:
     updates = digest.get("org_updates")
     if not isinstance(updates, Mapping):
         return None
-    new_items = updates.get("new") if isinstance(updates.get("new"), list) else []
-    revised_items = (
-        updates.get("revised") if isinstance(updates.get("revised"), list) else []
+    raw_new_items = updates.get("new")
+    raw_revised_items = updates.get("revised")
+    new_items: list[Any] = raw_new_items if isinstance(raw_new_items, list) else []
+    revised_items: list[Any] = (
+        raw_revised_items if isinstance(raw_revised_items, list) else []
     )
     if not new_items and not revised_items:
         return None
@@ -152,14 +154,17 @@ def refresh_cache(
             if reference in seen_references:
                 continue
             seen_references.add(reference)
-            catalog.append(
-                {
-                    "reference": reference,
-                    "name": name,
-                    "description": str(flow.get("description") or "")[:240],
-                    "visibility": flow.get("visibility"),
-                }
-            )
+            catalog_entry = {
+                "reference": reference,
+                "name": name,
+                "description": str(flow.get("description") or "")[:240],
+                "visibility": flow.get("visibility"),
+            }
+            for source_field, cache_field in (("id", "skill_id"), ("owner_id", "owner_id")):
+                value = flow.get(source_field)
+                if isinstance(value, str) and value:
+                    catalog_entry[cache_field] = value
+            catalog.append(catalog_entry)
             if len(catalog) >= 500:
                 break
     try:

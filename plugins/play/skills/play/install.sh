@@ -69,7 +69,10 @@ with tarfile.open(archive, "r:gz") as bundle:
         safe.append(member)
     if len(roots) != 1:
         raise SystemExit("play install: archive must contain one repository root")
-    bundle.extractall(destination, members=safe)
+    # Python 3.14 requires callers to choose an extraction policy explicitly.
+    # Older supported Python releases rely on the equivalent checks above.
+    extract_options = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
+    bundle.extractall(destination, members=safe, **extract_options)
 PY
   printf '%s\n' "✓ Verified Play archive"
 fi

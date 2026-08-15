@@ -33,8 +33,8 @@ ONBOARDING_ORIENTATION_VERSION = 3
 def default_onboarding_state_path() -> Path:
     return state_path("onboarding-state.json")
 
-STARTER_PLAY_REFERENCE = "modiqo/hello@0.1.0"
-STARTER_PLAY_URI = "https://play.modiqo.ai/modiqo/hello@0.1.0"
+STARTER_PLAY_REFERENCE = "modiqo/hello@0.2.0"
+STARTER_PLAY_URI = "https://play.modiqo.ai/modiqo/hello@0.2.0"
 _PLAY_PREFIX = re.compile(r"^(?:\$play|/play)(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL)
 _SETTLE_REQUEST = re.compile(
     r"^(?:\$play|/play)\s+settle\b(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL

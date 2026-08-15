@@ -33,9 +33,15 @@ using one source.
 ## Canonicalize and deduplicate
 
 - Use `owner/name` as the canonical identity whenever available.
+- Overlay live search hits with the authorized organization catalog by stable Play ID first, then
+  canonical reference. Organization listings are authoritative for current owner and visibility;
+  never derive either from registry storage paths.
 - Collapse registry versions under one canonical identity and retain the highest semantic version.
 - Collapse local aliases into a canonical identity only when name and normalized description map
   unambiguously to one locally identified or registry Play.
+- When an owner-shaped local path no longer exists in the authorized catalog but its name and
+  normalized description uniquely match a current registry Play, report the registry identity and
+  require a pull of that canonical reference. Do not execute the stale local owner alias.
 - Never merge matching names from different organizations without that evidence.
 - Combine source ranks with reciprocal-rank fusion and sort deterministically. Rank adequate matches
   by execution scope first: local, then private organization, then public hub.
@@ -47,7 +53,8 @@ For registry-addressable results, emit:
 - local availability and whether a pull/install is expected;
 - next command: `rote play inspect <owner>/<name>@<version> --json`.
 
-For a local-only Play, emit its `file://` URI and use its local path for inspection and execution.
+For a local-only DAG Play, emit its canonical `owner/name` URI and use that reference for inspection
+and execution; filesystem paths remain internal evidence only.
 
 ## Present choices
 
