@@ -280,9 +280,9 @@ def _typed_auth_failure(output: str) -> dict[str, Any] | None:
         if isinstance(source, Mapping):
             sources.append(source)
 
-    marker_source = _marker_auth_failure(output)
-    if marker_source is not None:
-        sources.append(marker_source)
+    rendered_source = _rendered_auth_failure(output)
+    if rendered_source is not None:
+        sources.append(rendered_source)
 
     # Multiple typed failures in one invocation are ambiguous. Refuse to guess
     # which adapter or credential should be repaired.
@@ -371,20 +371,20 @@ def _auth_protocol(value: object) -> str | None:
     return _AUTH_PROTOCOLS.get(value.strip())
 
 
-def _marker_auth_failure(output: str) -> Mapping[str, Any] | None:
-    """Project Rote's documented ``@@authentication`` section onto its v1 wire.
+def _rendered_auth_failure(output: str) -> Mapping[str, Any] | None:
+    """Project Rote's documented authentication rendering onto its v1 wire.
 
-    The Play run command currently owns a marker/prose shell rather than a
-    ``--json`` switch. Only the exact documented fields are accepted, and the
-    adapter-call safety bit must be present so ordinary Play output cannot be
-    mistaken for a pre-execution authentication refusal.
+    Rote supports both marker and prose shells at this boundary. Only their
+    exact documented fields are accepted, and the adapter-call safety bit must
+    be present so ordinary Play output cannot be mistaken for a pre-execution
+    authentication refusal.
     """
 
     lines = output.splitlines()
     starts = [
         index
         for index, line in enumerate(lines)
-        if line.strip() == "@@authentication"
+        if line.strip() in {"@@authentication", "Authentication required"}
     ]
     if len(starts) != 1:
         return None
@@ -400,6 +400,8 @@ def _marker_auth_failure(output: str) -> Mapping[str, Any] | None:
         if field is None or field in fields:
             continue
         fields[field] = value.strip()
+        if set(fields) == set(_AUTH_MARKER_FIELDS.values()):
+            break
     required = set(_AUTH_MARKER_FIELDS.values())
     if set(fields) != required:
         return None

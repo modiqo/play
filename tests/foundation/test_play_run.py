@@ -67,6 +67,22 @@ def auth_markers(protocol: str, *, adapter_calls_started: bool = False) -> str:
     )
 
 
+def auth_prose(protocol: str) -> str:
+    return "\n".join(
+        (
+            "Authentication required",
+            "  Adapter: crucible",
+            "  Credential: ADAPTER_CRUCIBLE_TOKEN",
+            "  State: missing",
+            f"  Protocol: {AUTH_PROTOCOLS[protocol]}",
+            "  Repair interaction: browser",
+            "  Network required: yes",
+            "  Remediation: retry in an interactive terminal to authorize",
+            "  Adapter calls started: false",
+        )
+    )
+
+
 def auth_json(protocol: str) -> str:
     return __import__("json").dumps(
         {
@@ -208,6 +224,22 @@ class UniversalPlayRunTest(unittest.TestCase):
             with self.subTest(protocol=protocol):
                 run.return_value = subprocess.CompletedProcess(
                     args=[], returncode=1, stdout="", stderr=auth_json(protocol)
+                )
+
+                result = execute(payload())
+
+                self.assertEqual("play_auth_repair_required", result["event"])
+                self.assertEqual(protocol, result["auth_repair"]["classified_rung"])
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_prose_auth_failure_routes_every_protocol_to_adapter_config(
+        self, run, _which
+    ) -> None:
+        for protocol in AUTH_PROTOCOLS:
+            with self.subTest(protocol=protocol):
+                run.return_value = subprocess.CompletedProcess(
+                    args=[], returncode=1, stdout="", stderr=auth_prose(protocol)
                 )
 
                 result = execute(payload())

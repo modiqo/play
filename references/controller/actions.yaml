@@ -556,10 +556,10 @@ actions:
       - Never request summary output. Preserve the complete primary payload, response and artifact references, effects, and any full-output reference returned by Rote.
       - Prefer Rote's human presentation for steps-with-presentation Plays; accept JSON or structured responses only when they retain the full primary result.
       - A compact Play summary cannot prove full detail and must not emit play_run_ready.
-      - Pin ROTE_OUTPUT_MODE=structured for the captured subprocess because rote play run has no JSON switch; this keeps its documented authentication section machine-readable regardless of the caller's shell preference.
+      - Pin ROTE_OUTPUT_MODE=structured for the captured subprocess because rote play run has no JSON switch; accept the same closed authentication fields from Rote's documented marker or prose rendering so an older or inherited shell mode cannot erase the repair route.
       - If rote play run returns the documented play.auth-required/v1 failure before any adapter call, emit source=rote_auth_repair_required, normalize only its exact static, oauth, oauth_dcr, or google_discovery protocol, and preserve its adapter id, credential variable, failure state, remediation, and evidence as play_auth_repair_required.
       - Reject unknown, incomplete, ambiguous, or post-adapter-call authentication payloads; never guess that an unknown protocol is a static token and never ask a user to paste an OAuth credential.
-      - Route non-authentication run failures to blocked with Rote's exact evidence so terminal errors cannot disappear into a standby exit.
+      - Route non-authentication run failures to blocked with Rote's exact evidence, and present the structured action_blocked reason verbatim so terminal errors cannot disappear into an empty yield or standby exit.
     events:
       play_run_ready: [play.version, resolution.local_state, resolution.pull_performed, result_ref, response_refs, artifact_refs, effects, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
       play_drifted: [reason, evidence_refs]

@@ -209,6 +209,10 @@ def _execute_instruction(
     required = projection["accepted_events"][event_id]["required_payload"]
     payload = _build_payload(required, raw, context)
     presentation = _presentation(raw)
+    if event_id == "action_blocked" and presentation is None:
+        reason = payload.get("reason")
+        if isinstance(reason, str) and reason.strip():
+            presentation = reason.strip()
     if (
         instruction.get("id") == "inspect_registry_play"
         and event_id in {"play_inspected", "play_not_runnable"}

@@ -1156,6 +1156,67 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("action_blocked", yielded.trace[0].event)
 
     @patch("play.runtime_actions.subprocess.run")
+    def test_structured_action_blocked_surfaces_its_reason_at_terminal(
+        self, run
+    ) -> None:
+        run.return_value = SimpleNamespace(
+            returncode=0,
+            stderr="",
+            stdout=json.dumps(
+                {
+                    "schema": "play.run-result/v1",
+                    "ok": False,
+                    "event": "action_blocked",
+                    "reason": "Crucible authentication output was not recognized",
+                    "recoverable": True,
+                    "owner": "play",
+                    "evidence_refs": ["sha256:blocked"],
+                }
+            ),
+        )
+        session = self.runtime.initial_session(
+            run_id="session-structured-blocker",
+            task_key="task-structured-blocker",
+            request_original="Run Crucible assessment",
+        )
+        context = dict(session.context)
+        context["state"] = "use_run"
+        context["request"] = {
+            **context["request"],
+            "requested_outcome": "Assess the landing page",
+            "parameters": {"source": "https://www.modiqo.ai"},
+        }
+        context["match"] = {
+            **context["match"],
+            "reference": "crucible-heavybit/landing-page-assessment",
+        }
+        context["inspection"] = {
+            **context["inspection"],
+            "exact_reference": "crucible-heavybit/landing-page-assessment@0.2.0",
+            "disclosure_sha256": "a" * 64,
+            "local_change": "none",
+        }
+        context["auth_repair"] = {
+            **context["auth_repair"],
+            "original_packet": {"schema": "play.run-handoff/v1"},
+            "original_packet_sha256": "b" * 64,
+        }
+        bound = replace(
+            session,
+            cursor=replace(session.cursor, state=StateId("use_run")),
+            context=context,
+        )
+
+        yielded = advance_until_yield(self.runtime, bound, root=ROOT)
+
+        self.assertEqual("blocked", yielded.projection["state"]["id"])
+        self.assertEqual(
+            ("Crucible authentication output was not recognized",),
+            yielded.presentations,
+        )
+        self.assertEqual("action_blocked", yielded.trace[0].event)
+
+    @patch("play.runtime_actions.subprocess.run")
     def test_advance_until_yield_auto_inspects_and_routes_local_play(self, run) -> None:
         run.return_value.returncode = 0
         run.return_value.stderr = ""

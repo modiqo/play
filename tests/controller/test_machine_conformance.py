@@ -802,6 +802,8 @@ class MachineConformanceTest(unittest.TestCase):
         run_policy = " ".join(ACTIONS["run_registry_play"]["command_policy"])
         for protocol in ("static", "oauth", "oauth_dcr", "google_discovery"):
             self.assertIn(protocol, run_policy)
+        self.assertIn("marker or prose", run_policy)
+        self.assertIn("present the structured action_blocked reason verbatim", run_policy)
         self.assertEqual(
             "blocked",
             MACHINE["states"]["use_run"]["on"]["action_blocked"][0]["target"],
