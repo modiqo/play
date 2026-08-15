@@ -1657,7 +1657,7 @@ def apply(
                 print("", file=active_progress.stream)
                 print("  Installing Rote components", file=active_progress.stream)
                 print(
-                    "    CLI · Node and Deno runtimes · browser automation · harness skills",
+                    "    CLI · Node and Deno runtimes · browser automation · shell integration",
                     file=active_progress.stream,
                 )
                 print(
