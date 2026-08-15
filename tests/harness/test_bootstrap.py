@@ -18,6 +18,7 @@ from scripts.lib.play.bootstrap import (
     _accept_identity_only_preflight,
     _parallel_harness_work,
     _fallback_skill_config_entries,
+    _official_rote_install_command,
     _render_status_card,
     _result_step,
     _run_visible,
@@ -78,6 +79,16 @@ class BootstrapTest(unittest.TestCase):
             _rote_skill_command(
                 "rote", ["kimi", "hermes", "opencode", "deepseek"]
             ),
+        )
+
+    def test_official_rote_installer_cannot_read_the_parent_terminal(self) -> None:
+        self.assertEqual(
+            [
+                "bash",
+                "-c",
+                "ROTE_YES=1 ROTE_FULL=1 bash -c \"$(curl --proto '=https' --tlsv1.2 -fsSL https://getrote.dev/install)\" </dev/null",
+            ],
+            _official_rote_install_command(),
         )
 
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")

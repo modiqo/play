@@ -366,6 +366,14 @@ def run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _official_rote_install_command() -> list[str]:
+    return [
+        "bash",
+        "-c",
+        'ROTE_YES=1 ROTE_FULL=1 bash -c "$(curl --proto \'=https\' --tlsv1.2 -fsSL https://getrote.dev/install)" </dev/null',
+    ]
+
+
 def _run_visible(
     command: Sequence[str], runner: Runner
 ) -> subprocess.CompletedProcess[str]:
@@ -1648,16 +1656,12 @@ def apply(
                 )
             )
         else:
-            command = [
-                "bash",
-                "-c",
-                'ROTE_YES=1 ROTE_FULL=1 bash -c "$(curl --proto \'=https\' --tlsv1.2 -fsSL https://getrote.dev/install)"',
-            ]
+            command = _official_rote_install_command()
             if active_progress.enabled:
                 print("", file=active_progress.stream)
                 print("  Installing Rote components", file=active_progress.stream)
                 print(
-                    "    CLI · Node and Deno runtimes · browser automation · harness skills",
+                    "    CLI · Node and Deno runtimes · browser automation · shell integration",
                     file=active_progress.stream,
                 )
                 print(
