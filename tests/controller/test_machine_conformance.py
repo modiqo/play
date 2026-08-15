@@ -804,6 +804,24 @@ class MachineConformanceTest(unittest.TestCase):
             self.assertIn(protocol, run_policy)
         self.assertIn("marker or prose", run_policy)
         self.assertIn("present the structured action_blocked reason verbatim", run_policy)
+        repair_policy = " ".join(ACTIONS["execute_auth_repair"]["command_policy"])
+        self.assertIn("rote adapter reauth <adapter_id>", repair_policy)
+        self.assertIn("missing or absent token-storage-entry", repair_policy)
+        self.assertIn("rote adapter pack <adapter_id> <backup_path>", repair_policy)
+        self.assertIn("rote adapter delete <adapter_id> --yes", repair_policy)
+        self.assertIn(
+            "rote adapter new-from-mcp <adapter_id> <endpoint> --headless",
+            repair_policy,
+        )
+        self.assertIn("restore the packed adapter", repair_policy)
+        self.assertIn("Never use a placeholder or fabricated token", repair_policy)
+        for excluded_protocol in ("static", "oauth", "google_discovery"):
+            self.assertIn(excluded_protocol, repair_policy)
+        repair_choice = next(
+            choice for choice in prompt["choices"] if choice["id"] == "repair"
+        )
+        self.assertIn("MCP OAuth DCR only", repair_choice["description"])
+        self.assertIn("backing up, deleting, and recreating", repair_choice["description"])
         self.assertEqual(
             "blocked",
             MACHINE["states"]["use_run"]["on"]["action_blocked"][0]["target"],

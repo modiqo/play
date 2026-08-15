@@ -232,6 +232,12 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("required", advanced.session.context["auth_repair"]["status"])
         self.assertEqual("human", advanced.projection.as_dict()["state"]["boundary"])
         self.assertIn("oauth_dcr", advanced.projection.as_dict()["instruction"]["question"])
+        repair_choice = next(
+            choice
+            for choice in advanced.projection.as_dict()["instruction"]["choices"]
+            if choice["id"] == "repair"
+        )
+        self.assertIn("backing up, deleting, and recreating", repair_choice["description"])
 
     def test_approved_auth_repair_redirects_harness_to_adapter_specialist(self) -> None:
         session = self.runtime.initial_session(
@@ -311,6 +317,12 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual(
             "rote-adapter-config", yielded.projection["instruction"]["specialist"]
         )
+        repair_policy = " ".join(yielded.projection["instruction"]["command_policy"])
+        self.assertIn(
+            "rote adapter new-from-mcp <adapter_id> <endpoint> --headless",
+            repair_policy,
+        )
+        self.assertIn("Never use a placeholder or fabricated token", repair_policy)
         self.assertEqual(
             "required",
             yielded.projection["instruction"]["input"]["auth_repair"]["packet"][

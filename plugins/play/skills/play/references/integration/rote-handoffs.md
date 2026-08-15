@@ -100,6 +100,21 @@ After Play receives explicit approval, prepare `play.auth-repair-handoff/v1` wit
 `rote-adapter-config`; it neither adds that skill to the CALL execution owner set nor authorizes the
 provider operation. Bind the repair packet to the exact original CALL packet and SHA.
 
+Until Rote can bootstrap a missing OAuth DCR token-storage entry in place, the approval disclosure
+also covers one narrow MCP recovery owned by `rote-adapter-config`. First try
+`rote adapter reauth <adapter-id>` once. Only when it returns the exact missing-token-entry failure,
+and fresh adapter metadata proves a known HTTPS MCP endpoint, create and validate a restorable
+`.adapt` archive with `rote adapter pack`. Then run `rote adapter delete <adapter-id> --yes` and
+`rote adapter new-from-mcp <adapter-id> <verified-endpoint> --headless`. The specialist owns the
+browser authorization; it must not redirect the user to reconstruct the flow manually.
+
+Fail closed before deletion if the backup is unavailable. If recreation or authentication fails,
+restore the backup and do not resume the Play. Success requires fresh evidence for endpoint, auth
+family, fingerprint, tool inventory, health, and dependent-Play indexing, with any provenance
+change recorded in the repair receipt. This temporary path never applies to static credentials,
+ordinary OAuth, Google discovery, ambiguous failures, or post-call authentication failures, and a
+placeholder token must never be created to trigger it.
+
 Require `play.auth-repair-receipt/v1` and validate it with
 `scripts/bin/play-handoff verify-auth-repair --stdin --json`. A successful receipt must match the
 requested adapter, environment variable, and classified rung, name the repair action, and include

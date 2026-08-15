@@ -184,7 +184,7 @@ prompts:
     template_fields: [auth_repair.adapter_id, auth_repair.classified_rung]
     selection: single
     choices:
-      - {id: repair, label: Continue sign-in, description: Open the protocol-appropriate secure prompt or browser flow, then retry the exact Play only after authentication is verified., event: auth_repair_approved}
+      - {id: repair, label: Continue guided repair, description: "Open the protocol-appropriate secure prompt or browser flow. For MCP OAuth DCR only, if normal reauth finds no token-storage entry, this also approves backing up, deleting, and recreating that adapter from its verified endpoint before authentication is verified and the exact Play is retried.", event: auth_repair_approved}
       - {id: stop, label: Do not repair, description: Stop without changing credentials, adapter authentication, or the original operation., event: auth_repair_declined}
     events:
       auth_repair_approved: [prompt_version, selected_at, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.original_packet_sha256]

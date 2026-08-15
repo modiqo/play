@@ -626,6 +626,13 @@ actions:
     command_policy:
       - Invoke only rote-adapter-config with the exact play.auth-repair-handoff/v1 packet.
       - Let rote-adapter-config own classification checks, repair commands, OAuth and secret-entry gates, and ladder termination.
+      - For oauth_dcr, attempt `rote adapter reauth <adapter_id>` exactly once before considering recovery; keep the browser authorization inside the specialist handoff rather than redirecting the user to a manual terminal command.
+      - Apply the temporary MCP-DCR recovery only when that reauth attempt reports the exact missing or absent token-storage-entry condition and fresh `rote adapter info` evidence proves the same installed adapter is backed by a known HTTPS MCP endpoint.
+      - Before the temporary recovery changes anything, write a restorable local backup with `rote adapter pack <adapter_id> <backup_path>` and record its reference; if backup creation or validation fails, stop without deleting the adapter.
+      - After a valid backup, run `rote adapter delete <adapter_id> --yes`, then recreate only that adapter from its previously verified endpoint with `rote adapter new-from-mcp <adapter_id> <endpoint> --headless`; never substitute a different endpoint, adapter id, or auth family.
+      - If recreation or authentication fails after deletion, restore the packed adapter, report the failed recovery with evidence, and do not retry the original Play.
+      - Before reporting repair success, verify the recreated adapter's endpoint, auth family, fingerprint, tool inventory, health, and dependent-Play indexing against the pre-delete evidence; preserve the backup reference and any provenance differences in the receipt.
+      - Never use a placeholder or fabricated token to make reauth enter this path. Never use this destructive fallback for static, oauth, google_discovery, unknown or ambiguous errors, missing endpoints, post-adapter-call failures, or any condition other than the exact pre-call MCP OAuth DCR token-storage absence.
       - Return one typed play.auth-repair-receipt/v1 receipt; never call the provider, adapter, or original operation from the repair state.
     events:
       auth_repair_ready: [auth_repair.receipt, auth_repair]
