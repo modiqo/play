@@ -78,3 +78,4 @@
 | P-0072 | code-review | conclusion | fixed | . | Play capture must be decided at prompt intake: capture creates and binds |
 | P-0073 | design-review | conclusion | open | scripts/lib/play/search.py | Use BM25 as an in-memory scorer over the owner-private authorized catalo |
 | P-0074 | installer-diagnosis | conclusion | fixed | scripts/lib/play/bootstrap.py | The Play curl installer appears stalled because bootstrap captures every |
+| P-0075 | play | conclusion | open | scripts/harness/play-profile | A marked portable install may migrate an available source-linked Play pr |

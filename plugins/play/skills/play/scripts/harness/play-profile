@@ -17,6 +17,7 @@ from pathlib import Path
 
 SCHEMA = "play.activation-profile/v1"
 ACTIVATION_POLICY = "rote-handoff-invocable/v1"
+PORTABLE_MARKER_SCHEMA = "play.portable-install/v1"
 SOURCE = Path(
     os.environ.get("PLAY_PROFILE_SOURCE", Path(__file__).resolve().parents[2])
 ).expanduser().resolve()
@@ -123,6 +124,24 @@ def marketplace_source() -> bool:
         (ancestor / marker / "plugin.json").is_file()
         for ancestor in (SOURCE, *SOURCE.parents)
         for marker in (".codex-plugin", ".claude-plugin", ".cursor-plugin", ".kimi-plugin")
+    )
+
+
+def portable_source() -> bool:
+    """Return whether this source was staged by Play's portable installer."""
+    marker = SOURCE / ".play-install.json"
+    if not marker.is_file() or marker.is_symlink():
+        return False
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return (
+        isinstance(payload, dict)
+        and payload.get("schema") == PORTABLE_MARKER_SCHEMA
+        and payload.get("source") == "portable-copy"
+        and isinstance(payload.get("version"), str)
+        and bool(payload["version"].strip())
     )
 
 
@@ -258,6 +277,54 @@ def load_state() -> dict[str, object] | None:
     return state
 
 
+def backup_profile_state(state: dict[str, object]) -> dict[str, str]:
+    """Archive the exact prior profile before transferring source ownership."""
+    path = state_path()
+    content = read_bytes(path)
+    try:
+        current = json.loads(content)
+    except json.JSONDecodeError as error:
+        raise ProfileError(f"cannot back up activation state {path}: {error}") from error
+    if current != state:
+        raise ProfileError("activation state changed during migration; retry the install")
+
+    backup_root = path.parent / "profile-backups"
+    if (backup_root.exists() or backup_root.is_symlink()) and (
+        not backup_root.is_dir() or backup_root.is_symlink()
+    ):
+        raise ProfileError(f"refusing unsafe profile backup path: {backup_root}")
+    try:
+        backup_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        backup_root.chmod(0o700)
+    except OSError as error:
+        raise ProfileError(
+            f"cannot prepare profile backup path {backup_root}: {error}"
+        ) from error
+
+    content_sha256 = digest(content)
+    backup = backup_root / f"activation-profile-{content_sha256}.json"
+    if backup.exists() or backup.is_symlink():
+        if (
+            not backup.is_file()
+            or backup.is_symlink()
+            or read_bytes(backup) != content
+        ):
+            raise ProfileError(f"refusing to replace changed profile backup: {backup}")
+    else:
+        try:
+            atomic_write(backup, content, 0o600)
+        except OSError as error:
+            raise ProfileError(
+                f"cannot write profile backup {backup}: {error}"
+            ) from error
+
+    return {
+        "path": str(backup),
+        "sha256": content_sha256,
+        "source": str(state.get("source", "")),
+    }
+
+
 def verify_state(state: dict[str, object]) -> list[str]:
     problems = []
     source = Path(str(state["source"])).resolve()
@@ -321,9 +388,16 @@ def reconcile(state: dict[str, object]) -> None:
         source / "scripts" / "bin" / "play-machine"
     ).is_file()
     orphaned_source_repair = source_changed and not recorded_source_available
+    portable_source_migration = (
+        source_changed
+        and mode == "source-linked"
+        and previous_mode == "source-linked"
+        and portable_source()
+    )
     if source_changed and not (
         orphaned_source_repair
         or (mode == "marketplace" and previous_mode == "marketplace")
+        or portable_source_migration
     ):
         raise ProfileError(f"profile state belongs to another Play source: {source}")
     if previous_mode != mode and not orphaned_source_repair:
@@ -365,6 +439,20 @@ def reconcile(state: dict[str, object]) -> None:
     recorded_launcher = state.get("launcher")
     if recorded_launcher is not None and Path(str(recorded_launcher)) != launcher:
         raise ProfileError("Play runtime launcher path changed; uninstall before reinstalling")
+
+    profile_backups = copy.deepcopy(state.get("profile_backups", []))
+    if not isinstance(profile_backups, list):
+        raise ProfileError("activation state has malformed profile backup history")
+    profile_backup = None
+    if source_changed or previous_mode != mode:
+        profile_backup = backup_profile_state(state)
+        if not any(
+            isinstance(record, dict)
+            and record.get("sha256") == profile_backup["sha256"]
+            and record.get("path") == profile_backup["path"]
+            for record in profile_backups
+        ):
+            profile_backups.append(profile_backup)
 
     try:
         for skill in sorted(previous_skills - desired_skills, key=str):
@@ -459,6 +547,7 @@ def reconcile(state: dict[str, object]) -> None:
             "rote_skills": [str(skill) for skill in sorted(desired_skills, key=str)],
             "launcher": str(launcher),
             "backups": backups,
+            "profile_backups": profile_backups,
         }
         atomic_write(
             state_path(),
@@ -488,6 +577,8 @@ def reconcile(state: dict[str, object]) -> None:
     )
     if orphaned_source_repair:
         print(f"repaired activation from missing Play source: {source}")
+    if profile_backup is not None:
+        print(f"backed up previous activation profile: {profile_backup['path']}")
     print("restart the harness to reload the reconciled activation profile")
 
 

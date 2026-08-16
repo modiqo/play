@@ -364,3 +364,13 @@
 {"action":"commit","ns":"installer-diagnosis","run":"run-041","summary":["Checked against 1 priors:","  → 1 carried (same identities, current scope state)","New this run: 0"],"t":"run"}
 {"action":"disposition","by":"agent","id":"P-0074","run":"run-042","scope_hash":"714ed11262d8","t":"event","to":"fixed"}
 {"action":"commit","ns":"installer-diagnosis","run":"run-042","summary":["Checked against 1 priors:","  ✓ 1 fixed — nice work","New this run: 0"],"t":"run"}
+{"action":"scope-missing","id":"P-0044","run":"run-043","t":"event"}
+{"action":"scope-missing","id":"P-0048","run":"run-043","t":"event"}
+{"action":"scope-missing","id":"P-0053","run":"run-043","t":"event"}
+{"action":"scope-missing","id":"P-0054","run":"run-043","t":"event"}
+{"action":"scope-missing","id":"P-0055","run":"run-043","t":"event"}
+{"action":"scope-missing","id":"P-0056","run":"run-043","t":"event"}
+{"action":"scope-missing","id":"P-0057","run":"run-043","t":"event"}
+{"action":"scope-missing","id":"P-0058","run":"run-043","t":"event"}
+{"born":"run-043","claim":"A marked portable install may migrate an available source-linked Play profile only after archiving the exact prior state in a private content-addressed backup; arbitrary source takeover and unsafe backup paths remain fail-closed.","direction":"archive-before-portable-profile-migration","evidence":"portable_source_migration is gated by the portable marker, backup_profile_state preserves exact bytes with 0700/0600 permissions, and migration tests prove rollback plus unsafe-path refusal.","facets":{"activation":"verify-phase","authority":"advisory","lifecycle":"stale-on-scope-change","obligation":"disposition-required","scope":"content-hash"},"id":"P-0075","ns":"play","scope_hash":"5dc9dbf1f7fe","scope_ref":"scripts/harness/play-profile","severity":"major","t":"prior","type":"conclusion"}
+{"action":"commit","ns":"play","run":"run-043","summary":["Checked against 8 priors:","New this run: 1"],"t":"run"}

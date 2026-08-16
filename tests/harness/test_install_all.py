@@ -242,6 +242,25 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("already active", result.stdout)
         self.uninstall(installed)
 
+    def test_portable_copy_migrates_source_profile_with_backup(self) -> None:
+        self.run_installer("install")
+        previous_state = self.state.read_bytes()
+        install_home = self.home / "portable-migration"
+        self.environment["PLAY_INSTALL_HOME"] = str(install_home)
+
+        result = self.run_installer("install", "--copy")
+
+        self.assertIn("backed up previous activation profile", result.stdout)
+        installed = install_home / "skill"
+        migrated = json.loads(self.state.read_text())
+        self.assertEqual(str(installed.resolve()), migrated["source"])
+        backup = Path(migrated["profile_backups"][0]["path"])
+        self.assertEqual(previous_state, backup.read_bytes())
+        for root in self.roots.values():
+            self.assertEqual(installed.resolve(), (root / "play").resolve())
+        self.uninstall(installed)
+        self.assertTrue(backup.is_file())
+
     def test_missing_rote_provider_fails_before_writing(self) -> None:
         missing = self.roots["claude"] / "rote-shell"
         (missing / "SKILL.md").unlink()

@@ -336,6 +336,96 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertIn("profile state belongs to another Play source", result.stderr)
         self.assertIn(str(first / "scripts/bin/play-machine"), self.launcher.read_text())
 
+    def test_portable_install_backs_up_and_migrates_available_source(self) -> None:
+        checkout = Path(self.temporary.name) / "checkout" / "skill"
+        portable = Path(self.temporary.name) / "portable" / "skill"
+        for source in (checkout, portable):
+            (source / "agents").mkdir(parents=True)
+            (source / "scripts" / "bin").mkdir(parents=True)
+            (source / "SKILL.md").write_bytes((ROOT / "SKILL.md").read_bytes())
+            (source / "agents" / "openai.yaml").write_bytes(
+                (ROOT / "agents" / "openai.yaml").read_bytes()
+            )
+            (source / "scripts" / "bin" / "play-machine").write_text("#!/bin/sh\n")
+        (portable / ".play-install.json").write_text(
+            json.dumps(
+                {
+                    "schema": "play.portable-install/v1",
+                    "source": "portable-copy",
+                    "version": "test",
+                }
+            )
+            + "\n"
+        )
+
+        self.source = checkout
+        self.run_profile("install")
+        previous_state = self.state.read_bytes()
+
+        skill = self.roots[0] / "rote"
+        markdown = skill / "SKILL.md"
+        metadata = skill / "agents" / "openai.yaml"
+        refreshed_markdown = b"---\nname: rote\ndescription: refreshed\n---\n\n# Refreshed\n"
+        refreshed_metadata = b'interface:\n  display_name: "Refreshed Rote"\n'
+        markdown.write_bytes(refreshed_markdown)
+        metadata.write_bytes(refreshed_metadata)
+
+        self.source = portable
+        result = self.run_profile("install")
+
+        self.assertIn("backed up previous activation profile", result.stdout)
+        migrated = json.loads(self.state.read_text())
+        self.assertEqual(str(portable.resolve()), migrated["source"])
+        self.assertEqual(1, len(migrated["profile_backups"]))
+        backup = Path(migrated["profile_backups"][0]["path"])
+        self.assertEqual(previous_state, backup.read_bytes())
+        self.assertEqual(0o600, backup.stat().st_mode & 0o777)
+        self.assertEqual(0o700, backup.parent.stat().st_mode & 0o777)
+        for root in self.roots:
+            self.assertEqual(portable.resolve(), (root / "play").resolve())
+        self.assertIn(str(portable / "scripts/bin/play-machine"), self.launcher.read_text())
+
+        self.run_profile("uninstall")
+        self.assertEqual(refreshed_markdown, markdown.read_bytes())
+        self.assertEqual(refreshed_metadata, metadata.read_bytes())
+        self.assertTrue(backup.is_file())
+
+    def test_portable_migration_fails_closed_when_backup_path_is_unsafe(self) -> None:
+        checkout = Path(self.temporary.name) / "checkout-unsafe" / "skill"
+        portable = Path(self.temporary.name) / "portable-unsafe" / "skill"
+        for source in (checkout, portable):
+            (source / "agents").mkdir(parents=True)
+            (source / "scripts" / "bin").mkdir(parents=True)
+            (source / "SKILL.md").write_bytes((ROOT / "SKILL.md").read_bytes())
+            (source / "agents" / "openai.yaml").write_bytes(
+                (ROOT / "agents" / "openai.yaml").read_bytes()
+            )
+            (source / "scripts" / "bin" / "play-machine").write_text("#!/bin/sh\n")
+        (portable / ".play-install.json").write_text(
+            json.dumps(
+                {
+                    "schema": "play.portable-install/v1",
+                    "source": "portable-copy",
+                    "version": "test",
+                }
+            )
+            + "\n"
+        )
+
+        self.source = checkout
+        self.run_profile("install")
+        previous_state = self.state.read_bytes()
+        (self.state.parent / "profile-backups").write_text("unsafe\n")
+
+        self.source = portable
+        result = self.run_profile("install", expected=1)
+
+        self.assertIn("refusing unsafe profile backup path", result.stderr)
+        self.assertEqual(previous_state, self.state.read_bytes())
+        for root in self.roots:
+            self.assertEqual(checkout.resolve(), (root / "play").resolve())
+        self.assertIn(str(checkout / "scripts/bin/play-machine"), self.launcher.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()
