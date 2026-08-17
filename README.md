@@ -934,6 +934,18 @@ play-routing --project . remove github-direct
 play-routing --project . list --json
 ```
 
+The same operations are available through natural-language Play requests without entering the
+state machine. An unqualified initialization defaults to the current repository:
+
+```text
+Initialize Play routing for this repo
+Route GitHub directly through gh in this project
+Show this project's Play routing policy
+Stop routing GitHub directly here
+```
+
+Only explicit user/global wording selects `~/.rote-play/routing.yaml`.
+
 `add` replaces a route with the same ID, `remove` fails when the ID is absent, and `init` is
 idempotent without overwriting existing policy. The nearest `.play/routing.yaml` inside the current
 Git worktree augments the user policy.

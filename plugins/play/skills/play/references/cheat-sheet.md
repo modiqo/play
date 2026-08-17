@@ -121,6 +121,9 @@ permissions, credentials, tool approvals, or safety checks.
 ## Route a provider directly in this project
 
 ```text
+You (chat):     Initialize Play routing for this repo
+Play:           creates `.play/routing.yaml`, or reports that the existing policy is current
+
 You (terminal): play-routing --project . add cloudflare-direct \
                   --provider cloudflare --tool wrangler \
                   --executor api --executor cli
@@ -128,6 +131,19 @@ You (chat):     deploy the Worker with Cloudflare
 Play:           the prompt hook stays silent for the matching action request
 Agent:          uses an allowed API or CLI path directly
 ```
+
+You can manage policy conversationally:
+
+```text
+Initialize Play routing for this repo
+Route GitHub directly through gh in this project
+Show this project's Play routing policy
+Stop routing GitHub directly here
+```
+
+Without an explicit scope, Play defaults to the current repository. Say “globally”, “user policy”,
+or “all projects” to manage the owner-private user policy instead. These requests use the routing
+CLI directly and never enter the Play state machine.
 
 Manage project routes:
 

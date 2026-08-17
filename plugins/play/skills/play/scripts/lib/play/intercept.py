@@ -27,7 +27,7 @@ from typing import Any
 
 from .inbox_cache import read_cache as read_inbox_cache
 from .private_store import atomic_write_json, load_json
-from .routing import matching_direct_route
+from .routing import is_routing_management_request, matching_direct_route
 from .state_home import state_path
 from .sidekick import coarse_task_class, latest_capture, preference_policy
 
@@ -324,6 +324,12 @@ def intercept_prompt(
             "Play: explicit cheat-sheet request — use the play skill's bundled "
             "`scripts/bin/play-cheat-sheet`, present its Markdown verbatim, and do not "
             "enter the Play state machine."
+        )
+    if is_routing_management_request(stripped):
+        return (
+            "Play: explicit routing-policy management request — use the play skill's "
+            "pre-machine routing-management path with the unchanged prompt. Default an "
+            "unqualified scope to this repository; do not search for or run a saved Play."
         )
     if (
         len(stripped) < MIN_PROMPT_CHARS

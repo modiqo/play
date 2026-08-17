@@ -132,6 +132,27 @@ class InterceptTest(unittest.TestCase):
                 self.assertIn("play-cheat-sheet", line or "")
                 self.assertIn("do not enter the Play state machine", line or "")
 
+    def test_routing_management_uses_pre_machine_skill_path(self) -> None:
+        project = Path(self._temporary.name) / "routing-project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        add_route(
+            project / ".play" / "routing.yaml",
+            route_id="github-direct",
+            providers=["github"],
+            tools=["gh"],
+        )
+
+        for prompt in (
+            "Initialize Play routing for this repo",
+            "remove GitHub from the Play direct route here",
+        ):
+            with self.subTest(prompt=prompt):
+                line = intercept_prompt(prompt, project_path=str(project))
+                self.assertIsNotNone(line)
+                self.assertIn("pre-machine routing-management path", line or "")
+                self.assertIn("Default an unqualified scope to this repository", line or "")
+
     def test_direct_prefix_is_a_one_turn_hard_bypass(self) -> None:
         for prompt in (
             "direct: check status on PR 1701 in modiqo/rote",

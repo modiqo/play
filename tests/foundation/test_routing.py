@@ -18,6 +18,7 @@ from play.routing import (
     add_route,
     find_project_policy,
     initialize,
+    is_routing_management_request,
     load_policy,
     matching_direct_route,
     remove_route,
@@ -133,6 +134,30 @@ class RoutingPolicyTest(unittest.TestCase):
         self.assertEqual(["github-direct", "cloudflare-direct"], [
             route["id"] for route in policy["routes"]
         ])
+
+    def test_routing_management_prompts_are_narrow_and_action_shaped(self) -> None:
+        accepted = (
+            "Initialize Play routing for this repo",
+            "set up Play routing",
+            "route GitHub directly through gh in this project",
+            "show this project's Play routing policy",
+            "remove GitHub from the Play direct route here",
+            "inspect .play/routing.yaml",
+        )
+        rejected = (
+            "should we route GitHub directly",
+            "do we have a skill for Play routing",
+            "deploy with Cloudflare",
+            "list my GitHub repositories",
+            "explain the network routing policy",
+        )
+
+        for prompt in accepted:
+            with self.subTest(prompt=prompt):
+                self.assertTrue(is_routing_management_request(prompt))
+        for prompt in rejected:
+            with self.subTest(prompt=prompt):
+                self.assertFalse(is_routing_management_request(prompt))
 
     def test_python_cli_add_list_and_remove(self) -> None:
         project = self.base / "cli-project"

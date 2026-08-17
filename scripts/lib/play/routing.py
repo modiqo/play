@@ -21,6 +21,21 @@ PROJECT_POLICY = Path(".play") / "routing.yaml"
 STRATEGIES = ("direct",)
 EXECUTORS = ("api", "cli")
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]{1,63}$")
+_MANAGEMENT_ACTION = re.compile(
+    r"^(?:(?:please|kindly)\s+)?(?:(?:can|could|would)\s+you\s+)?"
+    r"(?:(?:help\s+me|help|let'?s)\s+)?"
+    r"(?:initialize|init|set\s*up|configure|add|update|route|show|list|inspect|"
+    r"remove|delete|stop|disable)\b",
+    re.IGNORECASE,
+)
+_MANAGEMENT_SUBJECT = re.compile(
+    r"(?:\bplay(?:'s)?[\s-]+routing(?:[\s-]+policy)?\b|"
+    r"\b(?:play[\s-]+)?direct[\s-]+rout(?:e|ing)\b|"
+    r"\brout(?:e|ing)\s+(?:github(?:[\s-]+actions)?|cloudflare)\b"
+    r".{0,80}\bdirect(?:ly)?\b|"
+    r"\.play/routing(?:\.yaml)?\b)",
+    re.IGNORECASE,
+)
 
 
 class RoutingError(ValueError):
@@ -195,6 +210,16 @@ def matching_direct_route(
         if any(_selector_matches(normalized, selector) for selector in selectors):
             return route
     return None
+
+
+def is_routing_management_request(prompt: str) -> bool:
+    """Recognize explicit policy management without matching provider work."""
+
+    stripped = " ".join(prompt.strip().split())
+    return (
+        _MANAGEMENT_ACTION.match(stripped) is not None
+        and _MANAGEMENT_SUBJECT.search(stripped) is not None
+    )
 
 
 def _normalized_text(value: str) -> str:

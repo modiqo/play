@@ -3,8 +3,8 @@ name: play
 description: >
   Sidekick for reusable procedures. Use when the user explicitly invokes Play, a Play hook names a
   relevant saved procedure or recommends a search, or a verified capture is ready to settle. Play
-  also handles its cheat sheet, onboarding, canonical Play URIs, digest, management, sharing, and
-  birth certificates.
+  also manages direct-routing policy from natural-language requests and handles its cheat sheet,
+  onboarding, canonical Play URIs, digest, management, sharing, and birth certificates.
 ---
 
 # Play
@@ -32,6 +32,31 @@ If the unchanged trimmed request is `play cheat-sheet`, `$play cheat-sheet`, or
 machine or run preflight. Run the bundled `scripts/bin/play-cheat-sheet`, present its Markdown
 verbatim, and stop. This read-only help path must not search, capture, update preferences, or create
 a settle nudge.
+
+For a request whose primary intent is to initialize, inspect, add, update, or remove Play's direct
+routing policy, do not enter the state machine or run preflight. Translate the unchanged request to
+the bundled `scripts/bin/play-routing` CLI:
+
+- Default an unqualified request to `--project <workspace-root>`. Treat “this repo”, “this project”,
+  “here”, or “local” the same way. Use `--user` only when the user explicitly says user, global,
+  everywhere, all projects, or every project.
+- Treat an unqualified setup request such as “Initialize Play routing” as
+  `--project <workspace-root> init`. This is the default routing-management action and must not
+  overwrite an existing policy.
+- Map initialize/setup to `init`; show/list/inspect to `list`; add/route/update to `add`; and an
+  explicit remove/delete/stop/disable request to `remove`.
+- For `add`, derive a stable `<provider>-direct` ID from the named provider when no ID is given. Pass
+  only provider and tool names actually stated by the user; let the CLI default executors to both
+  API and CLI unless the request narrows them. Running `add` with an existing ID is an update.
+- For `remove`, require an explicit removal verb. Use a stated route ID, or derive
+  `<provider>-direct`; if neither is unambiguous, run `list` and ask which route to remove.
+- After `init`, present the CLI status and policy path. After `add` or `remove`, run `list` for the
+  same scope and present the resulting policy. A plain list request is read-only.
+
+Never infer routing management from a provider task alone. “Deploy with Cloudflare” is direct work
+when policy matches; “route Cloudflare directly in this repo” manages policy. Do not search Plays,
+capture work, update preferences, handle credentials, or claim that routing changes harness
+permissions or safety checks.
 
 ## Enter or resume
 
