@@ -117,12 +117,23 @@ def load_ledger(path: Path | None = None) -> list[dict[str, Any]]:
     return valid
 
 
+def _scope_key(scope: str, value: str | None) -> str | None:
+    if scope == "global":
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{scope} preferences require a scope_key")
+    if scope == "project":
+        return str(Path(value).expanduser().resolve())
+    return value.strip()
+
+
 def append_ledger_entry(
     *,
     statement: str,
     task_class: str,
     policy: str,
     scope: str = "global",
+    scope_key: str | None = None,
     path: Path | None = None,
 ) -> str:
     """Append one scoped preference entry and return its content reference."""
@@ -131,6 +142,7 @@ def append_ledger_entry(
         raise ValueError(f"unknown preference policy {policy!r}")
     if scope not in SCOPES:
         raise ValueError(f"unknown preference scope {scope!r}")
+    normalized_scope_key = _scope_key(scope, scope_key)
     target = path or _default_ledger_path()
     entries = load_ledger(target)
     entry = {
@@ -139,6 +151,11 @@ def append_ledger_entry(
         "policy": policy,
         "statement": statement[:MAX_INTENT_CHARS],
         "recorded_at": _utc_now(),
+        **(
+            {"scope_key": normalized_scope_key}
+            if normalized_scope_key is not None
+            else {}
+        ),
     }
     entries = [
         existing
@@ -146,12 +163,58 @@ def append_ledger_entry(
         if not (
             existing.get("scope") == scope
             and existing.get("task_class") == task_class
+            and existing.get("scope_key") == normalized_scope_key
         )
     ]
     entries.append(entry)
     atomic_write_json(target, {"schema": LEDGER_SCHEMA, "entries": entries})
     canonical = json.dumps(entry, sort_keys=True, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def preference_policy(
+    task_class: str,
+    *,
+    session_id: str | None = None,
+    project_path: str | None = None,
+    path: Path | None = None,
+) -> str | None:
+    """Resolve the most specific applicable preference without widening its scope."""
+
+    normalized_project = (
+        _scope_key("project", project_path)
+        if isinstance(project_path, str) and project_path.strip()
+        else None
+    )
+    normalized_session = session_id.strip() if isinstance(session_id, str) else None
+    selected: tuple[int, int, str] | None = None
+    for index, entry in enumerate(load_ledger(path)):
+        if entry.get("task_class") != task_class:
+            continue
+        scope = entry.get("scope")
+        applies = scope == "global"
+        rank = 0
+        if scope == "project":
+            applies = (
+                normalized_project is not None
+                and entry.get("scope_key") == normalized_project
+            )
+            rank = 1
+        elif scope == "session":
+            applies = (
+                normalized_session is not None
+                and entry.get("scope_key") == normalized_session
+            )
+            rank = 2
+        if not applies:
+            continue
+        policy = entry.get("policy")
+        if not isinstance(policy, str):
+            continue
+        candidate = (rank, index, policy)
+        if selected is None or candidate[:2] >= selected[:2]:
+            selected = candidate
+    return selected[2] if selected is not None else None
 
 
 def _load_hooks(path: Path) -> list[dict[str, Any]]:
@@ -294,8 +357,10 @@ def capture_for_settle(
         (index for index, item in enumerate(captures) if item.get("reference") == reference),
         None,
     )
-    capture = captures[capture_index] if capture_index is not None else None
-    if capture is None or capture.get("status") != "active":
+    if capture_index is None:
+        raise ValueError("capture handle is missing, expired, or already settled")
+    capture = captures[capture_index]
+    if capture.get("status") != "active":
         raise ValueError("capture handle is missing, expired, or already settled")
     validator = trajectory_validator or _validate_rote_trajectory
     trajectory_ref = validator(Path(str(capture.get("workspace_path"))))

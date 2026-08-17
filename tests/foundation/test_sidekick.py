@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.sidekick import capture_for_settle, record_standby
+from play.sidekick import append_ledger_entry, capture_for_settle, record_standby
 
 
 class StandbyBatonPassTest(unittest.TestCase):
@@ -87,6 +87,17 @@ class StandbyBatonPassTest(unittest.TestCase):
         self.assertFalse(result["standby"]["armed"])
         self.assertEqual("normal", result["capture"]["decision"])
         self.assertIsNone(result["presentation_markdown"])
+
+    def test_non_global_preferences_require_an_explicit_scope_key(self) -> None:
+        for scope in ("session", "project"):
+            with self.subTest(scope=scope):
+                with self.assertRaisesRegex(ValueError, "require a scope_key"):
+                    append_ledger_entry(
+                        statement="keep Play quiet here",
+                        task_class="ops-maintenance",
+                        policy="silent",
+                        scope=scope,
+                    )
 
     def test_capture_can_be_settled_only_once_after_trajectory_verification(self) -> None:
         def initialize(name: str) -> Path:

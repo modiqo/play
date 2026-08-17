@@ -10,7 +10,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.intercept import best_match, intercept_prompt, load_index, settle_nudge
+from play.intercept import (
+    best_match,
+    intercept_prompt,
+    is_direct_request,
+    load_index,
+    settle_nudge,
+)
 from play.sidekick import append_ledger_entry, start_capture
 
 
@@ -104,6 +110,16 @@ class InterceptTest(unittest.TestCase):
         self.assertIsNone(intercept_prompt("/play"))
         self.assertIsNone(intercept_prompt("ok"))
 
+    def test_direct_prefix_is_a_one_turn_hard_bypass(self) -> None:
+        for prompt in (
+            "direct: check status on PR 1701 in modiqo/rote",
+            "without play: check status on PR 1701 in modiqo/rote",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(is_direct_request(prompt))
+                self.assertIsNone(intercept_prompt(prompt))
+        self.assertFalse(is_direct_request("please work directly on PR 1701"))
+
     def test_ledger_silence_wins_over_a_match(self) -> None:
         append_ledger_entry(
             statement="no plays for status checks",
@@ -113,6 +129,39 @@ class InterceptTest(unittest.TestCase):
         self.assertIsNone(
             intercept_prompt("can you check status on PR 1701 in modiqo/rote")
         )
+
+    def test_project_silence_does_not_escape_its_project(self) -> None:
+        project = Path(self._temporary.name) / "quiet-project"
+        other = Path(self._temporary.name) / "other-project"
+        append_ledger_entry(
+            statement="no plays for status checks in this project",
+            task_class="ops-maintenance",
+            policy="silent",
+            scope="project",
+            scope_key=str(project),
+        )
+
+        prompt = "can you check status on PR 1701 in modiqo/rote"
+        self.assertIsNone(intercept_prompt(prompt, project_path=str(project)))
+        self.assertIsNotNone(intercept_prompt(prompt, project_path=str(other)))
+
+    def test_session_preference_overrides_global_silence(self) -> None:
+        append_ledger_entry(
+            statement="no plays for status checks",
+            task_class="ops-maintenance",
+            policy="silent",
+        )
+        append_ledger_entry(
+            statement="offer plays in this session",
+            task_class="ops-maintenance",
+            policy="intervene",
+            scope="session",
+            scope_key="session-open",
+        )
+
+        prompt = "can you check status on PR 1701 in modiqo/rote"
+        self.assertIsNotNone(intercept_prompt(prompt, session_id="session-open"))
+        self.assertIsNone(intercept_prompt(prompt, session_id="session-quiet"))
 
     def test_generic_advice_fires_once_per_cooldown(self) -> None:
         first = intercept_prompt("export the quarterly numbers into a spreadsheet")

@@ -1,10 +1,9 @@
 ---
 name: play
 description: >
-  Sidekick for reusable procedures. When the user asks for an outcome, Play checks whether a saved
-  Play already does it and offers to run it; after complicated repeatable work settles, Play offers
-  to save it. Otherwise it stays out of the way. Also handles explicit Play requests: onboarding,
-  canonical Play URIs, digest, management, sharing, and birth certificates.
+  Sidekick for reusable procedures. Use when the user explicitly invokes Play, a Play hook names a
+  relevant saved procedure or recommends a search, or a verified capture is ready to settle. Play
+  also handles onboarding, canonical Play URIs, digest, management, sharing, and birth certificates.
 ---
 
 # Play
@@ -13,10 +12,22 @@ Play's typed runtime owns all control flow. Your job at each yield is small and 
 `machine.yaml`, `actions.yaml`, `prompts.yaml`, schemas, or reference files during a run — the
 returned projection is the entire instruction contract for the current moment.
 
+## Activation gate
+
+Enter Play only when the user explicitly invokes Play or the prompt hook injected a Play activation
+line. An ordinary outcome with no hook activation continues normally; do not independently enroll it
+in Play merely because it could become reusable.
+
+If the unchanged request begins with `direct:` or `without play:`, treat the remainder as a one-turn
+hard bypass. Do not run `play-machine`, search, capture, update Play preferences, or create a settle
+nudge. Continue with the requested work directly. This bypass affects only Play orchestration; it
+does not bypass harness permissions, safety checks, or tool approvals. Do not convert it into a
+persistent mode or infer it from vague dissatisfaction.
+
 ## Enter or resume
 
-For a new task run `play-machine run-until-yield --stdin --json` with a harness-owned run ID,
-stable task key, and the unchanged user request:
+For an activated new task run `play-machine run-until-yield --stdin --json` with a harness-owned run
+ID, stable task key, and the unchanged user request:
 
 ```json
 {"run_id":"<run-id>","task_key":"<task-key>","request":{"original":"<request>"}}

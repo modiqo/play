@@ -89,25 +89,32 @@ $play settle cap_xxxxxxxxxxxxxxxx deployed staging and posted the summary
 Play checks that exact pre-work capture and its Rote evidence rather than guessing from the
 conversation. Settle is optional, but it is never retrospective.
 
-For a one-off task, just ask normally. You can also be explicit:
+For a one-off task, just ask normally. When you want to guarantee that one request never enters the
+Play machine, use the stateless direct prefix:
 
 ```text
-Handle this normally without Play
+direct: deploy this worker with wrangler
 ```
+
+`without play:` is an equivalent spelling. The bypass applies only to that request and does not
+disable harness permissions, safety checks, or tool approvals. A later explicit `$play` invocation
+works normally.
 
 ## What happens when you use Play?
 
 | You do this | Play does this | You stay in control of |
 |---|---|---|
-| Ask for an outcome | Searches your local and authorized Play collections | Whether to inspect or ignore a match |
+| A hook detects a relevant Play or repeatable outcome | Searches your local and authorized Play collections | Whether to inspect or ignore a match |
+| Prefix a request with `direct:` | Stays out completely: no machine, search, capture, or preference write | The direct task and its normal harness permissions |
 | Inspect a matching Play | Shows inputs, setup, credentials by name, and declared effects | Whether the exact version may run |
 | No adequate Play exists | Classifies the fallback as capture or normal before execution | Whether captured work should later settle |
 | Finish repeatable work | Checks whether the recorded steps are worth saving | Team, Community, or Skip |
 | Ask “what’s new” | Shows new and revised Plays grouped by organization | Whether to inspect one |
 
-Play is designed to be quiet. Conversation, creative work, and one-off tasks continue without a
-Play dialog. You can also teach it scoped preferences such as “no Plays while I’m prototyping” or
-“always offer Plays for deploy chores.”
+Play is designed to be quiet. The prompt hook is the proactive activation gate: conversation,
+creative work, one-off tasks, and requests that receive no Play activation line continue without
+entering the Play machine. You can also teach it scoped preferences such as “no Plays while I’m
+prototyping” or “always offer Plays for deploy chores.”
 
 ## Safety and privacy at a glance
 
@@ -129,7 +136,7 @@ $play whats new                            # Open your Play inbox
 $play settle <capture-handle> <summary>    # Settle an existing Rote capture
 $play birth weekly customer report         # See how one of your Plays was made
 $play list my organizations and Plays      # Browse authorized collections
-Handle this normally without Play          # Explicitly skip Play
+direct: <request>                           # Bypass Play for exactly one request
 ```
 
 That is enough for everyday use. Jump to the section that matches what you need next:
@@ -716,7 +723,7 @@ Create, save, and share without memorizing lifecycle commands:
 ```text
 $play create a reusable weekly customer report
 $play settle cap_xxxxxxxxxxxxxxxx built the weekly customer report end to end
-Handle this normally without Play
+direct: deploy this worker with wrangler
 ```
 
 Play always searches before creating. If an adequate Play exists it offers **Inspect existing**.
@@ -879,9 +886,16 @@ play-intercept prompt        # UserPromptSubmit: local + hub-catalog match, one 
 play-intercept settle-nudge  # Stop: one reminder per armed save hook per session
 ```
 
+The hook is the sole proactive activation gate. It emits nothing for `direct:` and `without play:`
+requests, so those requests do not load the Play machine even when a saved Play would otherwise
+match. Silence for any other request likewise means normal harness execution; the skill does not
+self-enroll an ordinary outcome.
+
 Hook state (index cache, cooldowns, nudge markers, preference ledger, standby hooks) lives in
 shared `~/.rote-play/` stores, so the safeguards compose across harnesses: a Play saved from one
-harness is an interception candidate in every other, and nudges never double-fire.
+harness is an interception candidate in every other, and nudges never double-fire. Preference
+resolution is specificity ordered (`session` over `project` over `global`); a non-global entry must
+carry its exact scope key and cannot silently widen to other sessions or projects.
 
 Cache lifecycle: `just install` kicks one detached warm-up refresh, and every session start
 re-refreshes when the cache is older than six hours — no cron, no manual sync. Without an

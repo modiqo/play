@@ -1,6 +1,6 @@
 interface:
   display_name: "Play"
-  short_description: "Discover, run, create, and share reusable Plays"
+  short_description: "Run explicitly requested or hook-recommended reusable Plays"
   default_prompt: "Use $play to show what’s new, run a Play by recognizable name, create and share a reusable outcome, or show how a Play was born."
 
 policy:

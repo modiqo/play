@@ -132,6 +132,16 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertIn("Only the Play runtime continuation backend", CONTEXT["$comment"])
         self.assertIn("24-hour expiry", CONTEXT["$comment"])
 
+    def test_skill_has_a_pre_runtime_one_turn_activation_gate(self) -> None:
+        self.assertLess(
+            SKILL_TEXT.index("## Activation gate"),
+            SKILL_TEXT.index("## Enter or resume"),
+        )
+        self.assertIn("An ordinary outcome with no hook activation continues normally", SKILL_TEXT)
+        self.assertIn("begins with `direct:` or `without play:`", SKILL_TEXT)
+        self.assertIn("Do not run `play-machine`", SKILL_TEXT)
+        self.assertIn("does not bypass harness permissions", SKILL_TEXT)
+
     def test_empty_invocation_uses_typed_live_identity_or_setup(self) -> None:
         self.assertEqual("invoke", MACHINE["initial"])
         self.assertEqual(

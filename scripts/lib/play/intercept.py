@@ -28,7 +28,7 @@ from typing import Any
 from .inbox_cache import read_cache as read_inbox_cache
 from .private_store import atomic_write_json, load_json
 from .state_home import state_path
-from .sidekick import coarse_task_class, latest_capture, load_ledger
+from .sidekick import coarse_task_class, latest_capture, preference_policy
 
 
 INDEX_SCHEMA = "play.intercept-index/v1"
@@ -42,6 +42,10 @@ _FAST_OUTCOME = re.compile(
     r"(?:(?:help\s+me|help)\s+)?"
     r"(?:retrieve|fetch|get|find|collect|download|export|list|summarize|check|"
     r"monitor|calculate|compare|deploy|publish|ship)\b",
+    re.IGNORECASE,
+)
+_DIRECT_REQUEST = re.compile(
+    r"^(?:direct|without\s+play)\s*:\s*\S",
     re.IGNORECASE,
 )
 _NAME = re.compile(r"^\s*\*?\s*name:\s*([A-Za-z0-9][A-Za-z0-9_-]*)\s*$", re.MULTILINE)
@@ -222,12 +226,27 @@ def best_match(prompt: str, entries: list[dict[str, Any]]) -> dict[str, Any] | N
     return None
 
 
-def _silenced(prompt: str) -> bool:
+def is_direct_request(prompt: str) -> bool:
+    """Return whether the user selected the explicit one-turn Play bypass."""
+
+    return _DIRECT_REQUEST.match(prompt.strip()) is not None
+
+
+def _silenced(
+    prompt: str,
+    *,
+    session_id: str | None = None,
+    project_path: str | None = None,
+) -> bool:
     task_class = coarse_task_class(prompt)
-    for policy in load_ledger():
-        if policy.get("task_class") == task_class and policy.get("policy") == "silent":
-            return True
-    return False
+    return (
+        preference_policy(
+            task_class,
+            session_id=session_id,
+            project_path=project_path,
+        )
+        == "silent"
+    )
 
 
 def _advice_recently_given(state_path: Path) -> bool:
@@ -254,14 +273,24 @@ def _record(state_path: Path, **fields: Any) -> None:
         pass
 
 
-def intercept_prompt(prompt: str) -> str | None:
+def intercept_prompt(
+    prompt: str,
+    *,
+    session_id: str | None = None,
+    project_path: str | None = None,
+) -> str | None:
     """Return the one context line to inject, or None for silence."""
 
     stripped = prompt.strip()
     if (
         len(stripped) < MIN_PROMPT_CHARS
         or stripped.startswith(("$play", "/play", "!", "/"))
-        or _silenced(stripped)
+        or is_direct_request(stripped)
+        or _silenced(
+            stripped,
+            session_id=session_id,
+            project_path=project_path,
+        )
     ):
         return None
     entries = load_index()
@@ -332,7 +361,17 @@ def main(argv: list[str] | None = None) -> int:
 
     if arguments.command == "prompt":
         prompt = payload.get("prompt")
-        line = intercept_prompt(prompt) if isinstance(prompt, str) else None
+        session_id = payload.get("session_id")
+        project_path = payload.get("cwd") or payload.get("workspace_root")
+        line = (
+            intercept_prompt(
+                prompt,
+                session_id=session_id if isinstance(session_id, str) else None,
+                project_path=project_path if isinstance(project_path, str) else None,
+            )
+            if isinstance(prompt, str)
+            else None
+        )
         if line:
             print(
                 json.dumps(
