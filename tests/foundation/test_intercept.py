@@ -13,10 +13,12 @@ sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 from play.intercept import (
     best_match,
     intercept_prompt,
+    is_action_request,
     is_direct_request,
     load_index,
     settle_nudge,
 )
+from play.routing import add_route
 from play.sidekick import append_ledger_entry, start_capture
 
 
@@ -45,6 +47,7 @@ class InterceptTest(unittest.TestCase):
             "PLAY_INTERCEPT_INDEX_PATH": str(base / "intercept-index.json"),
             "PLAY_INTERCEPT_STATE_PATH": str(base / "intercept-state.json"),
             "PLAY_INBOX_CACHE_PATH": str(base / "inbox-cache.json"),
+            "PLAY_ROUTING_USER_PATH": str(base / "routing.yaml"),
             "PLAY_SIDEKICK_STANDBY_PATH": str(base / "standby.json"),
             "PLAY_SIDEKICK_LEDGER_PATH": str(base / "preferences.json"),
         }
@@ -105,6 +108,11 @@ class InterceptTest(unittest.TestCase):
     def test_conversation_is_silent(self) -> None:
         self.assertIsNone(intercept_prompt("why did you pick that module name"))
 
+    def test_catalog_overlap_cannot_activate_play_for_a_design_discussion(self) -> None:
+        prompt = "should we use github actions for this repository"
+        self.assertFalse(is_action_request(prompt))
+        self.assertIsNone(intercept_prompt(prompt))
+
     def test_play_bound_and_short_prompts_are_silent(self) -> None:
         self.assertIsNone(intercept_prompt("$play settle finished the deploy"))
         self.assertIsNone(intercept_prompt("/play"))
@@ -119,6 +127,20 @@ class InterceptTest(unittest.TestCase):
                 self.assertTrue(is_direct_request(prompt))
                 self.assertIsNone(intercept_prompt(prompt))
         self.assertFalse(is_direct_request("please work directly on PR 1701"))
+
+    def test_project_direct_route_wins_before_catalog_matching(self) -> None:
+        project = Path(self._temporary.name) / "direct-project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        add_route(
+            project / ".play" / "routing.yaml",
+            route_id="github-direct",
+            providers=["github", "github-actions"],
+            tools=["git", "gh"],
+        )
+        prompt = "check github status on PR 1701 in modiqo/rote"
+        self.assertTrue(is_action_request(prompt))
+        self.assertIsNone(intercept_prompt(prompt, project_path=str(project)))
 
     def test_ledger_silence_wins_over_a_match(self) -> None:
         append_ledger_entry(

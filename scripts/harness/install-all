@@ -474,6 +474,8 @@ def execute(
         verify_harness_coverage(harnesses, source)
         verify_harness_integrations(harnesses)
         verify_play_runtime(source)
+        if command == "install":
+            initialize_routing_policy(source)
     except Exception:
         if destination is not None:
             if profile_activated:
@@ -489,6 +491,26 @@ def execute(
         print(
             f"Play {version(source)} is ready. Restart each running harness and use its invocation shown in the final setup card."
         )
+
+
+def initialize_routing_policy(source: Path) -> None:
+    """Create the owner-private routing policy without touching the caller's project."""
+
+    command = source / "scripts" / "bin" / "play-routing"
+    result = subprocess.run(
+        [str(command), "--user", "init"],
+        cwd=source,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+    if result.returncode:
+        reason = (result.stderr or result.stdout).strip() or "routing initialization failed"
+        raise InstallError(reason)
+    message = result.stdout.strip()
+    if message:
+        print(f"Play routing policy {message}")
 
 
 def warm_inbox_cache(source: Path) -> None:

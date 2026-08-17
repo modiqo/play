@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""Manage Play user and project routing policy."""
+
+from __future__ import annotations
+
+import importlib.util
+import os
+import shutil
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+if importlib.util.find_spec("yaml") is None:
+    uv = shutil.which("uv")
+    if uv is None or os.environ.get("PLAY_ROUTING_UV_BOOTSTRAPPED") == "1":
+        raise SystemExit("play-routing requires uv or the pinned Play Python environment")
+    environment = os.environ.copy()
+    environment["PLAY_ROUTING_UV_BOOTSTRAPPED"] = "1"
+    os.execve(
+        uv,
+        [uv, "run", "--project", str(ROOT), str(Path(__file__).resolve()), *sys.argv[1:]],
+        environment,
+    )
+
+sys.path.insert(0, str(ROOT / "scripts" / "lib"))
+
+from play.routing import main
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

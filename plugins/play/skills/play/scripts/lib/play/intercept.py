@@ -1,13 +1,13 @@
 """Blazing-fast structural interception for the two sidekick moments.
 
 `play-intercept prompt` runs on every UserPromptSubmit. It is local-only and
-must stay far under 100ms: an mtime-keyed index of saved Plays (built from
-`~/.rote/flows` frontmatter) is matched lexically against the prompt. On a
-specific hit it injects one context line naming the Play; on an outcome-shaped
-prompt with no local hit it injects, at most once per cooldown window, one line
-advising the agent to search preexisting Plays through the play skill. On
-everything else: silence, zero tokens. The scoped preference ledger applies —
-a silenced task class produces nothing.
+must stay far under 100ms: action-shaped prompts pass through trusted user and
+project routing policy, then an mtime-keyed index of saved Plays (built from
+`~/.rote/flows` frontmatter) is matched lexically. A direct route, discussion,
+or scoped silence produces nothing. On a specific hit it injects one context
+line naming the Play; on an outcome-shaped prompt with no local hit it injects,
+at most once per cooldown window, one line advising the agent to search
+preexisting Plays through the play skill.
 
 `play-intercept settle-nudge` runs on Stop. If a pre-work capture is active,
 it shows the exact settle handle once per session.
@@ -27,6 +27,7 @@ from typing import Any
 
 from .inbox_cache import read_cache as read_inbox_cache
 from .private_store import atomic_write_json, load_json
+from .routing import matching_direct_route
 from .state_home import state_path
 from .sidekick import coarse_task_class, latest_capture, preference_policy
 
@@ -46,6 +47,22 @@ _FAST_OUTCOME = re.compile(
 )
 _DIRECT_REQUEST = re.compile(
     r"^(?:direct|without\s+play)\s*:\s*\S",
+    re.IGNORECASE,
+)
+_ACTION_REQUEST = re.compile(
+    r"^(?:(?:please|kindly)\s+)?(?:(?:can|could|would)\s+you\s+)?"
+    r"(?:(?:help\s+me|help|(?:let'?s|i\s+want\s+you\s+to))\s+)?"
+    r"(?:use|run|execute|create|make|write|edit|change|update|fix|implement|"
+    r"refactor|review|test|verify|investigate|diagnose|build|configure|install|"
+    r"delete|set|add|remove|enable|disable|open|close|commit|push|pull|merge|"
+    r"trigger|cancel|retry|rerun|retrieve|fetch|get|find|collect|download|"
+    r"export|list|summarize|check|monitor|calculate|compare|deploy|publish|"
+    r"release|ship)\b",
+    re.IGNORECASE,
+)
+_DISCUSSION_REQUEST = re.compile(
+    r"^(?:why|how|what|when|where|who|should\s+(?:we|i)|can\s+(?:we|i)|"
+    r"could\s+(?:we|i)|would\s+(?:we|i))\b",
     re.IGNORECASE,
 )
 _NAME = re.compile(r"^\s*\*?\s*name:\s*([A-Za-z0-9][A-Za-z0-9_-]*)\s*$", re.MULTILINE)
@@ -232,6 +249,16 @@ def is_direct_request(prompt: str) -> bool:
     return _DIRECT_REQUEST.match(prompt.strip()) is not None
 
 
+def is_action_request(prompt: str) -> bool:
+    """Keep catalog token overlap from activating Play for discussions."""
+
+    stripped = prompt.strip()
+    return (
+        _DISCUSSION_REQUEST.match(stripped) is None
+        and _ACTION_REQUEST.match(stripped) is not None
+    )
+
+
 def _silenced(
     prompt: str,
     *,
@@ -286,11 +313,17 @@ def intercept_prompt(
         len(stripped) < MIN_PROMPT_CHARS
         or stripped.startswith(("$play", "/play", "!", "/"))
         or is_direct_request(stripped)
-        or _silenced(
+    ):
+        return None
+    if not is_action_request(stripped):
+        return None
+    if (
+        _silenced(
             stripped,
             session_id=session_id,
             project_path=project_path,
         )
+        or matching_direct_route(stripped, project_path=project_path) is not None
     ):
         return None
     entries = load_index()

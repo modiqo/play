@@ -1,0 +1,22 @@
+schema: play.routing/v1
+routes:
+  - id: github-direct
+    strategy: direct
+    providers:
+      - github
+      - github-actions
+    tools:
+      - git
+      - gh
+    executors:
+      - api
+      - cli
+  - id: cloudflare-direct
+    strategy: direct
+    providers:
+      - cloudflare
+    tools:
+      - wrangler
+    executors:
+      - api
+      - cli

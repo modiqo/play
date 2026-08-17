@@ -137,6 +137,7 @@ $play settle <capture-handle> <summary>    # Settle an existing Rote capture
 $play birth weekly customer report         # See how one of your Plays was made
 $play list my organizations and Plays      # Browse authorized collections
 direct: <request>                           # Bypass Play for exactly one request
+play-routing --project . list               # Inspect this repository's direct routes
 ```
 
 That is enough for everyday use. Jump to the section that matches what you need next:
@@ -890,6 +891,51 @@ The hook is the sole proactive activation gate. It emits nothing for `direct:` a
 requests, so those requests do not load the Play machine even when a saved Play would otherwise
 match. Silence for any other request likewise means normal harness execution; the skill does not
 self-enroll an ordinary outcome.
+
+Before matching catalog tokens, the hook requires an action-shaped request. A design question such
+as “should we use GitHub Actions?” stays silent even if a GitHub Play exists. Actual actions can be
+routed directly through a user or project policy:
+
+```yaml
+# .play/routing.yaml
+schema: play.routing/v1
+routes:
+  - id: github-direct
+    strategy: direct
+    providers: [github, github-actions]
+    tools: [git, gh]
+    executors: [api, cli]
+  - id: cloudflare-direct
+    strategy: direct
+    providers: [cloudflare]
+    tools: [wrangler]
+    executors: [api, cli]
+```
+
+A matching `direct` route suppresses Play activation only; normal harness permissions, credential
+boundaries, and safety checks still apply. Policies cannot contain command templates, arguments,
+endpoints, or credentials. Invalid policies authorize nothing and fall back to ordinary Play
+matching.
+
+Global install creates an empty owner-private policy at `~/.rote-play/routing.yaml`; it deliberately
+does not modify whichever repository happened to launch the installer. Manage that user policy or
+an explicit project policy with the bundled Python CLI:
+
+```bash
+play-routing --user list
+play-routing --project . init
+play-routing --project . add github-direct \
+  --provider github --provider github-actions --tool git --tool gh \
+  --executor api --executor cli
+play-routing --project . add cloudflare-direct \
+  --provider cloudflare --tool wrangler --executor api --executor cli
+play-routing --project . remove github-direct
+play-routing --project . list --json
+```
+
+`add` replaces a route with the same ID, `remove` fails when the ID is absent, and `init` is
+idempotent without overwriting existing policy. The nearest `.play/routing.yaml` inside the current
+Git worktree augments the user policy.
 
 Hook state (index cache, cooldowns, nudge markers, preference ledger, standby hooks) lives in
 shared `~/.rote-play/` stores, so the safeguards compose across harnesses: a Play saved from one

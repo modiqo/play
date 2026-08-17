@@ -16,7 +16,9 @@ returned projection is the entire instruction contract for the current moment.
 
 Enter Play only when the user explicitly invokes Play or the prompt hook injected a Play activation
 line. An ordinary outcome with no hook activation continues normally; do not independently enroll it
-in Play merely because it could become reusable.
+in Play merely because it could become reusable. The hook may remain silent because a validated user
+or project routing policy selected direct API/CLI execution; honor that silence and do not recreate
+Play activation from provider or tool names in the request.
 
 If the unchanged request begins with `direct:` or `without play:`, treat the remainder as a one-turn
 hard bypass. Do not run `play-machine`, search, capture, update Play preferences, or create a settle

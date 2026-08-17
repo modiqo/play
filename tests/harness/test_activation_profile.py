@@ -21,6 +21,7 @@ class ActivationProfileTest(unittest.TestCase):
         self.roots = [base / "codex" / "skills", base / "claude" / "skills"]
         self.state = base / "state" / "profile.json"
         self.launcher = base / "bin" / "play-machine"
+        self.routing_launcher = base / "bin" / "play-routing"
         self.originals: dict[Path, bytes] = {}
 
         for index, root in enumerate(self.roots):
@@ -48,6 +49,7 @@ class ActivationProfileTest(unittest.TestCase):
         environment["PLAY_HARNESS_ROOTS"] = os.pathsep.join(map(str, self.roots))
         environment["PLAY_PROFILE_STATE"] = str(self.state)
         environment["PLAY_MACHINE_LAUNCHER"] = str(self.launcher)
+        environment["PLAY_ROUTING_LAUNCHER"] = str(self.routing_launcher)
         if hasattr(self, "source"):
             environment["PLAY_PROFILE_SOURCE"] = str(self.source)
         result = subprocess.run(
@@ -69,6 +71,8 @@ class ActivationProfileTest(unittest.TestCase):
             self.assertEqual(ROOT, play.resolve())
         self.assertTrue(self.launcher.is_file())
         self.assertTrue(os.access(self.launcher, os.X_OK))
+        self.assertTrue(self.routing_launcher.is_file())
+        self.assertTrue(os.access(self.routing_launcher, os.X_OK))
 
         for skill in (self.roots[0] / "rote", self.roots[1] / "rote-shell"):
             self.assertIn(
@@ -86,6 +90,7 @@ class ActivationProfileTest(unittest.TestCase):
 
         self.assertFalse(self.state.exists())
         self.assertFalse(self.launcher.exists())
+        self.assertFalse(self.routing_launcher.exists())
         for root in self.roots:
             self.assertFalse((root / "play").exists())
         for path, content in self.originals.items():
@@ -250,6 +255,11 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertIn("0 harness root(s)", result.stdout)
         self.assertTrue(self.launcher.is_file())
         self.assertIn(str(self.source / "scripts/bin/play-machine"), self.launcher.read_text())
+        self.assertTrue(self.routing_launcher.is_file())
+        self.assertIn(
+            str(self.source / "scripts/bin/play-routing"),
+            self.routing_launcher.read_text(),
+        )
         state = json.loads(self.state.read_text())
         self.assertEqual([], state["roots"])
         self.assertEqual([], state["rote_skills"])

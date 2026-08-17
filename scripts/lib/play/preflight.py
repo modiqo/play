@@ -67,6 +67,7 @@ REQUIRED_PLAY_EXECUTABLES = (
     "play-publication",
     "play-publication-gate",
     "play-question",
+    "play-routing",
     "play-run",
     "play-run-output",
     "play-scheduler-probe",

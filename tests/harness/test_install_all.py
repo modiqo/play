@@ -10,6 +10,8 @@ import time
 import unittest
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[2]
 INSTALLER = ROOT / "scripts" / "harness" / "install-all"
@@ -163,10 +165,25 @@ class InstallAllTest(unittest.TestCase):
         self.assertTrue(launcher.is_file())
         self.assertTrue(os.access(launcher, os.X_OK))
         self.assertIn(str(ROOT / "scripts" / "bin" / "play-machine"), launcher.read_text())
+        routing_launcher = self.home / ".local" / "bin" / "play-routing"
+        self.assertTrue(routing_launcher.is_file())
+        self.assertTrue(os.access(routing_launcher, os.X_OK))
+        self.assertIn(
+            str(ROOT / "scripts" / "bin" / "play-routing"),
+            routing_launcher.read_text(),
+        )
+        routing = self.home / ".rote-play" / "routing.yaml"
+        self.assertTrue(routing.is_file())
+        self.assertEqual(
+            {"schema": "play.routing/v1", "routes": []},
+            yaml.safe_load(routing.read_text()),
+        )
+        self.assertEqual(0o600, routing.stat().st_mode & 0o777)
 
         self.run_installer("verify")
         self.uninstall(ROOT)
         self.assertFalse(launcher.exists())
+        self.assertFalse(routing_launcher.exists())
 
     def test_targets_exposes_multi_select_vendor_choices(self) -> None:
         result = self.run_installer("targets", "--json")
