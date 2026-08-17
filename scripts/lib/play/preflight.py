@@ -52,6 +52,7 @@ REQUIRED_PLAY_EXECUTABLES = (
     "play-birth",
     "play-activate",
     "play-certificate",
+    "play-cheat-sheet",
     "play-delivery",
     "play-digest",
     "play-handoff",

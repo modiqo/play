@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+"""Render Play's example-led user cheat sheet."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+
+SHEET = Path(__file__).resolve().parents[2] / "references" / "cheat-sheet.md"
+
+
+def main() -> int:
+    try:
+        content = SHEET.read_text(encoding="utf-8")
+    except OSError as error:
+        print(f"play-cheat-sheet: cannot read {SHEET}: {error}", file=sys.stderr)
+        return 1
+    print(content, end="" if content.endswith("\n") else "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -3,7 +3,8 @@ name: play
 description: >
   Sidekick for reusable procedures. Use when the user explicitly invokes Play, a Play hook names a
   relevant saved procedure or recommends a search, or a verified capture is ready to settle. Play
-  also handles onboarding, canonical Play URIs, digest, management, sharing, and birth certificates.
+  also handles its cheat sheet, onboarding, canonical Play URIs, digest, management, sharing, and
+  birth certificates.
 ---
 
 # Play
@@ -25,6 +26,12 @@ hard bypass. Do not run `play-machine`, search, capture, update Play preferences
 nudge. Continue with the requested work directly. This bypass affects only Play orchestration; it
 does not bypass harness permissions, safety checks, or tool approvals. Do not convert it into a
 persistent mode or infer it from vague dissatisfaction.
+
+If the unchanged trimmed request is `play cheat-sheet`, `$play cheat-sheet`, or
+`/play cheat-sheet` (also accept `cheat sheet` or `cheatsheet` spelling), do not enter the state
+machine or run preflight. Run the bundled `scripts/bin/play-cheat-sheet`, present its Markdown
+verbatim, and stop. This read-only help path must not search, capture, update preferences, or create
+a settle nudge.
 
 ## Enter or resume
 

@@ -136,6 +136,7 @@ $play whats new                            # Open your Play inbox
 $play settle <capture-handle> <summary>    # Settle an existing Rote capture
 $play birth weekly customer report         # See how one of your Plays was made
 $play list my organizations and Plays      # Browse authorized collections
+play cheat-sheet                           # Learn Play through short example interactions
 direct: <request>                           # Bypass Play for exactly one request
 play-routing --project . list               # Inspect this repository's direct routes
 ```

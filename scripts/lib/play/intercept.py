@@ -49,6 +49,10 @@ _DIRECT_REQUEST = re.compile(
     r"^(?:direct|without\s+play)\s*:\s*\S",
     re.IGNORECASE,
 )
+_CHEAT_SHEET_REQUEST = re.compile(
+    r"^(?:\$play|/play|play)\s+cheat(?:[\s-]?sheet)[.!]?$",
+    re.IGNORECASE,
+)
 _ACTION_REQUEST = re.compile(
     r"^(?:(?:please|kindly)\s+)?(?:(?:can|could|would)\s+you\s+)?"
     r"(?:(?:help\s+me|help|(?:let'?s|i\s+want\s+you\s+to))\s+)?"
@@ -249,6 +253,12 @@ def is_direct_request(prompt: str) -> bool:
     return _DIRECT_REQUEST.match(prompt.strip()) is not None
 
 
+def is_cheat_sheet_request(prompt: str) -> bool:
+    """Return whether the prompt selected Play's deterministic help surface."""
+
+    return _CHEAT_SHEET_REQUEST.match(prompt.strip()) is not None
+
+
 def is_action_request(prompt: str) -> bool:
     """Keep catalog token overlap from activating Play for discussions."""
 
@@ -309,6 +319,12 @@ def intercept_prompt(
     """Return the one context line to inject, or None for silence."""
 
     stripped = prompt.strip()
+    if is_cheat_sheet_request(stripped):
+        return (
+            "Play: explicit cheat-sheet request — use the play skill's bundled "
+            "`scripts/bin/play-cheat-sheet`, present its Markdown verbatim, and do not "
+            "enter the Play state machine."
+        )
     if (
         len(stripped) < MIN_PROMPT_CHARS
         or stripped.startswith(("$play", "/play", "!", "/"))

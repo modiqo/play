@@ -14,6 +14,7 @@ from play.intercept import (
     best_match,
     intercept_prompt,
     is_action_request,
+    is_cheat_sheet_request,
     is_direct_request,
     load_index,
     settle_nudge,
@@ -117,6 +118,19 @@ class InterceptTest(unittest.TestCase):
         self.assertIsNone(intercept_prompt("$play settle finished the deploy"))
         self.assertIsNone(intercept_prompt("/play"))
         self.assertIsNone(intercept_prompt("ok"))
+
+    def test_cheat_sheet_command_uses_the_pre_machine_help_path(self) -> None:
+        for prompt in (
+            "play cheat-sheet",
+            "$play cheat sheet",
+            "/play cheatsheet",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(is_cheat_sheet_request(prompt))
+                line = intercept_prompt(prompt)
+                self.assertIsNotNone(line)
+                self.assertIn("play-cheat-sheet", line or "")
+                self.assertIn("do not enter the Play state machine", line or "")
 
     def test_direct_prefix_is_a_one_turn_hard_bypass(self) -> None:
         for prompt in (
