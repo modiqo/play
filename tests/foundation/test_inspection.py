@@ -26,7 +26,20 @@ def inspected_payload(*, eligible: bool = True, local_decision: str = "install_r
             "blockers": [] if eligible else ["steps are not runnable"],
         },
         "parameters": [
-            {"name": "days", "type": "integer", "required": False, "default": "7"}
+            {
+                "name": "days",
+                "type": "integer",
+                "required": False,
+                "default": "7",
+                "description": "Whole days, from 1 through 30",
+                "example": 14,
+                "valid_values": [1, 7, 14, 30],
+                "input": {
+                    "label": "Lookback days",
+                    "allow_custom": True,
+                    "choices": [{"label": "One week", "value": 7}],
+                },
+            }
         ],
         "steps": [
             {
@@ -95,6 +108,22 @@ class InspectionTest(unittest.TestCase):
         )
         self.assertTrue(disclosure["approval"]["required"])
         self.assertEqual(64, len(disclosure["disclosure_sha256"]))
+        self.assertEqual(
+            {
+                "name": "days",
+                "label": "Lookback days",
+                "type": "integer",
+                "required": False,
+                "description": "Whole days, from 1 through 30",
+                "example": 14,
+                "valid_values": [1, 7, 14, 30],
+                "has_default": True,
+                "default": "7",
+                "allow_custom": True,
+                "choices": [{"label": "One week", "value": 7}],
+            },
+            disclosure["parameters"][0],
+        )
 
     def test_generic_adapter_operation_does_not_claim_read_only(self) -> None:
         disclosure = normalize_inspection("alpha/report", inspected_payload())

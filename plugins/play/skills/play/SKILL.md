@@ -116,7 +116,12 @@ again**; the replay turn contains the unchanged result without activation guidan
 Never infer confirmation, choose **Yes, continue** for the user, or summarize a missing result.
 
 - `model`: reason over only `instruction.input` and the projected policy; return one declared
-  event with every required payload field.
+  event with every required payload field. For `route_inspected_play`, resolve every parameter the
+  user already supplied against the inspected frontmatter in one pass, normalize it to the declared
+  type/description/example/valid values/input choices, and return the complete canonical
+  `request.parameters`. Ask for only the first value that is genuinely missing, ambiguous, or
+  invalid; never forward conversational shorthand as an execution parameter when frontmatter
+  declares a stricter format.
 - `human`: present the exact projected prompt through structured elicitation; resume with the
   selected declared event.
 - `specialist`: invoke only `instruction.specialist` with `instruction.input` through the

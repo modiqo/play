@@ -14,7 +14,6 @@ RUNTIME_COMMANDLESS_ACTIONS = frozenset(
         "build_receipt",
         "replay_onboarding_result",
         "classify_adequacy",
-        "route_inspected_play",
         "verify_play_output",
     }
 )

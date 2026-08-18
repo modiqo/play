@@ -377,7 +377,6 @@ states:
       full_match:
         - {guard: match_satisfies_constraints, target: use_inspect, mutate: enter_use}
         - {target: standby_exit, mutate: downgrade_inadequate_match}
-      remote_match_choice_required: [{target: search_present, mutate: record_search_results}]
       partial_match: [{target: standby_exit, mutate: record_partial_match}]
       uncertain_match: [{target: standby_exit, mutate: record_uncertain_match}]
       no_match: [{target: standby_exit, mutate: record_no_match}]

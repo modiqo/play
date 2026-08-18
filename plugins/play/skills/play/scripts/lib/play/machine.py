@@ -487,7 +487,7 @@ def validate_bundle(
     check(_target(states, "classify", "full_match") == "use_inspect", "an adequate discovered Play must enter read-only inspection")
     check(states.get("use_inspect", {}).get("entry", {}).get("action") == "inspect_registry_play", "Use must start with reusable Play inspection")
     check(_target(states, "use_inspect", "play_inspected") == "use_decide", "inspection must route by local readiness")
-    check(states.get("use_decide", {}).get("entry", {}).get("action") == "route_inspected_play", "local readiness must be resolved deterministically")
+    check(states.get("use_decide", {}).get("entry", {}).get("action") == "route_inspected_play", "typed parameter resolution must precede local readiness")
     check(_target(states, "use_decide", "local_play_ready") == "use_prepare", "an exact local Play must prepare its run handoff without a pull prompt")
     check(_target(states, "use_decide", "remote_pull_required") == "use_offer", "a remote Play must reach pull consent")
     check(states.get("use_offer", {}).get("prompt") == "approve_play_run", "remote Use must ask for pull and execution approval")

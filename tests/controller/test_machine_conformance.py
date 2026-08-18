@@ -735,6 +735,28 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["use_prepare"]["on"]["play_run_handoff_ready"][0]["target"],
         )
 
+    def test_inspected_parameters_are_resolved_generically_by_the_model(self) -> None:
+        action = ACTIONS["route_inspected_play"]
+        self.assertEqual("evaluator", action["kind"])
+        self.assertIn("request.original", action["input_required"])
+        self.assertIn("inspection.parameters", action["input_required"])
+        policy = " ".join(action["command_policy"])
+        self.assertIn("never use a provider-specific or parameter-name-specific parser", policy)
+        self.assertIn("type, description, example, valid_values, and input choices", policy)
+        self.assertIn("inclusive or exclusive bounds", policy)
+        self.assertIn("canonical execution form", policy)
+        self.assertNotIn(
+            "remote_match_choice_required", MACHINE["states"]["classify"]["on"]
+        )
+        self.assertEqual(
+            ["request.parameters"],
+            action["events"]["local_play_ready"],
+        )
+        self.assertEqual(
+            ["request.parameters"],
+            action["events"]["remote_pull_required"],
+        )
+
     def test_successful_output_passes_directly_to_verification(self) -> None:
         self.assertEqual(
             "use_verify",

@@ -48,9 +48,12 @@ def _parameters(raw: object) -> list[dict[str, Any]]:
             continue
         normalized = {
             "name": name,
+            "label": name,
             "type": item.get("type") if isinstance(item.get("type"), str) else "unknown",
             "required": item.get("required") is True,
             "description": item.get("description") or "",
+            "example": item.get("example"),
+            "valid_values": _items(item.get("valid_values")),
             "has_default": "default" in item,
             "default": item.get("default"),
         }

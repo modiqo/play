@@ -39,7 +39,6 @@ _SELECTOR_ACTIONS = {
     "resolve_public_owner",
     "inspect_publication_credentials",
     "classify_adequacy",
-    "route_inspected_play",
     "run_registry_play",
     "verify_play_output",
 }
@@ -342,16 +341,13 @@ def _commandless_result(
             "partial": "partial_match",
             "uncertain": "uncertain_match",
         }[classification]
-        if classification == "full" and candidate.get("primary_scope") != "local":
-            event = "remote_match_choice_required"
         covered = [str(candidate.get("name") or reference)]
         uncovered = [] if classification == "full" else [str(outcome)]
         match: dict[str, Any] = {
             "covered": covered,
             "uncovered": uncovered,
         }
-        if event != "remote_match_choice_required":
-            match["reference"] = reference
+        match["reference"] = reference
         result = {
             "event": event,
             "match": match,
@@ -360,39 +356,6 @@ def _commandless_result(
         if event in {"partial_match", "uncertain_match"}:
             result["capture"] = capture
         return result
-    if action_id == "route_inspected_play":
-        inspection_parameters = _path_value(context, "inspection.parameters")
-        supplied_parameters = _path_value(context, "request.parameters")
-        if not isinstance(inspection_parameters, list) or not isinstance(
-            supplied_parameters, Mapping
-        ):
-            raise ControllerRuntimeError("Play parameter context is malformed")
-        for parameter in inspection_parameters:
-            if not isinstance(parameter, Mapping):
-                raise ControllerRuntimeError("Play parameter declaration is malformed")
-            name = parameter.get("name")
-            if not isinstance(name, str) or not name:
-                raise ControllerRuntimeError("Play parameter name is missing")
-            if (
-                parameter.get("required") is True
-                and parameter.get("has_default") is not True
-                and name not in supplied_parameters
-            ):
-                return {
-                    "event": "play_parameter_required",
-                    "parameter_input": {
-                        "name": name,
-                        "label": str(parameter.get("label") or name),
-                        "type": str(parameter.get("type") or "string"),
-                        "description": str(parameter.get("description") or ""),
-                    },
-                }
-        local_change = _path_value(context, "inspection.local_change")
-        return {
-            "event": (
-                "local_play_ready" if local_change == "none" else "remote_pull_required"
-            )
-        }
     if action_id == "verify_play_output":
         output = context.get("output")
         if not isinstance(output, Mapping):

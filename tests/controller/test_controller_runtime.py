@@ -481,7 +481,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("ordinary_play_invocation", yielded.trace[0].event)
 
     @patch("play.runtime_actions.subprocess.run")
-    def test_retrieve_outcome_reaches_remote_choice_without_model_or_preflight(
+    def test_retrieve_outcome_inspects_full_remote_match_without_choice(
         self, run
     ) -> None:
         candidate = {
@@ -537,27 +537,109 @@ class ControllerRuntimeTest(unittest.TestCase):
                     }
                 ),
             ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "complete": True,
+                        "exact_reference": candidate["exact_reference"],
+                        "description": candidate["description"],
+                        "identity": {
+                            "name": candidate["name"],
+                            "description": candidate["description"],
+                            "visibility": "public",
+                        },
+                        "parameters": [
+                            {
+                                "name": "start_date",
+                                "label": "Start date",
+                                "type": "string",
+                                "required": True,
+                                "description": "Inclusive date in YYYY-MM-DD format",
+                                "example": "2026-07-01",
+                                "has_default": False,
+                                "default": None,
+                            },
+                            {
+                                "name": "end_date",
+                                "label": "End date",
+                                "type": "string",
+                                "required": True,
+                                "description": "Exclusive date in YYYY-MM-DD format",
+                                "example": "2026-09-01",
+                                "has_default": False,
+                                "default": None,
+                            },
+                        ],
+                        "local_change": "install",
+                        "dependencies": {"adapter_checks": []},
+                        "operations": [],
+                        "effects": {"summary": "No declared writes."},
+                        "blockers": [],
+                        "disclosure_sha256": "a" * 64,
+                        "preflight": {
+                            "run_eligible": True,
+                            "play_local_state": "missing",
+                            "decision": "install_required",
+                            "blockers": [],
+                        },
+                        "approval": {"notice": "Nothing has run."},
+                    }
+                ),
+            ),
         ]
         session = self.runtime.initial_session(
             run_id="rideshare-fast-path",
             task_key="rideshare-fast-path",
-            request_original="retrieve rideshare receipts",
+            request_original="retrieve rideshare receipts between July and August 2026",
         )
 
         yielded = advance_until_yield(self.runtime, session, root=ROOT)
 
-        self.assertEqual("search_offer", yielded.projection["state"]["id"])
-        self.assertEqual("human", yielded.projection["state"]["boundary"])
+        self.assertEqual("use_decide", yielded.projection["state"]["id"])
+        self.assertEqual("model", yielded.projection["state"]["boundary"])
         self.assertEqual(
             [
                 "classify_play_invocation",
                 "search_authorized_plays",
                 "classify_adequacy",
-                "present_search_results",
+                "inspect_registry_play",
             ],
             [item.action for item in yielded.trace],
         )
+        instruction = yielded.projection["instruction"]
+        self.assertEqual("route_inspected_play", instruction["id"])
+        self.assertEqual(
+            "retrieve rideshare receipts between July and August 2026",
+            instruction["input"]["request"]["original"],
+        )
+        self.assertEqual(2, len(instruction["input"]["inspection"]["parameters"]))
         self.assertNotIn("qualify_request", str(yielded.projection))
+        self.assertNotIn("Which matching Play", "\n".join(yielded.presentations))
+
+        normalized = self.runtime.advance_session(
+            yielded.session,
+            ControllerEvent(
+                id=EventId("remote_pull_required"),
+                payload={
+                    "request": {
+                        "parameters": {
+                            "start_date": "2026-07-01",
+                            "end_date": "2026-09-01",
+                        }
+                    }
+                },
+                guards={},
+            ),
+        ).session
+        approval = advance_until_yield(self.runtime, normalized, root=ROOT)
+        self.assertEqual("use_offer", approval.projection["state"]["id"])
+        self.assertEqual("human", approval.projection["state"]["boundary"])
+        self.assertEqual(
+            {"start_date": "2026-07-01", "end_date": "2026-09-01"},
+            approval.session.context["request"]["parameters"],
+        )
 
     @patch("play.runtime_actions.subprocess.run")
     def test_uri_collects_missing_required_parameters_before_pull_consent(
@@ -648,10 +730,31 @@ class ControllerRuntimeTest(unittest.TestCase):
             request_original=uri,
         )
 
-        first = advance_until_yield(self.runtime, session, root=ROOT)
+        decision = advance_until_yield(self.runtime, session, root=ROOT)
+        self.assertEqual("use_decide", decision.projection["state"]["id"])
+        self.assertEqual("model", decision.projection["state"]["boundary"])
+
+        requested_start = self.runtime.advance_session(
+            decision.session,
+            ControllerEvent(
+                id=EventId("play_parameter_required"),
+                payload={
+                    "request": {"parameters": {}},
+                    "parameter_input": {
+                        "name": "start_date",
+                        "label": "Start date",
+                        "type": "string",
+                        "description": "Inclusive YYYY-MM-DD date",
+                    },
+                },
+                guards={},
+            ),
+        ).session
+        first = advance_until_yield(self.runtime, requested_start, root=ROOT)
         self.assertEqual("use_parameter_offer", first.projection["state"]["id"])
         self.assertEqual("start_date", first.session.context["parameter_input"]["name"])
         self.assertEqual(
+            "Expected: Inclusive YYYY-MM-DD date\n\n"
             "What value should I use for Start date?",
             first.projection["instruction"]["question"],
         )
@@ -672,7 +775,25 @@ class ControllerRuntimeTest(unittest.TestCase):
                 guards={},
             ),
         ).session
-        second = advance_until_yield(self.runtime, supplied_start, root=ROOT)
+        second_decision = advance_until_yield(self.runtime, supplied_start, root=ROOT)
+        self.assertEqual("use_decide", second_decision.projection["state"]["id"])
+        requested_end = self.runtime.advance_session(
+            second_decision.session,
+            ControllerEvent(
+                id=EventId("play_parameter_required"),
+                payload={
+                    "request": {"parameters": {"start_date": "2026-07-01"}},
+                    "parameter_input": {
+                        "name": "end_date",
+                        "label": "End date",
+                        "type": "string",
+                        "description": "Inclusive YYYY-MM-DD date",
+                    },
+                },
+                guards={},
+            ),
+        ).session
+        second = advance_until_yield(self.runtime, requested_end, root=ROOT)
         self.assertEqual("use_parameter_offer", second.projection["state"]["id"])
         self.assertEqual("end_date", second.session.context["parameter_input"]["name"])
 
@@ -691,7 +812,24 @@ class ControllerRuntimeTest(unittest.TestCase):
                 guards={},
             ),
         ).session
-        consent = advance_until_yield(self.runtime, supplied_end, root=ROOT)
+        final_decision = advance_until_yield(self.runtime, supplied_end, root=ROOT)
+        self.assertEqual("use_decide", final_decision.projection["state"]["id"])
+        ready = self.runtime.advance_session(
+            final_decision.session,
+            ControllerEvent(
+                id=EventId("remote_pull_required"),
+                payload={
+                    "request": {
+                        "parameters": {
+                            "start_date": "2026-07-01",
+                            "end_date": "2026-07-31",
+                        }
+                    }
+                },
+                guards={},
+            ),
+        ).session
+        consent = advance_until_yield(self.runtime, ready, root=ROOT)
         self.assertEqual("use_offer", consent.projection["state"]["id"])
         self.assertEqual(
             {"start_date": "2026-07-01", "end_date": "2026-07-31"},
@@ -699,7 +837,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
 
     @patch("play.runtime_actions.subprocess.run")
-    def test_run_hello_executes_and_receipts_without_model_or_search(self, run) -> None:
+    def test_run_hello_resolves_empty_parameter_contract_then_executes(self, run) -> None:
         disclosure = {
             "schema": "play.run-disclosure/v1",
             "complete": True,
@@ -828,7 +966,17 @@ class ControllerRuntimeTest(unittest.TestCase):
             request_original="run hello",
         )
 
-        yielded = advance_until_yield(self.runtime, session, root=ROOT)
+        decision = advance_until_yield(self.runtime, session, root=ROOT)
+        self.assertEqual("use_decide", decision.projection["state"]["id"])
+        ready = self.runtime.advance_session(
+            decision.session,
+            ControllerEvent(
+                id=EventId("local_play_ready"),
+                payload={"request": {"parameters": {}}},
+                guards={},
+            ),
+        ).session
+        yielded = advance_until_yield(self.runtime, ready, root=ROOT)
 
         self.assertEqual("receipt", yielded.projection["state"]["id"])
         self.assertEqual("terminal", yielded.projection["state"]["boundary"])
@@ -838,13 +986,12 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "probe_rote_for_onboarding",
                 "inspect_onboarding_identity",
                 "inspect_registry_play",
-                "route_inspected_play",
                 "prepare_play_run_handoff",
                 "run_registry_play",
                 "verify_play_output",
                 "build_receipt",
             ],
-            [item.action for item in yielded.trace],
+            [item.action for item in decision.trace] + [item.action for item in yielded.trace],
         )
         self.assertNotIn("qualify_request", str(yielded.projection))
         self.assertNotIn("search_authorized_plays", str(yielded.projection))
@@ -1564,7 +1711,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertIsNone(advanced.session.context["authentication"]["receipt"])
 
     @patch("play.runtime_actions.subprocess.run")
-    def test_advance_until_yield_auto_inspects_and_routes_local_play(self, run) -> None:
+    def test_advance_until_yield_inspects_then_resolves_local_play(self, run) -> None:
         run.return_value.returncode = 0
         run.return_value.stderr = ""
         run.return_value.stdout = json.dumps(
@@ -1659,26 +1806,36 @@ class ControllerRuntimeTest(unittest.TestCase):
             preflight_ready=True,
         )
 
-        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+        decision = advance_until_yield(self.runtime, projected, root=ROOT)
+        self.assertEqual("use_decide", decision.projection["state"]["id"])
+        ready = self.runtime.advance_session(
+            decision.session,
+            ControllerEvent(
+                id=EventId("local_play_ready"),
+                payload={"request": {"parameters": {}}},
+                guards={},
+            ),
+        ).session
+        yielded = advance_until_yield(self.runtime, ready, root=ROOT)
 
         self.assertEqual("receipt", yielded.projection["state"]["id"])
         self.assertEqual("terminal", yielded.projection["state"]["boundary"])
-        self.assertEqual("inspect_registry_play", yielded.trace[0].action)
-        self.assertEqual("play_inspected", yielded.trace[0].event)
-        self.assertEqual("route_inspected_play", yielded.trace[1].action)
-        self.assertEqual("local_play_ready", yielded.trace[1].event)
-        self.assertEqual("prepare_play_run_handoff", yielded.trace[2].action)
-        self.assertEqual("play_run_handoff_ready", yielded.trace[2].event)
-        self.assertEqual("run_registry_play", yielded.trace[3].action)
-        self.assertEqual("verify_play_output", yielded.trace[4].action)
-        self.assertEqual("build_receipt", yielded.trace[5].action)
+        self.assertEqual("inspect_registry_play", decision.trace[0].action)
+        self.assertEqual("play_inspected", decision.trace[0].event)
+        self.assertEqual("prepare_play_run_handoff", yielded.trace[0].action)
+        self.assertEqual("play_run_handoff_ready", yielded.trace[0].event)
+        self.assertEqual("run_registry_play", yielded.trace[1].action)
+        self.assertEqual("verify_play_output", yielded.trace[2].action)
+        self.assertEqual("build_receipt", yielded.trace[3].action)
         self.assertEqual(3600, run.call_args_list[2].kwargs["timeout"])
-        self.assertEqual(2, len(yielded.presentations))
-        self.assertIn("#", yielded.presentations[0])
-        self.assertEqual("hello result", yielded.presentations[1])
+        self.assertEqual(1, len(decision.presentations))
+        self.assertIn("#", decision.presentations[0])
+        self.assertEqual(("hello result",), yielded.presentations)
 
     @patch("play.runtime_actions.subprocess.run")
-    def test_deterministic_match_presents_remote_choices_before_pull_consent(self, run) -> None:
+    def test_full_remote_match_skips_choice_and_reaches_parameter_resolution(
+        self, run
+    ) -> None:
         run.return_value.returncode = 0
         run.return_value.stderr = ""
         run.return_value.stdout = json.dumps(
@@ -1763,14 +1920,15 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         yielded = advance_until_yield(self.runtime, projected, root=ROOT)
 
-        self.assertEqual("search_offer", yielded.projection["state"]["id"])
-        self.assertEqual("human", yielded.projection["state"]["boundary"])
+        self.assertEqual("use_decide", yielded.projection["state"]["id"])
+        self.assertEqual("model", yielded.projection["state"]["boundary"])
         self.assertEqual(
-            ["classify_adequacy", "present_search_results"],
+            ["classify_adequacy", "inspect_registry_play"],
             [item.action for item in yielded.trace],
         )
-        self.assertTrue(yielded.session.context["search"]["results"])
-        self.assertTrue(yielded.session.context["search"]["play_choices"])
+        self.assertEqual([], yielded.session.context["search"]["results"])
+        self.assertEqual([], yielded.session.context["search"]["play_choices"])
+        self.assertNotIn("Which matching Play", "\n".join(yielded.presentations))
         self.assertLess(len(encode_session(yielded.session)), token_before + 512)
 
     @patch("play.runtime_actions.subprocess.run")
@@ -1865,7 +2023,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("modiqo/release", updated["match"]["reference"])
         self.assertEqual("use", updated["mode"])
 
-    def test_session_completes_the_use_contract_without_model_owned_context(self) -> None:
+    def test_session_completes_use_contract_with_typed_parameter_event(self) -> None:
         session = self.runtime.initial_session(
             run_id="session-use", task_key="task-use", request_original="Run Hello"
         )
@@ -1920,7 +2078,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             session,
             ControllerEvent(
                 id=EventId("local_play_ready"),
-                payload={},
+                payload={"request": {"parameters": {}}},
                 guards={},
             ),
         ).session
