@@ -22,6 +22,7 @@ from scripts.lib.play.bootstrap import (
     _official_rote_install_command,
     _render_status_card,
     _result_step,
+    _run_login_visible,
     _run_visible,
     _rote_skill_command,
     _warm_public_play_cache,
@@ -354,7 +355,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.17",
+                                "version": "0.4.18",
                                 "enabled": True,
                             }
                         ]
@@ -365,7 +366,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.17", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.18", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -386,7 +387,7 @@ class BootstrapTest(unittest.TestCase):
             ["/bin/codex", "plugin", "add", "play@play-skills"], commands[4]
         )
         self.assertEqual("completed", steps[-1].status)
-        self.assertIn("0.4.17", steps[-1].detail)
+        self.assertIn("0.4.18", steps[-1].detail)
 
     def test_claude_marketplace_convergence_refreshes_user_scope(self) -> None:
         runner = MagicMock()
@@ -419,7 +420,7 @@ class BootstrapTest(unittest.TestCase):
                     [
                         {
                             "id": "play@play-skills",
-                            "version": "0.4.17",
+                            "version": "0.4.18",
                             "enabled": True,
                             "scope": "user",
                         }
@@ -430,7 +431,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "claude", "/bin/claude", expected_version="0.4.17", runner=runner
+            "claude", "/bin/claude", expected_version="0.4.18", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -483,7 +484,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.17",
+                                "version": "0.4.18",
                                 "enabled": True,
                             }
                         ]
@@ -501,7 +502,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.17",
+                                "version": "0.4.18",
                                 "enabled": True,
                             }
                         ]
@@ -512,7 +513,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.17", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.18", runner=runner
         )
 
         self.assertEqual(6, runner.call_count)
@@ -821,6 +822,7 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertTrue(ready)
         self.assertEqual("completed", step.status)
+        self.assertEqual("Signed in with Github as person@example.com.", step.detail)
         self.assertEqual(
             ["/bin/rote", "login", "--provider", "github"], step.command
         )
@@ -832,6 +834,25 @@ class BootstrapTest(unittest.TestCase):
             ],
             [call.args[0] for call in runner.call_args_list],
         )
+
+    def test_visible_login_hides_typed_result_but_keeps_browser_guidance(self) -> None:
+        stream = StringIO()
+        result = _run_login_visible(
+            [
+                "sh",
+                "-c",
+                "printf '%s\\n' 'Opening browser...' 'https://example.test/auth' '@@status' 'ok: Login successful' '@@result' 'email: person@example.com'",
+            ],
+            run,
+            stream=stream,
+        )
+
+        displayed = stream.getvalue()
+        self.assertIn("Opening browser", displayed)
+        self.assertIn("https://example.test/auth", displayed)
+        self.assertNotIn("@@status", displayed)
+        self.assertNotIn("person@example.com", displayed)
+        self.assertIn("@@result", result.stdout)
 
     def test_public_cache_warm_requires_complete_fingerprinted_snapshot(self) -> None:
         runner = MagicMock(
@@ -1021,7 +1042,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.17 is installed and enabled.",
+                "Play 0.4.18 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -1106,7 +1127,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.17", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.18", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 

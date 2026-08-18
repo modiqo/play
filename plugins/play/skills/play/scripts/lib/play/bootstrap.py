@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import queue
 import re
 import shlex
 import shutil
@@ -397,6 +398,70 @@ def _run_visible(
     )
 
 
+def _run_login_visible(
+    command: Sequence[str],
+    runner: Runner,
+    *,
+    stream: Any = None,
+) -> subprocess.CompletedProcess[str]:
+    """Stream OAuth guidance while retaining Rote's typed tail for diagnostics.
+
+    Browser-opening guidance must remain live, but the terminal-oriented
+    ``@@status``/``@@result`` envelope is machine evidence rather than setup UI.
+    Once that envelope begins, keep it in the returned receipt without echoing
+    it between Play progress lines.
+    """
+
+    if runner is not run:
+        return runner(command)
+    output_stream = stream if stream is not None else sys.stderr
+    process = subprocess.Popen(
+        list(command),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    stdout = process.stdout
+    assert stdout is not None
+    lines: queue.Queue[str | None] = queue.Queue()
+
+    def read_lines() -> None:
+        try:
+            for line in stdout:
+                lines.put(line)
+        finally:
+            stdout.close()
+            lines.put(None)
+
+    reader = threading.Thread(target=read_lines, daemon=True)
+    reader.start()
+    captured: list[str] = []
+    typed_envelope = False
+    deadline = time.monotonic() + 900
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            process.kill()
+            process.wait()
+            raise subprocess.TimeoutExpired(list(command), 900)
+        try:
+            line = lines.get(timeout=min(0.25, remaining))
+        except queue.Empty:
+            continue
+        if line is None:
+            break
+        captured.append(line)
+        if line.strip().startswith("@@status"):
+            typed_envelope = True
+        if not typed_envelope:
+            print(line, end="", file=output_stream, flush=True)
+    returncode = process.wait(timeout=max(0.1, deadline - time.monotonic()))
+    reader.join(timeout=1)
+    return subprocess.CompletedProcess(
+        list(command), returncode, stdout="".join(captured), stderr=""
+    )
+
+
 def _probe_version(rote: str | None, runner: Runner) -> str | None:
     if rote is None:
         return None
@@ -440,7 +505,7 @@ def _identity_gate(
             f"login provider must be one of: {', '.join(LOGIN_PROVIDERS)}"
         )
     command = [rote, "login", "--provider", login_provider]
-    result = _run_visible(command, runner)
+    result = _run_login_visible(command, runner)
     if result.returncode != 0:
         return (
             Step(
@@ -451,7 +516,10 @@ def _identity_gate(
             ),
             False,
         )
-    if _probe_identity(rote, runner) != "authenticated":
+    identity = runner([rote, "whoami"])
+    identity_output = (identity.stdout or identity.stderr).strip()
+    email_match = re.search(r"(?im)^ok:\s*([^@\s]+@[^@\s]+\.[^@\s]+)\s*$", identity_output)
+    if identity.returncode != 0 or email_match is None:
         return (
             Step(
                 "rote_identity",
@@ -465,7 +533,7 @@ def _identity_gate(
         Step(
             "rote_identity",
             "completed",
-            f"Rote identity verified after {login_provider.title()} sign-in.",
+            f"Signed in with {login_provider.title()} as {email_match.group(1).lower()}.",
             command=command,
             changed=True,
         ),
@@ -2373,6 +2441,8 @@ def apply(
         runner=runner,
     )
     steps.append(identity_step)
+    if identity_step.changed and active_progress.enabled:
+        print(f"✓ {identity_step.detail}", file=active_progress.stream, flush=True)
     if not identity_ready:
         return _finish_report(
             plan,
