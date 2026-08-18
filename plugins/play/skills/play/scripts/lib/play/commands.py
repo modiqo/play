@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -15,6 +16,43 @@ class CommandError(RuntimeError):
 
 
 ErrorT = TypeVar("ErrorT", bound=CommandError)
+
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_SECTION_LINE = re.compile(r"(?m)^@@[a-z0-9_:.-]+[ \t]*$")
+
+
+def parse_rote_json(output: str) -> Any:
+    """Parse JSON from either machine mode or Rote's typed result envelope.
+
+    Rote normally emits only JSON when ``--json`` is honored. Harness wrappers
+    and older/newer CLI surfaces can instead preserve the structured
+    ``@@status``/``@@result`` envelope. Both registry catalog reads and Play
+    search use this one parser so their wire compatibility cannot drift.
+    """
+
+    stripped = output.strip()
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError as direct_error:
+        clean = _ANSI_ESCAPE.sub("", output)
+        sections = list(_SECTION_LINE.finditer(clean))
+        result = next(
+            (match for match in sections if match.group(0).strip() == "@@result"),
+            None,
+        )
+        if result is None:
+            raise direct_error
+        end = next(
+            (match.start() for match in sections if match.start() > result.end()),
+            len(clean),
+        )
+        payload = clean[result.end() : end].strip()
+        if not payload:
+            raise direct_error
+        try:
+            return json.loads(payload)
+        except json.JSONDecodeError:
+            raise direct_error
 
 
 def run_text(
@@ -73,7 +111,7 @@ def run_json(
     )
     label = " ".join(command[:4])
     try:
-        return json.loads(output)
+        return parse_rote_json(output)
     except json.JSONDecodeError as error:
         raise error_type(f"{label} returned malformed JSON") from error
 

@@ -69,6 +69,7 @@ def discovery_queries(query: str) -> list[str]:
 def search_both(query: str, limit: int) -> tuple[dict, list]:
     fetch_limit = max(50, limit * 10)
     queries = discovery_queries(query)
+    catalog_items, catalog_complete = _catalog_snapshot()
     commands = {}
     for index, candidate in enumerate(queries):
         commands[("local", index)] = [
@@ -83,31 +84,64 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
             key: executor.submit(run_json, command, error_type=SearchError)
             for key, command in commands.items()
         }
-        results = {key: future.result() for key, future in pending.items()}
+        results = {}
+        source_errors: dict[tuple[str, int], str] = {}
+        for key, future in pending.items():
+            try:
+                results[key] = future.result()
+            except SearchError as error:
+                source_errors[key] = str(error)
 
     local_flows = []
     seen_paths = set()
     live_registry_items = []
     for index in range(len(queries)):
-        local = results[("local", index)]
-        flows = local.get("flows") if isinstance(local, dict) else None
-        if not isinstance(flows, list):
-            raise SearchError("local search result has no flows array")
-        for item in flows:
-            key = item.get("path") if isinstance(item, dict) else None
-            if key not in seen_paths:
-                seen_paths.add(key)
-                local_flows.append(item)
-        registry = results[("registry", index)]
-        if not isinstance(registry, list):
-            raise SearchError("registry search result is not an array")
-        live_registry_items.extend(registry)
+        local = results.get(("local", index))
+        if local is not None:
+            flows = local.get("flows") if isinstance(local, dict) else None
+            if not isinstance(flows, list):
+                source_errors[("local", index)] = "local search result has no flows array"
+            else:
+                for item in flows:
+                    key = item.get("path") if isinstance(item, dict) else None
+                    if key not in seen_paths:
+                        seen_paths.add(key)
+                        local_flows.append(item)
+        registry = results.get(("registry", index))
+        if registry is not None:
+            if not isinstance(registry, list):
+                source_errors[("registry", index)] = (
+                    "registry search result is not an array"
+                )
+            else:
+                live_registry_items.extend(registry)
+    if source_errors and not catalog_complete:
+        details = "; ".join(
+            f"{source}[{index}]: {message}"
+            for (source, index), message in sorted(source_errors.items())
+        )
+        raise SearchError(
+            f"live search was incomplete and no verified complete catalog cache was available: {details}"
+        )
     # The registry's lexical search can miss an exactly-named Play the user is
     # authorized to run. The cached hub catalog is the authoritative bounded
     # enumeration of authorized-org Plays, so merge it as a recall backstop;
     # live results keep rank priority, and adequacy scoring decides matches.
-    return {"flows": local_flows}, reconcile_registry_items(
-        live_registry_items, _catalog_items()
+    return {
+        "flows": local_flows,
+        "source_health": {
+            "catalog_cache": "complete" if catalog_complete else "unavailable",
+            "live_errors": [
+                {
+                    "source": source,
+                    "query": queries[index],
+                    "error": message,
+                }
+                for (source, index), message in sorted(source_errors.items())
+            ],
+        },
+    }, reconcile_registry_items(
+        live_registry_items, catalog_items
     )
 
 
@@ -178,17 +212,17 @@ def reconcile_registry_items(live_items: list, catalog_items: list[dict]) -> lis
     return reconciled
 
 
-def _catalog_items() -> list[dict]:
-    """Authorized-org Plays from the inbox catalog cache, registry-shaped."""
+def _catalog_snapshot() -> tuple[list[dict], bool]:
+    """Authorized Plays from the verified inbox cache, registry-shaped."""
 
     try:
         from .inbox_cache import read_cache
 
         cache = read_cache()
     except Exception:  # noqa: BLE001 - the backstop must never break live search
-        return []
+        return [], False
     if cache is None or not isinstance(cache.get("catalog"), list):
-        return []
+        return [], False
     items: list[dict] = []
     for entry in cache["catalog"]:
         if not isinstance(entry, dict):
@@ -207,7 +241,13 @@ def _catalog_items() -> list[dict]:
                 "owner_id": entry.get("owner_id"),
             }
         )
-    return items
+    return items, cache.get("catalog_complete") is True
+
+
+def _catalog_items() -> list[dict]:
+    """Compatibility helper for callers that need only cached catalog rows."""
+
+    return _catalog_snapshot()[0]
 
 
 def registry_scope(item: dict) -> str:
@@ -550,6 +590,7 @@ def main() -> int:
         "result_refs": [result["reference"] for result in results if result["reference"]],
         "results": results,
         "play_choices": build_play_choices(results),
+        "source_health": local_payload.get("source_health", {}),
     }
     if args.as_json:
         print(json_text(payload))

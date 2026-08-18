@@ -300,6 +300,7 @@ class SearchTest(unittest.TestCase):
                         "window_days": 7,
                         "summary_line": None,
                         "counts": {"new": 0, "revised": 0},
+                        "catalog_complete": True,
                         "digest": {},
                         "markdown": None,
                         "catalog": [
@@ -328,6 +329,98 @@ class SearchTest(unittest.TestCase):
             self.assertEqual("modiqo/list-top-committers", results[0]["reference"])
             self.assertEqual("full", results[0]["match_classification"])
 
+    def test_verified_catalog_recovers_malformed_live_search_for_rideshare_query(self):
+        import json as json_module
+        import tempfile
+
+        query = (
+            "can you retrieve my rideshare receipts between july 15 "
+            "and august 15th 2026"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
+            cache_path.write_text(
+                json_module.dumps(
+                    {
+                        "schema": "play.inbox-cache/v1",
+                        "catalog_complete": True,
+                        "catalog": [
+                            {
+                                "reference": "modiqo/retrieve-rideshare-receipts",
+                                "name": "retrieve-rideshare-receipts",
+                                "description": (
+                                    "Retrieves rideshare receipts between two dates "
+                                    "from Uber, Lyft, and Waymo."
+                                ),
+                                "visibility": "public",
+                                "skill_id": "rideshare-play",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                PLAY_SEARCH,
+                "run_json",
+                side_effect=PLAY_SEARCH.SearchError("returned malformed JSON"),
+            ), mock.patch.dict(
+                os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
+            ):
+                local, registry = PLAY_SEARCH.search_both(
+                    PLAY_SEARCH.normalize_query(query), 5
+                )
+
+        results = PLAY_SEARCH.merge_results(
+            local,
+            registry,
+            pathlib.Path("/tmp/none"),
+            5,
+            PLAY_SEARCH.normalize_query(query),
+        )
+        self.assertEqual("modiqo/retrieve-rideshare-receipts", results[0]["reference"])
+        self.assertEqual("full", results[0]["match_classification"])
+        self.assertEqual("complete", local["source_health"]["catalog_cache"])
+        self.assertTrue(local["source_health"]["live_errors"])
+
+    def test_malformed_live_search_without_verified_catalog_fails_closed(self):
+        with mock.patch.object(
+            PLAY_SEARCH,
+            "run_json",
+            side_effect=PLAY_SEARCH.SearchError("returned malformed JSON"),
+        ), mock.patch.dict(
+            os.environ, {"PLAY_INBOX_CACHE_PATH": "/nonexistent/inbox.json"}
+        ):
+            with self.assertRaisesRegex(
+                PLAY_SEARCH.SearchError, "no verified complete catalog cache"
+            ):
+                PLAY_SEARCH.search_both("rideshare receipts", 5)
+
+    def test_live_search_accepts_same_typed_rote_result_envelope_as_catalog(self):
+        import subprocess
+
+        def typed_result(command, **_kwargs):
+            if command[1:3] == ["play", "search"]:
+                payload = '{"flows":[]}'
+            else:
+                payload = "[]"
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                f"@@status\nok: search ready\n\n@@result\n{payload}\n\n@@next\n- continue\n",
+                "",
+            )
+
+        with mock.patch(
+            "play.commands.subprocess.run", side_effect=typed_result
+        ), mock.patch.dict(
+            os.environ, {"PLAY_INBOX_CACHE_PATH": "/nonexistent/inbox.json"}
+        ):
+            local, registry = PLAY_SEARCH.search_both("rideshare receipts", 5)
+        self.assertEqual([], local["flows"])
+        self.assertEqual([], registry)
+        self.assertEqual([], local["source_health"]["live_errors"])
+
     def test_local_and_registry_searches_start_in_parallel(self):
         barrier = threading.Barrier(2)
         commands = []
@@ -342,7 +435,8 @@ class SearchTest(unittest.TestCase):
                     os.environ, {"PLAY_INBOX_CACHE_PATH": "/nonexistent/inbox.json"}
                 ):
             local, registry = PLAY_SEARCH.search_both("hello", 5)
-        self.assertEqual({"flows": []}, local)
+        self.assertEqual([], local["flows"])
+        self.assertEqual("unavailable", local["source_health"]["catalog_cache"])
         self.assertEqual([], registry)
         self.assertIn(
             ["rote", "play", "search", "hello", "--limit", "50", "--json"], commands

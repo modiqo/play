@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -16,12 +17,26 @@ from play.registry import (
     inspect_play,
     load_authorized_public_flow_infos,
     load_authorized_flows,
+    load_organizations,
     load_play_inspection,
     load_registry_flow_info,
 )
 
 
 class RegistryTest(unittest.TestCase):
+    @patch("play.commands.subprocess.run")
+    def test_catalog_accepts_typed_rote_result_envelope(self, run) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            ["rote", "registry", "org", "list", "--json"],
+            0,
+            "@@status\nok: catalog ready\n\n@@result\n"
+            '[{"slug":"modiqo","display_name":"Modiqo Inc"}]\n\n'
+            "@@next\n- continue\n",
+            "",
+        )
+        organizations = load_organizations()
+        self.assertEqual(["modiqo"], [organization.slug for organization in organizations])
+
     @patch("play.registry.run_rote_json")
     def test_authorized_flow_reads_are_scoped_per_organization(self, run_json) -> None:
         def payload(*arguments, **_kwargs):
