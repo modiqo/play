@@ -692,6 +692,21 @@ def build_plan(
         }
         for item in rote_skills
     ]
+    native_hook_targets = [
+        target.id
+        for target in targets
+        if target.selected
+        and target.id in {"codex", "claude"}
+        and isinstance(target.command, str)
+        and target.command
+    ]
+    portable_hook_targets = [
+        target.id
+        for target in targets
+        if target.selected
+        and target.hooks == "managed"
+        and target.id not in native_hook_targets
+    ]
     actions = [
         rote_action,
         {
@@ -748,8 +763,10 @@ def build_plan(
         },
         {
             "id": "install_hooks",
-            "effect": "merges managed Play pre, post, and session hooks while preserving unrelated hooks",
-            "targets": [target.id for target in targets if target.selected and target.hooks == "managed"],
+            "effect": "uses the marketplace plugin as the sole hook owner for Codex and Claude, removes their legacy duplicate user hooks, and installs portable hooks only where no native plugin owns them",
+            "native_plugin_targets": native_hook_targets,
+            "portable_targets": portable_hook_targets,
+            "targets": [*native_hook_targets, *portable_hook_targets],
         },
         {"id": "verify_and_report", "effect": "runs preflight checks and writes JSON and Markdown receipts"},
     ]
@@ -1632,6 +1649,80 @@ def install_hooks(harness: str, source: Path, *, run_id: str) -> Step:
     )
 
 
+def remove_portable_play_hooks(harness: str, *, run_id: str) -> Step:
+    """Remove legacy user hooks when a native marketplace plugin owns Play.
+
+    Codex and Claude load hooks declared by the installed Play plugin. Older
+    bootstrap releases also wrote the same hooks into user configuration,
+    causing every prompt to be intercepted twice. Preserve every unrelated
+    hook and converge Play to exactly one native owner.
+    """
+
+    if harness not in {"codex", "claude"}:
+        raise BootstrapError(
+            f"portable Play hook removal is unsupported for {harness}"
+        )
+    path = _hook_paths()[harness]
+    if not path.exists():
+        if harness == "codex":
+            _enable_codex_play_hook_state({}, path)
+        return Step(
+            "remove_duplicate_play_hooks",
+            "unchanged",
+            f"{LABELS[harness]} has no user hook configuration; the Play plugin is the sole hook owner.",
+            target=harness,
+        )
+    value = _load_json(path)
+    hooks = value.get("hooks")
+    if hooks is None:
+        hooks = {}
+    if not isinstance(hooks, dict):
+        raise BootstrapError(f"hooks must be an object in {path}")
+    removed = 0
+    for event in list(hooks):
+        entries = hooks[event]
+        if not isinstance(entries, list):
+            raise BootstrapError(f"hook event {event} must be a list in {path}")
+        preserved = [entry for entry in entries if not _is_play_hook(entry)]
+        removed += len(entries) - len(preserved)
+        if preserved:
+            hooks[event] = preserved
+        else:
+            hooks.pop(event)
+    enabled_count = (
+        _enable_codex_play_hook_state(value, path) if harness == "codex" else 0
+    )
+    if not removed:
+        return Step(
+            "remove_duplicate_play_hooks",
+            "unchanged",
+            f"No portable Play hooks remain in {path}; the Play plugin is the sole hook owner.",
+            target=harness,
+        )
+    backup = path.with_name(f"{path.name}.play-backup-{run_id}")
+    if backup.exists():
+        raise BootstrapError(f"refusing to replace existing hook backup: {backup}")
+    backup.write_bytes(path.read_bytes())
+    backup.chmod(0o600)
+    value["hooks"] = hooks
+    _atomic_json(path, value)
+    suffix = (
+        f" Reset {enabled_count} disabled Play plugin hook state entr"
+        f"{'y' if enabled_count == 1 else 'ies'}."
+        if enabled_count
+        else ""
+    )
+    return Step(
+        "remove_duplicate_play_hooks",
+        "completed",
+        f"Removed {removed} legacy Play hook entr"
+        f"{'y' if removed == 1 else 'ies'} from {path}; the marketplace plugin is now the sole hook owner.{suffix}",
+        target=harness,
+        changed=True,
+        evidence=str(backup),
+    )
+
+
 def _result_step(
     step_id: str,
     result: subprocess.CompletedProcess[str],
@@ -2380,6 +2471,12 @@ def apply(
             plan, run_id, started, steps, status="blocked", runner=runner
         )
 
+    # Native marketplace plugins own Play hooks for Codex and Claude. Remove
+    # portable copies left by older installers before activating skills so a
+    # single prompt can never be intercepted twice.
+    for harness in marketplace_harnesses:
+        steps.append(remove_portable_play_hooks(harness, run_id=run_id))
+
     if "codex" in selected:
         steps.append(codex_play_enablement_step())
 
@@ -2412,6 +2509,7 @@ def apply(
         harness
         for harness in selected
         if plan_targets.get(harness, {}).get("hooks") == "managed"
+        and harness not in marketplace_harnesses
     ]
 
     def install_harness_hooks(harness: str) -> Step:

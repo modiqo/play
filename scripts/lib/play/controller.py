@@ -489,6 +489,7 @@ class ControllerRuntime:
         self, session: RuntimeSession, event: ControllerEvent
     ) -> SessionAdvanceResult:
         self._validate_session(session)
+        event = _canonicalize_specialist_event(session, event)
         if (
             session.cursor.state == StateId("qualify")
             and event.id not in {EventId("conversation"), EventId("play_excluded"), EventId("action_blocked")}
@@ -562,6 +563,45 @@ class ControllerRuntime:
             raise ControllerRuntimeError(f"unknown cursor state {cursor.state!r}")
         if cursor.transition_seq < 0:
             raise ControllerRuntimeError("transition_seq cannot be negative")
+
+
+def _canonicalize_specialist_event(
+    session: RuntimeSession, event: ControllerEvent
+) -> ControllerEvent:
+    """Bind authentication success facts to the controller-owned packet.
+
+    Harnesses are good at performing an interactive OAuth flow but should not
+    be responsible for copying Play's closed receipt vocabulary. In
+    particular, natural results often use ``ready`` and repeat request-only
+    fields such as ``recoverable`` or ``blocked_reason``. The event id already
+    declares success, so derive every identity/status field from the approved
+    packet and retain only the two specialist-owned facts.
+    """
+
+    if (
+        session.cursor.state != StateId("use_authentication_execute")
+        or event.id != EventId("authentication_ready")
+    ):
+        return event
+    raw = event.payload.get("authentication")
+    packet = _path_value(session.context, "authentication.packet")
+    requested = packet.get("authentication") if isinstance(packet, Mapping) else None
+    if not isinstance(raw, Mapping) or not isinstance(requested, Mapping):
+        return event
+    canonical = {
+        "source": "rote_authentication_result",
+        "status": "authenticated",
+        "adapter_id": requested.get("adapter_id"),
+        "env_var": requested.get("env_var"),
+        "classified_rung": requested.get("classified_rung"),
+        "authentication_action": raw.get("authentication_action"),
+        "evidence_refs": raw.get("evidence_refs"),
+    }
+    return ControllerEvent(
+        id=event.id,
+        payload={"authentication": canonical},
+        guards=event.guards,
+    )
 
 
 def cursor_from_dict(payload: Mapping[str, Any]) -> ControllerCursor:

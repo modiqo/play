@@ -669,7 +669,7 @@ actions:
       - If recreation or authentication fails after deletion, restore the packed adapter, report the failed recovery with evidence, and do not retry the original Play.
       - Before reporting authentication success, verify the recreated adapter's endpoint, auth family, fingerprint, tool inventory, health, and dependent-Play indexing against the pre-delete evidence; preserve the backup reference and any provenance differences in the receipt.
       - Never use a placeholder or fabricated token to make reauth enter this path. Never use this destructive fallback for static, oauth, google_discovery, unknown or ambiguous errors, missing endpoints, post-adapter-call failures, or any condition other than the exact pre-call MCP OAuth DCR token-storage absence.
-      - Return only the verified authentication result fields declared by `authentication_ready`, or the failure fields declared by `authentication_failed`. Play builds the bound play.authentication-receipt/v1 envelope deterministically; the specialist must never construct run, state, action, owner, executor, event, or packet-hash fields.
+      - On success return only authentication_action and evidence_refs inside authentication_ready. Do not copy source, status, adapter_id, env_var, classified_rung, recoverable, blocked_reason, or distinguishing_error from the request. Play binds all canonical identity and status fields from the approved packet and builds the play.authentication-receipt/v1 envelope deterministically.
       - Never call the provider, adapter, or original operation from the authentication state.
     events:
       authentication_ready: [authentication]

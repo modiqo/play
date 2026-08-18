@@ -109,7 +109,10 @@ Never infer confirmation, choose **Yes, continue** for the user, or summarize a 
 - `specialist`: invoke only `instruction.specialist` with `instruction.input` through the
   harness's skill mechanism; resume with the one accepted typed receipt event. Interactive
   specialists own their own user questions — ask those directly and continue inside the
-  specialist flow; return to the runtime only with a declared receipt event.
+  specialist flow; return to the runtime only with a declared receipt event. For
+  `authentication_ready`, return only the verified `authentication_action` and `evidence_refs`;
+  Play deterministically binds `authenticated`, `rote_authentication_result`, and the adapter
+  identity from its approved packet. Never copy request-only authentication fields into the result.
 - `terminal`: present the terminal outcome and stop.
 
 If `instruction.preflight_required_for_events` names your selected event, run

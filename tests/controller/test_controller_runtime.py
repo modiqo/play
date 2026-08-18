@@ -331,12 +331,15 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
 
         evidence_refs = ["rote:adapter-health/crucible:fresh"]
-        result = {
-            "source": "rote_authentication_result",
-            "status": "authenticated",
+        specialist_result = {
+            "source": "google_oauth_result",
+            "status": "ready",
             "adapter_id": "crucible",
             "env_var": "ADAPTER_CRUCIBLE_TOKEN",
             "classified_rung": "oauth_dcr",
+            "recoverable": True,
+            "blocked_reason": None,
+            "distinguishing_error": "missing: browser authorization required",
             "authentication_action": "reauth",
             "evidence_refs": evidence_refs,
         }
@@ -344,7 +347,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             yielded.session,
             ControllerEvent(
                 id=EventId("authentication_ready"),
-                payload={"authentication": result},
+                payload={"authentication": specialist_result},
                 guards={},
             ),
         )
@@ -352,7 +355,13 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("use_authentication_receipt", received.session.context["state"])
         receipt = received.session.context["authentication"]["receipt"]
         self.assertEqual("play.authentication-receipt/v1", receipt["schema"])
-        self.assertEqual(result, receipt["payload"]["authentication"])
+        result = receipt["payload"]["authentication"]
+        self.assertEqual("rote_authentication_result", result["source"])
+        self.assertEqual("authenticated", result["status"])
+        self.assertEqual("crucible", result["adapter_id"])
+        self.assertEqual("reauth", result["authentication_action"])
+        self.assertNotIn("blocked_reason", result)
+        self.assertNotIn("recoverable", result)
         validation = verify_authentication_receipt(
             received.projection.as_dict()["instruction"]["input"]
         )
