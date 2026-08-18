@@ -729,7 +729,9 @@ class MachineConformanceTest(unittest.TestCase):
             for branch in branches
             if branch["target"] == "use_prepare"
         }
-        self.assertEqual({"use_decide", "use_offer"}, incoming)
+        self.assertEqual(
+            {"use_decide", "use_offer", "use_authentication_offer"}, incoming
+        )
         self.assertEqual(
             "use_run",
             MACHINE["states"]["use_prepare"]["on"]["play_run_handoff_ready"][0]["target"],
@@ -830,6 +832,30 @@ class MachineConformanceTest(unittest.TestCase):
             ],
         )
         self.assertEqual(
+            "use_prepare",
+            MACHINE["states"]["use_authentication_offer"]["on"][
+                "authentication_verification_requested"
+            ][0]["target"],
+        )
+        self.assertEqual(
+            "authentication_is_static",
+            MACHINE["states"]["use_authentication_offer"]["on"][
+                "authentication_verification_requested"
+            ][0]["guard"],
+        )
+        self.assertEqual(
+            "request_authentication_verification",
+            MACHINE["states"]["use_authentication_offer"]["on"][
+                "authentication_verification_requested"
+            ][0]["mutate"],
+        )
+        self.assertEqual(
+            "use_authentication_execute",
+            MACHINE["states"]["use_authentication_offer"]["on"][
+                "authentication_verification_requested"
+            ][1]["target"],
+        )
+        self.assertEqual(
             "blocked",
             MACHINE["states"]["use_authentication_offer"]["on"]["authentication_declined"][0][
                 "target"
@@ -853,6 +879,7 @@ class MachineConformanceTest(unittest.TestCase):
         run_policy = " ".join(ACTIONS["run_registry_play"]["command_policy"])
         self.assertIn("browser-capable Play that declares adapter.auth.ensure", run_policy)
         self.assertIn("typed missing static credential", run_policy)
+        self.assertIn("rote token list --json", run_policy)
         self.assertIn("legacy Play without adapter.auth.ensure", run_policy)
         self.assertIn("marker or prose", run_policy)
         self.assertIn("present the structured action_blocked reason verbatim", run_policy)
@@ -860,12 +887,18 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertIn("out-of-band setup path", authentication_policy)
         self.assertIn("first-party HTTPS token_url", authentication_policy)
         self.assertIn("rote token set <env_var> --stdin", authentication_policy)
+        self.assertIn("already present and healthy", authentication_policy)
         self.assertNotIn("receipt", authentication_policy.casefold())
         self.assertNotIn("repair", authentication_policy.casefold())
         authentication_choice = next(
             choice for choice in prompt["choices"] if choice["id"] == "authenticate"
         )
-        self.assertEqual("Continue authentication", authentication_choice["label"])
+        self.assertEqual("Guide me through setup", authentication_choice["label"])
+        verification_choice = next(
+            choice for choice in prompt["choices"] if choice["id"] == "verify"
+        )
+        self.assertEqual("I've set it — verify and retry", verification_choice["label"])
+        self.assertTrue(verification_choice["recommended"])
         stop_choice = next(
             choice for choice in prompt["choices"] if choice["id"] == "stop"
         )

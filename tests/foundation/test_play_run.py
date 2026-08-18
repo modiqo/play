@@ -321,6 +321,71 @@ class UniversalPlayRunTest(unittest.TestCase):
         self.assertEqual(1, run.call_count)
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_static_done_verifies_exact_manifest_key_then_retries_once(
+        self, run, _which
+    ) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="GitHub contributors", stderr=""
+        )
+        self.credential_snapshot_mock.side_effect = None
+        self.credential_snapshot_mock.return_value = _CredentialSnapshot(
+            adapter_id="github",
+            expected_env="GITHUB_TOKEN",
+            declared_env="GITHUB_TOKEN",
+            token_present=True,
+            token_unreadable=False,
+            healthy=True,
+            health_state="ready",
+            signature="healthy-github-token",
+        )
+        request = payload("modiqo/list-top-committers")
+        request["authentication"].update(
+            {
+                "status": "authenticating",
+                "adapter_id": "github",
+                "env_var": "GITHUB_TOKEN",
+                "classified_rung": "static",
+                "distinguishing_error": "missing: credential `GITHUB_TOKEN` is missing",
+            }
+        )
+
+        result = execute(request)
+
+        self.assertEqual("play_run_ready", result["event"])
+        self.assertEqual("GitHub contributors", result["output"]["primary"])
+        self.credential_snapshot_mock.assert_called_once()
+        snapshot_args = self.credential_snapshot_mock.call_args.args
+        self.assertEqual("github", snapshot_args[1])
+        self.assertEqual("GITHUB_TOKEN", snapshot_args[2])
+        run.assert_called_once()
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_static_done_with_missing_exact_key_returns_to_auth_offer_without_run(
+        self, run, _which
+    ) -> None:
+        request = payload("modiqo/list-top-committers")
+        request["authentication"].update(
+            {
+                "status": "authenticating",
+                "adapter_id": "github",
+                "env_var": "GITHUB_TOKEN",
+                "classified_rung": "static",
+                "distinguishing_error": "missing: credential `GITHUB_TOKEN` is missing",
+            }
+        )
+
+        result = execute(request)
+
+        self.assertEqual("play_authentication_required", result["event"])
+        self.assertEqual("github", result["authentication"]["adapter_id"])
+        self.assertEqual("GITHUB_TOKEN", result["authentication"]["env_var"])
+        self.assertIn("not present and healthy", result["authentication"]["distinguishing_error"])
+        self.credential_snapshot_mock.assert_called_once()
+        run.assert_not_called()
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run._invoke_authenticated")
     @patch("scripts.lib.play.play_run.subprocess.run")
     def test_notion_and_crucible_oauth_dcr_remain_play_owned(

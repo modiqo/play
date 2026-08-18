@@ -717,8 +717,10 @@ def validate_bundle(
     for forbidden in ("use_preflight", "use_resolve"):
         check(forbidden not in states, f"{forbidden} must stay inside the rote play run controller")
     check(
-        predecessors["use_prepare"] == {"use_decide", "use_offer"},
-        "run handoff preparation may follow only local readiness or remote pull approval",
+        predecessors["use_prepare"]
+        == {"use_decide", "use_offer", "use_authentication_offer"},
+        "run handoff preparation may follow only local readiness, remote pull approval, "
+        "or exact static-credential verification",
     )
     check(predecessors["use_run"] == {"use_prepare"}, "execution may follow only a prepared run handoff")
     check("use_inspect" in dominators["use_run"], "inspection must dominate execution")

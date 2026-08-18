@@ -20,6 +20,7 @@ guards:
   - match_satisfies_constraints
   - search_has_remaining_choices
   - captured_trajectory_is_verified
+  - authentication_is_static
   - save_choice_private
   - save_choice_public
   - public_owner_is_resolved
@@ -132,6 +133,7 @@ mutations:
   - enter_settled_judgment
   - record_save_worthiness
   - record_not_worth_saving
+  - request_authentication_verification
   - approve_authentication
   - decline_authentication
   - record_authentication_success
@@ -571,7 +573,7 @@ actions:
     owner: play
     effect: mixed
     timeout_seconds: 3600
-    input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, inspection.local_change, inspection.operations, request.parameters, output_policy, authentication.original_packet, authentication.original_packet_sha256]
+    input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, inspection.local_change, inspection.operations, request.parameters, output_policy, authentication.status, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.evidence_refs, authentication.original_packet, authentication.original_packet_sha256]
     command: scripts/bin/play-run --stdin --json
     command_policy:
       - Execute one approved rote play run using the canonical unversioned URI or owner/name reference; a pre-call browser authentication boundary may re-enter that unchanged command once with terminal-backed stdin so its declared adapter.auth.ensure step can finish.
@@ -587,6 +589,7 @@ actions:
       - When inspection declares adapter.auth.ensure and a browser authentication boundary appears, rerun the unchanged approved command with terminal-backed stdin so that Play step owns authorization and execution continues inside rote play run.
       - A browser-capable Play that declares adapter.auth.ensure never delegates authentication to a specialist. If its Play-owned attempt fails, block with the exact step evidence.
       - A typed missing static credential may emit play_authentication_required even when the Play declares adapter.auth.ensure, because that step can detect but cannot mint a vendor secret. Only a failure before adapter calls may enter this path.
+      - When the user says the static token is already set, compare the adapter manifest's exact token_env with the same exact name in `rote token list --json` before invoking the Play. Retry only when adapter health marks that named token healthy; never infer completion from the user's prose alone.
       - A legacy Play without adapter.auth.ensure may emit play_authentication_required for the existing compatibility path.
       - Reject unknown, incomplete, ambiguous, or post-adapter-call authentication payloads; never guess that an unknown protocol is a static token and never ask a user to paste an OAuth credential.
       - Route non-authentication run failures to blocked with Rote's exact evidence, and present the structured action_blocked reason verbatim so terminal errors cannot disappear into an empty yield or standby exit.
@@ -604,6 +607,7 @@ actions:
     input_required: [inspection.operations, authentication.source, authentication.status, authentication.owner, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.evidence_refs, authentication.original_packet, authentication.original_packet_sha256]
     command_policy:
       - For a typed static credential failure, this is a harness-guided, out-of-band setup path whether or not the inspected Play declares adapter.auth.ensure.
+      - Before repeating setup instructions, compare the adapter manifest's exact token_env with `rote token list --json`. If the same named credential is already present and healthy, return authentication_ready immediately without reopening the vendor page.
       - Resolve the named adapter's catalog metadata with `rote adapter catalog info <adapter_id> --json`; accept only a first-party HTTPS token_url, otherwise return authentication_failed without suggesting an unverified page.
       - Present the verified vendor token_url and tell the user to create the credential there, then run `rote token set <env_var> --stdin` in their own terminal. Never ask for, echo, capture, paste, proxy, or store the credential inside the harness or chat.
       - Pause inside the specialist flow until the user confirms the out-of-band command completed; then verify the named token is present without exposing its value.

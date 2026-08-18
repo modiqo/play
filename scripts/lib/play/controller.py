@@ -996,6 +996,9 @@ def _derive_session_guards(
         and _path_value(context, "capture.trajectory_ref")
         == _path_value(context, "evidence.verification")
     )
+    values[GuardId("authentication_is_static")] = (
+        _path_value(context, "authentication.classified_rung") == "static"
+    )
     values[GuardId("save_choice_private")] = (
         _path_value(context, "consent.save") == "private"
     )

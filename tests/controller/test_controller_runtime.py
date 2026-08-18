@@ -227,13 +227,107 @@ class ControllerRuntimeTest(unittest.TestCase):
         question = advanced.projection.as_dict()["instruction"]["question"]
         self.assertIn("crucible authentication blocked", question)
         self.assertIn("rote token set ADAPTER_CRUCIBLE_TOKEN --stdin", question)
-        self.assertIn("never ask for the token in chat", question)
+        self.assertIn("without exposing the token in chat", question)
+        verification_choice = next(
+            choice
+            for choice in advanced.projection.as_dict()["instruction"]["choices"]
+            if choice["id"] == "verify"
+        )
+        self.assertEqual("I've set it — verify and retry", verification_choice["label"])
+        self.assertTrue(verification_choice["recommended"])
+        self.assertIn("rote token list --json", verification_choice["description"])
         authentication_choice = next(
             choice
             for choice in advanced.projection.as_dict()["instruction"]["choices"]
             if choice["id"] == "authenticate"
         )
         self.assertIn("static credentials stay outside the harness", authentication_choice["description"])
+
+    def test_static_token_done_verifies_before_retry_without_specialist(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-static-token-done",
+            task_key="task-static-token-done",
+            request_original="List top committers for modiqo/rote",
+        )
+        prepared = prepare_play_run_handoff(
+            {
+                "run_id": "session-static-token-done",
+                "request": {
+                    "requested_outcome": "List top committers",
+                    "parameters": {"owner": "modiqo", "repo": "rote"},
+                },
+                "inspection": {
+                    "exact_reference": "modiqo/list-top-committers@0.1.0",
+                    "disclosure_sha256": "a" * 64,
+                },
+            }
+        )
+        context = dict(session.context)
+        context["state"] = "use_authentication_offer"
+        context["request"] = {
+            **context["request"],
+            "requested_outcome": "List top committers",
+            "parameters": {"owner": "modiqo", "repo": "rote"},
+        }
+        context["match"] = {
+            **context["match"],
+            "reference": "modiqo/list-top-committers",
+        }
+        context["inspection"] = {
+            **context["inspection"],
+            "exact_reference": "modiqo/list-top-committers@0.1.0",
+            "disclosure_sha256": "a" * 64,
+        }
+        context["authentication"] = {
+            **context["authentication"],
+            "source": "rote_authentication_required",
+            "status": "required",
+            "owner": "rote-adapter-config",
+            "recoverable": True,
+            "adapter_id": "github",
+            "env_var": "GITHUB_TOKEN",
+            "classified_rung": "static",
+            "distinguishing_error": "missing: credential `GITHUB_TOKEN` is missing",
+            "original_packet": prepared["authentication"]["original_packet"],
+            "original_packet_sha256": prepared["authentication"][
+                "original_packet_sha256"
+            ],
+            "evidence_refs": ["sha256:auth-required"],
+        }
+        bound = replace(
+            session,
+            cursor=replace(session.cursor, state=StateId("use_authentication_offer")),
+            context=context,
+        )
+
+        verified = self.runtime.advance_session(
+            bound,
+            ControllerEvent(
+                id=EventId("authentication_verification_requested"),
+                payload={
+                    "prompt_version": "approve_authentication/v1",
+                    "selected_at": "2026-08-18T17:55:24-07:00",
+                    "authentication": {
+                        "adapter_id": "github",
+                        "env_var": "GITHUB_TOKEN",
+                        "classified_rung": "static",
+                        "distinguishing_error": "missing: credential `GITHUB_TOKEN` is missing",
+                        "original_packet_sha256": prepared["authentication"][
+                            "original_packet_sha256"
+                        ],
+                    },
+                },
+                guards={},
+            ),
+        )
+
+        self.assertEqual("use_prepare", verified.session.context["state"])
+        self.assertEqual(
+            "authenticating", verified.session.context["authentication"]["status"]
+        )
+        projection = verified.projection.as_dict()
+        self.assertEqual("runtime", projection["state"]["boundary"])
+        self.assertEqual("prepare_play_run_handoff", projection["instruction"]["id"])
 
     def test_approved_authentication_redirects_harness_to_adapter_specialist(self) -> None:
         session = self.runtime.initial_session(

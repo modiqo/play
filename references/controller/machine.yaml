@@ -449,6 +449,9 @@ states:
     requires: [inspection.operations, authentication.source, authentication.status, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.evidence_refs, authentication.original_packet, authentication.original_packet_sha256]
     prompt: approve_authentication
     "on":
+      authentication_verification_requested:
+        - {guard: authentication_is_static, target: use_prepare, mutate: request_authentication_verification}
+        - {target: use_authentication_execute, mutate: approve_authentication}
       authentication_approved: [{target: use_authentication_execute, mutate: approve_authentication}]
       authentication_declined: [{target: blocked, mutate: decline_authentication}]
 

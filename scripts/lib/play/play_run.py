@@ -95,6 +95,54 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
     # mode so an inherited human-output preference cannot hide the typed
     # @@authentication section from this non-interactive controller boundary.
     environment["ROTE_OUTPUT_MODE"] = "structured"
+
+    # A user who already completed out-of-band static-token setup selects the
+    # verification event, which returns directly to this exact approved run.
+    # Confirm the manifest-declared key against Rote's token inventory before
+    # invoking any provider operation or specialist.
+    if (
+        authentication.get("status") == "authenticating"
+        and authentication.get("classified_rung") == "static"
+    ):
+        adapter_id = _string(
+            authentication.get("adapter_id"), "authentication.adapter_id"
+        )
+        env_var = _string(authentication.get("env_var"), "authentication.env_var")
+        distinguishing_error = _string(
+            authentication.get("distinguishing_error"),
+            "authentication.distinguishing_error",
+        )
+        static_authentication = {
+            "adapter_id": adapter_id,
+            "env_var": env_var,
+            "classified_rung": "static",
+            "distinguishing_error": distinguishing_error,
+        }
+        try:
+            verified_static = _credential_snapshot(
+                executable, adapter_id, env_var, environment
+            )
+        except CommandError as error:
+            return _failed(
+                "Play could not verify the static credential contract: " + str(error)
+            )
+        contract_error = _credential_contract_error(
+            verified_static, adapter_id, env_var
+        )
+        if contract_error is not None:
+            return _failed(contract_error)
+        if not verified_static.usable:
+            verification_error = (
+                f"credential {env_var} is not present and healthy for adapter "
+                f"{adapter_id}"
+            )
+            return _authentication_required(
+                {
+                    **static_authentication,
+                    "distinguishing_error": verification_error,
+                },
+                f"Static {verification_error}; no provider call was started.",
+            )
     with tempfile.TemporaryDirectory(prefix="play-run-") as directory:
         try:
             completed, stdout_path, stderr_path = _invoke(

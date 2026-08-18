@@ -295,6 +295,17 @@ cases:
     terminal: receipt
     includes_once: [use_authentication_offer, use_authentication_execute]
 
+  - name: a static token already set is verified before the exact retry
+    steps:
+      - {state: use_run, event: play_authentication_required, target: use_authentication_offer}
+      - {state: use_authentication_offer, event: authentication_verification_requested, guards: {authentication_is_static: true}, target: use_prepare}
+      - {state: use_prepare, event: play_run_handoff_ready, target: use_run}
+      - {state: use_run, event: play_run_ready, target: use_verify}
+      - {state: use_verify, event: outcome_verified, target: use_receipt}
+      - {state: use_receipt, event: receipt_ready, target: receipt}
+    terminal: receipt
+    excludes: [use_authentication_execute]
+
   - name: declined legacy authentication blocks without retrying
     steps:
       - {state: use_run, event: play_authentication_required, target: use_authentication_offer}

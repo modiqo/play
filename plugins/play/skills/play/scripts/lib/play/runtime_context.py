@@ -16,7 +16,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "0e97020b0cdc42f4877c523bc219d4b073d25b76d684b6383e18c0716968ec41"
+SUPPORTED_MUTATION_SET_SHA256 = "e6e533c325251220e4377fa0098bae6b6abdf49e40bdeb0636a5fdbbe5e7fd15"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -474,6 +474,7 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "record_save_hook": {"mode": "exited"},
     "enter_settled_judgment": {"mode": "settle"},
     "record_not_worth_saving": {"mode": "exited"},
+    "request_authentication_verification": {"authentication.status": "authenticating"},
     "approve_authentication": {"authentication.status": "approved"},
     "decline_authentication": {"authentication.status": "declined"},
     "record_authentication_handoff": {"authentication.status": "authenticating"},
@@ -516,6 +517,13 @@ def _apply_mutation_semantics(
 
     if mutation == "record_team_space":
         context["team"]["status"] = "ready"
+
+    if (
+        mutation == "record_controller_run"
+        and _path_value(context, "authentication.status") == "authenticating"
+        and _path_value(context, "authentication.classified_rung") == "static"
+    ):
+        context["authentication"]["status"] = "authenticated"
 
     if mutation == "record_authentication_response":
         packet = context["authentication"].get("packet")
