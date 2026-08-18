@@ -187,7 +187,11 @@ def load_registry_flow_info(reference: str) -> dict[str, Any]:
     payload = run_rote_json(
         "registry", "play", "info", reference, "--json", error_type=RegistryReadError
     )
-    skill = payload.get("skill") if isinstance(payload, dict) else None
+    skill = (
+        payload.get("play") or payload.get("skill")
+        if isinstance(payload, dict)
+        else None
+    )
     version = payload.get("version") if isinstance(payload, dict) else None
     if not isinstance(skill, dict) or not isinstance(version, dict):
         raise RegistryReadError(f"Registry info for {reference} has an unsupported shape")
@@ -208,9 +212,57 @@ def load_registry_flow_info(reference: str) -> dict[str, Any]:
         raise RegistryReadError(f"Registry info for {reference} lacks a valid install count")
 
     metadata = version.get("metadata")
+    flow_metadata = metadata.get("metadata") if isinstance(metadata, dict) else None
     provenance = metadata.get("provenance") if isinstance(metadata, dict) else None
     author = provenance.get("author") if isinstance(provenance, dict) else None
     creator_name = author.strip() if isinstance(author, str) and author.strip() else None
+    discoverability = (
+        flow_metadata.get("discoverability")
+        if isinstance(flow_metadata, dict)
+        else None
+    )
+
+    def strings(value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return sorted(
+            {item.strip() for item in value if isinstance(item, str) and item.strip()},
+            key=str.casefold,
+        )
+
+    labels = strings(
+        discoverability.get("labels") if isinstance(discoverability, dict) else None
+    )
+    tags = strings(
+        discoverability.get("tags") if isinstance(discoverability, dict) else None
+    )
+    adapter_names: set[str] = set()
+    if isinstance(flow_metadata, dict):
+        def add_adapter(value: object, *, allow_registry_reference: bool = False) -> None:
+            if not isinstance(value, str):
+                return
+            candidate = value.strip().partition("@")[0]
+            if candidate.startswith("adapter/"):
+                candidate = candidate.removeprefix("adapter/")
+            elif allow_registry_reference and "/" in candidate and ":" not in candidate:
+                candidate = candidate.rsplit("/", 1)[-1]
+            else:
+                return
+            if candidate:
+                adapter_names.add(candidate)
+
+        for field in ("adapter_sources", "adapter_releases", "mcp_servers"):
+            mapping = flow_metadata.get(field)
+            if isinstance(mapping, dict):
+                for value in mapping:
+                    add_adapter(value)
+                if field == "adapter_sources":
+                    for value in mapping.values():
+                        add_adapter(value, allow_registry_reference=True)
+        required = flow_metadata.get("requires_endpoints")
+        if isinstance(required, list):
+            for value in required:
+                add_adapter(value)
     return {
         "reference": reference,
         "exact_reference": f"{reference}@{release}",
@@ -227,6 +279,9 @@ def load_registry_flow_info(reference: str) -> dict[str, Any]:
         "creator_status": "available" if creator_name else "unavailable",
         "creator_source": "version.metadata.provenance.author" if creator_name else None,
         "default_parameters": {},
+        "labels": labels,
+        "tags": tags,
+        "adapters": sorted(adapter_names, key=str.casefold),
     }
 
 
@@ -261,6 +316,64 @@ def load_registry_flow_infos(
     flows = [(flow["owner"], flow) for _, flow, error in loaded if flow is not None and error is None]
     errors = [f"{reference}: {error}" for reference, _, error in loaded if error is not None]
     return InspectionBatch(flows, errors, candidate_count, omitted_count)
+
+
+def load_authorized_index_flows(
+    authorized_slugs: set[str],
+) -> dict[str, list[dict[str, Any]]]:
+    """Load the authorized Play feed enriched for deterministic local search.
+
+    Registry list supplies the complete namespace while registry info supplies
+    the current version, discoverability tags, and declared adapter names.  The
+    resulting snapshot is written once by the inbox refresher and searched
+    locally on every prompt.
+    """
+
+    grouped = load_authorized_flows(authorized_slugs)
+    references = [
+        f"{slug}/{flow['name']}"
+        for slug in sorted(grouped)
+        for flow in grouped[slug]
+    ]
+    if not references:
+        return grouped
+    batch = load_registry_flow_infos(references, limit=len(references))
+    if batch.errors or batch.omitted_count:
+        detail = "; ".join(batch.errors[:5])
+        if len(batch.errors) > 5:
+            detail += f"; and {len(batch.errors) - 5} more"
+        raise RegistryReadError(
+            "authorized Play search feed could not be fully enriched"
+            + (f": {detail}" if detail else "")
+        )
+    metadata_by_reference = {
+        flow["reference"]: flow for _, flow in batch.flows
+    }
+    enriched: dict[str, list[dict[str, Any]]] = {}
+    for slug in sorted(grouped):
+        enriched[slug] = []
+        for flow in grouped[slug]:
+            item = dict(flow)
+            metadata = metadata_by_reference.get(f"{slug}/{flow['name']}")
+            if metadata is not None:
+                item.update(
+                    {
+                        key: metadata.get(key)
+                        for key in (
+                            "description",
+                            "version",
+                            "status",
+                            "labels",
+                            "tags",
+                            "adapters",
+                        )
+                    }
+                )
+                item["latest_version_created_at"] = metadata.get(
+                    "version_created_at"
+                )
+            enriched[slug].append(item)
+    return enriched
 
 
 def inspect_references(

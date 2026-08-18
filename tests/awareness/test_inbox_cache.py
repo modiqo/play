@@ -137,10 +137,15 @@ class InboxCacheTest(unittest.TestCase):
         self.assertEqual(
             [
                 {
+                    "adapters": [],
                     "reference": "acme/ship-and-tell",
                     "name": "ship-and-tell",
                     "description": "Deploy, smoke, and post a summary.",
                     "visibility": "private",
+                    "version": None,
+                    "status": None,
+                    "labels": [],
+                    "tags": [],
                     "skill_id": "play-123",
                     "owner_id": "org-456",
                 }

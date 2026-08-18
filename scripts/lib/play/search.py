@@ -25,6 +25,8 @@ _DISCOVERY_STOP_WORDS = {
     "a",
     "an",
     "and",
+    "are",
+    "available",
     "can",
     "fetch",
     "find",
@@ -38,10 +40,14 @@ _DISCOVERY_STOP_WORDS = {
     "my",
     "of",
     "please",
+    "play",
+    "plays",
+    "related",
     "retrieve",
     "the",
     "to",
     "want",
+    "what",
     "you",
 }
 _MONTHS = {
@@ -75,6 +81,15 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
     fetch_limit = max(50, limit * 10)
     queries = discovery_queries(query)
     catalog_items, catalog_complete = _catalog_snapshot()
+    if catalog_complete:
+        return {
+            "flows": [],
+            "source_health": {
+                "catalog_cache": "complete",
+                "mode": "cached",
+                "live_errors": [],
+            },
+        }, reconcile_registry_items([], catalog_items)
     commands = {}
     for index, candidate in enumerate(queries):
         commands[("local", index)] = [
@@ -136,6 +151,7 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
         "flows": local_flows,
         "source_health": {
             "catalog_cache": "complete" if catalog_complete else "unavailable",
+            "mode": "live_fallback",
             "live_errors": [
                 {
                     "source": source,
@@ -244,6 +260,15 @@ def _catalog_snapshot() -> tuple[list[dict], bool]:
                 "visibility": entry.get("visibility"),
                 "skill_id": entry.get("skill_id"),
                 "owner_id": entry.get("owner_id"),
+                "version": entry.get("version"),
+                "status": entry.get("status"),
+                "labels": entry.get("labels") if isinstance(entry.get("labels"), list) else [],
+                "tags": entry.get("tags") if isinstance(entry.get("tags"), list) else [],
+                "adapters": (
+                    entry.get("adapters")
+                    if isinstance(entry.get("adapters"), list)
+                    else []
+                ),
             }
         )
     return items, cache.get("catalog_complete") is True
@@ -304,6 +329,9 @@ def new_hit(name: str, description: str, reference: str | None) -> dict:
         "versions_by_scope": {},
         "reconciled_from": set(),
         "stale_local_paths": set(),
+        "labels": set(),
+        "tags": set(),
+        "matched_adapters": set(),
     }
 
 
@@ -338,6 +366,17 @@ def merge_results(
         reference = f"{owner}/{name}"
         description = bounded_description(item.get("skill_description"))
         hit = canonical.setdefault(reference, new_hit(name, description, reference))
+        for field in ("labels", "tags"):
+            values = item.get(field)
+            if isinstance(values, list):
+                hit[field].update(
+                    value for value in values if isinstance(value, str) and value
+                )
+        adapters = item.get("adapters")
+        if isinstance(adapters, list):
+            hit["matched_adapters"].update(
+                value for value in adapters if isinstance(value, str) and value
+            )
         scope = registry_scope(item)
         hit["sources"].add(scope)
         hit["source_ranks"][scope] = min(rank, hit["source_ranks"].get(scope, rank))
@@ -423,7 +462,18 @@ def merge_results(
     semantic_query = discovery[-1] if discovery else normalized_query
     query_tokens = set(semantic_query.split())
     for hit in hits:
-        searchable = set(normalize_query(f"{hit['name']} {hit['description']}").split())
+        searchable = set(
+            normalize_query(
+                " ".join(
+                    [
+                        hit["name"],
+                        hit["description"],
+                        *sorted(hit["labels"]),
+                        *sorted(hit["tags"]),
+                    ]
+                )
+            ).split()
+        )
         coverage = len(query_tokens & searchable) / len(query_tokens) if query_tokens else 0.0
         rank_fusion = sum(1.0 / (60 + rank) for rank in hit["source_ranks"].values())
         hit["combined_score"] = coverage + rank_fusion
@@ -438,16 +488,36 @@ def merge_results(
         )
         hit["match_classification"] = (
             "full"
-            if coverage >= 0.75 or (name_is_covered and coverage >= 0.34)
+            if coverage >= 0.60 or (name_is_covered and coverage >= 0.34)
             else "partial"
             if coverage >= 0.34
             else "uncertain"
         )
+        adapter_tokens = {
+            adapter: set(normalize_query(adapter).split())
+            for adapter in hit["matched_adapters"]
+        }
+        hit["matched_adapters"] = {
+            adapter
+            for adapter, tokens in adapter_tokens.items()
+            if tokens and all(token_is_covered(token, query_tokens) for token in tokens)
+        }
         hit["primary_scope"] = (
             "local" if "local" in hit["sources"]
             else "remote_private" if "remote_private" in hit["sources"]
             else "remote_public"
         )
+    lexical_full = any(hit["match_classification"] == "full" for hit in hits)
+    adapter_matches = [hit for hit in hits if hit["matched_adapters"]]
+    if adapter_matches and not lexical_full:
+        hits = adapter_matches
+        for hit in hits:
+            hit["match_classification"] = "full"
+            hit["combined_score"] += 1.0
+    else:
+        best_class = "full" if lexical_full else "partial"
+        hits = [hit for hit in hits if hit["match_classification"] == best_class]
+
     class_priority = {"full": 0, "partial": 1, "uncertain": 2}
     scope_priority = {"local": 0, "remote_private": 1, "remote_public": 2}
     hits.sort(key=lambda hit: (
@@ -485,6 +555,28 @@ def merge_results(
             candidate_reference = reference
         else:
             raise SearchError("search result has neither a local path nor registry reference")
+        adapter_note = (
+            f"Matched through adapter(s): {', '.join(sorted(hit['matched_adapters']))}. "
+            if hit["matched_adapters"]
+            else ""
+        )
+        if execution_resolution == "run_local":
+            selection_description = (
+                f"{hit['description']} {adapter_note}Already local; inspect and run "
+                "without a pull prompt."
+            )
+        elif hit["reconciled_from"]:
+            selection_description = (
+                f"{hit['description']} {adapter_note}Registry ownership supersedes the "
+                f"stale local reference(s) {', '.join(sorted(hit['reconciled_from']))}; "
+                "pulling the canonical Play requires your approval."
+            )
+        else:
+            selection_description = (
+                f"{hit['description']} {adapter_note}Remote "
+                f"{primary_scope.removeprefix('remote_').replace('_', ' ')} match; "
+                "pulling requires your approval."
+            )
         output.append(
             {
                 "name": hit["name"],
@@ -497,6 +589,9 @@ def merge_results(
                 "score": round(hit["combined_score"], 8),
                 "coverage": round(hit["coverage"], 8),
                 "match_classification": hit["match_classification"],
+                "matched_adapters": sorted(hit["matched_adapters"], key=str.casefold),
+                "labels": sorted(hit["labels"], key=str.casefold),
+                "tags": sorted(hit["tags"], key=str.casefold),
                 "primary_scope": primary_scope,
                 "uri": uri,
                 "run_command": run_command,
@@ -504,20 +599,24 @@ def merge_results(
                 "hint_kind": hint_kind,
                 "local_availability": local_availability,
                 "execution_resolution": execution_resolution,
-                "selection_description": (
-                    f"{hit['description']} Already local; inspect and run without a pull prompt."
-                    if execution_resolution == "run_local"
-                    else f"{hit['description']} Registry ownership supersedes the stale local reference(s) {', '.join(sorted(hit['reconciled_from']))}; pulling the canonical Play requires your approval."
-                    if hit["reconciled_from"]
-                    else f"{hit['description']} Remote {primary_scope.removeprefix('remote_').replace('_', ' ')} match; pulling requires your approval."
-                ),
+                "selection_description": selection_description,
             }
         )
     return output
 
 
-def render_markdown(original: str, normalized: str, results: list[dict]) -> str:
-    lines = [f"Search: `{normalized}`", "", "Sources: local + authorized registry"]
+def render_markdown(
+    original: str,
+    normalized: str,
+    results: list[dict],
+    source_health: dict | None = None,
+) -> str:
+    source_label = (
+        "cached authorized Play feed"
+        if isinstance(source_health, dict) and source_health.get("mode") == "cached"
+        else "local + authorized registry"
+    )
+    lines = [f"Search: `{normalized}`", "", f"Sources: {source_label}"]
     if original.strip().casefold() != normalized:
         lines.extend(["", f"Normalized from: {original.strip()}"])
     if not results:
@@ -538,6 +637,10 @@ def render_markdown(original: str, normalized: str, results: list[dict]) -> str:
             ]
         )
         lines.append(f"   Next: inspect with `{result['inspect_command']}`")
+        if result.get("matched_adapters"):
+            lines.append(
+                "   Adapter match: " + ", ".join(result["matched_adapters"])
+            )
         if result["execution_resolution"] == "pull_required":
             lines.append("   Pulling and running requires a separate approval after inspection.")
     return "\n".join(lines)
@@ -602,5 +705,12 @@ def main() -> int:
     if args.as_json:
         print(json_text(payload))
     else:
-        print(render_markdown(original, normalized, results))
+        print(
+            render_markdown(
+                original,
+                normalized,
+                results,
+                local_payload.get("source_health"),
+            )
+        )
     return 0

@@ -93,7 +93,7 @@ class SearchTest(unittest.TestCase):
         results = PLAY_SEARCH.merge_results(
             local, [], flow_root, 10, "list something unrelated entirely here"
         )
-        self.assertNotEqual("full", results[0]["match_classification"])
+        self.assertEqual([], results)
 
     def test_one_character_play_name_typo_still_matches_full_identity(self):
         flow_root = pathlib.Path("/tmp/example-flows")
@@ -137,7 +137,7 @@ class SearchTest(unittest.TestCase):
             local, [], flow_root, 10, "lost tap computers for modiqo rote"
         )
 
-        self.assertNotEqual("full", results[0]["match_classification"])
+        self.assertEqual([], results)
 
     def test_registry_only_result_discloses_expected_pull_before_selection(self):
         results = PLAY_SEARCH.merge_results(
@@ -425,7 +425,133 @@ class SearchTest(unittest.TestCase):
         self.assertEqual("modiqo/retrieve-rideshare-receipts", results[0]["reference"])
         self.assertEqual("full", results[0]["match_classification"])
         self.assertEqual("complete", local["source_health"]["catalog_cache"])
-        self.assertTrue(local["source_health"]["live_errors"])
+        self.assertEqual("cached", local["source_health"]["mode"])
+        self.assertEqual([], local["source_health"]["live_errors"])
+
+    def test_cached_feed_returns_only_the_adequate_landing_page_match(self):
+        import json as json_module
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
+            cache_path.write_text(
+                json_module.dumps(
+                    {
+                        "schema": "play.inbox-cache/v1",
+                        "catalog_complete": True,
+                        "catalog": [
+                            {
+                                "reference": "modiqo/landing-page-assessment",
+                                "name": "landing-page-assessment",
+                                "description": "Assess landing-page messaging and readiness.",
+                                "visibility": "public",
+                                "version": "0.3.2",
+                                "labels": ["Marketing"],
+                                "tags": ["job-landing-page-review"],
+                                "adapters": ["crucible"],
+                            },
+                            {
+                                "reference": "modiqo/archive-analytics",
+                                "name": "archive-analytics",
+                                "description": "Analyze archived agent telemetry.",
+                                "visibility": "private",
+                            },
+                            {
+                                "reference": "modiqo/create-github-issue",
+                                "name": "create-github-issue",
+                                "description": "Create an issue on GitHub.",
+                                "visibility": "private",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(PLAY_SEARCH, "run_json") as live_search, \
+                    mock.patch.dict(
+                        os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
+                    ):
+                local, registry = PLAY_SEARCH.search_both(
+                    "find an available landing page readiness play", 5
+                )
+
+        live_search.assert_not_called()
+        results = PLAY_SEARCH.merge_results(
+            local,
+            registry,
+            pathlib.Path("/tmp/none"),
+            5,
+            "find an available landing page readiness play",
+        )
+        self.assertEqual(
+            ["modiqo/landing-page-assessment"],
+            [result["reference"] for result in results],
+        )
+        self.assertEqual("full", results[0]["match_classification"])
+
+    def test_cached_adapter_associations_find_latest_unique_plays(self):
+        catalog = [
+            {
+                "owner_slug": "modiqo",
+                "skill_name": name,
+                "skill_description": description,
+                "visibility": "public",
+                "version": version,
+                "adapters": ["crucible"],
+                "tags": ["tool-crucible"],
+            }
+            for name, description, version in (
+                (
+                    "founder-daily-operating-brief",
+                    "Rank founder priorities.",
+                    "0.1.2",
+                ),
+                (
+                    "landing-page-assessment",
+                    "Assess landing-page messaging.",
+                    "0.3.2",
+                ),
+                (
+                    "pricing-page-assessment",
+                    "Assess pricing-page decisions.",
+                    "0.3.3",
+                ),
+            )
+        ]
+        catalog.append(
+            {
+                "owner_slug": "modiqo",
+                "skill_name": "archive-analytics",
+                "skill_description": "Analyze archives.",
+                "visibility": "private",
+                "version": "1.0.0",
+                "adapters": ["duckdb"],
+            }
+        )
+
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []},
+            catalog,
+            pathlib.Path("/tmp/none"),
+            10,
+            "what are the heavybit crucible related plays",
+        )
+
+        self.assertEqual(
+            {
+                "modiqo/founder-daily-operating-brief",
+                "modiqo/landing-page-assessment",
+                "modiqo/pricing-page-assessment",
+            },
+            {result["reference"] for result in results},
+        )
+        self.assertTrue(
+            all(result["matched_adapters"] == ["crucible"] for result in results)
+        )
+        self.assertNotIn(
+            "modiqo/archive-analytics",
+            {result["reference"] for result in results},
+        )
 
     def test_malformed_live_search_without_verified_catalog_fails_closed(self):
         with mock.patch.object(

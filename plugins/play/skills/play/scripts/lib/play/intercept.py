@@ -115,6 +115,12 @@ def _tokens(text: str) -> set[str]:
     }
 
 
+def _string_values(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
 def _flow_dirs(root: Path) -> list[tuple[str, Path]]:
     """Yield (reference, main.ts path) for local flows and pulled owner/name flows."""
 
@@ -226,14 +232,23 @@ def _hub_entries(local_names: set[str]) -> list[dict[str, Any]]:
         ):
             continue
         description = str(item.get("description") or "")[:240]
+        labels = _string_values(item.get("labels"))
+        tags = _string_values(item.get("tags"))
+        adapters = _string_values(item.get("adapters"))
         entries.append(
             {
                 "reference": reference,
                 "name": name,
                 "description": description,
                 "scope": "hub",
-                "name_tokens": sorted(_tokens(name.replace("-", " "))),
+                "name_tokens": sorted(
+                    _tokens(name.replace("-", " "))
+                    | _tokens(" ".join([*labels, *tags, *adapters]))
+                ),
                 "text_tokens": sorted(_tokens(description)),
+                "labels": labels,
+                "tags": tags,
+                "adapters": adapters,
             }
         )
     return entries

@@ -17,6 +17,7 @@ from play.registry import (
     inspect_play,
     load_authorized_public_flow_infos,
     load_authorized_flows,
+    load_authorized_index_flows,
     load_organizations,
     load_play_inspection,
     load_registry_flow_info,
@@ -122,6 +123,95 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(8, flow["download_count"])
         self.assertNotIn("run_count", flow)
         self.assertEqual(("registry", "play", "info"), run_json.call_args.args[:3])
+
+    @patch("play.registry.run_rote_json")
+    def test_registry_flow_info_indexes_tags_and_adapter_associations(self, run_json) -> None:
+        run_json.return_value = {
+            "play": {
+                "name": "landing-page-assessment",
+                "description": "Assess a landing page.",
+                "visibility": "public",
+            },
+            "version": {
+                "version": "0.3.2",
+                "status": "approved",
+                "created_at": "2026-08-18T10:03:47Z",
+                "download_count": 0,
+                "install_count": 0,
+                "metadata": {
+                    "metadata": {
+                        "requires_endpoints": [
+                            "adapter/crucible",
+                            "stdio:/playwright",
+                        ],
+                        "adapter_sources": {
+                            "adapter/crucible": "modiqo/crucible"
+                        },
+                        "discoverability": {
+                            "labels": ["Marketing"],
+                            "tags": [
+                                "job-landing-page-review",
+                                "tool-crucible",
+                            ],
+                        },
+                    }
+                },
+            },
+        }
+
+        flow = load_registry_flow_info("modiqo/landing-page-assessment")
+
+        self.assertEqual(["crucible"], flow["adapters"])
+        self.assertEqual(["Marketing"], flow["labels"])
+        self.assertEqual(
+            ["job-landing-page-review", "tool-crucible"], flow["tags"]
+        )
+
+    @patch("play.registry.load_registry_flow_infos")
+    @patch("play.registry.load_authorized_flows")
+    def test_authorized_index_feed_merges_current_search_metadata(
+        self, load_flows, load_infos
+    ) -> None:
+        load_flows.return_value = {
+            "modiqo": [
+                {
+                    "id": "play-1",
+                    "name": "landing-page-assessment",
+                    "description": "Old description",
+                    "visibility": "public",
+                    "created_at": "2026-08-17T00:00:00Z",
+                }
+            ]
+        }
+        from play.registry import InspectionBatch
+
+        load_infos.return_value = InspectionBatch(
+            flows=[
+                (
+                    "modiqo",
+                    {
+                        "reference": "modiqo/landing-page-assessment",
+                        "description": "Current description",
+                        "version": "0.3.2",
+                        "version_created_at": "2026-08-18T10:03:47Z",
+                        "status": "approved",
+                        "labels": ["Marketing"],
+                        "tags": ["job-landing-page-review"],
+                        "adapters": ["crucible"],
+                    },
+                )
+            ],
+            errors=[],
+            candidate_count=1,
+            omitted_count=0,
+        )
+
+        grouped = load_authorized_index_flows({"modiqo"})
+
+        indexed = grouped["modiqo"][0]
+        self.assertEqual("0.3.2", indexed["version"])
+        self.assertEqual(["crucible"], indexed["adapters"])
+        self.assertEqual("Current description", indexed["description"])
 
     @patch("play.registry.run_rote_json")
     def test_nonzero_play_not_found_is_typed_for_search_recovery(self, run_json) -> None:

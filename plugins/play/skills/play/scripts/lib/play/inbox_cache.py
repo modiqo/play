@@ -29,7 +29,7 @@ from .digest_state import (
     scope_key,
 )
 from .private_store import atomic_write_json, load_json
-from .registry import Organization, load_authorized_flows, load_organizations
+from .registry import Organization, load_authorized_index_flows, load_organizations
 from .render import json_text
 from .state_home import state_path
 
@@ -144,6 +144,7 @@ def _public_catalog_entry(slug: str, flow: Mapping[str, Any]) -> dict[str, Any] 
         ),
         "labels": _string_list(flow.get("labels")),
         "tags": _string_list(flow.get("tags")),
+        "adapters": _string_list(flow.get("adapters")),
     }
     for source_field, cache_field in (("id", "skill_id"), ("owner_id", "owner_id")):
         value = flow.get(source_field)
@@ -202,7 +203,7 @@ def refresh_cache(
     if entry is not None and entry.get("scope") == scope:
         since = entry["checkpoint"]["last_seen_at"]
 
-    flows_loader = load_flows or load_authorized_flows
+    flows_loader = load_flows or load_authorized_index_flows
     catalog_complete = True
     try:
         grouped = flows_loader({org.slug for org in resolved_organizations})
@@ -233,9 +234,10 @@ def refresh_cache(
             name = flow.get("name")
             if not isinstance(name, str) or not name:
                 continue
-            reference = flow.get("reference")
+            reference = flow.get("base_reference") or flow.get("reference")
             if not isinstance(reference, str) or not reference:
                 reference = f"{slug}/{name}"
+            reference = reference.partition("@")[0]
             if reference in seen_references:
                 continue
             seen_references.add(reference)
@@ -244,6 +246,19 @@ def refresh_cache(
                 "name": name,
                 "description": str(flow.get("description") or "")[:240],
                 "visibility": flow.get("visibility"),
+                "version": (
+                    flow.get("version")
+                    if isinstance(flow.get("version"), str)
+                    else None
+                ),
+                "status": (
+                    flow.get("status")
+                    if isinstance(flow.get("status"), str)
+                    else None
+                ),
+                "labels": _string_list(flow.get("labels")),
+                "tags": _string_list(flow.get("tags")),
+                "adapters": _string_list(flow.get("adapters")),
             }
             for source_field, cache_field in (("id", "skill_id"), ("owner_id", "owner_id")):
                 value = flow.get(source_field)
@@ -260,7 +275,7 @@ def refresh_cache(
     organization_scope = sorted({org.slug for org in resolved_organizations})
     catalog_snapshot = {
         "organization_scope": organization_scope,
-        "plays": public_catalog,
+        "plays": catalog,
     }
     try:
         markdown = render_markdown(dict(digest))
