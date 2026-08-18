@@ -520,8 +520,7 @@ cases:
       - {state: qualify, event: play_awareness_request, target: awareness_collect}
       - {state: awareness_collect, event: awareness_ready, target: awareness_present}
       - {state: awareness_present, event: awareness_presented, target: awareness_offer}
-      - {state: awareness_offer, event: awareness_domain_selected, target: awareness_domain_offer}
-      - {state: awareness_domain_offer, event: awareness_play_selected, target: use_inspect}
+      - {state: awareness_offer, event: awareness_play_selected, target: use_inspect}
       - {state: use_inspect, event: play_inspected, target: use_decide}
       - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_approved, target: use_prepare}

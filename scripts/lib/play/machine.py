@@ -677,14 +677,8 @@ def validate_bundle(
         "unchanged awareness must still present the current catalog summary",
     )
     check(
-        _target(states, "awareness_offer", "awareness_domain_selected")
-        == "awareness_domain_offer",
-        "awareness must reveal Play choices only after a domain selection",
-    )
-    check(
-        _target(states, "awareness_domain_offer", "awareness_play_selected")
-        == "use_inspect",
-        "an exact awareness selection must enter inspection",
+        _target(states, "awareness_offer", "awareness_play_selected") == "use_inspect",
+        "a sampled awareness selection must enter inspection directly",
     )
     check(_target(states, "qualify", "play_creation_request") == "creator_search", "explicit creator intent must search before exploration")
     check(

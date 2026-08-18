@@ -48,7 +48,7 @@ prompts:
     question: What would you like to do next?
     selection: single
     choices:
-      - {id: useful, label: Run another Play, description: Choose a domain, inspect a short list, and approve only the method you want., event: onboarding_awareness_selected, recommended: true}
+      - {id: useful, label: Run another Play, description: Choose from a random sample of 10 public Plays and inspect the method before approving it., event: onboarding_awareness_selected, recommended: true}
       - {id: goal, label: Create your own, description: Start with a useful outcome; Play searches first and, when exploration is needed, capture begins before the work so a verified method can be saved., event: onboarding_goal_selected}
       - {id: team, label: Create team space, description: Claim a team handle and invite colleagues to review and use Plays together., event: onboarding_team_selected}
       - {id: done, label: Finish, description: Keep the verified receipt and stop here., event: onboarding_finished}
@@ -94,31 +94,8 @@ prompts:
     events:
       team_invite_described: [prompt_version, selected_at, team.slug, team.invite_email, team.invite_role]
 
-  select_awareness_domain:
-    question: Which domain would you like to explore, or would you rather start another way?
-    selection: single
-    choices_from:
-      context: awareness.domain_choices
-      id_field: slug
-      label_field: label
-      description_field: description
-      value_source_field: slug
-      value_field: awareness.selected_domain
-      event: awareness_domain_selected
-    choices:
-      - {id: hello, label: Run Hello, description: "Recommended low-risk proof: public data, no account credentials, and no declared writes.", event: awareness_hello_selected, recommended: true}
-      - {id: search, label: Find by outcome, description: Describe what you need and search every authorized Play., event: awareness_search_selected}
-      - {id: create, label: Create your own, description: Start with `$play <a useful outcome>` so capture can begin before any exploratory work., event: awareness_create_selected}
-      - {id: done, label: Not now, description: Close discovery without inspecting or running anything., event: awareness_dismissed}
-    events:
-      awareness_domain_selected: [prompt_version, selected_at, awareness.selected_domain]
-      awareness_hello_selected: [prompt_version, selected_at]
-      awareness_search_selected: [prompt_version, selected_at]
-      awareness_create_selected: [prompt_version, selected_at]
-      awareness_dismissed: [prompt_version, selected_at]
-
   select_awareness_play:
-    question: Which Play in this domain would you like to inspect?
+    question: Which Play would you like to inspect?
     selection: single
     choices_from:
       context: awareness.play_choices
@@ -129,15 +106,11 @@ prompts:
       value_field: match.reference
       event: awareness_play_selected
     choices:
-      - {id: domains, label: Choose another domain, description: Return to the organization summary., event: awareness_domain_change_selected}
-      - {id: hello, label: Run Hello, description: Try the recommended low-risk first Play., event: awareness_hello_selected, recommended: true}
       - {id: search, label: Find by outcome, description: Describe what you need and search every authorized Play., event: awareness_search_selected}
       - {id: create, label: Create your own, description: Begin with a useful outcome and capture the trajectory before exploration starts., event: awareness_create_selected}
       - {id: done, label: Not now, description: Close discovery without inspecting or running anything., event: awareness_dismissed}
     events:
       awareness_play_selected: [prompt_version, selected_at, match.reference, request.original, request.parameters]
-      awareness_domain_change_selected: [prompt_version, selected_at]
-      awareness_hello_selected: [prompt_version, selected_at]
       awareness_search_selected: [prompt_version, selected_at]
       awareness_create_selected: [prompt_version, selected_at]
       awareness_dismissed: [prompt_version, selected_at]

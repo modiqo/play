@@ -246,11 +246,8 @@ stateDiagram-v2
 
     %% ── Awareness, creator, management ──
     awareness_collect --> awareness_present : current snapshot (new, changed, or unchanged)
-    awareness_present --> awareness_offer : catalog summary + domain counts
-    awareness_offer --> awareness_domain_offer : domain selected
-    awareness_offer --> use_inspect : Hello selected
-    awareness_domain_offer --> awareness_offer : choose another domain
-    awareness_domain_offer --> use_inspect : exact Play selected
+    awareness_present --> awareness_offer : catalog summary + random 10
+    awareness_offer --> use_inspect : sampled Play selected
     creator_search --> creator_offer : related Play exists
     creator_search --> standby_exit : no match — apply capture decision
     creator_offer --> use_inspect : use existing
@@ -453,8 +450,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.13/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.13 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.14/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.14 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -851,11 +848,9 @@ scripts/bin/play-public-trends --play modiqo/hello@0.2.0 --json
 scripts/bin/play-public-trends --org modiqo --workers 8 --json
 ```
 
-“What’s new” is a stepwise discovery funnel, not a wall of Play cards. On the first view it begins by
-congratulating the user for taking the first step. It then reports the live, coverage-aware count of
-runnable public Plays visible through the user’s authorized organizations, lists each organization
-with its Play count, and asks the user to choose a domain. Only then does it reveal a bounded short
-list of Plays in that domain. Hello remains the recommended low-risk first move.
+“What’s new” reports the live, coverage-aware count of runnable public Plays visible to the user,
+then presents a random sample of up to ten cards for direct inspection. The sample refreshes with
+the catalog snapshot and remains stable while that cached snapshot is reused.
 
 Public JSON cards are fetched concurrently and grouped by their declared organization or user owner
 kind. The total is derived from inspected runnable cards, never hard-coded: complete coverage uses an
@@ -872,7 +867,7 @@ does not write host state unless `--remember` is explicit.
 On normal `$play whats new` requests, Play uses remembered mode. It stores only a stable awareness SHA,
 UTC checkpoint, and authorized-scope contract in `~/.rote-play/digest-state.json`. If the current
 snapshot has the same SHA, Play says nothing changed and still presents the current catalog summary
-and domain choices. The moving time window is excluded from the SHA, and no inbox contents or
+and randomized Play choices. The moving time window and randomized display sample are excluded from the SHA, and no inbox contents or
 credentials are stored.
 
 ### The zero-token inbox and structural hooks

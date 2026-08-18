@@ -80,9 +80,6 @@ mutations:
   - record_awareness_digest
   - record_awareness_presentation
   - enter_awareness_use
-  - enter_awareness_starter_use
-  - select_awareness_domain
-  - return_awareness_domains
   - record_awareness_search_choice
   - record_awareness_create_choice
   - record_awareness_dismissal
@@ -424,20 +421,21 @@ actions:
     command: scripts/bin/play-digest --remember --days <awareness.window_days> --json
     command_policy:
       - Reuse the parallel public-card statistics collector embedded by play-digest for both explicit aliases and inferred awareness intent.
-      - Fetch only bounded public cards, group accepted statistics by declared organization or user owner kind, and retain fetch latency without treating lifetime counters as run analytics.
-      - Project a coverage-aware public Play total and organization/domain counts from inspected runnable cards; never hard-code the catalog size or present authorized scope as a global registry total.
-      - Keep the first response compact: congratulate a first-time viewer, summarize the catalog, list domains with counts, and defer individual Play cards until a domain is selected.
+      - Fetch only bounded public cards and retain fetch latency without treating lifetime counters as run analytics.
+      - Project a coverage-aware public Play total from inspected runnable cards; never hard-code the catalog size or present authorized scope as a global registry total.
+      - Select an unbiased random sample of at most 10 runnable public Plays whenever the catalog snapshot refreshes. Keep that sample stable while the cached snapshot is reused, and keep randomness outside the catalog-change fingerprint.
+      - Present the sampled Play cards directly; do not group or route them through registry domains or organizations.
     events:
-      awareness_ready: [awareness.complete, awareness.digest_ref, awareness.coverage, awareness.public_play_count, awareness.domain_count, awareness.domain_choices, awareness.domain_groups, awareness.selected_domain, awareness.play_choices, evidence_refs]
-      awareness_unchanged: [awareness.complete, awareness.digest_ref, awareness.coverage, awareness.public_play_count, awareness.domain_count, awareness.domain_choices, awareness.domain_groups, awareness.selected_domain, awareness.play_choices, evidence_refs]
+      awareness_ready: [awareness.complete, awareness.digest_ref, awareness.coverage, awareness.public_play_count, awareness.sample_strategy, awareness.sample_limit, awareness.sampled_count, awareness.play_choices, evidence_refs]
+      awareness_unchanged: [awareness.complete, awareness.digest_ref, awareness.coverage, awareness.public_play_count, awareness.sample_strategy, awareness.sample_limit, awareness.sampled_count, awareness.play_choices, evidence_refs]
 
   present_awareness_digest:
     kind: deterministic
     owner: play
     effect: none
-    input_required: [awareness.complete, awareness.digest_ref, awareness.coverage, awareness.public_play_count, awareness.domain_count, awareness.domain_choices]
+    input_required: [awareness.complete, awareness.digest_ref, awareness.coverage, awareness.public_play_count, awareness.sample_strategy, awareness.sample_limit, awareness.sampled_count, awareness.play_choices]
     events:
-      awareness_presented: [awareness.digest_ref, awareness.domain_choices]
+      awareness_presented: [awareness.digest_ref, awareness.play_choices]
 
   search_creator_plays:
     kind: deterministic

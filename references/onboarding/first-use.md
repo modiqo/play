@@ -75,7 +75,7 @@ rote play inspect modiqo/hello --json
 rote play run modiqo/hello
 ```
 
-Then offer another Play by domain, creation from a useful outcome, a team space, or Finish. Explain
+Then offer another Play from the randomized catalog sample, creation from a useful outcome, a team space, or Finish. Explain
 the creation boundary precisely: begin with `$play <do something useful>` so capture classification
 happens before exploration; steer the work; after verification, ask to save the captured method.
 Never suggest that uncaptured work can be converted into a Play retrospectively.

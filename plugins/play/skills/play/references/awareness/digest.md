@@ -29,7 +29,7 @@ snapshot; it excludes the moving digest window. Compare it with the previous SHA
 - `initial`: present the complete first digest.
 - `changed`: present the new/revised window and current public ranking.
 - `unchanged`: emit `awareness_unchanged`, say that nothing changed, and still present the current
-  catalog summary and domain selector. “What’s new” is also the discovery entrance, so an unchanged
+  catalog summary and randomized Play sample. “What’s new” is also the discovery entrance, so an unchanged
   acknowledgment must not become a dead end.
 
 Advance memory only after stdout has been flushed successfully. A failed collection never changes
@@ -83,18 +83,16 @@ Present `# What’s new in Plays` progressively:
 
 1. On an `initial` remembered view, put “Nice—you’ve taken the first step” before any heading or
    catalog data.
-2. Show the number of inspected runnable public Plays and the number of organizations/domains that
-   own them. Derive both from the current cards. Never hard-code a marketing total.
-3. List organization/domain display names with their Play counts, but do not dump individual cards.
-4. Recommend Hello and explain that inspection is an X-ray of the exact method and declared effects.
-5. Use `select_awareness_domain` to ask for a domain. After selection, populate only that domain’s
-   five most recently published or released Plays in `awareness.play_choices`, then use
-   `select_awareness_play`. Keep the organization count as the complete eligible total rather than
-   the shortlist length.
+2. Show the number of inspected runnable public Plays. Derive it from the current cards and never
+   hard-code a marketing total.
+3. Select up to ten cards at random whenever the catalog snapshot refreshes and present them
+   directly in `awareness.play_choices`.
+4. Use `select_awareness_play` so a selected card enters inspection immediately. Find by outcome
+   and Create your own remain available beside the sample.
 
-A cached digest is discovery-compatible only when its organization/domain projection is present
-and its organization counts reconcile exactly to the runnable public Play total. Refresh a fresh
-legacy cache that lacks this projection instead of rendering a misleading zero-organization count.
+A cached digest is discovery-compatible only when its random sample contract is present, contains
+at most ten unique unversioned references, and reconciles with the runnable public Play total.
+Refresh a legacy cache that lacks this projection.
 
 Complete inspection coverage supports an exact scoped count. Partial coverage must say “at least”
 and disclose that the scope is the user’s authorized organizations, not the global registry.

@@ -4,6 +4,7 @@ import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -14,7 +15,7 @@ from play.digest import (
     classify_updates,
     rank_public,
     render_markdown,
-    supports_domain_discovery,
+    supports_play_discovery,
 )
 from play.registry import Organization
 
@@ -136,7 +137,7 @@ class DigestTest(unittest.TestCase):
         self.assertEqual("alpha/new-play@1.1.0", item["resolved_reference"])
         self.assertEqual({"days": "7"}, item["parameters"])
 
-    def test_whats_new_defers_individual_cards_until_a_domain_is_selected(self) -> None:
+    def test_whats_new_lists_sampled_public_cards_directly(self) -> None:
         grouped = {
             "alpha": [
                 {
@@ -151,7 +152,17 @@ class DigestTest(unittest.TestCase):
         digest = build_digest(
             [Organization("alpha", "Alpha Team")],
             grouped,
-            [],
+            [
+                (
+                    "alpha",
+                    {
+                        "name": "weekly-report",
+                        "description": "A concise weekly customer report.",
+                        "visibility": "public",
+                        "download_count": 3,
+                    },
+                )
+            ],
             start=self.start,
             end=self.end,
             public_limit=10,
@@ -167,7 +178,7 @@ class DigestTest(unittest.TestCase):
         rendered = render_markdown(digest)
         self.assertIn("# What’s new in Plays", rendered)
         self.assertIn("1 new or revised Play", rendered)
-        self.assertNotIn("weekly-report", rendered)
+        self.assertIn("weekly-report", rendered)
         self.assertNotIn("| Play |", rendered)
         self.assertEqual("unavailable", digest["capabilities"]["run_metrics"]["status"])
 
@@ -213,7 +224,9 @@ class DigestTest(unittest.TestCase):
         self.assertEqual("org", digest["public_groups"][0]["owner_kind"])
         self.assertEqual(1, digest["ranking"]["eligible_count"])
         self.assertEqual(1, digest["ranking"]["organization_count"])
-        self.assertEqual(1, digest["public_domains"][0]["count"])
+        self.assertEqual(1, digest["sample"]["sampled_count"])
+        self.assertEqual("random", digest["sample"]["strategy"])
+        self.assertEqual("modiqo/hello", digest["public_sample"][0]["reference"])
         self.assertEqual("modiqo/hello", digest["public_top"][0]["base_reference"])
         self.assertEqual("modiqo/hello", digest["public_top"][0]["reference"])
         self.assertEqual(
@@ -223,7 +236,8 @@ class DigestTest(unittest.TestCase):
         self.assertEqual(15.25, digest["ranking"]["fetch"]["elapsed_ms"])
         rendered = render_markdown(digest)
         self.assertIn("1 runnable public Play", rendered)
-        self.assertIn("**Modiqo** — 1 Play", rendered)
+        self.assertIn("## 1 Play to explore", rendered)
+        self.assertIn("**hello**", rendered)
         self.assertIn("Counts cover runnable public cards", rendered)
 
     def test_first_digest_congratulates_before_the_summary(self) -> None:
@@ -262,7 +276,7 @@ class DigestTest(unittest.TestCase):
         )
         self.assertIn("at least **1 runnable public Play**", render_markdown(digest))
 
-    def test_legacy_cached_digest_without_domains_is_not_discovery_compatible(self) -> None:
+    def test_legacy_cached_digest_without_random_sample_is_not_discovery_compatible(self) -> None:
         digest = build_digest(
             [Organization("modiqo", "Modiqo")],
             {"modiqo": []},
@@ -280,9 +294,9 @@ class DigestTest(unittest.TestCase):
             end=self.end,
             public_limit=10,
         )
-        self.assertTrue(supports_domain_discovery(digest))
-        digest.pop("public_domains")
-        self.assertFalse(supports_domain_discovery(digest))
+        self.assertTrue(supports_play_discovery(digest))
+        digest.pop("public_sample")
+        self.assertFalse(supports_play_discovery(digest))
 
     def test_cached_digest_with_version_pinned_catalog_choice_is_refreshed(self) -> None:
         digest = build_digest(
@@ -303,51 +317,44 @@ class DigestTest(unittest.TestCase):
             end=self.end,
             public_limit=10,
         )
-        self.assertTrue(supports_domain_discovery(digest))
-        digest["public_domains"][0]["plays"][0]["reference"] = "modiqo/hello@0.2.0"
-        self.assertFalse(supports_domain_discovery(digest))
+        self.assertTrue(supports_play_discovery(digest))
+        digest["public_sample"][0]["reference"] = "modiqo/hello@0.2.0"
+        self.assertFalse(supports_play_discovery(digest))
 
-    def test_domain_choices_keep_total_count_but_offer_most_recent_plays(self) -> None:
-        grouped = {
-            "engineering": [
-                {
-                    "name": "older",
-                    "visibility": "public",
-                    "created_at": "2026-07-01T00:00:00+00:00",
-                    "latest_version_created_at": "2026-07-02T00:00:00+00:00",
-                },
-                {
-                    "name": "newer",
-                    "visibility": "public",
-                    "created_at": "2026-07-03T00:00:00+00:00",
-                    "latest_version_created_at": "2026-08-03T00:00:00+00:00",
-                },
-            ]
-        }
+    def test_random_sample_caps_at_ten_and_is_not_download_ranked(self) -> None:
+        grouped = {"modiqo": []}
         public = [
             (
-                "engineering",
+                "modiqo",
                 {
-                    "name": name,
+                    "name": f"play-{index:02d}",
                     "visibility": "public",
-                    "download_count": downloads,
+                    "download_count": 100 - index,
                 },
             )
-            for name, downloads in (("older", 100), ("newer", 1))
+            for index in range(12)
         ]
-        digest = build_digest(
-            [Organization("engineering", "Engineering")],
-            grouped,
-            public,
-            start=self.start,
-            end=self.end,
-            public_limit=10,
-        )
+        with patch("play.digest.random.SystemRandom") as system_random:
+            system_random.return_value.sample.side_effect = (
+                lambda population, count: list(reversed(population))[:count]
+            )
+            digest = build_digest(
+                [Organization("modiqo", "Modiqo")],
+                grouped,
+                public,
+                start=self.start,
+                end=self.end,
+                public_limit=10,
+            )
 
-        domain = digest["public_domains"][0]
-        self.assertEqual(2, domain["count"])
-        self.assertEqual(5, domain["recent_play_limit"])
-        self.assertEqual(["newer", "older"], [play["name"] for play in domain["plays"]])
+        self.assertEqual(12, digest["sample"]["available_count"])
+        self.assertEqual(10, digest["sample"]["sampled_count"])
+        self.assertEqual(10, len(digest["public_sample"]))
+        self.assertEqual("play-11", digest["public_sample"][0]["name"])
+        self.assertNotEqual(
+            [item["reference"] for item in digest["public_top"]],
+            [item["reference"] for item in digest["public_sample"]],
+        )
 
     def test_awareness_sha_is_stable_across_windows_but_changes_with_source_state(self) -> None:
         grouped = {

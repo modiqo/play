@@ -2080,10 +2080,9 @@
         "digest_ref",
         "coverage",
         "public_play_count",
-        "domain_count",
-        "domain_choices",
-        "domain_groups",
-        "selected_domain",
+        "sample_strategy",
+        "sample_limit",
+        "sampled_count",
         "play_choices"
       ],
       "additionalProperties": false,
@@ -2106,54 +2105,23 @@
           "type": "integer",
           "minimum": 0
         },
-        "domain_count": {
+        "sample_strategy": {
+          "const": "random"
+        },
+        "sample_limit": {
           "type": "integer",
-          "minimum": 0
+          "const": 10
         },
-        "domain_choices": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/awarenessDomainChoice"
-          }
-        },
-        "domain_groups": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/awarenessDomainGroup"
-          }
-        },
-        "selected_domain": {
-          "$ref": "#/$defs/nullableString"
+        "sampled_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
         },
         "play_choices": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/awarenessChoice"
           }
-        }
-      }
-    },
-    "awarenessDomainChoice": {
-      "type": "object",
-      "required": ["slug", "label", "description"],
-      "additionalProperties": false,
-      "properties": {
-        "slug": {"type": "string", "minLength": 1},
-        "label": {"type": "string", "minLength": 1},
-        "description": {"type": "string", "minLength": 1}
-      }
-    },
-    "awarenessDomainGroup": {
-      "type": "object",
-      "required": ["slug", "label", "count", "plays"],
-      "additionalProperties": false,
-      "properties": {
-        "slug": {"type": "string", "minLength": 1},
-        "label": {"type": "string", "minLength": 1},
-        "count": {"type": "integer", "minimum": 1},
-        "plays": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/awarenessChoice"}
         }
       }
     },

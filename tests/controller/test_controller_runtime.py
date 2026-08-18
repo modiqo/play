@@ -48,7 +48,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(76, len(self.runtime.bundle.states))
+        self.assertEqual(75, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -1812,23 +1812,21 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "org_updates": {"new": [], "revised": [], "revised_complete": True},
                 "public_top": [],
                 "public_groups": [],
-                "public_domains": [
+                "public_sample": [
                     {
-                        "owner": "engineering-workflows",
-                        "owner_kind": "org",
-                        "display_name": "Engineering Workflows",
-                        "count": 1,
-                        "plays": [
-                            {
-                                "reference": "engineering-workflows/release-notes@1.0.0",
-                                "name": "release-notes",
-                                "description": "Draft checked release notes.",
-                                "download_count": 12,
-                                "parameters": {},
-                            }
-                        ],
+                        "reference": "modiqo/release-notes",
+                        "name": "release-notes",
+                        "description": "Draft checked release notes.",
+                        "download_count": 12,
+                        "parameters": {},
                     }
                 ],
+                "sample": {
+                    "strategy": "random",
+                    "limit": 10,
+                    "available_count": 1,
+                    "sampled_count": 1,
+                },
                 "ranking": {
                     "label": "Authorized public Plays by lifetime downloads",
                     "complete": True,
@@ -1861,90 +1859,38 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         self.assertEqual(1, len(yielded.presentations))
         self.assertIn("What’s new in Plays", yielded.presentations[0])
-        self.assertEqual(1, yielded.session.context["awareness"]["domain_count"])
+        self.assertEqual("random", yielded.session.context["awareness"]["sample_strategy"])
+        self.assertEqual(10, yielded.session.context["awareness"]["sample_limit"])
+        self.assertEqual(1, yielded.session.context["awareness"]["sampled_count"])
         self.assertEqual(
-            "engineering-workflows",
-            yielded.session.context["awareness"]["domain_choices"][0]["slug"],
+            "modiqo/release-notes",
+            yielded.session.context["awareness"]["play_choices"][0]["reference"],
         )
-        self.assertEqual(
-            "engineering-workflows/release-notes",
-            yielded.session.context["awareness"]["domain_groups"][0]["plays"][0][
-                "reference"
-            ],
-        )
+        dynamic_choices = yielded.projection["instruction"]["choices"]
+        self.assertEqual("release-notes", dynamic_choices[0]["label"])
 
-    def test_awareness_domain_selection_reveals_only_that_domains_plays(self) -> None:
+    def test_awareness_sample_selection_binds_the_selected_play(self) -> None:
         from play.runtime_context import apply_event, initial_context
 
         context = initial_context(
-            run_id="domain-select",
-            task_key="domain-select",
-            machine_version="test",
-            request_original="what's new",
-        )
-        context["awareness"]["domain_groups"] = [
-            {
-                "slug": "engineering",
-                "label": "Engineering",
-                "count": 1,
-                "plays": [
-                    {
-                        "reference": "engineering/release",
-                        "label": "release",
-                        "description": "Prepare a release.",
-                        "parameters": {},
-                    }
-                ],
-            },
-            {
-                "slug": "workplace",
-                "label": "Workplace",
-                "count": 1,
-                "plays": [
-                    {
-                        "reference": "workplace/inbox",
-                        "label": "inbox",
-                        "description": "Review an inbox.",
-                        "parameters": {},
-                    }
-                ],
-            },
-        ]
-        updated = apply_event(
-            context,
-            event_id="awareness_domain_selected",
-            payload={"awareness": {"selected_domain": "engineering"}},
-            state="awareness_domain_offer",
-            transition_seq=1,
-            mutation="select_awareness_domain",
-        )
-        self.assertEqual("engineering", updated["awareness"]["selected_domain"])
-        self.assertEqual(
-            ["engineering/release"],
-            [choice["reference"] for choice in updated["awareness"]["play_choices"]],
-        )
-
-    def test_awareness_hello_binds_pinned_starter_before_inspection(self) -> None:
-        from play.onboarding import STARTER_PLAY_URI
-        from play.runtime_context import apply_event, initial_context
-
-        context = initial_context(
-            run_id="awareness-hello",
-            task_key="awareness-hello",
+            run_id="sample-select",
+            task_key="sample-select",
             machine_version="test",
             request_original="what's new",
         )
         updated = apply_event(
             context,
-            event_id="awareness_hello_selected",
-            payload={},
+            event_id="awareness_play_selected",
+            payload={
+                "match": {"reference": "modiqo/release"},
+                "request": {"parameters": {}},
+            },
             state="use_inspect",
             transition_seq=1,
-            mutation="enter_awareness_starter_use",
+            mutation="enter_awareness_use",
         )
-        self.assertEqual("selected", updated["onboarding"]["starter_status"])
-        self.assertEqual(STARTER_PLAY_URI, updated["match"]["reference"])
-        self.assertIn("hello", updated["request"]["requested_outcome"])
+        self.assertEqual("modiqo/release", updated["match"]["reference"])
+        self.assertEqual("use", updated["mode"])
 
     def test_session_completes_the_use_contract_without_model_owned_context(self) -> None:
         session = self.runtime.initial_session(

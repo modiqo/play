@@ -11,14 +11,11 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from .digest_state import stable_sha
-from .onboarding import STARTER_PLAY_URI
-
-
 class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "9fec303cee4552000752a5f5c084ccd6c4fd0a4e54bd1f2213b2f4312045113d"
+SUPPORTED_MUTATION_SET_SHA256 = "5b2592de30435c0a1c5f9837683c6a325c7bf28666dc01873c1f1efb11ae0507"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -263,10 +260,9 @@ def initial_context(
             "digest_ref": None,
             "coverage": "unknown",
             "public_play_count": 0,
-            "domain_count": 0,
-            "domain_choices": [],
-            "domain_groups": [],
-            "selected_domain": None,
+            "sample_strategy": "random",
+            "sample_limit": 10,
+            "sampled_count": 0,
             "play_choices": [],
         },
         "creator": {"intent": None, "seed_reference": None},
@@ -432,10 +428,6 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     },
     "set_creator_request": {"mode": "create"},
     "enter_awareness_use": {"mode": "use"},
-    "enter_awareness_starter_use": {
-        "mode": "use",
-        "onboarding.starter_status": "selected",
-    },
     "set_awareness_search": {"mode": "awareness"},
     "record_creator_standby": {"mode": "exited"},
     "enter_creator_use": {"mode": "use"},
@@ -594,23 +586,6 @@ def _apply_mutation_semantics(
         if isinstance(starter, str) and starter:
             context["match"]["reference"] = starter
             _bind_direct_play_request(context, starter)
-    elif mutation == "enter_awareness_starter_use":
-        starter = context["onboarding"].get("starter_reference") or STARTER_PLAY_URI
-        context["onboarding"]["starter_reference"] = starter
-        context["match"]["reference"] = starter
-        _bind_direct_play_request(context, starter)
-    elif mutation == "select_awareness_domain":
-        selected = context["awareness"].get("selected_domain")
-        context["awareness"]["play_choices"] = []
-        for group in context["awareness"].get("domain_groups", []):
-            if isinstance(group, Mapping) and group.get("slug") == selected:
-                plays = group.get("plays")
-                if isinstance(plays, list):
-                    context["awareness"]["play_choices"] = copy.deepcopy(plays)
-                break
-    elif mutation == "return_awareness_domains":
-        context["awareness"]["selected_domain"] = None
-        context["awareness"]["play_choices"] = []
     elif mutation == "start_uri_onboarding":
         play_uri = _path_value(payload, "onboarding.play_uri")
         if isinstance(play_uri, str) and play_uri:

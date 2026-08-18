@@ -54,15 +54,23 @@ def _digest(new: int, revised: int) -> dict:
         },
         "public_top": [],
         "public_groups": [],
-        "public_domains": [
+        "public_sample": [
             {
+                "reference": "acme/hello",
+                "name": "hello",
                 "owner": "acme",
                 "owner_kind": "org",
-                "display_name": "Acme",
-                "count": 1,
-                "plays": [],
+                "description": "Say hello.",
+                "download_count": 1,
+                "parameters": {},
             }
         ],
+        "sample": {
+            "strategy": "random",
+            "limit": 10,
+            "available_count": 1,
+            "sampled_count": 1,
+        },
         "personal_stats": {"reason": "run analytics are not collected"},
     }
 
@@ -121,7 +129,7 @@ class InboxCacheTest(unittest.TestCase):
         assert stored is not None
         self.assertEqual(2, stored["counts"]["new"])
         self.assertEqual(stored["summary_line"], cached_line(cache_path=self.cache_path))
-        self.assertIn("**Acme** — 1 Play", stored["markdown"])
+        self.assertIn("**hello** — Say hello.", stored["markdown"])
         self.assertEqual(
             "acme/play-new-0",
             stored["digest"]["org_updates"]["new"][0]["reference"],
@@ -152,11 +160,11 @@ class InboxCacheTest(unittest.TestCase):
         assert stored is not None
         self.assertEqual(1, stored["counts"]["new"])
 
-    def test_if_older_than_refreshes_a_fresh_legacy_digest_without_domains(self) -> None:
+    def test_if_older_than_refreshes_a_fresh_legacy_digest_without_sample(self) -> None:
         self._refresh(_digest(1, 0))
         stored = read_cache(cache_path=self.cache_path)
         assert stored is not None
-        stored["digest"].pop("public_domains")
+        stored["digest"].pop("public_sample")
         from play.private_store import atomic_write_json
 
         atomic_write_json(self.cache_path, stored)
@@ -167,7 +175,7 @@ class InboxCacheTest(unittest.TestCase):
         assert latest is not None
         self.assertEqual(3, latest["counts"]["new"])
         self.assertEqual(1, latest["digest"]["ranking"]["organization_count"])
-        self.assertEqual("acme", latest["digest"]["public_domains"][0]["owner"])
+        self.assertEqual("acme/hello", latest["digest"]["public_sample"][0]["reference"])
 
     def test_if_older_than_refreshes_a_stale_cache(self) -> None:
         self._refresh(_digest(1, 0))

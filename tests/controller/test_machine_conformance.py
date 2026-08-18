@@ -620,16 +620,14 @@ class MachineConformanceTest(unittest.TestCase):
         )
         self.assertEqual(
             "use_inspect",
-            MACHINE["states"]["awareness_domain_offer"]["on"]["awareness_play_selected"][0]["target"],
+            MACHINE["states"]["awareness_offer"]["on"]["awareness_play_selected"][0]["target"],
         )
         self.assertEqual(
             "awareness_present",
             MACHINE["states"]["awareness_collect"]["on"]["awareness_unchanged"][0]["target"],
         )
-        self.assertEqual(
-            "awareness_domain_offer",
-            MACHINE["states"]["awareness_offer"]["on"]["awareness_domain_selected"][0]["target"],
-        )
+        self.assertNotIn("awareness_domain_offer", MACHINE["states"])
+        self.assertEqual("select_awareness_play", MACHINE["states"]["awareness_offer"]["prompt"])
 
     def test_creator_intent_searches_before_standby_and_skips_generic_offer(self) -> None:
         self.assertEqual(

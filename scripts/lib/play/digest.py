@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import random
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,7 +34,7 @@ from .timewindow import TimeWindowError, next_checkpoint, parse_timestamp, resol
 
 
 SCHEMA = "play.digest/v1"
-DOMAIN_RECENT_LIMIT = 5
+PUBLIC_SAMPLE_LIMIT = 10
 FINGERPRINT_FIELDS = (
     "name",
     "visibility",
@@ -174,6 +175,18 @@ def rank_public(
     return eligible[:limit], ranking
 
 
+def sample_public(
+    flows: list[dict[str, Any]], *, limit: int = PUBLIC_SAMPLE_LIMIT
+) -> list[dict[str, Any]]:
+    """Return an unbiased display sample without changing catalog identity."""
+
+    if limit < 1:
+        raise ValueError("public sample limit must be at least 1")
+    if not flows:
+        return []
+    return random.SystemRandom().sample(flows, min(limit, len(flows)))
+
+
 def awareness_fingerprint(
     organizations: list[Organization],
     grouped: dict[str, list[dict]],
@@ -297,43 +310,7 @@ def build_digest(
         item["recent_kind"] = (
             "release" if isinstance(latest_version_created_at, str) else "publication"
         )
-    domain_public: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    for item in all_public:
-        domain_public.setdefault((item["owner"], item["owner_kind"]), []).append(item)
-    for plays in domain_public.values():
-        plays.sort(key=lambda item: item["reference"])
-        plays.sort(
-            key=lambda item: (
-                parse_timestamp(item["recent_at"], field=f"{item['reference']}.recent_at")
-                if item.get("recent_at")
-                else datetime.min.replace(tzinfo=timezone.utc)
-            ),
-            reverse=True,
-        )
-    display_names = {org.slug: org.display_name for org in organizations}
-    public_domains = [
-        {
-            "owner": owner,
-            "owner_kind": owner_kind,
-            "display_name": display_names.get(owner, owner),
-            "count": len(plays),
-            "recent_play_limit": DOMAIN_RECENT_LIMIT,
-            "plays": plays[:DOMAIN_RECENT_LIMIT],
-        }
-        for (owner, owner_kind), plays in domain_public.items()
-    ]
-    public_domains.sort(key=lambda domain: domain["owner"])
-    public_domains.sort(
-        key=lambda domain: (
-            parse_timestamp(
-                domain["plays"][0]["recent_at"],
-                field=f"{domain['owner']}.recent_at",
-            )
-            if domain["plays"] and domain["plays"][0].get("recent_at")
-            else datetime.min.replace(tzinfo=timezone.utc)
-        ),
-        reverse=True,
-    )
+    public_sample = sample_public(all_public)
     return {
         "schema": SCHEMA,
         "complete": True,
@@ -362,7 +339,13 @@ def build_digest(
             {"owner": owner, "owner_kind": owner_kind, "plays": plays}
             for (owner, owner_kind), plays in sorted(grouped_public.items())
         ],
-        "public_domains": public_domains,
+        "public_sample": public_sample,
+        "sample": {
+            "strategy": "random",
+            "limit": PUBLIC_SAMPLE_LIMIT,
+            "available_count": len(all_public),
+            "sampled_count": len(public_sample),
+        },
         "ranking": ranking,
         "capabilities": {
             "organization_updates": {
@@ -436,18 +419,10 @@ def render_markdown(digest: dict[str, Any]) -> str:
     revised_items = digest["org_updates"]["revised"]
     ranking = digest["ranking"]
     public_count = ranking.get("eligible_count", 0)
-    domains = digest.get("public_domains", [])
-    domain_count = len(domains) if isinstance(domains, list) else 0
+    sample = digest.get("public_sample", [])
+    sample_contract = digest.get("sample", {})
     coverage_prefix = "" if ranking.get("complete") is True else "at least "
     public_noun = "Play" if public_count == 1 else "Plays"
-    organizations_only = isinstance(domains, list) and all(
-        isinstance(domain, dict) and domain.get("owner_kind") == "org"
-        for domain in domains
-    )
-    if organizations_only:
-        domain_noun = "organization" if domain_count == 1 else "organizations"
-    else:
-        domain_noun = "publisher domain" if domain_count == 1 else "publisher domains"
     lines = []
     if isinstance(memory, dict) and memory.get("status") == "initial":
         lines.extend(
@@ -459,26 +434,26 @@ def render_markdown(digest: dict[str, Any]) -> str:
     lines.extend([
         "# What’s new in Plays",
         "",
-        f"You can explore {coverage_prefix}**{public_count} runnable public {public_noun}** across **{domain_count} {domain_noun}** visible to you.",
+        f"You can explore {coverage_prefix}**{public_count} runnable public {public_noun}** visible to you.",
         "",
     ])
     if isinstance(memory, dict) and memory.get("status") == "unchanged":
         lines.extend(["Nothing has changed since your last check; this is the current catalog.", ""])
-    if isinstance(domains, list) and domains:
-        lines.extend(["## Domains", ""])
-        for domain in domains:
-            if not isinstance(domain, dict):
+    if isinstance(sample, list) and sample:
+        sample_noun = "Play" if len(sample) == 1 else "Plays"
+        lines.extend([f"## {len(sample)} {sample_noun} to explore", ""])
+        for play in sample:
+            if not isinstance(play, dict):
                 continue
-            name = domain.get("display_name") or domain.get("owner") or "Unknown"
-            count = domain.get("count", 0)
-            noun = "Play" if count == 1 else "Plays"
-            lines.append(f"- **{name}** — {count} {noun}")
+            name = play.get("name") or play.get("reference") or "Unknown"
+            description = play.get("description") or "Inspect this Play."
+            lines.append(f"- **{name}** — {description}")
         lines.append("")
     lines.extend(
         [
             "**Recommended first move: Run Hello.** It is a low-risk proof using public data, no account credentials, and no declared writes. Inspect acts like an X-ray: it shows the exact method and effects before you approve Rote to run it locally.",
             "",
-            "Choose a domain for a short list, run Hello, or start with a useful outcome of your own.",
+            f"This is a random sample of {sample_contract.get('sampled_count', len(sample))} Plays from the current catalog. Choose one to inspect, search by outcome, or start with a useful outcome of your own.",
             "",
             f"Recent-publication window: `{window['start']}` → `{window['end']}` (UTC)",
             "",
@@ -493,7 +468,7 @@ def render_markdown(digest: dict[str, Any]) -> str:
     if inbox_count:
         lines.append(
             f"There {'is' if inbox_count == 1 else 'are'} **{inbox_count} new or revised "
-            f"{'Play' if inbox_count == 1 else 'Plays'}** in this window. Choose a domain to see a short list."
+            f"{'Play' if inbox_count == 1 else 'Plays'}** in this window."
         )
     elif digest["org_updates"]["revised_complete"]:
         lines.append("Your recent-publication inbox is clear.")
@@ -505,59 +480,47 @@ def render_markdown(digest: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def supports_domain_discovery(digest: object) -> bool:
-    """Reject legacy v1 snapshots that predate organization/domain projection."""
+def supports_play_discovery(digest: object) -> bool:
+    """Reject cached snapshots that predate direct randomized Play discovery."""
 
     if not isinstance(digest, dict) or digest.get("schema") != SCHEMA:
         return False
     ranking = digest.get("ranking")
-    domains = digest.get("public_domains")
-    if not isinstance(ranking, dict) or not isinstance(domains, list):
+    sample = digest.get("public_sample")
+    sample_contract = digest.get("sample")
+    if (
+        not isinstance(ranking, dict)
+        or not isinstance(sample, list)
+        or not isinstance(sample_contract, dict)
+    ):
         return False
     public_count = ranking.get("eligible_count")
-    organization_count = ranking.get("organization_count")
     if (
         not isinstance(public_count, int)
         or isinstance(public_count, bool)
         or public_count < 0
-        or not isinstance(organization_count, int)
-        or isinstance(organization_count, bool)
-        or organization_count < 0
-        or organization_count != len(domains)
+        or sample_contract.get("strategy") != "random"
+        or sample_contract.get("limit") != PUBLIC_SAMPLE_LIMIT
+        or sample_contract.get("available_count") != public_count
+        or sample_contract.get("sampled_count") != len(sample)
+        or len(sample) > PUBLIC_SAMPLE_LIMIT
     ):
         return False
-    projected_count = 0
     seen: set[str] = set()
-    for domain in domains:
-        if not isinstance(domain, dict):
+    for play in sample:
+        if not isinstance(play, dict):
             return False
-        owner = domain.get("owner")
-        count = domain.get("count")
-        plays = domain.get("plays")
+        reference = play.get("reference")
         if (
-            not isinstance(owner, str)
-            or not owner
-            or owner in seen
-            or not isinstance(count, int)
-            or isinstance(count, bool)
-            or count < 1
-            or not isinstance(plays, list)
+            not isinstance(reference, str)
+            or not reference
+            or reference in seen
+            or "@" in reference
+            or reference.count("/") != 1
         ):
             return False
-        for play in plays:
-            if not isinstance(play, dict):
-                return False
-            reference = play.get("reference")
-            if (
-                not isinstance(reference, str)
-                or not reference
-                or "@" in reference
-                or reference.count("/") != 1
-            ):
-                return False
-        seen.add(owner)
-        projected_count += count
-    return projected_count == public_count
+        seen.add(reference)
+    return len(sample) == min(PUBLIC_SAMPLE_LIMIT, public_count)
 
 
 def collect_digest(
@@ -658,7 +621,7 @@ def _fresh_cached_digest(*, days: int, max_age_hours: float = 6.0) -> dict[str, 
     if age < 0 or age > max_age_hours * 3600:
         return None
     digest = cache.get("digest")
-    if not supports_domain_discovery(digest):
+    if not supports_play_discovery(digest):
         return None
     assert isinstance(digest, dict)
     return copy.deepcopy(digest)

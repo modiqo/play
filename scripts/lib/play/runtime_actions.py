@@ -570,72 +570,42 @@ def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, An
         public_play_count = (
             ranking.get("eligible_count", 0) if isinstance(ranking, Mapping) else 0
         )
-        domain_groups = []
-        domain_choices = []
-        domains = raw.get("public_domains")
-        if isinstance(domains, list):
-            for domain in domains:
-                if not isinstance(domain, Mapping):
+        play_choices = []
+        sample = raw.get("public_sample")
+        if isinstance(sample, list):
+            for item in sample:
+                if not isinstance(item, Mapping):
                     continue
-                slug = domain.get("owner")
-                label = domain.get("display_name") or slug
-                count = domain.get("count")
-                plays = domain.get("plays")
-                if (
-                    not isinstance(slug, str)
-                    or not slug
-                    or not isinstance(label, str)
-                    or not label
-                    or not isinstance(count, int)
-                    or count < 1
-                    or not isinstance(plays, list)
-                ):
+                reference = item.get("reference")
+                name = item.get("name")
+                if not isinstance(reference, str) or not reference:
                     continue
-                play_choices = []
-                for item in plays:
-                    if not isinstance(item, Mapping):
-                        continue
-                    reference = item.get("reference")
-                    name = item.get("name")
-                    if not isinstance(reference, str) or not reference:
-                        continue
-                    if not isinstance(name, str) or not name:
-                        continue
-                    description = str(item.get("description") or "Inspect this Play.")
-                    downloads = item.get("download_count")
-                    if isinstance(downloads, int):
-                        description = f"{description} · {downloads} lifetime downloads"
-                    recent_at = item.get("recent_at")
-                    recent_kind = item.get("recent_kind")
-                    if isinstance(recent_at, str) and recent_at:
-                        date = recent_at.split("T", 1)[0]
-                        label = "released" if recent_kind == "release" else "published"
-                        description = f"{description} · {label} {date}"
-                    parameters = item.get("parameters")
-                    play_choices.append(
-                        {
-                            "reference": reference.partition("@")[0],
-                            "label": name,
-                            "description": description,
-                            "parameters": dict(parameters) if isinstance(parameters, Mapping) else {},
-                        }
+                if not isinstance(name, str) or not name:
+                    continue
+                description = str(item.get("description") or "Inspect this Play.")
+                downloads = item.get("download_count")
+                if isinstance(downloads, int):
+                    description = f"{description} · {downloads} lifetime downloads"
+                recent_at = item.get("recent_at")
+                recent_kind = item.get("recent_kind")
+                if isinstance(recent_at, str) and recent_at:
+                    date = recent_at.split("T", 1)[0]
+                    published_label = (
+                        "released" if recent_kind == "release" else "published"
                     )
-                sample = ", ".join(choice["label"] for choice in play_choices[:3])
-                noun = "Play" if count == 1 else "Plays"
-                description = f"{count} public {noun}"
-                if sample:
-                    description += f" · recent: {sample}"
-                domain_choices.append(
-                    {"slug": slug, "label": label, "description": description}
-                )
-                domain_groups.append(
+                    description = f"{description} · {published_label} {date}"
+                parameters = item.get("parameters")
+                play_choices.append(
                     {
-                        "slug": slug,
-                        "label": label,
-                        "count": count,
-                        "plays": play_choices,
+                        "reference": reference.partition("@")[0],
+                        "label": name,
+                        "description": description,
+                        "parameters": (
+                            dict(parameters) if isinstance(parameters, Mapping) else {}
+                        ),
                     }
                 )
+        sample_contract = raw.get("sample")
         derived["awareness"] = {
             "complete": raw.get("complete") is True,
             "digest_ref": digest_ref,
@@ -645,11 +615,18 @@ def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, An
                 else "partial"
             ),
             "public_play_count": public_play_count,
-            "domain_count": len(domain_groups),
-            "domain_choices": domain_choices,
-            "domain_groups": domain_groups,
-            "selected_domain": None,
-            "play_choices": [],
+            "sample_strategy": (
+                sample_contract.get("strategy")
+                if isinstance(sample_contract, Mapping)
+                else "random"
+            ),
+            "sample_limit": (
+                sample_contract.get("limit")
+                if isinstance(sample_contract, Mapping)
+                else 10
+            ),
+            "sampled_count": len(play_choices),
+            "play_choices": play_choices,
         }
         derived["evidence_refs"] = [digest_ref]
         derived["presentation_markdown"] = render_digest_markdown(dict(raw))

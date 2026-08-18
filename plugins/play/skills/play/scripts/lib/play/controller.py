@@ -904,8 +904,8 @@ def _derive_session_guards(
     )
     values[GuardId("awareness_snapshot_ready")] = (
         _path_value(context, "awareness.complete") is True
-        and isinstance(_path_value(context, "awareness.domain_choices"), list)
-        and bool(_path_value(context, "awareness.domain_choices"))
+        and isinstance(_path_value(context, "awareness.play_choices"), list)
+        and bool(_path_value(context, "awareness.play_choices"))
     )
     values[GuardId("search_is_complete")] = (
         _path_value(event.payload, "search.complete") is True

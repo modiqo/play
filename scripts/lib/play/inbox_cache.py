@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .digest import collect_digest, render_markdown, supports_domain_discovery
+from .digest import collect_digest, render_markdown, supports_play_discovery
 from .digest_state import (
     default_state_path,
     load_entry,
@@ -177,7 +177,7 @@ def refresh_cache(
             fetched_at = existing.get("fetched_at")
             try:
                 age = (_utc_now() - datetime.fromisoformat(str(fetched_at))).total_seconds()
-                if age < if_older_than_hours * 3600 and supports_domain_discovery(
+                if age < if_older_than_hours * 3600 and supports_play_discovery(
                     existing.get("digest")
                 ):
                     return {**existing, "refreshed": False}
