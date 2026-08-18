@@ -17,14 +17,18 @@ returned projection is the entire instruction contract for the current moment.
 
 Enter Play only when the user explicitly invokes Play or the prompt hook injected a Play activation
 line. An ordinary outcome with no hook activation continues normally; do not independently enroll it
-in Play merely because it could become reusable. The hook may remain silent because a validated user
-or project routing policy selected direct API/CLI execution; honor that silence and do not recreate
-Play activation from provider or tool names in the request.
+in Play merely because it could become reusable. A hook line beginning `Play direct bypass:` is a
+negative route, not Play activation. Honor it for the complete user turn, including every inference,
+delegation, retry, and tool loop: do not invoke Play or Rote skills, CLIs, runtimes, searches,
+adapters, workspaces, capture, or follow-up routing. Use harness-native tools or only the matched
+vendor API/CLI path named by the hook.
 
 If the unchanged request begins with `direct:` or `without play:`, treat the remainder as a one-turn
 hard bypass. Do not run `play-machine`, search, capture, update Play preferences, or create a settle
-nudge. Continue with the requested work directly. This bypass affects only Play orchestration; it
-does not bypass harness permissions, safety checks, or tool approvals. Do not convert it into a
+nudge. Do not invoke any Rote skill, CLI, adapter, workspace, search, or routing layer. Continue with
+the requested work through harness-native tools or the relevant vendor API/CLI. This whole-turn
+bypass includes inference continuations, delegation, retries, and tool loops; it does not bypass
+harness permissions, authentication, safety checks, or tool approvals. Do not convert it into a
 persistent mode or infer it from vague dissatisfaction.
 
 If the unchanged trimmed request is `play cheat-sheet`, `$play cheat-sheet`, or
@@ -62,8 +66,8 @@ the bundled `scripts/bin/play-routing` CLI:
 
 Never infer routing management from a provider task alone. “Deploy with Cloudflare” is direct work
 when policy matches; “route Cloudflare directly in this repo” manages policy. Do not search Plays,
-capture work, update preferences, handle credentials, or claim that routing changes harness
-permissions or safety checks.
+invoke Rote, capture work, update preferences, handle credentials, or claim that routing changes
+harness permissions or safety checks.
 
 ## Enter or resume
 

@@ -3,10 +3,11 @@
 `play-intercept prompt` runs on every UserPromptSubmit. It is local-only and
 must stay far under 100ms: action-shaped prompts pass through trusted user and
 project routing policy, then an mtime-keyed index of saved Plays (built from
-`~/.rote/flows` frontmatter) is matched lexically. A direct route, discussion,
-or scoped silence produces nothing. On a specific hit it injects one context
-line naming the Play; on an outcome-shaped prompt with no local hit it injects,
-at most once per cooldown window, one line advising the agent to search
+`~/.rote/flows` frontmatter) is matched lexically. A direct prefix or validated
+route injects a whole-turn Play-and-Rote bypass contract before catalog access;
+discussion or scoped silence produces nothing. On a specific hit it injects one
+context line naming the Play; on an outcome-shaped prompt with no local hit it
+injects, at most once per cooldown window, one line advising the agent to search
 preexisting Plays through the play skill.
 
 `play-intercept milestone-nudge` runs on Stop. It claims at most one internal
@@ -288,6 +289,34 @@ def is_direct_request(prompt: str) -> bool:
     return _DIRECT_REQUEST.match(prompt.strip()) is not None
 
 
+def _direct_bypass_context(route: Mapping[str, Any] | None = None) -> str:
+    """Stamp the complete inference turn with an explicit negative route."""
+
+    if route is None:
+        scope = "The user explicitly selected the one-turn direct prefix."
+        path = "Use harness-native tools or the relevant vendor API/CLI directly."
+    else:
+        providers = ", ".join(route["providers"]) or "none"
+        tools = ", ".join(route["tools"]) or "none"
+        executors = ", ".join(route["executors"])
+        scope = (
+            f"Validated direct route `{route['id']}` matched "
+            f"(providers: {providers}; tools: {tools}; executors: {executors})."
+        )
+        path = (
+            "Use harness-native tools or only the matched vendor API/CLI path "
+            "allowed by that route."
+        )
+    return (
+        "Play direct bypass: "
+        f"{scope} For this entire user turn, bypass both Play and Rote orchestration. "
+        "Do not invoke Play or Rote skills, CLIs, runtimes, searches, adapters, "
+        "workspaces, capture, or follow-up routing during any inference, delegation, "
+        f"retry, or tool loop. {path} Normal harness permissions, authentication, "
+        "tool approvals, and safety checks still apply."
+    )
+
+
 def is_cheat_sheet_request(prompt: str) -> bool:
     """Return whether the prompt selected Play's deterministic help surface."""
 
@@ -377,24 +406,25 @@ def intercept_prompt(
             "pre-machine routing-management path with the unchanged prompt. Default an "
             "unqualified scope to this repository; do not search for or run a saved Play."
         )
+    if is_direct_request(stripped):
+        return _direct_bypass_context()
     if (
         len(stripped) < MIN_PROMPT_CHARS
         or stripped.startswith(("$play", "/play", "!", "/"))
-        or is_direct_request(stripped)
     ):
         return None
     action_request = is_action_request(stripped)
     if not action_request and not _is_match_backed_request(stripped):
         return None
-    if (
-        _silenced(
-            stripped,
-            session_id=session_id,
-            project_path=project_path,
-        )
-        or matching_direct_route(stripped, project_path=project_path) is not None
+    if _silenced(
+        stripped,
+        session_id=session_id,
+        project_path=project_path,
     ):
         return None
+    direct_route = matching_direct_route(stripped, project_path=project_path)
+    if direct_route is not None:
+        return _direct_bypass_context(direct_route)
     entries = load_index()
     hub_entries = _hub_entries(set())
     # The refreshed authorized catalog is the canonical publication namespace.

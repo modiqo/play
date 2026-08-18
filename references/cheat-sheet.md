@@ -110,8 +110,8 @@ Birth certificates exclude raw commands, parameters, responses, credentials, and
 
 ```text
 You:  direct: deploy this Worker with wrangler
-Play: stays out of this request
-Agent: uses the appropriate CLI or API directly
+Hook: marks the whole turn to bypass both Play and Rote
+Agent: uses harness-native tools or the appropriate vendor CLI/API directly
 ```
 
 ```text
@@ -119,8 +119,9 @@ direct: <request>
 without play: <request>
 ```
 
-This is a one-turn bypass. It does not become a sticky mode and does not bypass harness
-permissions, credentials, tool approvals, or safety checks.
+This is a whole-turn bypass across inference continuations, delegation, retries, and tool loops. It
+does not become sticky and does not bypass harness permissions, credentials, tool approvals, or
+safety checks.
 
 ## Route a provider directly in this project
 
@@ -132,8 +133,8 @@ You (terminal): play-routing --project . add cloudflare-direct \
                   --provider cloudflare --tool wrangler \
                   --executor api --executor cli
 You (chat):     deploy the Worker with Cloudflare
-Play:           the prompt hook stays silent for the matching action request
-Agent:          uses an allowed API or CLI path directly
+Hook:           injects the matched Play-and-Rote bypass with route constraints
+Agent:          uses an allowed harness-native or vendor API/CLI path directly
 ```
 
 You can manage policy conversationally:
@@ -165,7 +166,8 @@ Manage routes across all projects by replacing `--project .` with `--user`. Runn
 with the same route ID updates it. Install creates an empty owner-private user policy; project
 policy lives at `.play/routing.yaml`, and the nearest policy inside the Git worktree is used.
 
-A routing policy is not an executor or a permission override. It only prevents Play activation for
-matching action requests; the harness still chooses and authorizes the actual API or CLI operation.
+A routing policy is not an executor or a permission override. It prevents Play and Rote
+orchestration for matching action requests; the harness still chooses and authorizes the actual
+API or CLI operation.
 Malformed policies authorize nothing. There is deliberately no sticky `$play skip` mode: use
 `direct:` once, or a narrow user/project route when the preference should persist.

@@ -190,7 +190,12 @@ class InterceptTest(unittest.TestCase):
         ):
             with self.subTest(prompt=prompt):
                 self.assertTrue(is_direct_request(prompt))
-                self.assertIsNone(intercept_prompt(prompt))
+                line = intercept_prompt(prompt)
+                self.assertIsNotNone(line)
+                self.assertIn("bypass both Play and Rote", line or "")
+                self.assertIn("entire user turn", line or "")
+                self.assertIn("inference, delegation, retry, or tool loop", line or "")
+                self.assertIn("harness-native tools", line or "")
         self.assertFalse(is_direct_request("please work directly on PR 1701"))
 
     def test_project_direct_route_wins_before_catalog_matching(self) -> None:
@@ -205,7 +210,13 @@ class InterceptTest(unittest.TestCase):
         )
         prompt = "check github status on PR 1701 in modiqo/rote"
         self.assertTrue(is_action_request(prompt))
-        self.assertIsNone(intercept_prompt(prompt, project_path=str(project)))
+        line = intercept_prompt(prompt, project_path=str(project))
+        self.assertIsNotNone(line)
+        self.assertIn("Validated direct route `github-direct`", line or "")
+        self.assertIn("providers: github, github-actions", line or "")
+        self.assertIn("tools: git, gh", line or "")
+        self.assertIn("executors: api, cli", line or "")
+        self.assertIn("bypass both Play and Rote", line or "")
 
     def test_ledger_silence_wins_over_a_match(self) -> None:
         append_ledger_entry(

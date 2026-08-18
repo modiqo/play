@@ -93,23 +93,23 @@ $play settle cap_xxxxxxxxxxxxxxxx deployed staging and posted the summary
 Play checks that exact pre-work capture and its Rote evidence rather than guessing from the
 conversation. Settle is optional, but it is never retrospective.
 
-For a one-off task, just ask normally. When you want to guarantee that one request never enters the
-Play machine, use the stateless direct prefix:
+For a one-off task, just ask normally. When you want to guarantee that one request bypasses both
+Play and Rote orchestration, use the stateless direct prefix:
 
 ```text
 direct: deploy this worker with wrangler
 ```
 
-`without play:` is an equivalent spelling. The bypass applies only to that request and does not
-disable harness permissions, safety checks, or tool approvals. A later explicit `$play` invocation
-works normally.
+`without play:` is an equivalent spelling. The bypass covers every inference, delegation, retry,
+and tool loop for that request, but does not disable harness permissions, authentication, safety
+checks, or tool approvals. A later explicit `$play` invocation works normally.
 
 ## What happens when you use Play?
 
 | You do this | Play does this | You stay in control of |
 |---|---|---|
 | A hook detects a relevant Play or repeatable outcome | Searches your local and authorized Play collections | Whether to inspect or ignore a match |
-| Prefix a request with `direct:` | Stays out completely: no machine, search, capture, or preference write | The direct task and its normal harness permissions |
+| Prefix a request with `direct:` | Bypasses Play and Rote for the whole turn: no machine, search, adapter, workspace, capture, or preference write | The direct task and its normal harness permissions |
 | Inspect a matching Play | Shows inputs, setup, credentials by name, and declared effects | Whether the exact version may run |
 | No adequate Play exists | Classifies the fallback as capture or normal before execution | Whether captured work should later settle |
 | Finish repeatable work | Checks whether the recorded steps are worth saving | Team, Community, or Skip |
@@ -141,7 +141,7 @@ $play settle <capture-handle> <summary>    # Settle an existing Rote capture
 $play birth weekly customer report         # See how one of your Plays was made
 $play list my organizations and Plays      # Browse authorized collections
 play cheat-sheet                           # Learn Play through short example interactions
-direct: <request>                           # Bypass Play for exactly one request
+direct: <request>                           # Bypass Play and Rote for one whole turn
 play-routing --project . list               # Inspect this repository's direct routes
 ```
 
@@ -450,8 +450,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.30/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.30 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.31/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.31 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -893,10 +893,11 @@ play-intercept prompt        # UserPromptSubmit: local + hub-catalog match, one 
 play-intercept settle-nudge  # Stop: one reminder per armed save hook per session
 ```
 
-The hook is the sole proactive activation gate. It emits nothing for `direct:` and `without play:`
-requests, so those requests do not load the Play machine even when a saved Play would otherwise
-match. Silence for any other request likewise means normal harness execution; the skill does not
-self-enroll an ordinary outcome.
+The hook is the sole proactive activation gate. For `direct:` and `without play:` requests it
+injects a negative whole-turn route that forbids both Play and Rote orchestration, even when a saved
+Play would otherwise match. A validated direct routing policy injects the same contract plus its
+provider, tool, and executor constraints. Silence for any other request means normal harness
+execution; the skill does not self-enroll an ordinary outcome.
 
 Before matching catalog tokens, the hook requires an action-shaped request. A design question such
 as “should we use GitHub Actions?” stays silent even if a GitHub Play exists. Actual actions can be
