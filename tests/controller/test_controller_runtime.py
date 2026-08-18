@@ -48,7 +48,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(74, len(self.runtime.bundle.states))
+        self.assertEqual(76, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -1400,6 +1400,72 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         self.assertEqual((primary,), yielded.presentations)
         self.assertEqual(primary, yielded.session.context["output"]["primary"])
+
+    def test_first_hello_result_must_be_confirmed_and_can_be_replayed(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-first-result",
+            task_key="task-first-result",
+            request_original="Run Hello",
+        )
+        context = dict(session.context)
+        context["state"] = "use_receipt"
+        context["match"] = dict(context["match"])
+        context["match"]["reference"] = "modiqo/hello@0.1.0"
+        context["evidence"] = dict(context["evidence"])
+        context["evidence"]["verification"] = "verify:first-hello"
+        context["onboarding"] = dict(context["onboarding"])
+        context["onboarding"]["starter_status"] = "selected"
+        context["output"] = dict(context["output"])
+        context["output"].update(
+            {
+                "source": "rote_human_presentation",
+                "format": "text",
+                "primary": "hello from rote proc",
+            }
+        )
+        projected = replace(
+            session,
+            cursor=replace(session.cursor, state=StateId("use_receipt")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        first = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("onboarding_result_offer", first.projection["state"]["id"])
+        self.assertEqual("human", first.projection["state"]["boundary"])
+        self.assertEqual("confirm_onboarding_result", first.projection["instruction"]["id"])
+        self.assertEqual(("hello from rote proc",), first.presentations)
+
+        replay_selected = self.runtime.advance_session(
+            first.session,
+            ControllerEvent(
+                id=EventId("onboarding_result_replay_requested"),
+                payload={
+                    "prompt_version": "confirm_onboarding_result",
+                    "selected_at": "2026-08-18T00:00:00Z",
+                },
+                guards={},
+            ),
+        ).session
+        replayed = advance_until_yield(self.runtime, replay_selected, root=ROOT)
+
+        self.assertEqual("onboarding_result_offer", replayed.projection["state"]["id"])
+        self.assertEqual(("hello from rote proc",), replayed.presentations)
+        self.assertEqual("replay_onboarding_result", replayed.trace[0].action)
+
+        confirmed = self.runtime.advance_session(
+            replayed.session,
+            ControllerEvent(
+                id=EventId("onboarding_result_confirmed"),
+                payload={
+                    "prompt_version": "confirm_onboarding_result",
+                    "selected_at": "2026-08-18T00:00:01Z",
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("onboarding_activation_present", confirmed.session.cursor.state)
 
     @patch("play.runtime_actions.subprocess.run")
     def test_failed_deterministic_command_surfaces_stderr_without_json_debugging(

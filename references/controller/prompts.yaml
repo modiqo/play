@@ -58,6 +58,18 @@ prompts:
       onboarding_awareness_selected: [prompt_version, selected_at]
       onboarding_finished: [prompt_version, selected_at, receipt_ref]
 
+  confirm_onboarding_result:
+    question: Can you see the complete Play result above?
+    selection: single
+    choices:
+      - {id: continue, label: "Yes, continue", description: Continue onboarding only after the complete result is visible., event: onboarding_result_confirmed, recommended: true}
+      - {id: replay, label: Show result again, description: Replay the unchanged result by itself before showing any next action., event: onboarding_result_replay_requested}
+      - {id: done, label: Stop here, description: Keep the verified receipt and stop without continuing onboarding., event: onboarding_result_finished}
+    events:
+      onboarding_result_confirmed: [prompt_version, selected_at]
+      onboarding_result_replay_requested: [prompt_version, selected_at]
+      onboarding_result_finished: [prompt_version, selected_at, receipt_ref]
+
   describe_team_handle:
     question: What lowercase team handle should colleagues recognize?
     selection: text

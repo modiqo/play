@@ -54,11 +54,14 @@ cases:
       - state: use_receipt
         event: receipt_ready
         guards: {use_is_onboarding_starter: true}
-        target: onboarding_activation_present
+        target: onboarding_result_offer
+      - {state: onboarding_result_offer, event: onboarding_result_replay_requested, target: onboarding_result_replay}
+      - {state: onboarding_result_replay, event: onboarding_result_replayed, target: onboarding_result_offer}
+      - {state: onboarding_result_offer, event: onboarding_result_confirmed, target: onboarding_activation_present}
       - {state: onboarding_activation_present, event: onboarding_activation_presented, target: onboarding_activation_offer}
       - {state: onboarding_activation_offer, event: onboarding_finished, target: receipt}
     terminal: receipt
-    includes_once: [use_inspect, use_offer, use_run, use_verify, use_receipt, onboarding_activation_present, onboarding_activation_offer]
+    includes_once: [use_inspect, use_offer, use_run, use_verify, use_receipt, onboarding_result_replay, onboarding_activation_present, onboarding_activation_offer]
 
   - name: first-use team creation reuses the typed colleague invite loop
     steps:

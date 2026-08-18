@@ -307,6 +307,14 @@ def _commandless_result(
             },
             "presentation": primary,
         }
+    if action_id == "replay_onboarding_result":
+        primary = _path_value(context, "output.primary")
+        if primary is None or primary == "":
+            raise ControllerRuntimeError("onboarding result is unavailable for replay")
+        return {
+            "event": "onboarding_result_replayed",
+            "presentation": primary,
+        }
     if action_id == "classify_adequacy":
         search = context.get("search")
         request = context.get("request")

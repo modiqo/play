@@ -231,6 +231,21 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertIn("login --provider", login_policy)
         self.assertIn("exactly one", login_policy)
         self.assertIn("Never ask for", login_policy)
+        result_prompt = PROMPTS["confirm_onboarding_result"]
+        self.assertEqual(
+            ["continue", "replay", "done"],
+            [choice["id"] for choice in result_prompt["choices"]],
+        )
+        self.assertEqual(
+            "onboarding_result_offer",
+            MACHINE["states"]["use_receipt"]["on"]["receipt_ready"][0]["target"],
+        )
+        self.assertEqual(
+            "onboarding_result_replay",
+            MACHINE["states"]["onboarding_result_offer"]["on"][
+                "onboarding_result_replay_requested"
+            ][0]["target"],
+        )
 
     def test_play_uri_uses_inspect_or_bounded_public_card(self) -> None:
         available = MACHINE["states"]["onboarding_probe"]["on"]["rote_available"]

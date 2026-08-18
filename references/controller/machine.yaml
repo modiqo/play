@@ -512,8 +512,27 @@ states:
     entry: {action: build_receipt}
     "on":
       receipt_ready:
-        - {guard: use_is_onboarding_starter, target: onboarding_activation_present, mutate: attach_onboarding_starter_receipt}
+        - {guard: use_is_onboarding_starter, target: onboarding_result_offer, mutate: attach_onboarding_starter_receipt}
         - {target: receipt, mutate: attach_receipt}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_result_offer:
+    owner: play
+    checkpoint: after
+    requires: [receipt_ref, output.primary]
+    prompt: confirm_onboarding_result
+    "on":
+      onboarding_result_confirmed: [{target: onboarding_activation_present, mutate: record_onboarding_result_confirmation}]
+      onboarding_result_replay_requested: [{target: onboarding_result_replay, mutate: request_onboarding_result_replay}]
+      onboarding_result_finished: [{target: receipt, mutate: finish_onboarding_activation}]
+
+  onboarding_result_replay:
+    owner: play
+    checkpoint: both
+    requires: [receipt_ref, output.primary]
+    entry: {action: replay_onboarding_result}
+    "on":
+      onboarding_result_replayed: [{target: onboarding_result_offer, mutate: record_onboarding_result_replay}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   onboarding_activation_present:

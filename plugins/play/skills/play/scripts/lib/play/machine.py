@@ -609,10 +609,26 @@ def validate_bundle(
     )
     check(
         _target(states, "use_receipt", "receipt_ready")
+        == "onboarding_result_offer"
+        and states.get("onboarding_result_offer", {}).get("prompt")
+        == "confirm_onboarding_result"
+        and _target(
+            states, "onboarding_result_offer", "onboarding_result_confirmed"
+        )
         == "onboarding_activation_present"
+        and _target(
+            states,
+            "onboarding_result_offer",
+            "onboarding_result_replay_requested",
+        )
+        == "onboarding_result_replay"
+        and _target(
+            states, "onboarding_result_replay", "onboarding_result_replayed"
+        )
+        == "onboarding_result_offer"
         and states.get("onboarding_activation_offer", {}).get("prompt")
         == "choose_onboarding_next",
-        "a verified starter receipt must explain activation before the next choice",
+        "a verified starter receipt must be confirmed or replayed before activation and the next choice",
     )
     check(
         _target(states, "onboarding_setup", "rote_setup_completed") == "onboarding_probe",
@@ -816,7 +832,7 @@ def validate_bundle(
     )
     check(
         edges["use_receipt"]
-        == {"onboarding_activation_present", "receipt", "blocked"},
+        == {"onboarding_result_offer", "receipt", "blocked"},
         "Use receipt may explain first activation but must not publish or index",
     )
     check(_target(states, "save_offer", "save_skipped") == "completed", "Skip must complete without publication or indexing")

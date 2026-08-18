@@ -126,6 +126,9 @@ mutations:
   - record_verification
   - attach_receipt
   - attach_onboarding_starter_receipt
+  - record_onboarding_result_confirmation
+  - request_onboarding_result_replay
+  - record_onboarding_result_replay
   - record_onboarding_activation
   - finish_onboarding_activation
   - record_save_hook
@@ -610,6 +613,17 @@ actions:
       - Compute integrity metadata over the unchanged primary value; never wrap, summarize, convert, or decorate it.
     events:
       receipt_ready: [receipt_ref, output.presentation_sha256, output.primary_bytes]
+
+  replay_onboarding_result:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [output.primary, receipt_ref]
+    command_policy:
+      - Return the unchanged primary Play result as the only presentation in this replay turn.
+      - Do not append onboarding guidance, a summary, or the next-action presentation before the user confirms they can see the result.
+    events:
+      onboarding_result_replayed: []
 
   present_first_play_activation:
     kind: deterministic

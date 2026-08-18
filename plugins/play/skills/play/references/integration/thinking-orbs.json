@@ -56,6 +56,14 @@
       "orb": "connecting",
       "label": "Checking the signed-in Rote identity…"
     },
+    "onboarding_result_offer": {
+      "orb": "listening",
+      "label": "Waiting for confirmation that the Play result is visible…"
+    },
+    "onboarding_result_replay": {
+      "orb": "working",
+      "label": "Showing the unchanged Play result again…"
+    },
     "onboarding_login_offer": {
       "orb": "listening",
       "label": "Waiting for your Rote sign-in choice…"

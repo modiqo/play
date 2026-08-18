@@ -95,6 +95,13 @@ owner-privately under `~/.rote-play/continuations` and expires it after 24 hours
 
 Present returned `presentations` in order, then act on `projection.state.boundary`:
 
+Returned presentations are a blocking delivery queue, not optional context. Deliver every primary
+result completely before showing or acting on the projected prompt. On first-use Hello, never move
+past `confirm_onboarding_result` until the user confirms the result is visible. If the harness marks
+the tool response as truncated, or the result is absent from chat, offer or select only **Show result
+again**; the replay turn contains the unchanged result without activation guidance or next actions.
+Never infer confirmation, choose **Yes, continue** for the user, or summarize a missing result.
+
 - `model`: reason over only `instruction.input` and the projected policy; return one declared
   event with every required payload field.
 - `human`: present the exact projected prompt through structured elicitation; resume with the
