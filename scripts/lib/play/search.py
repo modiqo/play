@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import difflib
 import os
 import shlex
 import sys
@@ -11,7 +10,12 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .commands import CommandError, run_json
-from .normalize import NormalizationError, normalize_query, semantic_version_key
+from .normalize import (
+    NormalizationError,
+    normalize_query,
+    semantic_version_key,
+    token_is_covered,
+)
 from .render import json_text
 
 
@@ -430,7 +434,7 @@ def merge_results(
         # name identity, treat the unmatched remainder as arguments, not gaps.
         name_tokens = set(normalize_query(hit["name"]).split())
         name_is_covered = bool(name_tokens) and all(
-            _name_token_is_covered(token, query_tokens) for token in name_tokens
+            token_is_covered(token, query_tokens) for token in name_tokens
         )
         hit["match_classification"] = (
             "full"
@@ -510,25 +514,6 @@ def merge_results(
             }
         )
     return output
-
-
-def _name_token_is_covered(name_token: str, query_tokens: set[str]) -> bool:
-    """Accept one bounded typo in a meaningful Play-name token.
-
-    Short tokens remain exact to avoid turning broad words into false matches.
-    Longer tokens use a high similarity floor, which covers ordinary
-    single-character omissions without making adequacy generally fuzzy.
-    """
-
-    if name_token in query_tokens:
-        return True
-    if len(name_token) < 5:
-        return False
-    return any(
-        len(query_token) >= 4
-        and difflib.SequenceMatcher(None, name_token, query_token).ratio() >= 0.88
-        for query_token in query_tokens
-    )
 
 
 def render_markdown(original: str, normalized: str, results: list[dict]) -> str:

@@ -353,6 +353,53 @@ class InterceptTest(unittest.TestCase):
         assert line is not None
         self.assertIn("modiqo/retrieve-rideshare-receipts", line)
 
+    def test_request_prefix_recovers_typo_from_cached_play_name(self) -> None:
+        from play.private_store import atomic_write_json
+
+        atomic_write_json(
+            Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
+            {
+                "schema": "play.inbox-cache/v1",
+                "catalog": [
+                    {
+                        "reference": "modiqo/retrieve-recent-emails",
+                        "name": "retrieve-recent-emails",
+                        "description": "Retrieves recent messages from Gmail.",
+                        "visibility": "public",
+                    }
+                ],
+            },
+        )
+
+        prompt = "can you reti" + "eve recent emails"
+        self.assertFalse(is_action_request(prompt))
+        line = intercept_prompt(prompt)
+        assert line is not None
+        self.assertIn("modiqo/retrieve-recent-emails", line)
+        self.assertIn("available in your hub", line)
+
+    def test_prefixed_discussion_stays_silent_with_strong_catalog_overlap(self) -> None:
+        from play.private_store import atomic_write_json
+
+        atomic_write_json(
+            Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
+            {
+                "schema": "play.inbox-cache/v1",
+                "catalog": [
+                    {
+                        "reference": "modiqo/retrieve-recent-emails",
+                        "name": "retrieve-recent-emails",
+                        "description": "Retrieves recent messages from Gmail.",
+                        "visibility": "public",
+                    }
+                ],
+            },
+        )
+
+        self.assertIsNone(
+            intercept_prompt("can you explain retrieve recent emails")
+        )
+
     def test_current_hub_namespace_wins_over_stale_local_owner(self) -> None:
         from play.private_store import atomic_write_json
 

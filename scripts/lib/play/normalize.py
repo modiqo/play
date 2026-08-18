@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import re
 import unicodedata
 
@@ -32,3 +33,22 @@ def semantic_version_key(value: str | None) -> tuple[tuple[int, int | str], ...]
         return ()
     parts = re.split(r"[.+-]", value)
     return tuple((0, int(part)) if part.isdigit() else (1, part.casefold()) for part in parts)
+
+
+def token_is_covered(expected: str, actual_tokens: set[str]) -> bool:
+    """Return whether a meaningful token is present, allowing one bounded typo.
+
+    Short tokens remain exact so common words cannot become broad fuzzy matches.
+    The high similarity floor covers ordinary single-character omissions in
+    longer identity tokens without making general catalog text fuzzy.
+    """
+
+    if expected in actual_tokens:
+        return True
+    if len(expected) < 5:
+        return False
+    return any(
+        len(actual) >= 4
+        and difflib.SequenceMatcher(None, expected, actual).ratio() >= 0.88
+        for actual in actual_tokens
+    )

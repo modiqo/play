@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from .inbox_cache import read_cache as read_inbox_cache
+from .normalize import token_is_covered
 from .private_store import atomic_write_json, load_json
 from .routing import is_routing_management_request, matching_direct_route
 from .state_home import state_path
@@ -67,6 +68,18 @@ _ACTION_REQUEST = re.compile(
 _DISCUSSION_REQUEST = re.compile(
     r"^(?:why|how|what|when|where|who|should\s+(?:we|i)|can\s+(?:we|i)|"
     r"could\s+(?:we|i)|would\s+(?:we|i))\b",
+    re.IGNORECASE,
+)
+_REQUEST_PREFIX = re.compile(
+    r"^(?:(?:please|kindly)\s+)?(?:"
+    r"(?:can|could|would)\s+you(?:\s+(?:now|please)){0,2}\b|"
+    r"help(?:\s+me)?\b|let'?s\b|i\s+want\s+you\s+to\b)",
+    re.IGNORECASE,
+)
+_PREFIXED_DISCUSSION = re.compile(
+    r"^(?:(?:please|kindly)\s+)?(?:can|could|would)\s+you"
+    r"(?:\s+(?:now|please)){0,2}\s+"
+    r"(?:explain|discuss|describe|clarify|tell\s+me)\b",
     re.IGNORECASE,
 )
 _NAME = re.compile(r"^\s*\*?\s*name:\s*([A-Za-z0-9][A-Za-z0-9_-]*)\s*$", re.MULTILINE)
@@ -235,14 +248,19 @@ def best_match(prompt: str, entries: list[dict[str, Any]]) -> dict[str, Any] | N
     best: dict[str, Any] | None = None
     best_score = 0
     for entry in entries:
-        name_hits = len(prompt_tokens & set(entry.get("name_tokens", [])))
+        name_tokens = set(entry.get("name_tokens", []))
+        name_hits = sum(
+            token_is_covered(name_token, prompt_tokens)
+            for name_token in name_tokens
+        )
         text_hits = len(prompt_tokens & set(entry.get("text_tokens", [])))
         score = name_hits * 3 + text_hits
         if score > best_score:
             best, best_score = entry, score
-    if best is not None and best_score >= 4 and (
-        len(prompt_tokens & set(best.get("name_tokens", []))) >= 2
-    ):
+    if best is not None and best_score >= 4 and sum(
+        token_is_covered(name_token, prompt_tokens)
+        for name_token in set(best.get("name_tokens", []))
+    ) >= 2:
         return best
     return None
 
@@ -266,6 +284,17 @@ def is_action_request(prompt: str) -> bool:
     return (
         _DISCUSSION_REQUEST.match(stripped) is None
         and _ACTION_REQUEST.match(stripped) is not None
+    )
+
+
+def _is_match_backed_request(prompt: str) -> bool:
+    """Allow a strong catalog match to recover a misspelled action verb."""
+
+    stripped = prompt.strip()
+    return (
+        _DISCUSSION_REQUEST.match(stripped) is None
+        and _PREFIXED_DISCUSSION.match(stripped) is None
+        and _REQUEST_PREFIX.match(stripped) is not None
     )
 
 
@@ -337,7 +366,8 @@ def intercept_prompt(
         or is_direct_request(stripped)
     ):
         return None
-    if not is_action_request(stripped):
+    action_request = is_action_request(stripped)
+    if not action_request and not _is_match_backed_request(stripped):
         return None
     if (
         _silenced(
@@ -372,7 +402,7 @@ def intercept_prompt(
             "Run it through the play skill: it inspects first and asks approval before "
             "running — never decompose it into manual pull or adapter commands."
         )
-    if _FAST_OUTCOME.match(stripped) and entries is not None:
+    if action_request and _FAST_OUTCOME.match(stripped) and entries is not None:
         state_path = _state_path()
         if _advice_recently_given(state_path):
             return None
