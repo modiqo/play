@@ -114,13 +114,13 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
             if auth_failure is None:
                 return _failed(failure_output or f"rote play run exited {completed.returncode}")
 
-            # Older Plays without adapter.auth.ensure may use the compatibility
-            # specialist path. Self-aware Plays never delegate authentication.
-            if not play_owns_authentication:
+            # A static credential cannot be minted by adapter.auth.ensure. The
+            # harness must guide the user to the vendor's first-party token
+            # page and an out-of-band `rote token set ... --stdin` handoff.
+            # Browser-capable auth remains owned by a declared auth.ensure
+            # step; older Plays use the compatibility specialist path.
+            if auth_failure["classified_rung"] == "static" or not play_owns_authentication:
                 return _authentication_required(auth_failure, failure_output)
-
-            if auth_failure["classified_rung"] == "static":
-                return _failed(failure_output or f"rote play run exited {completed.returncode}")
 
             # The approved Play run already disclosed authentication. Give the
             # exact same Rote command a terminal-backed stdin so its declared
@@ -355,7 +355,7 @@ def _failed(reason: str) -> dict[str, Any]:
 def _authentication_required(
     authentication: Mapping[str, str], reason: str
 ) -> dict[str, Any]:
-    """Offer the compatibility specialist only when the Play lacks auth.ensure."""
+    """Offer guided authentication without accepting credentials in the harness."""
 
     digest = hashlib.sha256(reason.encode()).hexdigest()
     return {

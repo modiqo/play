@@ -177,11 +177,11 @@ prompts:
       play_parameter_supplied: [prompt_version, selected_at, parameter_input.name, parameter_input.value]
 
   approve_authentication:
-    question: "This older Play does not declare adapter.auth.ensure, and {authentication.adapter_id} authentication blocked its run. Continue with guided authentication?"
-    template_fields: [authentication.adapter_id]
+    question: "{authentication.adapter_id} authentication blocked this run ({authentication.classified_rung}). For a static credential, the harness will show the verified vendor token page and the exact `rote token set {authentication.env_var} --stdin` command to run in your own terminal; it will never ask for the token in chat. Continue with guided authentication?"
+    template_fields: [authentication.adapter_id, authentication.classified_rung, authentication.env_var]
     selection: single
     choices:
-      - {id: authenticate, label: Continue guided authentication, description: "Let the authentication specialist configure only the named adapter, then retry the exact approved Play.", event: authentication_approved}
+      - {id: authenticate, label: Continue authentication, description: "Use the named adapter's authentication path; static credentials stay outside the harness, then Play retries the exact approved run.", event: authentication_approved}
       - {id: stop, label: Not now, description: Stop without changing authentication or retrying the Play., event: authentication_declined}
     events:
       authentication_approved: [prompt_version, selected_at, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.original_packet_sha256]

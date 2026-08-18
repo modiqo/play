@@ -55,14 +55,20 @@ def payload(reference: str = URI) -> dict:
     }
 
 
-def auth_markers(protocol: str, *, adapter_calls_started: bool = False) -> str:
+def auth_markers(
+    protocol: str,
+    *,
+    adapter: str = "crucible",
+    credential: str = "ADAPTER_CRUCIBLE_TOKEN",
+    adapter_calls_started: bool = False,
+) -> str:
     return "\n".join(
         (
             "@@status",
             "error: authentication required",
             "@@authentication",
-            "Adapter: crucible",
-            "Credential: ADAPTER_CRUCIBLE_TOKEN",
+            f"Adapter: {adapter}",
+            f"Credential: {credential}",
             "State: missing",
             f"Protocol: {AUTH_PROTOCOLS[protocol]}",
             "Authentication interaction: browser",
@@ -252,6 +258,77 @@ class UniversalPlayRunTest(unittest.TestCase):
                 self.assertEqual(protocol, result["authentication"]["classified_rung"])
                 self.assertEqual("rote-adapter-config", result["authentication"]["owner"])
                 run.reset_mock()
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_auth_ensure_static_token_uses_out_of_band_specialist_path(
+        self, run, _which
+    ) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr=auth_markers("static")
+        )
+
+        result = execute(payload())
+
+        self.assertEqual("play_authentication_required", result["event"])
+        self.assertEqual("static", result["authentication"]["classified_rung"])
+        self.assertEqual("ADAPTER_CRUCIBLE_TOKEN", result["authentication"]["env_var"])
+        self.assertEqual("rote-adapter-config", result["authentication"]["owner"])
+        self.assertEqual(1, run.call_count)
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_notion_and_crucible_oauth_dcr_remain_play_owned(
+        self, run, _which
+    ) -> None:
+        adapters = (
+            ("notion-mcp", "ADAPTER_NOTION_MCP_TOKEN"),
+            ("crucible", "ADAPTER_CRUCIBLE_TOKEN"),
+        )
+        for adapter, credential in adapters:
+            with self.subTest(adapter=adapter):
+                run.side_effect = [
+                    subprocess.CompletedProcess(
+                        args=[],
+                        returncode=1,
+                        stdout="",
+                        stderr=auth_markers(
+                            "oauth_dcr", adapter=adapter, credential=credential
+                        ),
+                    ),
+                    subprocess.CompletedProcess(
+                        args=[], returncode=0, stdout=f"{adapter} output", stderr=""
+                    ),
+                ]
+
+                result = execute(payload())
+
+                self.assertEqual("play_run_ready", result["event"])
+                self.assertNotIn("authentication", result)
+                self.assertEqual(2, run.call_count)
+                run.reset_mock(side_effect=True)
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_thread_otter_static_bearer_uses_out_of_band_specialist_path(
+        self, run, _which
+    ) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr=auth_markers(
+                "static", adapter="thread-otter", credential="THREAD_OTTER_TOKEN"
+            ),
+        )
+
+        result = execute(payload())
+
+        self.assertEqual("play_authentication_required", result["event"])
+        self.assertEqual("thread-otter", result["authentication"]["adapter_id"])
+        self.assertEqual("THREAD_OTTER_TOKEN", result["authentication"]["env_var"])
+        self.assertEqual("static", result["authentication"]["classified_rung"])
+        self.assertEqual(1, run.call_count)
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")

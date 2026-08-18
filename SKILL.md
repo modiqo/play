@@ -131,10 +131,15 @@ Never infer confirmation, choose **Yes, continue** for the user, or summarize a 
 - `terminal`: present the terminal outcome and stop.
 
 Authentication declared by a saved Play stays inside its approved `rote play run`. When inspection
-shows `adapter.auth.ensure`, complete secure provider sign-in inside that step and continue the same
-run; never invoke `rote-adapter-config`, run `rote oauth` separately, or synthesize an authentication
-receipt for it. Only an older Play without `adapter.auth.ensure` may enter the explicit
-`rote-adapter-config` compatibility path after its run reports authentication is required.
+shows `adapter.auth.ensure`, complete secure browser-capable provider sign-in inside that step and
+continue the same run; never run `rote oauth` separately or synthesize an authentication receipt for
+it. A missing static credential is the exception because the step can detect but cannot mint a
+vendor secret: follow the projected `rote-adapter-config` boundary, resolve only the adapter
+catalog's first-party HTTPS token page, and tell the user to create the token there and run
+`rote token set <ENV> --stdin` in their own terminal. Never request or receive the token in chat.
+Only after the user confirms the out-of-band command and the named token is verified may Play retry
+the exact approved run. An older Play without `adapter.auth.ensure` may also enter the explicit
+compatibility path after its run reports authentication is required.
 
 Never run full Play preflight during a normal request. Install-time convergence owns cross-harness
 readiness; the normal runtime owns its exact dependency and authentication states and projects a

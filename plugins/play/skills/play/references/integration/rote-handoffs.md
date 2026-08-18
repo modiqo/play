@@ -86,12 +86,15 @@ detected substrate and evidence, creation/reuse status, auth status/owner, orche
 ## Recoverable authentication
 
 Saved Play authentication is selected from the inspected operations. When a Play declares
-`adapter.auth.ensure`, the approved `rote play run` owns provider sign-in: Play re-enters that same
-command with terminal-backed stdin at an exact pre-call browser boundary, and it never delegates to
-an authentication specialist. A failed Play-owned authentication step blocks with its exact output.
-Only a legacy Play without `adapter.auth.ensure` may offer the `rote-adapter-config` compatibility
-path; specialist success returns only its action and evidence before the exact Play is inspected and
-run again. This path does not manufacture an authentication receipt.
+`adapter.auth.ensure`, the approved `rote play run` owns browser-capable provider sign-in: Play
+re-enters that same command with terminal-backed stdin at an exact pre-call browser boundary and
+does not delegate it. A failed Play-owned browser authentication step blocks with its exact output.
+A typed missing static credential is the exception: the harness may enter `rote-adapter-config`,
+resolve only the adapter catalog's first-party HTTPS `token_url`, and present the vendor page plus
+`rote token set <ENV> --stdin` for the user to run in their own terminal. The harness never receives
+the credential. After the user confirms and the named token is verified, the exact approved Play is
+inspected and run again. A legacy Play without `adapter.auth.ensure` may also offer the compatibility
+path. This path does not manufacture an authentication receipt.
 
 Before any Play run, bind the exact reference, parameters, disclosure SHA, and expected events into
 `play.run-handoff/v1` with `scripts/bin/play-handoff prepare-play-run --stdin --json`. Preserve that

@@ -813,7 +813,7 @@ class MachineConformanceTest(unittest.TestCase):
             handoff["$defs"]["adapterChoice"]["required"],
         )
 
-    def test_auth_ensure_is_play_owned_and_legacy_auth_uses_specialist(self) -> None:
+    def test_browser_auth_ensure_is_play_owned_and_static_auth_uses_specialist(self) -> None:
         self.assertEqual(
             "use_authentication_offer",
             MACHINE["states"]["use_run"]["on"]["play_authentication_required"][0][
@@ -842,21 +842,30 @@ class MachineConformanceTest(unittest.TestCase):
             ][0]["target"],
         )
         prompt = PROMPTS["approve_authentication"]
-        self.assertEqual(["authentication.adapter_id"], prompt["template_fields"])
+        self.assertEqual(
+            [
+                "authentication.adapter_id",
+                "authentication.classified_rung",
+                "authentication.env_var",
+            ],
+            prompt["template_fields"],
+        )
         run_policy = " ".join(ACTIONS["run_registry_play"]["command_policy"])
-        self.assertIn("declares adapter.auth.ensure never delegates", run_policy)
+        self.assertIn("browser-capable Play that declares adapter.auth.ensure", run_policy)
+        self.assertIn("typed missing static credential", run_policy)
         self.assertIn("legacy Play without adapter.auth.ensure", run_policy)
         self.assertIn("marker or prose", run_policy)
         self.assertIn("present the structured action_blocked reason verbatim", run_policy)
         authentication_policy = " ".join(ACTIONS["execute_authentication"]["command_policy"])
-        self.assertIn("compatibility path only", authentication_policy)
-        self.assertIn("do not declare adapter.auth.ensure", authentication_policy)
+        self.assertIn("out-of-band setup path", authentication_policy)
+        self.assertIn("first-party HTTPS token_url", authentication_policy)
+        self.assertIn("rote token set <env_var> --stdin", authentication_policy)
         self.assertNotIn("receipt", authentication_policy.casefold())
         self.assertNotIn("repair", authentication_policy.casefold())
         authentication_choice = next(
             choice for choice in prompt["choices"] if choice["id"] == "authenticate"
         )
-        self.assertEqual("Continue guided authentication", authentication_choice["label"])
+        self.assertEqual("Continue authentication", authentication_choice["label"])
         stop_choice = next(
             choice for choice in prompt["choices"] if choice["id"] == "stop"
         )

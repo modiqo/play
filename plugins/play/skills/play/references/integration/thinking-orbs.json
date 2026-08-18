@@ -226,7 +226,7 @@
     },
     "use_authentication_offer": {
       "orb": "listening",
-      "label": "Waiting for legacy Play authentication approval…"
+      "label": "Waiting for Play authentication approval…"
     },
     "use_authentication_execute": {
       "orb": "weaving",

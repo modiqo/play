@@ -169,7 +169,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             projection["instruction"]["input"],
         )
 
-    def test_legacy_play_auth_failure_preserves_source_for_guided_authentication(self) -> None:
+    def test_play_auth_failure_preserves_source_for_guided_authentication(self) -> None:
         session = self.runtime.initial_session(
             run_id="session-auth-source",
             task_key="task-auth-source",
@@ -224,13 +224,16 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         self.assertEqual("required", advanced.session.context["authentication"]["status"])
         self.assertEqual("human", advanced.projection.as_dict()["state"]["boundary"])
-        self.assertIn("does not declare adapter.auth.ensure", advanced.projection.as_dict()["instruction"]["question"])
+        question = advanced.projection.as_dict()["instruction"]["question"]
+        self.assertIn("crucible authentication blocked", question)
+        self.assertIn("rote token set ADAPTER_CRUCIBLE_TOKEN --stdin", question)
+        self.assertIn("never ask for the token in chat", question)
         authentication_choice = next(
             choice
             for choice in advanced.projection.as_dict()["instruction"]["choices"]
             if choice["id"] == "authenticate"
         )
-        self.assertIn("configure only the named adapter", authentication_choice["description"])
+        self.assertIn("static credentials stay outside the harness", authentication_choice["description"])
 
     def test_approved_authentication_redirects_harness_to_adapter_specialist(self) -> None:
         session = self.runtime.initial_session(
@@ -311,8 +314,9 @@ class ControllerRuntimeTest(unittest.TestCase):
             "rote-adapter-config", yielded.projection["instruction"]["specialist"]
         )
         authentication_policy = " ".join(yielded.projection["instruction"]["command_policy"])
-        self.assertIn("compatibility path only", authentication_policy)
-        self.assertIn("do not declare adapter.auth.ensure", authentication_policy)
+        self.assertIn("out-of-band setup path", authentication_policy)
+        self.assertIn("first-party HTTPS token_url", authentication_policy)
+        self.assertIn("rote token set <env_var> --stdin", authentication_policy)
         self.assertEqual([], yielded.projection["instruction"]["input"]["inspection"]["operations"])
 
         evidence_refs = ["rote:adapter-health/crucible:fresh"]
