@@ -188,6 +188,94 @@ class InboxCacheTest(unittest.TestCase):
         self.assertIsNone(read_cache(cache_path=self.cache_path))
         self.assertIsNone(cached_line(cache_path=self.cache_path))
 
+    def test_public_catalog_is_canonical_and_fingerprinted(self) -> None:
+        flows = [
+            {
+                "name": "z-last",
+                "description": "Last by canonical reference.",
+                "visibility": "public",
+                "version": "1.2.0",
+                "status": "released",
+                "tags": ["release", "github", "release"],
+                "labels": ["Engineering", "Automation"],
+            },
+            {
+                "name": "a-first",
+                "description": "First by canonical reference.",
+                "visibility": "public",
+                "version": "0.3.0",
+                "status": "approved",
+            },
+        ]
+
+        first = refresh_cache(
+            cache_path=self.cache_path,
+            state_path=self.state_path,
+            collect=lambda **_: _digest(0, 0),
+            load_flows=lambda _: {"acme": list(flows)},
+            organizations=[Organization("acme", "Acme")],
+            require_complete_catalog=True,
+        )
+        second_path = self.cache_path.with_name("second-cache.json")
+        second = refresh_cache(
+            cache_path=second_path,
+            state_path=self.state_path,
+            collect=lambda **_: _digest(0, 0),
+            load_flows=lambda _: {"acme": list(reversed(flows))},
+            organizations=[Organization("acme", "Acme")],
+            require_complete_catalog=True,
+        )
+
+        self.assertTrue(first["catalog_complete"])
+        self.assertEqual(2, first["counts"]["public"])
+        self.assertEqual(first["catalog_sha256"], second["catalog_sha256"])
+        self.assertEqual(
+            ["acme/a-first", "acme/z-last"],
+            [item["reference"] for item in first["public_catalog"]],
+        )
+        self.assertEqual(
+            ["Automation", "Engineering"], first["public_catalog"][1]["labels"]
+        )
+        self.assertEqual(
+            ["github", "release"], first["public_catalog"][1]["tags"]
+        )
+
+    def test_required_complete_catalog_failure_preserves_last_snapshot(self) -> None:
+        self._refresh(_digest(1, 0))
+        before = self.cache_path.read_bytes()
+
+        with self.assertRaisesRegex(RuntimeError, "registry unavailable"):
+            refresh_cache(
+                cache_path=self.cache_path,
+                state_path=self.state_path,
+                collect=lambda **_: _digest(2, 0),
+                load_flows=lambda _: (_ for _ in ()).throw(
+                    RuntimeError("registry unavailable")
+                ),
+                organizations=[Organization("acme", "Acme")],
+                require_complete_catalog=True,
+            )
+
+        self.assertEqual(before, self.cache_path.read_bytes())
+
+    def test_maintenance_failure_returns_last_verified_snapshot(self) -> None:
+        previous = self._refresh(_digest(1, 0))
+        before = self.cache_path.read_bytes()
+
+        retained = refresh_cache(
+            cache_path=self.cache_path,
+            state_path=self.state_path,
+            collect=lambda **_: _digest(2, 0),
+            load_flows=lambda _: (_ for _ in ()).throw(
+                RuntimeError("registry unavailable")
+            ),
+            organizations=[Organization("acme", "Acme")],
+        )
+
+        self.assertFalse(retained["refreshed"])
+        self.assertEqual(previous["catalog_sha256"], retained["catalog_sha256"])
+        self.assertEqual(before, self.cache_path.read_bytes())
+
 
 if __name__ == "__main__":
     unittest.main()

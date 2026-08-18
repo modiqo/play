@@ -17,16 +17,20 @@ page in every supported app.
 ## Get started for the first time
 
 ```text
-You:  $play
-Play: verifies the local setup and sign-in, then offers the low-risk Hello Play
+You:  run the Play installer
+Setup: verifies Rote, offers Google or GitHub when sign-in/account creation is needed,
+       then caches a verified public Play catalog before activating your agent apps
+You:  start the agent and type $play
+Play: verifies the post-login setup, reads What’s New locally, then offers the low-risk Hello Play
 You:  choose Run Hello
 Play: shows the exact method, inputs, credentials by name, and declared effects
 You:  approve the run
 Play: returns the verified result and receipt
 ```
 
-If Rote or sign-in is missing, Play guides setup and then resumes the original request. An empty
-`$play` is also the safest way to check or repair setup.
+The normal installer finishes sign-in before touching Play-owned harness state. If a session later
+expires or is revoked, Play’s harness recovery lane guides sign-in and resumes the original
+request. An empty `$play` is also the safest way to check or repair setup.
 
 ## Find and run an existing Play
 

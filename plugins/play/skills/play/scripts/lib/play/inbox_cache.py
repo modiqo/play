@@ -12,6 +12,7 @@ the user actually views the digest.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -88,6 +89,74 @@ def summary_line(digest: Mapping[str, Any]) -> str | None:
     )
 
 
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return sorted(
+        {item.strip() for item in value if isinstance(item, str) and item.strip()},
+        key=str.casefold,
+    )
+
+
+def _public_catalog_entry(slug: str, flow: Mapping[str, Any]) -> dict[str, Any] | None:
+    if flow.get("visibility") != "public" or flow.get("deleted_at"):
+        return None
+    status = flow.get("status")
+    if status is not None and status not in {"approved", "released"}:
+        return None
+    if flow.get("play_run_eligible") is False:
+        return None
+    name = flow.get("name")
+    if not isinstance(name, str) or not name:
+        return None
+    reference = (
+        flow.get("base_reference") or flow.get("reference") or f"{slug}/{name}"
+    )
+    if not isinstance(reference, str) or not reference:
+        return None
+    reference = reference.partition("@")[0]
+    version = flow.get("version")
+    exact_reference = flow.get("exact_reference")
+    if not isinstance(exact_reference, str) or not exact_reference:
+        exact_reference = (
+            f"{reference}@{version}"
+            if isinstance(version, str) and version
+            else reference
+        )
+    entry: dict[str, Any] = {
+        "reference": reference,
+        "exact_reference": exact_reference,
+        "owner": slug,
+        "name": name,
+        "description": str(flow.get("description") or "")[:240],
+        "visibility": "public",
+        "version": version if isinstance(version, str) and version else None,
+        "status": status if isinstance(status, str) and status else None,
+        "created_at": (
+            flow.get("created_at")
+            if isinstance(flow.get("created_at"), str)
+            else None
+        ),
+        "latest_version_created_at": (
+            flow.get("latest_version_created_at")
+            if isinstance(flow.get("latest_version_created_at"), str)
+            else None
+        ),
+        "labels": _string_list(flow.get("labels")),
+        "tags": _string_list(flow.get("tags")),
+    }
+    for source_field, cache_field in (("id", "skill_id"), ("owner_id", "owner_id")):
+        value = flow.get(source_field)
+        if isinstance(value, str) and value:
+            entry[cache_field] = value
+    return entry
+
+
+def _snapshot_sha(payload: object) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 def refresh_cache(
     *,
     days: int = DEFAULT_WINDOW_DAYS,
@@ -97,6 +166,7 @@ def refresh_cache(
     collect: Callable[..., dict[str, Any]] | None = None,
     load_flows: Callable[[set[str]], dict[str, list[dict[str, Any]]]] | None = None,
     organizations: list[Organization] | None = None,
+    require_complete_catalog: bool = False,
 ) -> dict[str, Any]:
     """Fetch the digest and persist both cache tiers; the background-job body."""
 
@@ -132,16 +202,29 @@ def refresh_cache(
     if entry is not None and entry.get("scope") == scope:
         since = entry["checkpoint"]["last_seen_at"]
 
-    collector = collect or collect_digest
-    digest = collector(days=days, since=since, organizations=resolved_organizations)
     flows_loader = load_flows or load_authorized_flows
+    catalog_complete = True
     try:
         grouped = flows_loader({org.slug for org in resolved_organizations})
-    except Exception:  # noqa: BLE001 - the catalog tier is best-effort
-        grouped = {}
+    except Exception:  # noqa: BLE001 - retain a prior verified snapshot on maintenance failure
+        if require_complete_catalog:
+            raise
+        existing = read_cache(cache_path=target)
+        if existing is not None:
+            return {**existing, "refreshed": False}
+        raise
+    collector = collect or collect_digest
+    digest = collector(
+        days=days,
+        since=since,
+        organizations=resolved_organizations,
+        grouped_flows=grouped,
+    )
     catalog: list[dict[str, Any]] = []
+    public_catalog: list[dict[str, Any]] = []
     seen_references: set[str] = set()
-    for slug, flows in grouped.items():
+    for slug in sorted(grouped):
+        flows = grouped[slug]
         if not isinstance(flows, list):
             continue
         for flow in flows:
@@ -167,8 +250,18 @@ def refresh_cache(
                 if isinstance(value, str) and value:
                     catalog_entry[cache_field] = value
             catalog.append(catalog_entry)
-            if len(catalog) >= 500:
-                break
+            public_entry = _public_catalog_entry(slug, flow)
+            if public_entry is not None:
+                public_catalog.append(public_entry)
+    catalog.sort(key=lambda item: str(item["reference"]).casefold())
+    public_catalog.sort(
+        key=lambda item: (str(item["reference"]).casefold(), str(item["exact_reference"]))
+    )
+    organization_scope = sorted({org.slug for org in resolved_organizations})
+    catalog_snapshot = {
+        "organization_scope": organization_scope,
+        "plays": public_catalog,
+    }
     try:
         markdown = render_markdown(dict(digest))
     except (KeyError, TypeError):
@@ -181,10 +274,15 @@ def refresh_cache(
         "counts": {
             "new": len(digest.get("org_updates", {}).get("new", [])),
             "revised": len(digest.get("org_updates", {}).get("revised", [])),
+            "public": len(public_catalog),
         },
+        "catalog_complete": catalog_complete,
+        "organization_scope": organization_scope,
+        "catalog_sha256": _snapshot_sha(catalog_snapshot),
         "digest": digest,
         "markdown": markdown,
         "catalog": catalog,
+        "public_catalog": public_catalog,
         "refreshed": True,
     }
     atomic_write_json(target, {key: value for key, value in cache.items() if key != "refreshed"})
@@ -224,6 +322,11 @@ def main(argv: list[str] | None = None) -> int:
         metavar="HOURS",
         help="refresh only when the cache is older than this many hours",
     )
+    parser.add_argument(
+        "--require-complete-catalog",
+        action="store_true",
+        help="fail instead of replacing the cache when the authorized catalog cannot be loaded",
+    )
     parser.add_argument("--json", action="store_true", dest="as_json")
     arguments = parser.parse_args(argv)
 
@@ -232,7 +335,9 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--days must be at least 1")
         try:
             cache = refresh_cache(
-                days=arguments.days, if_older_than_hours=arguments.if_older_than
+                days=arguments.days,
+                if_older_than_hours=arguments.if_older_than,
+                require_complete_catalog=arguments.require_complete_catalog,
             )
         except Exception as error:  # noqa: BLE001 - background job must fail quietly
             print(f"play-inbox: {error}", file=sys.stderr)

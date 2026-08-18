@@ -571,6 +571,7 @@ def collect_digest(
     update_inspection_budget: int = 4,
     org_slugs: list[str] | None = None,
     organizations: list[Organization] | None = None,
+    grouped_flows: dict[str, list[dict]] | None = None,
     end: datetime | None = None,
 ) -> dict[str, Any]:
     """Collect a digest without coupling callers to the CLI or output renderer."""
@@ -595,7 +596,11 @@ def collect_digest(
             else load_organizations()
         )
     )
-    grouped = load_authorized_flows({org.slug for org in resolved_organizations})
+    grouped = (
+        grouped_flows
+        if grouped_flows is not None
+        else load_authorized_flows({org.slug for org in resolved_organizations})
+    )
     candidate_new, candidate_revised = classify_updates(grouped, start, resolved_end)
     update_references = [item["reference"] for item in [*candidate_new, *candidate_revised]]
     metadata_batch = load_registry_flow_infos(update_references, limit=update_metadata_budget)

@@ -24,6 +24,7 @@ SCHEMA = "play.bootstrap/v1"
 PLAN_SCHEMA = "play.bootstrap-plan/v1"
 REPORT_SCHEMA = "play.bootstrap-report/v1"
 BACKUP_SCHEMA = "play.install-backup/v1"
+LOGIN_PROVIDERS = ("google", "github")
 SUPPORTED_HARNESSES = (
     "codex",
     "claude",
@@ -415,6 +416,63 @@ def _probe_identity(rote: str | None, runner: Runner) -> str:
     return "authenticated" if result.returncode == 0 and "ok:" in output else "required"
 
 
+def _identity_gate(
+    rote: str,
+    *,
+    login_provider: str | None,
+    runner: Runner,
+) -> tuple[Step, bool]:
+    """Verify identity or complete one explicit OAuth provider flow before setup mutates Play."""
+
+    if _probe_identity(rote, runner) == "authenticated":
+        return Step("rote_identity", "completed", "Rote identity verified."), True
+    if login_provider is None:
+        return (
+            Step(
+                "rote_identity",
+                "onboarding_required",
+                "Choose Google or GitHub sign-in before Play-owned harness state is changed.",
+            ),
+            False,
+        )
+    if login_provider not in LOGIN_PROVIDERS:
+        raise BootstrapError(
+            f"login provider must be one of: {', '.join(LOGIN_PROVIDERS)}"
+        )
+    command = [rote, "login", "--provider", login_provider]
+    result = _run_visible(command, runner)
+    if result.returncode != 0:
+        return (
+            Step(
+                "rote_identity",
+                "onboarding_required",
+                f"{login_provider.title()} sign-in did not complete. Retry setup or choose the other provider.",
+                command=command,
+            ),
+            False,
+        )
+    if _probe_identity(rote, runner) != "authenticated":
+        return (
+            Step(
+                "rote_identity",
+                "onboarding_required",
+                f"{login_provider.title()} sign-in returned without a verified Rote identity.",
+                command=command,
+            ),
+            False,
+        )
+    return (
+        Step(
+            "rote_identity",
+            "completed",
+            f"Rote identity verified after {login_provider.title()} sign-in.",
+            command=command,
+            changed=True,
+        ),
+        True,
+    )
+
+
 def _probe_update(rote: str | None, runner: Runner) -> dict[str, str | None]:
     if rote is None:
         return {
@@ -636,6 +694,16 @@ def build_plan(
     ]
     actions = [
         rote_action,
+        {
+            "id": "verify_rote_identity",
+            "effect": "requires an authenticated Rote identity through Google or GitHub before changing Play-owned state",
+            "recommended": True,
+        },
+        {
+            "id": "warm_public_play_cache",
+            "effect": "builds and verifies a canonical seven-day public Play snapshot for What’s New",
+            "recommended": True,
+        },
         {
             "id": "converge_rote_skills",
             "effect": (
@@ -1454,6 +1522,86 @@ def _result_step(
     )
 
 
+def _warm_public_play_cache(
+    source: Path,
+    *,
+    runner: Runner,
+    progress: Progress,
+) -> Step:
+    """Build and validate the first What’s New snapshot before harness activation."""
+
+    command = [
+        sys.executable,
+        str(source / "scripts" / "bin" / "play-inbox"),
+        "refresh",
+        "--days",
+        "7",
+        "--require-complete-catalog",
+        "--json",
+    ]
+    result = progress.command("Caching public Plays", runner, command)
+    if result.returncode != 0:
+        return _result_step("warm_public_play_cache", result, command)
+    try:
+        payload = json.loads(result.stdout)
+    except (json.JSONDecodeError, TypeError) as error:
+        return Step(
+            "warm_public_play_cache",
+            "failed",
+            f"Public Play cache refresh returned invalid JSON: {error}",
+            command=command,
+        )
+    counts = payload.get("counts") if isinstance(payload, dict) else None
+    public_count = counts.get("public") if isinstance(counts, dict) else None
+    organization_scope = payload.get("organization_scope") if isinstance(payload, dict) else None
+    snapshot = payload.get("catalog_sha256") if isinstance(payload, dict) else None
+    valid = (
+        isinstance(payload, dict)
+        and payload.get("schema") == "play.inbox-cache/v1"
+        and payload.get("catalog_complete") is True
+        and isinstance(public_count, int)
+        and not isinstance(public_count, bool)
+        and public_count >= 0
+        and isinstance(organization_scope, list)
+        and all(isinstance(slug, str) and slug for slug in organization_scope)
+        and isinstance(snapshot, str)
+        and re.fullmatch(r"sha256:[0-9a-f]{64}", snapshot) is not None
+    )
+    if not valid:
+        return Step(
+            "warm_public_play_cache",
+            "failed",
+            "Public Play cache refresh did not return a complete, fingerprinted snapshot.",
+            command=command,
+        )
+    assert isinstance(public_count, int)
+    assert isinstance(organization_scope, list)
+    assert isinstance(snapshot, str)
+    org_count = len(organization_scope)
+    detail = (
+        f"Cached {public_count} public Play{'s' if public_count != 1 else ''} across "
+        f"{org_count} organization{'s' if org_count != 1 else ''}; snapshot {snapshot}."
+    )
+    evidence = json.dumps(
+        {
+            "schema": payload["schema"],
+            "catalog_complete": True,
+            "catalog_sha256": snapshot,
+            "organization_scope": organization_scope,
+            "public_play_count": public_count,
+        },
+        sort_keys=True,
+    )
+    return Step(
+        "warm_public_play_cache",
+        "completed",
+        detail,
+        command=command,
+        changed=payload.get("refreshed") is True,
+        evidence=evidence,
+    )
+
+
 def _accept_identity_only_preflight(
     result: subprocess.CompletedProcess[str],
 ) -> subprocess.CompletedProcess[str]:
@@ -1530,11 +1678,14 @@ def _render_status_card(report: dict[str, Any]) -> str:
     status = str(report["status"])
     status_label = {
         "completed": "READY",
-        "onboarding_required": "READY — SIGN IN TO CONTINUE",
+        "onboarding_required": "SETUP PAUSED — SIGN IN REQUIRED",
         "action_required": "READY — ACTION REQUIRED",
         "blocked": "INCOMPLETE",
     }.get(status, status.upper())
     steps = [step for step in report["steps"] if isinstance(step, dict)]
+    onboarding_steps = [
+        step for step in steps if step.get("status") == "onboarding_required"
+    ]
     general_blocker = any(
         step.get("status") in {"failed", "approval_required"}
         and step.get("target") is None
@@ -1552,7 +1703,9 @@ def _render_status_card(report: dict[str, Any]) -> str:
     ]
     for harness in report["selected_harnesses"]:
         harness_steps = [step for step in steps if step.get("target") == harness]
-        if general_blocker or any(
+        if onboarding_steps:
+            state = "WAITING FOR SIGN-IN"
+        elif general_blocker or any(
             step.get("status") in {"failed", "approval_required"}
             for step in harness_steps
         ):
@@ -1567,9 +1720,6 @@ def _render_status_card(report: dict[str, Any]) -> str:
             state = "READY"
         lines.append(f"    {LABELS.get(harness, harness):<14} {state}")
 
-    onboarding_steps = [
-        step for step in steps if step.get("status") == "onboarding_required"
-    ]
     action_steps = [
         step
         for step in steps
@@ -1580,9 +1730,10 @@ def _render_status_card(report: dict[str, Any]) -> str:
         lines.extend(
             [
                 "",
-                "  Sign in to start",
-                "    Open a selected harness and invoke Play. It will detect the missing",
-                "    identity, offer Google or GitHub, and resume after browser sign-in.",
+                "  Sign in to finish setup",
+                "    Re-run this installer in a terminal and choose Google or GitHub.",
+                "    For unattended setup, pass PLAY_LOGIN_PROVIDER=google or github.",
+                "    Play-owned harness state has not been changed.",
             ]
         )
     if action_steps:
@@ -1596,7 +1747,7 @@ def _render_status_card(report: dict[str, Any]) -> str:
                 prefix = step_id.replace("_", " ").title() + ": "
             lines.append(f"    - {prefix}{_human_step_detail(step)}")
 
-    if status != "blocked":
+    if status not in {"blocked", "onboarding_required"}:
         lines.extend(
             [
                 "",
@@ -1754,9 +1905,11 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
             "",
             "  What happens next",
             "",
-            f"    1. Prepare Rote and its skills for {app_count} {app_word}",
-            "    2. Back up and replace Play-owned harness state while preserving unrelated settings",
-            "    3. Verify every app and save a detailed receipt",
+            "    1. Verify your Rote identity with Google or GitHub",
+            "    2. Cache a verified public Play catalog for What’s New",
+            f"    3. Prepare Rote and its skills for {app_count} {app_word}",
+            "    4. Back up and replace Play-owned harness state while preserving unrelated settings",
+            "    5. Verify every app and save a detailed receipt",
             "",
             "  Credentials stay on this machine. Plays disclose writes before they run.",
             "",
@@ -1805,6 +1958,47 @@ def _confirm(question: str, *, default: bool) -> bool:
     raise BootstrapError("approval must be yes or no")
 
 
+def _choose_login_provider() -> str:
+    """Choose the OAuth identity provider from the controlling terminal."""
+
+    stream = None
+    close_stream = False
+    if sys.stdin.isatty():
+        stream = sys.stdin
+    else:
+        try:
+            stream = open("/dev/tty", "r+", encoding="utf-8")
+            close_stream = True
+        except OSError as error:
+            raise BootstrapError(
+                "sign-in needs an interactive terminal or --login-provider google|github"
+            ) from error
+    prompt = (
+        "\nSign in or create your Rote account before Play is activated:\n"
+        "  1. Continue with Google (recommended)\n"
+        "  2. Continue with GitHub\n"
+        "Choose 1 or 2 [1]: "
+    )
+    try:
+        if stream is sys.stdin:
+            print(prompt, end="", file=sys.stderr, flush=True)
+        else:
+            stream.write(prompt)
+            stream.flush()
+        answer = stream.readline()
+    finally:
+        if close_stream:
+            stream.close()
+    if not answer:
+        raise BootstrapError("interactive sign-in selection ended before a choice was received")
+    normalized = answer.strip().lower()
+    if normalized in {"", "1", "google", "continue with google"}:
+        return "google"
+    if normalized in {"2", "github", "continue with github"}:
+        return "github"
+    raise BootstrapError("sign-in provider must be Google or GitHub")
+
+
 def write_report(report: dict[str, Any]) -> tuple[Path, Path]:
     root = _report_root() / "runs"
     json_path = root / f"{report['run_id']}.json"
@@ -1823,6 +2017,7 @@ def apply(
     top_k: int = 3,
     requested: Sequence[str] | None = None,
     approve_remote_installer: bool = False,
+    login_provider: str | None = None,
     runner: Runner = run,
     run_id: str | None = None,
     expected_plan_id: str | None = None,
@@ -1895,6 +2090,38 @@ def apply(
 
     if rote is None:
         return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
+
+    identity_step, identity_ready = _identity_gate(
+        rote,
+        login_provider=login_provider,
+        runner=runner,
+    )
+    steps.append(identity_step)
+    if not identity_ready:
+        return _finish_report(
+            plan,
+            run_id,
+            started,
+            steps,
+            status="onboarding_required",
+            runner=runner,
+        )
+
+    cache_step = _warm_public_play_cache(
+        source,
+        runner=runner,
+        progress=active_progress,
+    )
+    steps.append(cache_step)
+    if cache_step.status != "completed":
+        return _finish_report(
+            plan,
+            run_id,
+            started,
+            steps,
+            status="blocked",
+            runner=runner,
+        )
 
     skill_harnesses = _rote_skill_harnesses(
         selected, plan["rote_skills"], update_status
@@ -2065,16 +2292,6 @@ def apply(
         if harness in hook_results:
             steps.append(hook_results[harness])
 
-    identity = _probe_identity(rote, runner)
-    steps.append(
-        Step(
-            "rote_identity",
-            "completed" if identity == "authenticated" else "onboarding_required",
-            "Rote identity verified."
-            if identity == "authenticated"
-            else "Sign in or create a Rote account with Google or GitHub; the browser keeps credentials out of the installer.",
-        )
-    )
     launcher = Path(
         os.environ.get("PLAY_MACHINE_LAUNCHER", _home() / ".local" / "bin" / "play-machine")
     ).expanduser()
@@ -2171,6 +2388,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         command.add_argument("--json", action="store_true")
     apply_parser = subparsers.choices["apply"]
     apply_parser.add_argument("--approve-remote-installer", action="store_true")
+    apply_parser.add_argument("--login-provider", choices=LOGIN_PROVIDERS)
     apply_parser.add_argument("--run-id")
     apply_parser.add_argument("--plan-id")
     install_parser = subparsers.choices["install"]
@@ -2183,6 +2401,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--approve-remote-installer",
         action="store_true",
         help="approve https://getrote.dev/install for unattended setup",
+    )
+    install_parser.add_argument(
+        "--login-provider",
+        choices=LOGIN_PROVIDERS,
+        help="complete first-run Rote sign-in with this OAuth provider",
     )
     install_parser.add_argument(
         "--mode",
@@ -2206,6 +2429,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 top_k=args.top_k,
                 requested=args.harness,
                 approve_remote_installer=args.approve_remote_installer,
+                login_provider=args.login_provider,
                 run_id=args.run_id,
                 expected_plan_id=args.plan_id,
                 progress=progress,
@@ -2217,6 +2441,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 lambda: build_plan(top_k=args.top_k, requested=args.harness),
             )
             approve_remote_installer = args.approve_remote_installer
+            login_provider = args.login_provider
             renderer = _render_guided_plan if args.mode == "guided" else _render_plan
             print(renderer(plan), file=sys.stderr if args.json else sys.stdout)
             if not args.yes:
@@ -2230,11 +2455,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                     return 0
                 if plan["rote"]["path"] is None:
                     approve_remote_installer = True
+                if (
+                    plan["rote"].get("identity") != "authenticated"
+                    and login_provider is None
+                ):
+                    login_provider = _choose_login_provider()
             payload = apply(
                 source,
                 top_k=args.top_k,
                 requested=args.harness,
                 approve_remote_installer=approve_remote_installer,
+                login_provider=login_provider,
                 run_id=args.run_id,
                 expected_plan_id=plan["plan_id"],
                 prepared_plan=plan,

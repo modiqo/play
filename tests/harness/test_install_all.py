@@ -30,11 +30,15 @@ class InstallAllTest(unittest.TestCase):
             "case \"${1:-}\" in\n"
             "  version) echo 'version: 1.0.0' ;;\n"
             "  whoami)\n"
-            "    if [ \"${ROTE_TEST_LOGGED_OUT:-}\" = 1 ]; then\n"
+            "    if [ \"${ROTE_TEST_LOGGED_OUT:-}\" = 1 ] && [ ! -f \"${HOME}/.rote-test-logged-in\" ]; then\n"
             "      echo 'error: Not logged in'\n"
             "      exit 1\n"
             "    fi\n"
             "    echo 'ok: person@example.com'\n"
+            "    ;;\n"
+            "  login)\n"
+            "    : > \"${HOME}/.rote-test-logged-in\"\n"
+            "    echo 'browser sign-in completed'\n"
             "    ;;\n"
             "  self-update)\n"
             "    if [ \"${2:-}\" = '--check' ]; then\n"
@@ -45,6 +49,11 @@ class InstallAllTest(unittest.TestCase):
             "    fi\n"
             "    ;;\n"
             "  install) echo 'Rote skills installed' ;;\n"
+            "  registry)\n"
+            "    if [ \"${2:-}\" = org ] && [ \"${3:-}\" = list ]; then\n"
+            "      echo '[]'\n"
+            "    fi\n"
+            "    ;;\n"
             "  play) echo 'rote play' ;;\n"
             "esac\n",
             encoding="utf-8",
@@ -71,7 +80,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '{\"marketplaces\":[]}'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.9\",\"enabled\":true}],\"available\":[]}'\n"
+                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.10\",\"enabled\":true}],\"available\":[]}'\n"
                     "  else\n"
                     "    printf '%s\\n' '{\"installed\":[],\"available\":[]}'\n"
                     "  fi\n"
@@ -88,7 +97,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '[]'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.9\",\"enabled\":true,\"scope\":\"user\"}]'\n"
+                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.10\",\"enabled\":true,\"scope\":\"user\"}]'\n"
                     "  else\n"
                     "    printf '%s\\n' '[]'\n"
                     "  fi\n"
@@ -278,7 +287,7 @@ class InstallAllTest(unittest.TestCase):
 
         self.run_installer("install", "--copy")
         installed = install_home / "skill"
-        self.assertEqual("0.4.9", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.10", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():
@@ -346,7 +355,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("◐ Checking the Play setup plan", result.stderr)
         self.assertIn("✓ Verifying Codex", result.stderr)
         self.assertIn("| Play setup plan", result.stdout)
-        self.assertIn("Version: 0.4.9", result.stdout)
+        self.assertIn("Version: 0.4.10", result.stdout)
         self.assertIn("| Play setup", result.stdout)
         self.assertIn("Status: READY", result.stdout)
         self.assertIn("Congratulations — step 1", result.stdout)
@@ -361,6 +370,17 @@ class InstallAllTest(unittest.TestCase):
         report = json.loads(reports[0].read_text(encoding="utf-8"))
         self.assertEqual("completed", report["status"])
         self.assertEqual(["codex", "claude", "kimi"], report["selected_harnesses"])
+        step_ids = [step["id"] for step in report["steps"]]
+        self.assertLess(step_ids.index("rote_identity"), step_ids.index("backup_play_state"))
+        self.assertLess(
+            step_ids.index("warm_public_play_cache"),
+            step_ids.index("backup_play_state"),
+        )
+        cache = next(
+            step for step in report["steps"] if step["id"] == "warm_public_play_cache"
+        )
+        self.assertEqual("completed", cache["status"])
+        self.assertIn("snapshot sha256:", cache["detail"])
         self.uninstall(installed)
 
     def test_portable_installer_is_valid_posix_shell(self) -> None:
@@ -375,6 +395,26 @@ class InstallAllTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn('install "$@" < /dev/tty', installer)
+
+    def test_portable_installer_rejects_unknown_login_provider(self) -> None:
+        environment = {
+            **self.environment,
+            "PLAY_INSTALL_SOURCE": str(ROOT),
+            "PLAY_INSTALL_YES": "1",
+            "PLAY_LOGIN_PROVIDER": "password",
+        }
+
+        result = subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh")],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("PLAY_LOGIN_PROVIDER must be google or github", result.stderr)
 
     def test_remote_archive_extraction_selects_a_safe_python_policy(self) -> None:
         installer = (ROOT / "install.sh").read_text(encoding="utf-8")
@@ -426,9 +466,10 @@ class InstallAllTest(unittest.TestCase):
         )
 
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertIn("Status: READY — SIGN IN TO CONTINUE", result.stdout)
-        self.assertIn("Sign in to start", result.stdout)
-        self.assertIn("offer Google or GitHub", result.stdout)
+        self.assertIn("Status: SETUP PAUSED — SIGN IN REQUIRED", result.stdout)
+        self.assertIn("Sign in to finish setup", result.stdout)
+        self.assertIn("choose Google or GitHub", result.stdout)
+        self.assertIn("Play-owned harness state has not been changed", result.stdout)
         self.assertNotIn("rote login --provider", result.stdout)
         self.assertNotIn("Status: INCOMPLETE", result.stdout)
         reports = list((self.home / "bootstrap-state" / "runs").glob("*.json"))
@@ -437,7 +478,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertEqual("onboarding_required", report["status"])
         identity = next(step for step in report["steps"] if step["id"] == "rote_identity")
         self.assertEqual("onboarding_required", identity["status"])
-        self.uninstall(install_home / "skill")
+        self.assertFalse((install_home / "skill").exists())
 
     def test_sign_in_and_disabled_codex_are_actionable_not_install_errors(self) -> None:
         config = self.home / ".codex" / "config.toml"
@@ -451,6 +492,7 @@ class InstallAllTest(unittest.TestCase):
             "PLAY_INSTALL_HOME": str(install_home),
             "PLAY_INSTALL_SOURCE": str(ROOT),
             "PLAY_INSTALL_YES": "1",
+            "PLAY_LOGIN_PROVIDER": "github",
             "ROTE_TEST_LOGGED_OUT": "1",
         }
 
@@ -464,8 +506,8 @@ class InstallAllTest(unittest.TestCase):
         )
 
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertIn("Status: READY — SIGN IN TO CONTINUE", result.stdout)
-        self.assertIn("Sign in to start", result.stdout)
+        self.assertIn("Status: READY", result.stdout)
+        self.assertNotIn("Sign in to finish setup", result.stdout)
         self.assertNotIn("explicit disabled Play skill override", result.stdout)
         self.assertNotIn("[[skills.config]]", config.read_text(encoding="utf-8"))
         self.assertNotIn("Status: INCOMPLETE", result.stdout)

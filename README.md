@@ -36,6 +36,10 @@ That is the whole setup. The installer opens a small terminal wizard: press Ente
 guided walkthrough, or choose **Review details** to inspect every planned change. Play finds your
 agent apps, checks Rote and its skills, and explains what it will install, update, or refresh. One
 approval covers the displayed setup, including the official Rote installer when Rote is missing.
+Before changing Play-owned harness state, the wizard verifies the current Rote identity and, when
+needed, asks whether to continue with Google or GitHub. The browser OAuth flow signs in or creates
+the account; the installer then builds and fingerprints the public Play catalog used by **What’s
+New** before activating any harness.
 For Codex and Claude Code, it keeps an already-current Play plugin and refreshes the marketplace
 plus reinstalls only when the installed plugin is missing or stale.
 
@@ -354,11 +358,14 @@ value, real recurring needs, low review cost, and permission to redesign or reti
 Redirected output gets one start and one finish record per phase without rotating copy or repeated
 elapsed-time heartbeats.
 
-An installed but unsigned Rote is a successful first-use state. The final card says **READY — SIGN
-IN TO CONTINUE**, offers Google and GitHub sign-in/account creation, and exits successfully. The
-next Play request preserves its original intent while `rote-setup` guides authentication, verifies
-the live identity, and resumes. Managed activation also self-repairs a launcher whose recorded Play
-source no longer exists; it will not take over a different source that is still present.
+Identity is an early setup gate. If Rote is unsigned, the terminal wizard offers Google and GitHub
+before any Play-owned backup, plugin, skill, or hook is changed. OAuth login also creates a new
+account when the provider identity has not been seen before. A non-interactive install without an
+authenticated profile or explicit provider pauses at **SETUP PAUSED — SIGN IN REQUIRED**; rerun it
+with a terminal or provide `PLAY_LOGIN_PROVIDER=google|github`. The harness identity lane remains a
+repair path for sessions that expire or are revoked later. Managed activation also self-repairs a
+launcher whose recorded Play source no longer exists; it will not take over a different source that
+is still present.
 
 Invocation differs by app:
 
@@ -399,15 +406,18 @@ developer preview upstream.
 
 The simple command above is the only command people need. CI has no controlling terminal, so
 automation must record both approvals explicitly: the displayed Play plan and, when Rote may be
-missing, its official installer.
+missing, its official installer. A first-time unattended installation must also select the OAuth
+provider explicitly.
 
 ```bash
 curl -fsSL https://getrote.dev/playoffs/install.sh \
-  | env PLAY_INSTALL_YES=1 PLAY_APPROVE_REMOTE_INSTALLER=1 sh
+  | env PLAY_INSTALL_YES=1 PLAY_APPROVE_REMOTE_INSTALLER=1 \
+      PLAY_LOGIN_PROVIDER=github sh
 ```
 
-Omit `PLAY_APPROVE_REMOTE_INSTALLER=1` when Rote is known to be installed. Set
-`PLAY_INSTALL_TOP_K=<n>` from 1 through 3 to change the default number of selected apps.
+Omit `PLAY_APPROVE_REMOTE_INSTALLER=1` when Rote is known to be installed, and omit
+`PLAY_LOGIN_PROVIDER` when that profile is already authenticated. Set `PLAY_INSTALL_TOP_K=<n>` from
+1 through 3 to change the default number of selected apps.
 
 ### Full Play + Rote bootstrap
 
@@ -443,8 +453,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.9/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.9 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.10/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.10 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -956,12 +966,13 @@ harness is an interception candidate in every other, and nudges never double-fir
 resolution is specificity ordered (`session` over `project` over `global`); a non-global entry must
 carry its exact scope key and cannot silently widen to other sessions or projects.
 
-Cache lifecycle: `just install` kicks one detached warm-up refresh, and every session start
-re-refreshes when the cache is older than six hours — no cron, no manual sync. Without an
-installed, authenticated Rote every tier degrades to silence: the refresh fails quietly, the
-catalog stays empty, and the interceptor's advice line becomes the onboarding funnel (play skill →
-Rote probe → guided `rote-setup`). The first refresh after sign-in populates the catalog with
-everything the new identity is authorized to see.
+Cache lifecycle: setup synchronously builds a complete, canonically ordered public catalog after
+identity verification and records its stable SHA-256 fingerprint in the bootstrap receipt. **What’s
+New** therefore has a zero-network first read when the harness starts. Session start refreshes only
+when the cache is older than six hours — no cron or manual sync — and keeps the last verified
+snapshot if a maintenance refresh cannot reach the registry. The cache stores exact references,
+release metadata, labels, and tags when the registry exposes them; digest acknowledgment remains a
+separate state so refreshing never marks an item as viewed.
 
 Recurring delivery is optional and must be explicitly requested. Its host-neutral two-phase
 contract remains available for an authorized scheduler:

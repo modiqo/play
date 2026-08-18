@@ -18,11 +18,13 @@ from scripts.lib.play.bootstrap import (
     _accept_identity_only_preflight,
     _parallel_harness_work,
     _fallback_skill_config_entries,
+    _identity_gate,
     _official_rote_install_command,
     _render_status_card,
     _result_step,
     _run_visible,
     _rote_skill_command,
+    _warm_public_play_cache,
     apply,
     backup_play_state,
     build_plan,
@@ -225,7 +227,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.9",
+                                "version": "0.4.10",
                                 "enabled": True,
                             }
                         ]
@@ -236,7 +238,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.9", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.10", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -257,7 +259,7 @@ class BootstrapTest(unittest.TestCase):
             ["/bin/codex", "plugin", "add", "play@play-skills"], commands[4]
         )
         self.assertEqual("completed", steps[-1].status)
-        self.assertIn("0.4.9", steps[-1].detail)
+        self.assertIn("0.4.10", steps[-1].detail)
 
     def test_claude_marketplace_convergence_refreshes_user_scope(self) -> None:
         runner = MagicMock()
@@ -290,7 +292,7 @@ class BootstrapTest(unittest.TestCase):
                     [
                         {
                             "id": "play@play-skills",
-                            "version": "0.4.9",
+                            "version": "0.4.10",
                             "enabled": True,
                             "scope": "user",
                         }
@@ -301,7 +303,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "claude", "/bin/claude", expected_version="0.4.9", runner=runner
+            "claude", "/bin/claude", expected_version="0.4.10", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -354,7 +356,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.9",
+                                "version": "0.4.10",
                                 "enabled": True,
                             }
                         ]
@@ -372,7 +374,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.9",
+                                "version": "0.4.10",
                                 "enabled": True,
                             }
                         ]
@@ -383,7 +385,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.9", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.10", runner=runner
         )
 
         self.assertEqual(6, runner.call_count)
@@ -657,12 +659,119 @@ class BootstrapTest(unittest.TestCase):
             }
         )
 
-        self.assertIn("Status: READY — SIGN IN TO CONTINUE", rendered)
-        self.assertIn("Codex          READY", rendered)
-        self.assertIn("Sign in to start", rendered)
-        self.assertIn("offer Google or GitHub", rendered)
+        self.assertIn("Status: SETUP PAUSED — SIGN IN REQUIRED", rendered)
+        self.assertIn("Codex          WAITING FOR SIGN-IN", rendered)
+        self.assertIn("Sign in to finish setup", rendered)
+        self.assertIn("choose Google or GitHub", rendered)
+        self.assertIn("Play-owned harness state has not been changed", rendered)
         self.assertNotIn("rote login --provider", rendered)
         self.assertNotIn("INCOMPLETE", rendered)
+
+    def test_identity_gate_requires_provider_before_play_mutation(self) -> None:
+        runner = MagicMock(
+            return_value=MagicMock(returncode=0, stdout="error: Not logged in\n", stderr="")
+        )
+
+        step, ready = _identity_gate(
+            "/bin/rote", login_provider=None, runner=runner
+        )
+
+        self.assertFalse(ready)
+        self.assertEqual("onboarding_required", step.status)
+        runner.assert_called_once_with(["/bin/rote", "whoami"])
+
+    def test_identity_gate_runs_selected_oauth_provider_and_reverifies(self) -> None:
+        runner = MagicMock()
+        runner.side_effect = [
+            MagicMock(returncode=0, stdout="error: Not logged in\n", stderr=""),
+            MagicMock(returncode=0, stdout="browser completed\n", stderr=""),
+            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
+        ]
+
+        step, ready = _identity_gate(
+            "/bin/rote", login_provider="github", runner=runner
+        )
+
+        self.assertTrue(ready)
+        self.assertEqual("completed", step.status)
+        self.assertEqual(
+            ["/bin/rote", "login", "--provider", "github"], step.command
+        )
+        self.assertEqual(
+            [
+                ["/bin/rote", "whoami"],
+                ["/bin/rote", "login", "--provider", "github"],
+                ["/bin/rote", "whoami"],
+            ],
+            [call.args[0] for call in runner.call_args_list],
+        )
+
+    def test_public_cache_warm_requires_complete_fingerprinted_snapshot(self) -> None:
+        runner = MagicMock(
+            return_value=MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "schema": "play.inbox-cache/v1",
+                        "refreshed": True,
+                        "catalog_complete": True,
+                        "catalog_sha256": "sha256:" + "a" * 64,
+                        "organization_scope": ["modiqo"],
+                        "counts": {"public": 47},
+                    }
+                ),
+                stderr="",
+            )
+        )
+
+        step = _warm_public_play_cache(
+            ROOT, runner=runner, progress=Progress(enabled=False)
+        )
+
+        self.assertEqual("completed", step.status)
+        self.assertIn("47 public Plays", step.detail)
+        assert step.command is not None
+        self.assertIn("--require-complete-catalog", step.command)
+
+    @patch("scripts.lib.play.bootstrap.backup_play_state")
+    @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
+    def test_apply_stops_before_backup_when_identity_is_missing(
+        self, _resolve_rote: MagicMock, backup: MagicMock
+    ) -> None:
+        plan = {
+            "plan_id": "sha256:identity-gate",
+            "selected_harnesses": ["codex"],
+            "targets": [],
+            "rote": {
+                "path": "/bin/rote",
+                "version": "1.0.0",
+                "identity": "required",
+                "update": {
+                    "status": "current",
+                    "detail": "Rote is current.",
+                    "recommended_action": "keep",
+                },
+            },
+            "rote_skills": [],
+        }
+        runner = MagicMock()
+        runner.side_effect = [
+            MagicMock(returncode=0, stdout="error: Not logged in\n", stderr=""),
+            MagicMock(returncode=0, stdout="version: 1.0.0\n", stderr=""),
+            MagicMock(returncode=0, stdout="error: Not logged in\n", stderr=""),
+        ]
+
+        report = apply(
+            ROOT,
+            requested=["codex"],
+            runner=runner,
+            run_id="identity-gate-run",
+            prepared_plan=plan,
+        )
+
+        self.assertEqual("onboarding_required", report["status"])
+        self.assertEqual(["check_rote_update", "rote_identity"], [step["id"] for step in report["steps"]])
+        backup.assert_not_called()
 
     def test_status_card_keeps_structured_command_output_in_report(self) -> None:
         verbose = json.dumps(
@@ -785,7 +894,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.9 is installed and enabled.",
+                "Play 0.4.10 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -800,13 +909,26 @@ class BootstrapTest(unittest.TestCase):
             MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
             MagicMock(returncode=0, stdout="Rote 1.1.0 is available\n", stderr=""),
             MagicMock(returncode=0, stdout="updated to 1.1.0\n", stderr=""),
+            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "schema": "play.inbox-cache/v1",
+                        "refreshed": True,
+                        "catalog_complete": True,
+                        "catalog_sha256": "sha256:" + "a" * 64,
+                        "organization_scope": ["modiqo"],
+                        "counts": {"public": 47},
+                    }
+                ),
+                stderr="",
+            ),
             MagicMock(returncode=0, stdout="installed all skills\n", stderr=""),
             MagicMock(returncode=0, stdout="Play ready\n", stderr=""),
-            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
             MagicMock(returncode=0, stdout='{"ready":true}\n', stderr=""),
             MagicMock(returncode=0, stdout="version: 1.1.0\n", stderr=""),
             MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
-            MagicMock(returncode=0, stdout="You are on the latest version!\n", stderr=""),
         ]
 
         report = apply(
@@ -840,11 +962,19 @@ class BootstrapTest(unittest.TestCase):
         self.assertLess(
             step_ids.index("verify_play_plugin"), step_ids.index("install_play")
         )
+        self.assertLess(
+            step_ids.index("rote_identity"), step_ids.index("backup_play_state")
+        )
+        self.assertLess(
+            step_ids.index("warm_public_play_cache"),
+            step_ids.index("backup_play_state"),
+        )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.9", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.10", _converge_marketplace.call_args.kwargs["expected_version"]
         )
 
+    @patch("scripts.lib.play.bootstrap._choose_login_provider", return_value="google")
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
     @patch("scripts.lib.play.bootstrap.apply")
     @patch("scripts.lib.play.bootstrap.build_plan")
@@ -853,6 +983,7 @@ class BootstrapTest(unittest.TestCase):
         build: MagicMock,
         apply_plan: MagicMock,
         confirm: MagicMock,
+        choose_provider: MagicMock,
     ) -> None:
         build.return_value = {
             "plan_id": "sha256:guided",
@@ -899,6 +1030,7 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertEqual(0, result)
         confirm.assert_called_once()
+        choose_provider.assert_called_once_with()
         self.assertIn("Install Rote and Play", confirm.call_args.args[0])
         self.assertIn("Your setup", output.getvalue())
         self.assertNotIn("Play setup plan", output.getvalue())
@@ -907,6 +1039,7 @@ class BootstrapTest(unittest.TestCase):
             top_k=3,
             requested=["codex"],
             approve_remote_installer=True,
+            login_provider="google",
             run_id="guided-run",
             expected_plan_id="sha256:guided",
             prepared_plan=build.return_value,

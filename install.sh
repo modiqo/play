@@ -172,6 +172,11 @@ case "${PLAY_APPROVE_REMOTE_INSTALLER:-}" in
   1) set -- "$@" --approve-remote-installer ;;
   *) fail "PLAY_APPROVE_REMOTE_INSTALLER must be 0 or 1" ;;
 esac
+case "${PLAY_LOGIN_PROVIDER:-}" in
+  "") ;;
+  google|github) set -- "$@" --login-provider "$PLAY_LOGIN_PROVIDER" ;;
+  *) fail "PLAY_LOGIN_PROVIDER must be google or github" ;;
+esac
 if [ -n "${PLAY_INSTALL_TOP_K:-}" ]; then
   set -- "$@" --top-k "$PLAY_INSTALL_TOP_K"
 fi
