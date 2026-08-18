@@ -171,6 +171,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn(str(ROOT / "scripts" / "bin" / "play-intercept"), json.dumps(prompt))
         self.assertTrue(path.with_name("hooks.json.play-backup-test-run").is_file())
         self.assertIn("Stop", value["hooks"])
+        self.assertIn("milestone-nudge", json.dumps(value["hooks"]["Stop"]))
         self.assertIn("SessionStart", value["hooks"])
 
     def test_codex_hook_reinstall_resets_only_play_disabled_state(self) -> None:
@@ -255,6 +256,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(1, value["version"])
         self.assertIn("play-intercept", value["hooks"]["beforeSubmitPrompt"][0]["command"])
         self.assertIn("play-intercept", value["hooks"]["stop"][0]["command"])
+        self.assertIn("milestone-nudge", value["hooks"]["stop"][0]["command"])
         self.assertIn("play-inbox", value["hooks"]["sessionStart"][0]["command"])
 
     def test_native_plugin_removes_only_legacy_play_hooks(self) -> None:
@@ -355,7 +357,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.27",
+                                "version": "0.4.28",
                                 "enabled": True,
                             }
                         ]
@@ -366,7 +368,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.27", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.28", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -387,7 +389,7 @@ class BootstrapTest(unittest.TestCase):
             ["/bin/codex", "plugin", "add", "play@play-skills"], commands[4]
         )
         self.assertEqual("completed", steps[-1].status)
-        self.assertIn("0.4.27", steps[-1].detail)
+        self.assertIn("0.4.28", steps[-1].detail)
 
     def test_claude_marketplace_convergence_refreshes_user_scope(self) -> None:
         runner = MagicMock()
@@ -420,7 +422,7 @@ class BootstrapTest(unittest.TestCase):
                     [
                         {
                             "id": "play@play-skills",
-                            "version": "0.4.27",
+                            "version": "0.4.28",
                             "enabled": True,
                             "scope": "user",
                         }
@@ -431,7 +433,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "claude", "/bin/claude", expected_version="0.4.27", runner=runner
+            "claude", "/bin/claude", expected_version="0.4.28", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -484,7 +486,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.27",
+                                "version": "0.4.28",
                                 "enabled": True,
                             }
                         ]
@@ -502,7 +504,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.27",
+                                "version": "0.4.28",
                                 "enabled": True,
                             }
                         ]
@@ -513,7 +515,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.27", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.28", runner=runner
         )
 
         self.assertEqual(6, runner.call_count)
@@ -1042,7 +1044,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.27 is installed and enabled.",
+                "Play 0.4.28 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -1127,7 +1129,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.27", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.28", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 

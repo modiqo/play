@@ -57,6 +57,7 @@ from play.continuations import (
 )
 from play.private_store import PrivateStoreError
 from play.preflight import inspect as inspect_preflight
+from play.milestones import observe_transition
 
 
 def _read_object() -> dict[str, Any]:
@@ -263,8 +264,13 @@ def main() -> int:
                 raise ControllerRuntimeError("stdin requires a continuation_id")
             if not isinstance(event_payload, dict):
                 raise ControllerRuntimeError("stdin requires an event object")
-            result = runtime.advance_session(
-                session, event_from_dict(event_payload)
+            event = event_from_dict(event_payload)
+            result = runtime.advance_session(session, event)
+            observe_transition(
+                source=str(session.cursor.state),
+                event=str(event.id),
+                target=str(result.session.cursor.state),
+                context=result.session.context,
             )
             terminal = result.session.cursor.state in runtime.bundle.terminals
             payload = {
@@ -299,12 +305,21 @@ def main() -> int:
                 if not isinstance(event_payload, dict):
                     raise ControllerRuntimeError("event must be an object")
                 event = event_from_dict(event_payload)
-                session = runtime.advance_session(session, event).session
+                source = str(session.cursor.state)
+                result = runtime.advance_session(session, event)
+                session = result.session
+                observe_transition(
+                    source=source,
+                    event=str(event.id),
+                    target=str(session.cursor.state),
+                    context=session.context,
+                )
             yielded = advance_until_yield(
                 runtime,
                 session,
                 root=ROOT,
                 max_actions=args.max_actions,
+                transition_observer=observe_transition,
             )
             terminal = yielded.session.cursor.state in runtime.bundle.terminals
             payload = {

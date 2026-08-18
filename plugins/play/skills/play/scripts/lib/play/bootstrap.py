@@ -1701,7 +1701,7 @@ def _managed_hook_entries(harness: str, source: Path) -> dict[str, list[dict[str
     intercept = shlex.quote(str(source / "scripts" / "bin" / "play-intercept"))
     inbox = shlex.quote(str(source / "scripts" / "bin" / "play-inbox"))
     prompt = f"{intercept} prompt 2>/dev/null || true"
-    stop = f"{intercept} settle-nudge 2>/dev/null || true"
+    stop = f"{intercept} milestone-nudge 2>/dev/null || true"
     session = f"{inbox} line 2>/dev/null; ({inbox} refresh --if-older-than 6 >/dev/null 2>&1 &)"
     if harness in {"codex", "claude"}:
         return {

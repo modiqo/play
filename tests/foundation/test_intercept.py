@@ -19,8 +19,10 @@ from play.intercept import (
     is_cheat_sheet_request,
     is_direct_request,
     load_index,
+    milestone_nudge,
     settle_nudge,
 )
+from play.milestones import record_event
 from play.routing import add_route
 from play.sidekick import append_ledger_entry, start_capture
 
@@ -53,6 +55,7 @@ class InterceptTest(unittest.TestCase):
             "PLAY_ROUTING_USER_PATH": str(base / "routing.yaml"),
             "PLAY_SIDEKICK_STANDBY_PATH": str(base / "standby.json"),
             "PLAY_SIDEKICK_LEDGER_PATH": str(base / "preferences.json"),
+            "PLAY_MILESTONE_PATH": str(base / "milestones.json"),
         }
         self._saved = {key: os.environ.get(key) for key in self._environment}
         os.environ.update(self._environment)
@@ -258,26 +261,41 @@ class InterceptTest(unittest.TestCase):
     def test_no_match_no_verb_is_silent(self) -> None:
         self.assertIsNone(intercept_prompt("refactor the widget renderer for clarity"))
 
-    def test_settle_nudge_fires_once_per_capture_and_session(self) -> None:
+    def test_active_capture_stays_internal_at_stop(self) -> None:
         def initialize(name: str) -> Path:
             path = Path(self._temporary.name) / name
             path.mkdir()
             return path
 
-        capture = start_capture(
+        start_capture(
             intent="deploy staging and post summary",
             task_class="build-ship-chore",
             reason="no_match",
             workspace_initializer=initialize,
         )
-        first = settle_nudge("session-a")
-        assert first is not None
-        self.assertIn("$play settle", first)
-        self.assertIn(capture["reference"], first)
-        self.assertIsNone(settle_nudge("session-a"))
-        self.assertIsNotNone(settle_nudge("session-b"))
+        self.assertIsNone(milestone_nudge("session-a"))
+        self.assertIsNone(settle_nudge("session-b"))
 
-    def test_settle_nudge_silent_without_a_hook(self) -> None:
+    def test_first_run_unlock_teaches_playrunner_to_playmaker_path_once(self) -> None:
+        record_event(
+            "play_run_completed",
+            run_id="run-hello",
+            reference="modiqo/hello",
+        )
+
+        first = milestone_nudge("session-a")
+        assert first is not None
+        self.assertIn("Playrunner unlocked", first)
+        self.assertIn("$play <play URI>", first)
+        self.assertIn("$play <what you want in English>", first)
+        self.assertIn("$play explore <something useful>", first)
+        self.assertIn("save this Play", first)
+        self.assertNotIn("cap_", first)
+        self.assertNotIn("$play settle", first)
+        self.assertIsNone(milestone_nudge("session-a"))
+        self.assertIsNone(milestone_nudge("session-b"))
+
+    def test_milestone_nudge_silent_without_an_event(self) -> None:
         self.assertIsNone(settle_nudge("session-a"))
 
     def test_best_match_requires_two_name_tokens(self) -> None:

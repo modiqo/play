@@ -9,7 +9,7 @@ import re
 import shlex
 import subprocess
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -68,6 +68,7 @@ def advance_until_yield(
     *,
     root: Path,
     max_actions: int = 32,
+    transition_observer: Callable[..., None] | None = None,
 ) -> RuntimeYield:
     """Execute eligible deterministic Play actions until human/model work is required."""
 
@@ -94,6 +95,13 @@ def advance_until_yield(
             root=root,
         )
         result = runtime.advance_session(current, event)
+        if transition_observer is not None:
+            transition_observer(
+                source=str(current.cursor.state),
+                event=str(event.id),
+                target=str(result.session.cursor.state),
+                context=result.session.context,
+            )
         trace.append(
             DeterministicTrace(
                 state=str(current.cursor.state),
