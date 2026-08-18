@@ -21,13 +21,14 @@ class CheatSheetTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         for heading in (
-            "## Get started for the first time",
-            "## Find and run an existing Play",
-            "## See what is available",
-            "## Turn successful work into a Play",
-            "## See how a Play was made",
-            "## Work directly for one request",
-            "## Route a provider directly in this project",
+            "## Pick your path",
+            "## Your first minute: become a Playrunner",
+            "## Ask for an outcome, not a command",
+            "## Know what “Pull and run” means",
+            "## Follow the nudges: Playrunner → Playmaker",
+            "## Turn your expertise into a Play",
+            "## Pocket card",
+            "## The three rules worth remembering",
         ):
             self.assertIn(heading, result.stdout)
         for command in (
@@ -39,7 +40,9 @@ class CheatSheetTest(unittest.TestCase):
             self.assertIn(command, result.stdout)
         self.assertIn("You:", result.stdout)
         self.assertIn("Play:", result.stdout)
-        self.assertIn("There is deliberately no sticky `$play skip` mode", result.stdout)
+        self.assertIn("The bypass covers inference continuations, delegation, retries, and tool loops", result.stdout)
+        self.assertIn("Inspect before you approve", result.stdout)
+        self.assertIn("Secrets stay out of chat", result.stdout)
 
 
 if __name__ == "__main__":
