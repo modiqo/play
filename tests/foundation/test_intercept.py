@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -73,6 +75,31 @@ class InterceptTest(unittest.TestCase):
             else:
                 os.environ[key] = value
         self._temporary.cleanup()
+
+    @unittest.skipUnless(Path("/usr/bin/python3").is_file(), "system Python unavailable")
+    def test_entrypoint_bootstraps_pinned_environment_when_yaml_is_missing(self) -> None:
+        if shutil.which("uv") is None:
+            self.skipTest("uv unavailable")
+        result = subprocess.run(
+            [
+                "/usr/bin/python3",
+                str(ROOT / "scripts" / "bin" / "play-intercept"),
+                "prompt",
+            ],
+            input=json.dumps({"prompt": "play cheat-sheet"}),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+            env={**os.environ, "PLAY_INTERCEPT_UV_BOOTSTRAPPED": "0"},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertIn(
+            "cheat-sheet",
+            payload["hookSpecificOutput"]["additionalContext"],
+        )
 
     def _write_flow(
         self, name: str, description: str, tag: str, owner: str | None = None

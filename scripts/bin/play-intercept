@@ -3,10 +3,36 @@
 
 from __future__ import annotations
 
+import importlib.util
+import os
+import shutil
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+ROOT = Path(__file__).resolve().parents[2]
+if importlib.util.find_spec("yaml") is None:
+    uv = shutil.which("uv")
+    if uv is None or os.environ.get("PLAY_INTERCEPT_UV_BOOTSTRAPPED") == "1":
+        raise SystemExit(
+            "play-intercept requires uv or the pinned Play Python environment"
+        )
+    environment = os.environ.copy()
+    environment["PLAY_INTERCEPT_UV_BOOTSTRAPPED"] = "1"
+    os.execve(
+        uv,
+        [
+            uv,
+            "run",
+            "--project",
+            str(ROOT),
+            str(Path(__file__).resolve()),
+            *sys.argv[1:],
+        ],
+        environment,
+    )
+
+sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.intercept import main
 

@@ -1543,7 +1543,7 @@ def _verify_prompt_intercept(source: Path) -> None:
             text=True,
             capture_output=True,
             check=False,
-            timeout=5,
+            timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise BootstrapError(f"Play prompt hook smoke check failed: {error}") from error
