@@ -24,7 +24,7 @@ from play.controller import (
 )
 from play.runtime_actions import _execute_instruction, advance_until_yield
 from play.runtime_context import RuntimeContextError, validate_mutation_contract
-from play.handoff import prepare_play_run_handoff, verify_authentication_receipt
+from play.handoff import prepare_play_run_handoff
 
 
 class ControllerRuntimeTest(unittest.TestCase):
@@ -48,7 +48,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(75, len(self.runtime.bundle.states))
+        self.assertEqual(73, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -169,7 +169,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             projection["instruction"]["input"],
         )
 
-    def test_use_run_auth_failure_preserves_source_for_guided_repair(self) -> None:
+    def test_legacy_play_auth_failure_preserves_source_for_guided_authentication(self) -> None:
         session = self.runtime.initial_session(
             run_id="session-auth-source",
             task_key="task-auth-source",
@@ -224,13 +224,13 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         self.assertEqual("required", advanced.session.context["authentication"]["status"])
         self.assertEqual("human", advanced.projection.as_dict()["state"]["boundary"])
-        self.assertIn("oauth_dcr", advanced.projection.as_dict()["instruction"]["question"])
+        self.assertIn("does not declare adapter.auth.ensure", advanced.projection.as_dict()["instruction"]["question"])
         authentication_choice = next(
             choice
             for choice in advanced.projection.as_dict()["instruction"]["choices"]
             if choice["id"] == "authenticate"
         )
-        self.assertIn("backing up, deleting, and recreating", authentication_choice["description"])
+        self.assertIn("configure only the named adapter", authentication_choice["description"])
 
     def test_approved_authentication_redirects_harness_to_adapter_specialist(self) -> None:
         session = self.runtime.initial_session(
@@ -311,17 +311,9 @@ class ControllerRuntimeTest(unittest.TestCase):
             "rote-adapter-config", yielded.projection["instruction"]["specialist"]
         )
         authentication_policy = " ".join(yielded.projection["instruction"]["command_policy"])
-        self.assertIn(
-            "rote adapter new-from-mcp <adapter_id> <endpoint> --headless",
-            authentication_policy,
-        )
-        self.assertIn("Never use a placeholder or fabricated token", authentication_policy)
-        self.assertEqual(
-            "required",
-            yielded.projection["instruction"]["input"]["authentication"]["packet"][
-                "authentication"
-            ]["status"],
-        )
+        self.assertIn("compatibility path only", authentication_policy)
+        self.assertIn("do not declare adapter.auth.ensure", authentication_policy)
+        self.assertEqual([], yielded.projection["instruction"]["input"]["inspection"]["operations"])
 
         evidence_refs = ["rote:adapter-health/crucible:fresh"]
         specialist_result = {
@@ -345,37 +337,13 @@ class ControllerRuntimeTest(unittest.TestCase):
             ),
         )
 
-        self.assertEqual("use_authentication_receipt", received.session.context["state"])
-        receipt = received.session.context["authentication"]["receipt"]
-        self.assertEqual("play.authentication-receipt/v1", receipt["schema"])
-        result = receipt["payload"]["authentication"]
-        self.assertEqual("rote_authentication_result", result["source"])
+        self.assertEqual("use_inspect", received.session.context["state"])
+        result = received.session.context["authentication"]
         self.assertEqual("authenticated", result["status"])
         self.assertEqual("crucible", result["adapter_id"])
         self.assertEqual("reauth", result["authentication_action"])
-        self.assertNotIn("blocked_reason", result)
-        self.assertNotIn("recoverable", result)
-        validation = verify_authentication_receipt(
-            received.projection.as_dict()["instruction"]["input"]
-        )
-        self.assertTrue(validation["ok"])
-        self.assertEqual("specialist_authentication_ready", validation["event"])
-
-        receipt_projection = received.projection.as_dict()
-        receipt_event, _ = _execute_instruction(
-            receipt_projection["instruction"],
-            projection=receipt_projection,
-            context=received.session.context,
-            root=ROOT,
-        )
-        validated = self.runtime.advance_session(received.session, receipt_event)
-
-        self.assertEqual("use_inspect", validated.session.context["state"])
-        self.assertEqual("specialist_authentication_ready", receipt_event.id)
-        self.assertTrue(validated.session.context["authentication"]["receipt_valid"])
-        self.assertIsInstance(
-            validated.session.context["authentication"]["receipt_ref"], str
-        )
+        self.assertEqual(evidence_refs, result["evidence_refs"])
+        self.assertIsNone(result["receipt"])
 
     def test_session_advance_applies_event_and_checkpoints_context(self) -> None:
         session = self.runtime.initial_session(
@@ -1551,51 +1519,49 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         self.assertEqual("action_blocked", yielded.trace[0].event)
 
-    @patch("play.runtime_actions.subprocess.run")
-    def test_invalid_authentication_receipt_surfaces_its_reason_at_terminal(
-        self, run
-    ) -> None:
-        run.return_value = SimpleNamespace(
-            returncode=0,
-            stderr="",
-            stdout=json.dumps(
-                {
-                    "schema": "play.authentication-handoff-verification/v1",
-                    "ok": False,
-                    "event": "authentication_receipt_invalid",
-                    "receipt_valid": False,
-                    "blocked_reason": "packet and receipt must be objects",
-                    "evidence_refs": [],
-                    "reasons": ["packet and receipt must be objects"],
-                }
-            ),
-        )
+    def test_legacy_authentication_failure_blocks_without_a_receipt(self) -> None:
         session = self.runtime.initial_session(
-            run_id="session-invalid-auth-receipt",
-            task_key="task-invalid-auth-receipt",
+            run_id="session-legacy-auth-failed",
+            task_key="task-legacy-auth-failed",
             request_original="Run Crucible assessment",
         )
         context = dict(session.context)
-        context["state"] = "use_authentication_receipt"
+        context["state"] = "use_authentication_execute"
         context["authentication"] = {
             **context["authentication"],
-            "packet": {"schema": "play.authentication-handoff/v1"},
-            "packet_sha256": "a" * 64,
-            "receipt": {"schema": "play.authentication-receipt/v1"},
+            "source": "rote_authentication_required",
+            "status": "approved",
+            "owner": "rote-adapter-config",
+            "recoverable": True,
+            "adapter_id": "crucible",
+            "env_var": "ADAPTER_CRUCIBLE_TOKEN",
+            "classified_rung": "oauth_dcr",
+            "distinguishing_error": "missing: browser authorization required",
+            "original_packet": {"schema": "play.run-handoff/v1"},
+            "original_packet_sha256": "a" * 64,
+            "evidence_refs": ["sha256:auth-required"],
         }
         bound = replace(
             session,
-            cursor=replace(session.cursor, state=StateId("use_authentication_receipt")),
+            cursor=replace(session.cursor, state=StateId("use_authentication_execute")),
             context=context,
         )
 
-        yielded = advance_until_yield(self.runtime, bound, root=ROOT)
-
-        self.assertEqual("blocked", yielded.projection["state"]["id"])
-        self.assertEqual(
-            ("packet and receipt must be objects",), yielded.presentations
+        advanced = self.runtime.advance_session(
+            bound,
+            ControllerEvent(
+                id=EventId("authentication_failed"),
+                payload={
+                    "reason": "provider authorization was declined",
+                    "evidence_refs": ["sha256:auth-failed"],
+                },
+                guards={},
+            ),
         )
-        self.assertEqual("authentication_receipt_invalid", yielded.trace[0].event)
+
+        self.assertEqual("blocked", advanced.session.context["state"])
+        self.assertEqual("failed", advanced.session.context["authentication"]["status"])
+        self.assertIsNone(advanced.session.context["authentication"]["receipt"])
 
     @patch("play.runtime_actions.subprocess.run")
     def test_advance_until_yield_auto_inspects_and_routes_local_play(self, run) -> None:

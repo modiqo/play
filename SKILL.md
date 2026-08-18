@@ -122,11 +122,14 @@ Never infer confirmation, choose **Yes, continue** for the user, or summarize a 
 - `specialist`: invoke only `instruction.specialist` with `instruction.input` through the
   harness's skill mechanism; resume with the one accepted typed receipt event. Interactive
   specialists own their own user questions — ask those directly and continue inside the
-  specialist flow; return to the runtime only with a declared receipt event. For
-  `authentication_ready`, return only the verified `authentication_action` and `evidence_refs`;
-  Play deterministically binds `authenticated`, `rote_authentication_result`, and the adapter
-  identity from its approved packet. Never copy request-only authentication fields into the result.
+  specialist flow; return to the runtime only with a declared receipt event.
 - `terminal`: present the terminal outcome and stop.
+
+Authentication declared by a saved Play stays inside its approved `rote play run`. When inspection
+shows `adapter.auth.ensure`, complete secure provider sign-in inside that step and continue the same
+run; never invoke `rote-adapter-config`, run `rote oauth` separately, or synthesize an authentication
+receipt for it. Only an older Play without `adapter.auth.ensure` may enter the explicit
+`rote-adapter-config` compatibility path after its run reports authentication is required.
 
 Never run full Play preflight during a normal request. Install-time convergence owns cross-harness
 readiness; the normal runtime owns its exact dependency and authentication states and projects a

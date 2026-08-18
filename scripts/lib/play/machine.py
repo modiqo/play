@@ -464,13 +464,6 @@ def validate_bundle(
         if not changed:
             break
     rules = {
-        "use_authentication_offer": (
-            "use_authentication_handoff",
-            "use_authentication_execute",
-            "use_authentication_receipt",
-        ),
-        "use_authentication_handoff": ("use_authentication_execute", "use_authentication_receipt"),
-        "use_authentication_execute": ("use_authentication_receipt",),
         "save_judge": ("crystallize",),
         "crystallize": ("save_prepare", "save_offer", "public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
         "save_prepare": ("save_offer", "public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
@@ -899,27 +892,6 @@ def validate_bundle(
         .get("enum")
         == ["unknown", "resolved", "choice_required", "unavailable"],
         "publication context must retain typed pre-save owner resolution",
-    )
-    authentication_owner_enum = (
-        context_schema.get("$defs", {})
-        .get("authentication", {})
-        .get("properties", {})
-        .get("owner", {})
-        .get("enum")
-    )
-    check(
-        authentication_owner_enum == ["rote-adapter-config", None],
-        "authentication must use a separate closed rote-adapter-config owner",
-    )
-    check(
-        actions.get("prepare_authentication_handoff", {}).get("command")
-        == "scripts/bin/play-handoff prepare-authentication --stdin --json",
-        "authentication availability must use its dedicated handoff gate",
-    )
-    check(
-        actions.get("validate_authentication_receipt", {}).get("command")
-        == "scripts/bin/play-handoff verify-authentication --stdin --json",
-        "authentication receipts must use their dedicated verification gate",
     )
     check(
         actions.get("present_birth_certificate", {}).get("command")

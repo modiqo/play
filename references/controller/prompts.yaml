@@ -177,12 +177,12 @@ prompts:
       play_parameter_supplied: [prompt_version, selected_at, parameter_input.name, parameter_input.value]
 
   approve_authentication:
-    question: "{authentication.adapter_id} needs {authentication.classified_rung} authentication before this Play can run. Sign in now?"
-    template_fields: [authentication.adapter_id, authentication.classified_rung]
+    question: "This older Play does not declare adapter.auth.ensure, and {authentication.adapter_id} authentication blocked its run. Continue with guided authentication?"
+    template_fields: [authentication.adapter_id]
     selection: single
     choices:
-      - {id: authenticate, label: Continue secure sign-in, description: "Open the protocol-appropriate secure prompt or browser flow. For MCP OAuth DCR only, if normal sign-in finds no token-storage entry, this also approves backing up, deleting, and recreating that adapter from its verified endpoint before authentication is verified and the exact Play is retried.", event: authentication_approved}
-      - {id: stop, label: Not now, description: Stop without changing credentials, adapter authentication, or the original operation., event: authentication_declined}
+      - {id: authenticate, label: Continue guided authentication, description: "Let the authentication specialist configure only the named adapter, then retry the exact approved Play.", event: authentication_approved}
+      - {id: stop, label: Not now, description: Stop without changing authentication or retrying the Play., event: authentication_declined}
     events:
       authentication_approved: [prompt_version, selected_at, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.original_packet_sha256]
       authentication_declined: [prompt_version, selected_at, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.original_packet_sha256]

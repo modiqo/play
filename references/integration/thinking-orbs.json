@@ -226,19 +226,11 @@
     },
     "use_authentication_offer": {
       "orb": "listening",
-      "label": "Waiting for Play authentication approval…"
-    },
-    "use_authentication_handoff": {
-      "orb": "connecting",
-      "label": "Connecting the Play authentication specialist…"
+      "label": "Waiting for legacy Play authentication approval…"
     },
     "use_authentication_execute": {
       "orb": "weaving",
-      "label": "Coordinating Play authentication…"
-    },
-    "use_authentication_receipt": {
-      "orb": "solving",
-      "label": "Checking the Play authentication receipt…"
+      "label": "Authenticating an adapter for a legacy Play…"
     },
     "use_verify": {
       "orb": "solving",

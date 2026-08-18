@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -28,6 +29,13 @@ def payload(reference: str = URI) -> dict:
             "exact_reference": EXACT,
             "disclosure_sha256": "a" * 64,
             "local_change": "none",
+            "operations": [
+                {
+                    "name": "google_auth",
+                    "target": "adapter/gmail",
+                    "operation": "adapter.auth.ensure",
+                }
+            ],
         },
         "request": {"parameters": parameters},
         "output_policy": {
@@ -132,6 +140,7 @@ class UniversalPlayRunTest(unittest.TestCase):
             arguments,
         )
         self.assertEqual("structured", run.call_args.kwargs["env"]["ROTE_OUTPUT_MODE"])
+        self.assertEqual("1", run.call_args.kwargs["env"]["ROTE_FLOW_PROGRESS"])
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")
@@ -195,29 +204,38 @@ class UniversalPlayRunTest(unittest.TestCase):
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")
-    def test_marker_auth_failure_routes_every_protocol_to_adapter_config(
+    def test_auth_ensure_owns_browser_authentication_without_specialist(
         self, run, _which
     ) -> None:
-        for protocol in AUTH_PROTOCOLS:
+        for protocol in ("oauth", "oauth_dcr", "google_discovery"):
             with self.subTest(protocol=protocol):
-                run.return_value = subprocess.CompletedProcess(
-                    args=[], returncode=1, stdout="", stderr=auth_markers(protocol)
-                )
+                terminal_stdin: list[bool] = []
+
+                def invoke(*_args, **kwargs):
+                    stdin = kwargs.get("stdin")
+                    terminal_stdin.append(
+                        isinstance(stdin, int) and os.isatty(stdin)
+                    )
+                    if len(terminal_stdin) == 1:
+                        return subprocess.CompletedProcess(
+                            args=[], returncode=1, stdout="", stderr=auth_markers(protocol)
+                        )
+                    return subprocess.CompletedProcess(
+                        args=[], returncode=0, stdout="authenticated output", stderr=""
+                    )
+
+                run.side_effect = invoke
 
                 result = execute(payload())
 
-                self.assertEqual("play_authentication_required", result["event"])
-                repair = result["authentication"]
-                self.assertEqual("rote_authentication_required", repair["source"])
-                self.assertEqual("rote-adapter-config", repair["owner"])
-                self.assertEqual("crucible", repair["adapter_id"])
-                self.assertEqual("ADAPTER_CRUCIBLE_TOKEN", repair["env_var"])
-                self.assertEqual(protocol, repair["classified_rung"])
-                self.assertIn("missing:", repair["distinguishing_error"])
+                self.assertEqual("play_run_ready", result["event"])
+                self.assertEqual([False, True], terminal_stdin)
+                self.assertEqual(2, run.call_count)
+                run.reset_mock(side_effect=True)
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")
-    def test_json_auth_failure_routes_every_protocol_to_adapter_config(
+    def test_legacy_play_without_auth_ensure_routes_typed_auth_to_specialist(
         self, run, _which
     ) -> None:
         for protocol in AUTH_PROTOCOLS:
@@ -225,15 +243,19 @@ class UniversalPlayRunTest(unittest.TestCase):
                 run.return_value = subprocess.CompletedProcess(
                     args=[], returncode=1, stdout="", stderr=auth_json(protocol)
                 )
+                request = payload()
+                request["inspection"]["operations"] = []
 
-                result = execute(payload())
+                result = execute(request)
 
                 self.assertEqual("play_authentication_required", result["event"])
                 self.assertEqual(protocol, result["authentication"]["classified_rung"])
+                self.assertEqual("rote-adapter-config", result["authentication"]["owner"])
+                run.reset_mock()
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")
-    def test_prose_auth_failure_routes_every_protocol_to_adapter_config(
+    def test_legacy_play_prose_auth_failure_uses_compatibility_path(
         self, run, _which
     ) -> None:
         for protocol in AUTH_PROTOCOLS:
@@ -242,10 +264,31 @@ class UniversalPlayRunTest(unittest.TestCase):
                     args=[], returncode=1, stdout="", stderr=auth_prose(protocol)
                 )
 
-                result = execute(payload())
+                request = payload()
+                request["inspection"]["operations"] = []
+                result = execute(request)
 
                 self.assertEqual("play_authentication_required", result["event"])
                 self.assertEqual(protocol, result["authentication"]["classified_rung"])
+                run.reset_mock()
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_auth_ensure_failure_never_falls_back_to_specialist(self, run, _which) -> None:
+        run.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="", stderr=auth_markers("google_discovery")
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="", stderr=auth_markers("google_discovery")
+            ),
+        ]
+
+        result = execute(payload())
+
+        self.assertEqual("action_blocked", result["event"])
+        self.assertNotIn("authentication", result)
+        self.assertEqual(2, run.call_count)
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")

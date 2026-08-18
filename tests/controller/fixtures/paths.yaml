@@ -281,13 +281,11 @@ cases:
     terminal: completed
     excludes: [qualify, search, author_release, birth_capture, private_org, private_publish, public_publish, birth_bind, index]
 
-  - name: a use-run auth failure can be authenticated and retried through the exact chain
+  - name: a legacy Play without auth ensure can use specialist authentication after failure
     steps:
       - {state: use_run, event: play_authentication_required, target: use_authentication_offer}
-      - {state: use_authentication_offer, event: authentication_approved, target: use_authentication_handoff}
-      - {state: use_authentication_handoff, event: authentication_handoff_ready, target: use_authentication_execute}
-      - {state: use_authentication_execute, event: authentication_ready, target: use_authentication_receipt}
-      - {state: use_authentication_receipt, event: specialist_authentication_ready, target: use_inspect}
+      - {state: use_authentication_offer, event: authentication_approved, target: use_authentication_execute}
+      - {state: use_authentication_execute, event: authentication_ready, target: use_inspect}
       - {state: use_inspect, event: play_inspected, target: use_decide}
       - {state: use_decide, event: local_play_ready, target: use_prepare}
       - {state: use_prepare, event: play_run_handoff_ready, target: use_run}
@@ -295,19 +293,18 @@ cases:
       - {state: use_verify, event: outcome_verified, target: use_receipt}
       - {state: use_receipt, event: receipt_ready, target: receipt}
     terminal: receipt
-    includes_once: [use_authentication_offer, use_authentication_handoff, use_authentication_execute, use_authentication_receipt]
+    includes_once: [use_authentication_offer, use_authentication_execute]
 
-  - name: declined use-run authentication repair blocks without retrying
+  - name: declined legacy authentication blocks without retrying
     steps:
       - {state: use_run, event: play_authentication_required, target: use_authentication_offer}
       - {state: use_authentication_offer, event: authentication_declined, target: blocked}
     terminal: blocked
-    excludes: [use_authentication_handoff, use_authentication_execute, use_authentication_receipt]
+    excludes: [use_authentication_execute]
 
-  - name: invalid use-run authentication repair receipt blocks before retry
+  - name: failed legacy authentication blocks before retry
     steps:
-      - {state: use_authentication_execute, event: authentication_ready, target: use_authentication_receipt}
-      - {state: use_authentication_receipt, event: authentication_receipt_invalid, target: blocked}
+      - {state: use_authentication_execute, event: authentication_failed, target: blocked}
     terminal: blocked
     excludes: [use_inspect, use_run]
 

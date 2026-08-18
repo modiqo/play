@@ -447,41 +447,20 @@ states:
   use_authentication_offer:
     owner: play
     checkpoint: after
-    requires: [authentication.source, authentication.status, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.evidence_refs, authentication.original_packet, authentication.original_packet_sha256]
+    requires: [inspection.operations, authentication.source, authentication.status, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.evidence_refs, authentication.original_packet, authentication.original_packet_sha256]
     prompt: approve_authentication
     "on":
-      authentication_approved: [{target: use_authentication_handoff, mutate: approve_authentication}]
+      authentication_approved: [{target: use_authentication_execute, mutate: approve_authentication}]
       authentication_declined: [{target: blocked, mutate: decline_authentication}]
-
-  use_authentication_handoff:
-    owner: play
-    checkpoint: after
-    requires: [authentication.source, authentication.status, authentication.owner, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.evidence_refs, authentication.original_packet, authentication.original_packet_sha256]
-    entry: {action: prepare_authentication_handoff}
-    "on":
-      authentication_handoff_ready: [{target: use_authentication_execute, mutate: record_authentication_handoff}]
-      authentication_specialist_unavailable: [{target: blocked, mutate: record_authentication_unavailable}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_authentication_execute:
     owner: rote-specialist
     checkpoint: both
-    requires: [authentication.owner, authentication.packet, authentication.packet_sha256, authentication.original_packet_sha256]
+    requires: [inspection.operations, authentication.source, authentication.status, authentication.owner, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.evidence_refs, authentication.original_packet, authentication.original_packet_sha256]
     entry: {action: execute_authentication}
     "on":
-      authentication_ready: [{target: use_authentication_receipt, mutate: record_authentication_response}]
-      authentication_failed: [{target: use_authentication_receipt, mutate: record_authentication_response}]
-      action_blocked: [{target: blocked, mutate: record_blocker}]
-
-  use_authentication_receipt:
-    owner: play
-    checkpoint: after
-    requires: [authentication.packet, authentication.packet_sha256, authentication.receipt]
-    entry: {action: validate_authentication_receipt}
-    "on":
-      specialist_authentication_ready: [{target: use_inspect, mutate: record_authentication_success}]
-      specialist_authentication_failed: [{target: blocked, mutate: record_authentication_failure}]
-      authentication_receipt_invalid: [{target: blocked, mutate: record_invalid_authentication_receipt}]
+      authentication_ready: [{target: use_inspect, mutate: record_authentication_success}]
+      authentication_failed: [{target: blocked, mutate: record_authentication_failure}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_verify:

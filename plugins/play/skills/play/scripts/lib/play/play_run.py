@@ -1,4 +1,4 @@
-"""Execute one approved registry Play exactly once and emit its typed result."""
+"""Execute one approved registry Play and emit its typed result."""
 
 from __future__ import annotations
 
@@ -49,6 +49,10 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
     disclosure_sha256 = _string(
         inspection.get("disclosure_sha256"), "inspection.disclosure_sha256"
     )
+    operations = inspection.get("operations")
+    if not isinstance(operations, list):
+        raise PlayRunError("inspection.operations must be an array")
+    play_owns_authentication = _declares_auth_ensure(operations)
     parameters = request.get("parameters")
     if not isinstance(parameters, Mapping):
         raise PlayRunError("request.parameters must be an object")
@@ -79,25 +83,23 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
         "--yes",
     ]
     environment = os.environ.copy()
-    environment.setdefault("ROTE_FLOW_PROGRESS", "0")
+    # Keep step failures observable. Rote writes progress to stderr and the
+    # Play result to stdout, so successful primary output remains unchanged.
+    environment["ROTE_FLOW_PROGRESS"] = "1"
     environment.setdefault("ROTE_NO_HINTS", "1")
     # `rote play run` owns no JSON flag. Pin its documented structured marker
     # mode so an inherited human-output preference cannot hide the typed
     # @@authentication section from this non-interactive controller boundary.
     environment["ROTE_OUTPUT_MODE"] = "structured"
     with tempfile.TemporaryDirectory(prefix="play-run-") as directory:
-        stdout_path = Path(directory) / "stdout"
-        stderr_path = Path(directory) / "stderr"
         try:
-            with stdout_path.open("wb") as stdout_handle, stderr_path.open("wb") as stderr_handle:
-                completed = subprocess.run(
-                    arguments,
-                    stdout=stdout_handle,
-                    stderr=stderr_handle,
-                    check=False,
-                    timeout=3600,
-                    env=environment,
-                )
+            completed, stdout_path, stderr_path = _invoke(
+                arguments,
+                environment,
+                Path(directory),
+                suffix="initial",
+                terminal_stdin=False,
+            )
         except (OSError, subprocess.TimeoutExpired) as error:
             return _failed(str(error))
 
@@ -105,13 +107,47 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
         stderr_value = _completed_bytes(completed.stderr, stderr_path)
         if completed.returncode != 0:
             failure_output = _combined_output(
-                _bounded_text(stdout_value, stdout_path, 10_000),
-                _bounded_text(stderr_value, stderr_path, 10_000),
+                _bounded_edge_text(stdout_value, stdout_path, 10_000),
+                _bounded_edge_text(stderr_value, stderr_path, 10_000),
             )
             auth_failure = _typed_auth_failure(failure_output)
-            if auth_failure is not None:
-                return auth_failure
-            return _failed(failure_output or f"rote play run exited {completed.returncode}")
+            if auth_failure is None:
+                return _failed(failure_output or f"rote play run exited {completed.returncode}")
+
+            # Older Plays without adapter.auth.ensure may use the compatibility
+            # specialist path. Self-aware Plays never delegate authentication.
+            if not play_owns_authentication:
+                return _authentication_required(auth_failure, failure_output)
+
+            if auth_failure["classified_rung"] == "static":
+                return _failed(failure_output or f"rote play run exited {completed.returncode}")
+
+            # The approved Play run already disclosed authentication. Give the
+            # exact same Rote command a terminal-backed stdin so its declared
+            # adapter.auth.ensure step owns browser authorization. Play
+            # never shells out to OAuth itself and never delegates credentials
+            # to an authentication specialist.
+            try:
+                completed, stdout_path, stderr_path = _invoke(
+                    arguments,
+                    environment,
+                    Path(directory),
+                    suffix="authenticated",
+                    terminal_stdin=True,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                return _failed(str(error))
+            stdout_value = _completed_bytes(completed.stdout, stdout_path)
+            stderr_value = _completed_bytes(completed.stderr, stderr_path)
+            if completed.returncode != 0:
+                failure_output = _combined_output(
+                    _bounded_edge_text(stdout_value, stdout_path, 10_000),
+                    _bounded_edge_text(stderr_value, stderr_path, 10_000),
+                )
+                return _failed(
+                    failure_output
+                    or f"rote play run exited {completed.returncode} after Play authentication"
+                )
 
         primary_value, primary_path = (
             (stdout_value, stdout_path)
@@ -163,6 +199,41 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _invoke(
+    arguments: Sequence[str],
+    environment: Mapping[str, str],
+    directory: Path,
+    *,
+    suffix: str,
+    terminal_stdin: bool,
+) -> tuple[subprocess.CompletedProcess[Any], Path, Path]:
+    stdout_path = directory / f"stdout-{suffix}"
+    stderr_path = directory / f"stderr-{suffix}"
+    master_fd: int | None = None
+    slave_fd: int | None = None
+    try:
+        if terminal_stdin:
+            import pty
+
+            master_fd, slave_fd = pty.openpty()
+        with stdout_path.open("wb") as stdout_handle, stderr_path.open("wb") as stderr_handle:
+            completed = subprocess.run(
+                list(arguments),
+                stdin=slave_fd,
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                check=False,
+                timeout=3600,
+                env=dict(environment),
+            )
+    finally:
+        if slave_fd is not None:
+            os.close(slave_fd)
+        if master_fd is not None:
+            os.close(master_fd)
+    return completed, stdout_path, stderr_path
+
+
 def _completed_bytes(value: object, path: Path) -> bytes | None:
     if isinstance(value, str):
         return value.encode("utf-8")
@@ -181,6 +252,28 @@ def _bounded_text(value: bytes | None, path: Path, limit: int) -> str:
             value = handle.read(limit)
     else:
         value = value[:limit]
+    return value.decode("utf-8", errors="ignore")
+
+
+def _bounded_edge_text(value: bytes | None, path: Path, limit: int) -> str:
+    """Preserve both the command preamble and the terminal failure diagnostic."""
+
+    if value is None:
+        size = path.stat().st_size
+        if size <= limit:
+            value = path.read_bytes()
+        else:
+            head_size = limit // 3
+            tail_size = limit - head_size
+            with path.open("rb") as handle:
+                head = handle.read(head_size)
+                handle.seek(-tail_size, os.SEEK_END)
+                tail = handle.read(tail_size)
+            value = head + b"\n... output omitted ...\n" + tail
+    elif len(value) > limit:
+        head_size = limit // 3
+        tail_size = limit - head_size
+        value = value[:head_size] + b"\n... output omitted ...\n" + value[-tail_size:]
     return value.decode("utf-8", errors="ignore")
 
 
@@ -219,7 +312,7 @@ def _persist_full_output(value: bytes | None, path: Path, digest: str) -> Path:
 
 
 _DRIFT_MARKERS = ("drift", "hash mismatch", "fingerprint mismatch", "disclosure mismatch")
-_LOGIN_MARKERS = ("not logged in", "rote login", "requires login", "authentication required")
+_LOGIN_MARKERS = ("not logged in", "rote login", "requires login")
 
 
 def _failed(reason: str) -> dict[str, Any]:
@@ -259,7 +352,35 @@ def _failed(reason: str) -> dict[str, Any]:
     }
 
 
-def _typed_auth_failure(output: str) -> dict[str, Any] | None:
+def _authentication_required(
+    authentication: Mapping[str, str], reason: str
+) -> dict[str, Any]:
+    """Offer the compatibility specialist only when the Play lacks auth.ensure."""
+
+    digest = hashlib.sha256(reason.encode()).hexdigest()
+    return {
+        "schema": "play.run-result/v1",
+        "ok": False,
+        "event": "play_authentication_required",
+        "authentication": {
+            "source": "rote_authentication_required",
+            "owner": "rote-adapter-config",
+            "recoverable": True,
+            **dict(authentication),
+            "evidence_refs": [f"sha256:{digest}"],
+        },
+    }
+
+
+def _declares_auth_ensure(operations: Sequence[object]) -> bool:
+    return any(
+        isinstance(operation, Mapping)
+        and operation.get("operation") == "adapter.auth.ensure"
+        for operation in operations
+    )
+
+
+def _typed_auth_failure(output: str) -> dict[str, str] | None:
     sources: list[Mapping[str, Any]] = []
     candidates = dict.fromkeys((output, *reversed(output.splitlines())))
     for candidate in candidates:
@@ -313,21 +434,11 @@ def _typed_auth_failure(output: str) -> dict[str, Any] | None:
     ):
         return None
 
-    digest = hashlib.sha256(output.encode()).hexdigest()
     return {
-        "schema": "play.run-result/v1",
-        "ok": False,
-        "event": "play_authentication_required",
-        "authentication": {
-            "source": "rote_authentication_required",
-            "owner": "rote-adapter-config",
-            "recoverable": True,
-            "adapter_id": adapter_id.strip(),
-            "env_var": env_var.strip(),
-            "classified_rung": classified_rung,
-            "distinguishing_error": f"{state}: {remediation.strip()}",
-            "evidence_refs": [f"sha256:{digest}"],
-        },
+        "adapter_id": adapter_id.strip(),
+        "env_var": env_var.strip(),
+        "classified_rung": classified_rung,
+        "distinguishing_error": f"{state}: {remediation.strip()}",
     }
 
 

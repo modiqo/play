@@ -85,10 +85,20 @@ detected substrate and evidence, creation/reuse status, auth status/owner, orche
 
 ## Recoverable authentication
 
-The same authentication contract applies when `rote play run` encounters adapter authentication. Before a
-Play run, bind the exact reference, parameters, disclosure SHA, and expected events into
+Saved Play authentication is selected from the inspected operations. When a Play declares
+`adapter.auth.ensure`, the approved `rote play run` owns provider sign-in: Play re-enters that same
+command with terminal-backed stdin at an exact pre-call browser boundary, and it never delegates to
+an authentication specialist. A failed Play-owned authentication step blocks with its exact output.
+Only a legacy Play without `adapter.auth.ensure` may offer the `rote-adapter-config` compatibility
+path; specialist success returns only its action and evidence before the exact Play is inspected and
+run again. This path does not manufacture an authentication receipt.
+
+Before any Play run, bind the exact reference, parameters, disclosure SHA, and expected events into
 `play.run-handoff/v1` with `scripts/bin/play-handoff prepare-play-run --stdin --json`. Preserve that
 packet and SHA as the original contract; do not expand the Play run into adapter commands.
+
+The closed authentication packet and receipt contract below is retained for uncovered CALL
+handoffs. It is not the saved-Play authentication path.
 
 Do not collapse a recoverable CALL authentication failure into `route_exhausted`. The execution
 owner returns `authentication_required` with `source=rote_authentication_required`, `recoverable=true`, the

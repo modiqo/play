@@ -759,7 +759,7 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertEqual(3600, ACTIONS["run_registry_play"]["timeout_seconds"])
         self.assertIn("Never request summary output", policy)
         self.assertIn("compact Play summary cannot prove full detail", policy)
-        self.assertIn("exactly one rote play run", policy)
+        self.assertIn("one approved rote play run", policy)
         self.assertEqual(
             "verify_play_output", MACHINE["states"]["use_verify"]["entry"]["action"]
         )
@@ -791,7 +791,7 @@ class MachineConformanceTest(unittest.TestCase):
             handoff["$defs"]["adapterChoice"]["required"],
         )
 
-    def test_recoverable_auth_uses_separate_approved_repair_loop(self) -> None:
+    def test_auth_ensure_is_play_owned_and_legacy_auth_uses_specialist(self) -> None:
         self.assertEqual(
             "use_authentication_offer",
             MACHINE["states"]["use_run"]["on"]["play_authentication_required"][0][
@@ -802,7 +802,7 @@ class MachineConformanceTest(unittest.TestCase):
             "approve_authentication", MACHINE["states"]["use_authentication_offer"]["prompt"]
         )
         self.assertEqual(
-            "use_authentication_handoff",
+            "use_authentication_execute",
             MACHINE["states"]["use_authentication_offer"]["on"]["authentication_approved"][0][
                 "target"
             ],
@@ -814,64 +814,33 @@ class MachineConformanceTest(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            "rote-adapter-config",
-            CONTEXT["$defs"]["authentication"]["properties"]["owner"]["enum"][0],
-        )
-        self.assertNotIn("rote-adapter-config", ACTIONS_DOC["specialist_owners"])
-        self.assertEqual(
-            "scripts/bin/play-handoff prepare-authentication --stdin --json",
-            ACTIONS["prepare_authentication_handoff"]["command"],
-        )
-        self.assertEqual(
-            "scripts/bin/play-handoff verify-authentication --stdin --json",
-            ACTIONS["validate_authentication_receipt"]["command"],
-        )
-        self.assertEqual(
             "use_inspect",
-            MACHINE["states"]["use_authentication_receipt"]["on"][
-                "specialist_authentication_ready"
+            MACHINE["states"]["use_authentication_execute"]["on"][
+                "authentication_ready"
             ][0]["target"],
         )
-        self.assertEqual(
-            "blocked",
-            MACHINE["states"]["use_authentication_receipt"]["on"][
-                "authentication_receipt_invalid"
-            ][0]["target"],
-        )
-        self.assertIn("Never place raw credentials", SKILL_TEXT)
         prompt = PROMPTS["approve_authentication"]
-        self.assertEqual(
-            ["authentication.adapter_id", "authentication.classified_rung"],
-            prompt["template_fields"],
-        )
+        self.assertEqual(["authentication.adapter_id"], prompt["template_fields"])
         run_policy = " ".join(ACTIONS["run_registry_play"]["command_policy"])
-        for protocol in ("static", "oauth", "oauth_dcr", "google_discovery"):
-            self.assertIn(protocol, run_policy)
+        self.assertIn("declares adapter.auth.ensure never delegates", run_policy)
+        self.assertIn("legacy Play without adapter.auth.ensure", run_policy)
         self.assertIn("marker or prose", run_policy)
         self.assertIn("present the structured action_blocked reason verbatim", run_policy)
         authentication_policy = " ".join(ACTIONS["execute_authentication"]["command_policy"])
-        self.assertIn("rote adapter reauth <adapter_id>", authentication_policy)
-        self.assertIn("missing or absent token-storage-entry", authentication_policy)
-        self.assertIn("rote adapter pack <adapter_id> <backup_path>", authentication_policy)
-        self.assertIn("rote adapter delete <adapter_id> --yes", authentication_policy)
-        self.assertIn(
-            "rote adapter new-from-mcp <adapter_id> <endpoint> --headless",
-            authentication_policy,
-        )
-        self.assertIn("restore the packed adapter", authentication_policy)
-        self.assertIn("Never use a placeholder or fabricated token", authentication_policy)
-        for excluded_protocol in ("static", "oauth", "google_discovery"):
-            self.assertIn(excluded_protocol, authentication_policy)
+        self.assertIn("compatibility path only", authentication_policy)
+        self.assertIn("do not declare adapter.auth.ensure", authentication_policy)
+        self.assertNotIn("receipt", authentication_policy.casefold())
+        self.assertNotIn("repair", authentication_policy.casefold())
         authentication_choice = next(
             choice for choice in prompt["choices"] if choice["id"] == "authenticate"
         )
-        self.assertEqual("Continue secure sign-in", authentication_choice["label"])
+        self.assertEqual("Continue guided authentication", authentication_choice["label"])
         stop_choice = next(
             choice for choice in prompt["choices"] if choice["id"] == "stop"
         )
         self.assertEqual("Not now", stop_choice["label"])
-        self.assertIn("MCP OAuth DCR only", authentication_choice["description"])
-        self.assertIn("backing up, deleting, and recreating", authentication_choice["description"])
+        self.assertNotIn("repair", json.dumps(prompt).casefold())
+        self.assertIn("adapter.auth.ensure", SKILL_TEXT)
         self.assertEqual(
             "blocked",
             MACHINE["states"]["use_run"]["on"]["action_blocked"][0]["target"],

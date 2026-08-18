@@ -36,8 +36,6 @@ _SELECTOR_ACTIONS = {
     "inspect_onboarding_experience",
     "inspect_registry_play",
     "collect_awareness_digest",
-    "prepare_authentication_handoff",
-    "validate_authentication_receipt",
     "resolve_public_owner",
     "inspect_publication_credentials",
     "classify_adequacy",
