@@ -33,6 +33,13 @@ machine or run preflight. Run the bundled `scripts/bin/play-cheat-sheet`, presen
 verbatim, and stop. This read-only help path must not search, capture, update preferences, or create
 a settle nudge.
 
+If the unchanged trimmed request is `play what's new`, `$play what's new`, or `/play what's new`
+(also accept `whats new`, `popular Plays`, or `trending Plays`), do not enter the state machine, run
+preflight, or create a continuation. Run the bundled
+`scripts/bin/play-digest --remember --days 7`, present its Markdown verbatim, and stop. The digest
+uses the install-warmed catalog cache when fresh and performs its own bounded refresh otherwise. A
+later request to inspect or run one of the displayed Plays is a new, naturally activated request.
+
 For a request whose primary intent is to initialize, inspect, add, update, or remove Play's direct
 routing policy, do not enter the state machine or run preflight. Translate the unchanged request to
 the bundled `scripts/bin/play-routing` CLI:
@@ -61,10 +68,13 @@ permissions or safety checks.
 ## Enter or resume
 
 For an activated new task run `play-machine run-until-yield --stdin --json` with a harness-owned run
-ID, stable task key, and the unchanged user request:
+ID, stable task key, and the unchanged user request. Execute it as one non-interactive shell command
+whose heredoc closes stdin; never start it as an interactive or background terminal process:
 
-```json
+```sh
+play-machine run-until-yield --stdin --json <<'PLAY_INPUT'
 {"run_id":"<run-id>","task_key":"<task-key>","request":{"original":"<request>"}}
+PLAY_INPUT
 ```
 
 The installer normally places `play-machine` on `PATH`. If it is unavailable but this loaded skill
@@ -85,10 +95,13 @@ Never settle normal/uncaptured work or reconstruct a trajectory after the fact.
 The command executes every eligible deterministic action and stops only at a model, human,
 specialist, or terminal boundary, returning a short `continuation_id`. Keep that value opaque in
 harness state — never inspect, print, or persist it yourself. The runtime stores context
-owner-privately under `~/.rote-play/continuations` and expires it after 24 hours. Resume with:
+owner-privately under `~/.rote-play/continuations` and expires it after 24 hours. Resume with the
+same one-shot heredoc form:
 
-```json
+```sh
+play-machine run-until-yield --stdin --json <<'PLAY_INPUT'
 {"continuation_id":"<24-character-id>","event":{"id":"<event>","payload":{},"guards":{}}}
+PLAY_INPUT
 ```
 
 ## Handle the yield
@@ -115,17 +128,12 @@ Never infer confirmation, choose **Yes, continue** for the user, or summarize a 
   identity from its approved packet. Never copy request-only authentication fields into the result.
 - `terminal`: present the terminal outcome and stop.
 
-If `instruction.preflight_required_for_events` names your selected event, run
-`play-machine preflight --harness <codex|claude|kimi|cursor|hermes|opencode|deepseek|generic> --json` first and pass its complete
-unchanged output as `preflight`. Missing Rote setup delegates to the `rote-setup` skill.
-When the preflight is structurally healthy and its only failed check is `authenticated`, treat that
-as the normal first-use entrance, not an error or blocker: keep the Play continuation opaque and
-resume the harness-owned login states. Present `choose_login_provider` (Google, GitHub, or Not now),
-delegate only the selected OAuth login to `rote-setup`, and let the browser own credentials and
-consent. After the specialist verifies exactly one `rote whoami`, return to `onboarding_identity`
-and resume the same greeting or Play URI. If the user pauses or defers login, preserve the original
-request and say how to resume it; do not replace the requested outcome with a generic installation
-failure or print raw login commands as the primary onboarding path.
+Never run full Play preflight during a normal request. Install-time convergence owns cross-harness
+readiness; the normal runtime owns its exact dependency and authentication states and projects a
+targeted setup or login handoff only when one is actually required. `play-machine preflight` is a
+diagnostic for explicit install/repair work, not an execution gate. A continuation exists only at a
+real model, approval, specialist, or user-choice boundary; keep its short ID opaque and never narrate
+or inspect continuation machinery.
 
 ## Cross-harness bootstrap
 

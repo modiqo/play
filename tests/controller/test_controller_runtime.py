@@ -84,14 +84,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("qualify", result["projection"]["state"]["id"])
         self.assertEqual("model", result["projection"]["state"]["boundary"])
         self.assertEqual("qualify_request", result["projection"]["instruction"]["id"])
-        self.assertIn(
-            "outcome_request",
-            result["projection"]["instruction"]["preflight_required_for_events"],
-        )
-        self.assertNotIn(
-            "conversation",
-            result["projection"]["instruction"]["preflight_required_for_events"],
-        )
+        self.assertNotIn("preflight", str(result["projection"]["instruction"]))
 
     def test_terminal_projection_has_no_instruction(self) -> None:
         terminal = self.runtime.step(
@@ -432,7 +425,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         with self.assertRaisesRegex(ControllerRuntimeError, "invalid runtime session token"):
             decode_session(corrupted)
 
-    def test_session_requires_ready_preflight_only_for_play_trajectory(self) -> None:
+    def test_session_advances_play_trajectory_without_global_preflight(self) -> None:
         session = self.runtime.initial_session(
             run_id="session-1", task_key="task-1", request_original="Find release notes"
         )
@@ -458,14 +451,28 @@ class ControllerRuntimeTest(unittest.TestCase):
             guards={},
         )
 
-        with self.assertRaisesRegex(ControllerRuntimeError, "ready Play preflight"):
-            self.runtime.advance_session(session, event)
-
-        ready = self.runtime.confirm_preflight(
-            session, {"schema": "play.preflight/v1", "ready": True}
-        )
-        advanced = self.runtime.advance_session(ready, event)
+        advanced = self.runtime.advance_session(session, event)
         self.assertEqual("search", advanced.session.cursor.state)
+
+    def test_explicit_awareness_enters_digest_without_model_or_preflight(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="awareness-fast", task_key="play-whats-new", request_original="$play what's new"
+        )
+        advanced = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("play_awareness_invocation"),
+                payload={
+                    "request": {"intent": "what's new"},
+                    "awareness": {"window_days": 7},
+                    "preferences": {"policies": []},
+                    "onboarding": {"classify_ns": 1},
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("awareness_collect", advanced.session.cursor.state)
+        self.assertFalse(advanced.session.preflight_ready)
 
     def test_session_exit_does_not_require_preflight(self) -> None:
         session = self.runtime.initial_session(

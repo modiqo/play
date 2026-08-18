@@ -412,17 +412,6 @@ class ControllerRuntime:
                     if context is not None
                     else {}
                 ),
-                **(
-                    {
-                        "preflight_required_for_events": [
-                            str(event)
-                            for event in state.events
-                            if event not in {"conversation", "play_excluded", "action_blocked"}
-                        ]
-                    }
-                    if state.id == StateId("qualify")
-                    else {}
-                ),
             }
         elif state.prompt is not None:
             prompt = self.bundle.prompts[state.prompt]
@@ -490,14 +479,6 @@ class ControllerRuntime:
     ) -> SessionAdvanceResult:
         self._validate_session(session)
         event = _canonicalize_specialist_event(session, event)
-        if (
-            session.cursor.state == StateId("qualify")
-            and event.id not in {EventId("conversation"), EventId("play_excluded"), EventId("action_blocked")}
-            and not session.preflight_ready
-        ):
-            raise ControllerRuntimeError(
-                "a ready Play preflight is required after qualification"
-            )
         event = _derive_session_guards(session, event)
         step = self.step(session.cursor, event)
         try:

@@ -13,6 +13,7 @@ states:
       empty_play_invocation: [{target: onboarding_probe, mutate: start_greeting_onboarding}]
       play_uri_invocation: [{target: onboarding_probe, mutate: start_uri_onboarding}]
       outcome_play_invocation: [{target: search, mutate: set_request_contract}]
+      play_awareness_invocation: [{target: awareness_collect, mutate: set_awareness_request}]
       settled_task_invocation: [{target: save_judge, mutate: enter_settled_judgment}]
       settled_task_rejected: [{target: blocked, mutate: record_blocker}]
       ordinary_play_invocation: [{target: qualify, mutate: record_ordinary_invocation}]

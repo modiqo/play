@@ -299,14 +299,6 @@ def main() -> int:
                 if not isinstance(event_payload, dict):
                     raise ControllerRuntimeError("event must be an object")
                 event = event_from_dict(event_payload)
-                if (
-                    session.cursor.state == "qualify"
-                    and event.id not in {"conversation", "play_excluded", "action_blocked"}
-                ):
-                    preflight = request.get("preflight")
-                    if not isinstance(preflight, dict):
-                        raise ControllerRuntimeError("a Play preflight object is required")
-                    session = runtime.confirm_preflight(session, preflight)
                 session = runtime.advance_session(session, event).session
             yielded = advance_until_yield(
                 runtime,
@@ -410,7 +402,10 @@ def main() -> int:
             return_code = 0 if payload["ready"] is True else 2
     except (ControllerRuntimeError, PrivateStoreError) as error:
         parser.exit(1, f"play-machine: {error}\n")
-    print(json.dumps(payload, indent=2, sort_keys=True))
+    if args.command == "run-until-yield":
+        print(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+    else:
+        print(json.dumps(payload, indent=2, sort_keys=True))
     return return_code
 
 

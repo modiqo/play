@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.digest import (
+    _upgrade_cached_discovery,
     build_digest,
     classify_updates,
     rank_public,
@@ -297,6 +298,44 @@ class DigestTest(unittest.TestCase):
         self.assertTrue(supports_play_discovery(digest))
         digest.pop("public_sample")
         self.assertFalse(supports_play_discovery(digest))
+
+    def test_fresh_legacy_catalog_upgrades_locally_without_registry_refresh(self) -> None:
+        digest = build_digest(
+            [Organization("modiqo", "Modiqo")],
+            {"modiqo": []},
+            [
+                (
+                    "modiqo",
+                    {
+                        "name": "hello",
+                        "visibility": "public",
+                        "download_count": 1,
+                    },
+                )
+            ],
+            start=self.start,
+            end=self.end,
+            public_limit=10,
+        )
+        digest.pop("public_sample")
+        digest.pop("sample")
+
+        upgraded = _upgrade_cached_discovery(
+            digest,
+            [
+                {
+                    "reference": "modiqo/hello",
+                    "name": "hello",
+                    "description": "Safe first Play",
+                    "visibility": "public",
+                }
+            ],
+        )
+
+        self.assertIsNotNone(upgraded)
+        assert upgraded is not None
+        self.assertTrue(supports_play_discovery(upgraded))
+        self.assertEqual("modiqo/hello", upgraded["public_sample"][0]["reference"])
 
     def test_cached_digest_with_version_pinned_catalog_choice_is_refreshed(self) -> None:
         digest = build_digest(

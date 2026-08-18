@@ -36,6 +36,16 @@ class PresentationTest(unittest.TestCase):
             skill.replace("\n", " "),
         )
 
+    def test_whats_new_is_a_no_preflight_no_continuation_fast_path(self) -> None:
+        skill = (Path(__file__).resolve().parents[2] / "SKILL.md").read_text()
+        normalized = skill.replace("\n", " ")
+
+        self.assertIn("play-digest --remember --days 7", skill)
+        self.assertIn(
+            "do not enter the state machine, run preflight, or create a continuation",
+            normalized,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

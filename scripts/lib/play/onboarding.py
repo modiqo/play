@@ -63,6 +63,11 @@ _FAST_OUTCOME = re.compile(
     r"monitor|calculate|compare)\b",
     re.IGNORECASE,
 )
+_FAST_AWARENESS = re.compile(
+    r"^(?:(?:what(?:'|’)s|whats)\s+new|new|popular|trending)"
+    r"(?:\s+(?:in\s+)?plays?)?[.!?]?$",
+    re.IGNORECASE,
+)
 
 
 class OnboardingError(RuntimeError):
@@ -184,6 +189,9 @@ def classify_invocation(original: str) -> dict[str, Any]:
         elif uri_request is not None:
             kind = "play_uri"
             play_uri, parameters = uri_request
+        elif _FAST_AWARENESS.fullmatch(remainder):
+            kind = "awareness"
+            play_uri = None
         elif _FAST_OUTCOME.match(remainder):
             kind = "outcome"
             play_uri = None
@@ -193,6 +201,9 @@ def classify_invocation(original: str) -> dict[str, Any]:
     elif uri_request is not None:
         kind = "play_uri"
         play_uri, parameters = uri_request
+    elif _FAST_AWARENESS.fullmatch(stripped):
+        kind = "awareness"
+        play_uri = None
     elif _FAST_OUTCOME.match(stripped):
         kind = "outcome"
         play_uri = None
@@ -207,6 +218,7 @@ def classify_invocation(original: str) -> dict[str, Any]:
         "play_uri": play_uri,
         "parameters": parameters,
         "intent": candidate.rstrip(".!?"),
+        "window_days": 7 if kind == "awareness" else None,
         "preferences": {"policies": load_ledger()},
         "classify_ns": time.perf_counter_ns() - started,
     }

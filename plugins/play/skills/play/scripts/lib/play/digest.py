@@ -621,10 +621,73 @@ def _fresh_cached_digest(*, days: int, max_age_hours: float = 6.0) -> dict[str, 
     if age < 0 or age > max_age_hours * 3600:
         return None
     digest = cache.get("digest")
-    if not supports_play_discovery(digest):
+    if supports_play_discovery(digest):
+        assert isinstance(digest, dict)
+        return copy.deepcopy(digest)
+    return _upgrade_cached_discovery(digest, cache.get("catalog"))
+
+
+def _upgrade_cached_discovery(
+    digest: object, catalog: object
+) -> dict[str, Any] | None:
+    """Project a legacy fresh catalog into the current randomized sample contract.
+
+    This is deliberately local-only. It lets an immediately invoked What's New
+    request use an install-warmed catalog even when the prior cache predates the
+    direct sample fields, instead of paying for a redundant registry sweep.
+    """
+
+    if not isinstance(digest, dict) or not isinstance(catalog, list):
         return None
-    assert isinstance(digest, dict)
-    return copy.deepcopy(digest)
+    ranking = digest.get("ranking")
+    if not isinstance(ranking, dict):
+        return None
+    expected_count = ranking.get("eligible_count")
+    if not isinstance(expected_count, int) or isinstance(expected_count, bool):
+        return None
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in catalog:
+        if not isinstance(entry, dict) or entry.get("visibility") != "public":
+            continue
+        reference = entry.get("reference")
+        name = entry.get("name")
+        if (
+            not isinstance(reference, str)
+            or reference.count("/") != 1
+            or "@" in reference
+            or reference in seen
+            or not isinstance(name, str)
+            or not name
+        ):
+            return None
+        seen.add(reference)
+        candidates.append(
+            {
+                "reference": reference,
+                "base_reference": reference,
+                "name": name,
+                "description": str(entry.get("description") or ""),
+                "parameters": {},
+                "recent_at": entry.get("latest_version_created_at")
+                or entry.get("created_at"),
+                "recent_kind": (
+                    "release" if entry.get("latest_version_created_at") else "publication"
+                ),
+            }
+        )
+    if len(candidates) != expected_count:
+        return None
+    upgraded = copy.deepcopy(digest)
+    public_sample = sample_public(candidates)
+    upgraded["public_sample"] = public_sample
+    upgraded["sample"] = {
+        "strategy": "random",
+        "limit": PUBLIC_SAMPLE_LIMIT,
+        "available_count": len(candidates),
+        "sampled_count": len(public_sample),
+    }
+    return upgraded if supports_play_discovery(upgraded) else None
 
 
 def main() -> int:

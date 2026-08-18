@@ -178,6 +178,13 @@ class InvocationClassificationTest(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual("ordinary", classify_invocation(value)["invocation_kind"])
 
+    def test_awareness_aliases_bypass_model_qualification(self) -> None:
+        for value in ("$play what's new", "/play whats new", "popular Plays", "trending"):
+            with self.subTest(value=value):
+                result = classify_invocation(value)
+                self.assertEqual("awareness", result["invocation_kind"])
+                self.assertEqual(7, result["window_days"])
+
     def test_uri_validator_rejects_credentials_queries_and_fragments(self) -> None:
         self.assertEqual(URI, canonical_play_uri(URI))
         for value in (

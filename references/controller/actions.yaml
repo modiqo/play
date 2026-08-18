@@ -180,6 +180,7 @@ actions:
       - Treat only a trimmed `$play` or `/play` with no arguments as an empty greeting invocation.
       - Treat the harness's exact Play activation-without-a-task boilerplate as the same greeting; never send it to model qualification.
       - Bind `run hello`, `run the Hello Play`, and `$play run hello` directly to the unversioned canonical Hello URI without model qualification or search.
+      - Bind exact what's-new, popular, and trending Play aliases directly to the seven-day awareness digest without model qualification or preflight.
       - Treat a bare or prefixed canonical HTTPS play.modiqo.ai owner/name URI, optionally followed by unique key=value parameters, as a Play URI invocation.
       - Route unambiguous retrieve, fetch, get, find, collect, download, export, list, summarize, check, monitor, calculate, and compare outcomes directly to search.
       - Treat `$play settle <capture-handle> [summary]` as re-entry only when the owner-private capture exists and its Rote workspace already contains trajectory evidence; never reconstruct capture after the work.
@@ -189,6 +190,7 @@ actions:
       empty_play_invocation: [onboarding.intent, onboarding.classify_ns]
       play_uri_invocation: [onboarding.intent, onboarding.play_uri, match.reference, request.parameters, onboarding.classify_ns]
       outcome_play_invocation: [request.intent, request.requested_outcome, modality_policy, preferences.policies, onboarding.classify_ns]
+      play_awareness_invocation: [request.intent, awareness.window_days, preferences.policies, onboarding.classify_ns]
       settled_task_invocation: [standby.armed, standby.task_class, standby.hook_ref, standby.settle_summary, capture.decision, capture.reason, capture.task_class, capture.reference, capture.workspace, capture.status, capture.trajectory_ref, execution.workspace, evidence_refs, request.intent, request.requested_outcome, preferences.policies, onboarding.classify_ns]
       settled_task_rejected: [reason]
       ordinary_play_invocation: [preferences.policies, onboarding.classify_ns]

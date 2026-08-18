@@ -66,14 +66,14 @@ class PluginPackageTest(unittest.TestCase):
 
         self.assertNotIn("dependencies", manifest)
 
-    def test_marketplace_session_hook_repairs_activation_before_inbox(self) -> None:
+    def test_marketplace_session_hook_never_reinstalls_activation(self) -> None:
         hooks = json.loads((ROOT / "plugins/play/hooks/hooks.json").read_text())
         command = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
 
         self.assertIn("${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}", command)
-        self.assertIn("play-activate", command)
-        self.assertIn("Play activation incomplete", command)
-        self.assertLess(command.index("play-activate"), command.index("play-inbox"))
+        self.assertIn("play-inbox", command)
+        self.assertNotIn("play-activate", command)
+        self.assertNotIn("Play activation incomplete", command)
 
     def test_active_sources_have_no_legacy_flow_commands(self) -> None:
         files = [ROOT / "README.md", ROOT / "SKILL.md"]
