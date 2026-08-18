@@ -11,6 +11,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from .digest_state import stable_sha
+from .inbox_cache import resolve_cached_reference
 class RuntimeContextError(RuntimeError):
     pass
 
@@ -497,6 +498,13 @@ def _apply_mutation_semantics(
 ) -> None:
     for path, value in _CONSTANT_PATCHES.get(mutation, {}).items():
         _set_existing_path(context, path, value)
+
+    if mutation == "enter_direct_use":
+        selected = context["match"].get("reference")
+        if isinstance(selected, str):
+            canonical = resolve_cached_reference(selected)
+            if canonical is not None:
+                context["match"]["reference"] = canonical
 
     if mutation == "enter_use":
         # Search result descriptions and choices are presentation data. Once a match is

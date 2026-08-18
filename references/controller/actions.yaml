@@ -368,6 +368,7 @@ actions:
     input_required: [request.original, preferences.policies]
     command_policy:
       - Classify explicit or inferred requests for what is new, popular public Plays, or trending Plays as play_awareness_request; the digest owns truthful metric labels and must not call cumulative totals a time-window trend.
+      - For exact_play_request, preserve the complete canonical owner/name reference supplied by the activation hook or cached catalog; never emit a bare Play name.
       - Honor the scoped preference ledger; a request whose task class is ledgered silent must emit play_excluded without search, narration, or any mention of Play.
       - When the user states a scoped intervention preference (for example no Plays during prototyping, or always offer Plays for deploy chores), return the statement with its task class and policy on play_excluded so the ledger can record it; otherwise return null preference fields.
       - Classify every novel outcome before execution as capture or normal. Capture only when the likely multi-step, parameterizable work may become reusable and therefore must begin through Rote; normal means no trajectory is created and the task can never be settled post hoc.

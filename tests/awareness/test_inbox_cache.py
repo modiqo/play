@@ -13,6 +13,7 @@ from play.inbox_cache import (
     cached_line,
     read_cache,
     refresh_cache,
+    resolve_cached_reference,
     summary_line,
 )
 from play.registry import Organization
@@ -200,6 +201,55 @@ class InboxCacheTest(unittest.TestCase):
     def test_missing_cache_reads_as_absent(self) -> None:
         self.assertIsNone(read_cache(cache_path=self.cache_path))
         self.assertIsNone(cached_line(cache_path=self.cache_path))
+
+    def test_complete_catalog_resolves_a_unique_bare_play_name(self) -> None:
+        from play.private_store import atomic_write_json
+
+        atomic_write_json(
+            self.cache_path,
+            {
+                "schema": "play.inbox-cache/v1",
+                "catalog_complete": True,
+                "catalog": [
+                    {
+                        "reference": "modiqo/retrieve-recent-emails",
+                        "name": "retrieve-recent-emails",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(
+            "modiqo/retrieve-recent-emails",
+            resolve_cached_reference(
+                "retrieve-recent-emails", cache_path=self.cache_path
+            ),
+        )
+        self.assertEqual(
+            "modiqo/retrieve-recent-emails@0.1.6",
+            resolve_cached_reference(
+                "retrieve-recent-emails@0.1.6", cache_path=self.cache_path
+            ),
+        )
+
+    def test_bare_name_resolution_fails_closed_for_ambiguous_catalog(self) -> None:
+        from play.private_store import atomic_write_json
+
+        atomic_write_json(
+            self.cache_path,
+            {
+                "schema": "play.inbox-cache/v1",
+                "catalog_complete": True,
+                "catalog": [
+                    {"reference": "alpha/report", "name": "report"},
+                    {"reference": "beta/report", "name": "report"},
+                ],
+            },
+        )
+
+        self.assertIsNone(
+            resolve_cached_reference("report", cache_path=self.cache_path)
+        )
 
     def test_public_catalog_is_canonical_and_fingerprinted(self) -> None:
         flows = [

@@ -317,6 +317,42 @@ def read_cache(*, cache_path: Path | None = None) -> dict[str, Any] | None:
     return dict(payload)
 
 
+def resolve_cached_reference(
+    requested: str, *, cache_path: Path | None = None
+) -> str | None:
+    """Resolve one bare Play name to its canonical cached owner/name identity."""
+
+    value = requested.strip()
+    if not value:
+        return None
+    base, marker, version = value.partition("@")
+    if "/" in base:
+        return value
+    cache = read_cache(cache_path=cache_path)
+    if cache is None or cache.get("catalog_complete") is not True:
+        return None
+    catalog = cache.get("catalog")
+    if not isinstance(catalog, list):
+        return None
+    matches: set[str] = set()
+    for item in catalog:
+        if not isinstance(item, Mapping):
+            continue
+        reference = item.get("reference")
+        name = item.get("name")
+        if (
+            isinstance(reference, str)
+            and "/" in reference
+            and isinstance(name, str)
+            and name.casefold() == base.casefold()
+        ):
+            matches.add(reference.partition("@")[0])
+    if len(matches) != 1:
+        return None
+    canonical = next(iter(matches))
+    return f"{canonical}@{version}" if marker and version else canonical
+
+
 def cached_line(*, cache_path: Path | None = None) -> str | None:
     """The zero-token session-start surface: one line, or nothing at all."""
 

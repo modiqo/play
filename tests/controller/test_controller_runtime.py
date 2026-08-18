@@ -2232,6 +2232,54 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("verify:1", yielded.session.context["evidence"]["verification"])
         self.assertTrue(yielded.session.context["receipt_ref"].startswith("sha256:"))
 
+    @patch(
+        "play.runtime_context.resolve_cached_reference",
+        return_value="modiqo/retrieve-recent-emails",
+    )
+    def test_exact_request_repairs_unique_bare_name_before_inspection(
+        self, resolve_reference
+    ) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-email",
+            task_key="retrieve-recent-emails",
+            request_original="c" + "na you retrieve recent emails",
+        )
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("ordinary_play_invocation"),
+                payload={
+                    "onboarding": {"classify_ns": 1},
+                    "preferences": {"policies": []},
+                },
+                guards={},
+            ),
+        ).session
+
+        advanced = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("exact_play_request"),
+                payload={
+                    "request": {
+                        "intent": "Run the retrieve-recent-emails Play",
+                        "requested_outcome": "Retrieve recent Gmail messages",
+                        "parameters": {},
+                    },
+                    "match": {"reference": "retrieve-recent-emails"},
+                    "modality_policy": session.context["modality_policy"],
+                },
+                guards={},
+            ),
+        ).session
+
+        resolve_reference.assert_called_once_with("retrieve-recent-emails")
+        self.assertEqual("use_inspect", advanced.cursor.state)
+        self.assertEqual(
+            "modiqo/retrieve-recent-emails",
+            advanced.context["match"]["reference"],
+        )
+
     def test_executes_an_unconditional_transition(self) -> None:
         result = self.runtime.step(
             self.cursor(),

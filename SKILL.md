@@ -104,6 +104,11 @@ play-machine run-until-yield --stdin --json <<'PLAY_INPUT'
 PLAY_INPUT
 ```
 
+When the activation hook names a Play, preserve that complete canonical `owner/name` reference in
+every `match.reference` event. Never shorten it to the bare Play name, reconstruct an owner, or use
+digest display text as identity. The runtime can resolve a unique bare name from its complete cached
+catalog as a compatibility safeguard, but the hook-supplied canonical reference remains authoritative.
+
 ## Handle the yield
 
 Present returned `presentations` in order, then act on `projection.state.boundary`:
