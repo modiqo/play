@@ -840,6 +840,95 @@ class ControllerRuntimeTest(unittest.TestCase):
             consent.session.context["request"]["parameters"],
         )
 
+    def test_inspected_frontmatter_rejects_invented_repository_parameter(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="committers-parameter-contract",
+            task_key="committers-parameter-contract",
+            request_original="list top committers for modiqo/rote",
+        )
+        context = dict(session.context)
+        context["state"] = "use_decide"
+        context["request"] = {
+            **context["request"],
+            "intent": "list top committers for modiqo/rote",
+            "requested_outcome": "list top committers for modiqo/rote",
+        }
+        context["match"] = {
+            **context["match"],
+            "reference": "modiqo/list-top-committers",
+        }
+        context["inspection"] = {
+            **context["inspection"],
+            "complete": True,
+            "exact_reference": "modiqo/list-top-committers@0.1.4",
+            "local_change": "install",
+            "disclosure_sha256": "a" * 64,
+            "parameters": [
+                {
+                    "name": "owner",
+                    "label": "Owner",
+                    "type": "string",
+                    "required": True,
+                    "description": "GitHub repository owner",
+                    "valid_values": [],
+                },
+                {
+                    "name": "repo",
+                    "label": "Repo",
+                    "type": "string",
+                    "required": True,
+                    "description": "GitHub repository name",
+                    "valid_values": [],
+                },
+                {
+                    "name": "limit",
+                    "label": "Limit",
+                    "type": "integer",
+                    "required": False,
+                    "description": "Maximum contributors",
+                    "valid_values": [],
+                },
+            ],
+        }
+        bound = replace(
+            session,
+            cursor=replace(session.cursor, state=StateId("use_decide")),
+            context=context,
+        )
+
+        with self.assertRaisesRegex(
+            ControllerRuntimeError,
+            r"undeclared parameter\(s\): repository; declared parameters: owner, repo, limit",
+        ):
+            self.runtime.advance_session(
+                bound,
+                ControllerEvent(
+                    id=EventId("remote_pull_required"),
+                    payload={
+                        "request": {"parameters": {"repository": "modiqo/rote"}}
+                    },
+                    guards={},
+                ),
+            )
+
+        accepted = self.runtime.advance_session(
+            bound,
+            ControllerEvent(
+                id=EventId("remote_pull_required"),
+                payload={
+                    "request": {
+                        "parameters": {"owner": "modiqo", "repo": "rote"}
+                    }
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("use_offer", accepted.session.context["state"])
+        self.assertEqual(
+            {"owner": "modiqo", "repo": "rote"},
+            accepted.session.context["request"]["parameters"],
+        )
+
     @patch("play.runtime_actions.subprocess.run")
     def test_run_hello_resolves_empty_parameter_contract_then_executes(self, run) -> None:
         disclosure = {

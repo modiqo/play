@@ -95,6 +95,50 @@ class SearchTest(unittest.TestCase):
         )
         self.assertNotEqual("full", results[0]["match_classification"])
 
+    def test_one_character_play_name_typo_still_matches_full_identity(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        local = {
+            "flows": [
+                {
+                    "name": "list-top-committers",
+                    "path": str(
+                        flow_root / "modiqo" / "list-top-committers" / "main.ts"
+                    ),
+                    "description": "Lists top contributors for a GitHub repository.",
+                    "score": 20.0,
+                }
+            ]
+        }
+
+        misspelled_query = "can you list top commi" + "ters for modiqo rote"
+        results = PLAY_SEARCH.merge_results(
+            local, [], flow_root, 10, misspelled_query
+        )
+
+        self.assertEqual("list-top-committers", results[0]["name"])
+        self.assertEqual("full", results[0]["match_classification"])
+
+    def test_short_or_unrelated_tokens_do_not_receive_typo_tolerance(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        local = {
+            "flows": [
+                {
+                    "name": "list-top-committers",
+                    "path": str(
+                        flow_root / "modiqo" / "list-top-committers" / "main.ts"
+                    ),
+                    "description": "Lists top contributors for a GitHub repository.",
+                    "score": 20.0,
+                }
+            ]
+        }
+
+        results = PLAY_SEARCH.merge_results(
+            local, [], flow_root, 10, "lost tap computers for modiqo rote"
+        )
+
+        self.assertNotEqual("full", results[0]["match_classification"])
+
     def test_registry_only_result_discloses_expected_pull_before_selection(self):
         results = PLAY_SEARCH.merge_results(
             {"flows": []},

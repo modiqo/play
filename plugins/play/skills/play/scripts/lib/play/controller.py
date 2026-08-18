@@ -479,6 +479,7 @@ class ControllerRuntime:
     ) -> SessionAdvanceResult:
         self._validate_session(session)
         event = _canonicalize_specialist_event(session, event)
+        _validate_inspected_parameter_event(session, event)
         event = _derive_session_guards(session, event)
         step = self.step(session.cursor, event)
         try:
@@ -569,6 +570,85 @@ def _canonicalize_specialist_event(
         },
         guards=event.guards,
     )
+
+
+def _validate_inspected_parameter_event(
+    session: RuntimeSession, event: ControllerEvent
+) -> None:
+    """Keep evaluator-produced execution parameters locked to frontmatter."""
+
+    if session.cursor.state != StateId("use_decide") or event.id not in {
+        EventId("play_parameter_required"),
+        EventId("local_play_ready"),
+        EventId("remote_pull_required"),
+    }:
+        return
+    declarations = _path_value(session.context, "inspection.parameters")
+    if not isinstance(declarations, list):
+        raise ControllerRuntimeError("inspected parameter declarations are malformed")
+    declared: dict[str, Mapping[str, Any]] = {}
+    for declaration in declarations:
+        if not isinstance(declaration, Mapping):
+            raise ControllerRuntimeError("inspected parameter declaration is malformed")
+        name = declaration.get("name")
+        if not isinstance(name, str) or not name or name in declared:
+            raise ControllerRuntimeError("inspected parameter names are invalid")
+        declared[name] = declaration
+    parameters = _path_value(event.payload, "request.parameters")
+    if not isinstance(parameters, Mapping):
+        raise ControllerRuntimeError("route_inspected_play parameters must be an object")
+    unknown = sorted(set(parameters) - set(declared))
+    if unknown:
+        raise ControllerRuntimeError(
+            "route_inspected_play returned undeclared parameter(s): "
+            + ", ".join(unknown)
+            + "; declared parameters: "
+            + ", ".join(declared)
+        )
+    for name, value in parameters.items():
+        declaration = declared[name]
+        if not _matches_parameter_type(value, declaration.get("type")):
+            raise ControllerRuntimeError(
+                f"route_inspected_play returned the wrong type for parameter {name}"
+            )
+        valid_values = declaration.get("valid_values")
+        if isinstance(valid_values, list) and valid_values and value not in valid_values:
+            raise ControllerRuntimeError(
+                f"route_inspected_play returned an invalid value for parameter {name}"
+            )
+    if event.id in {EventId("local_play_ready"), EventId("remote_pull_required")}:
+        missing = [
+            name
+            for name, declaration in declared.items()
+            if declaration.get("required") is True and name not in parameters
+        ]
+        if missing:
+            raise ControllerRuntimeError(
+                "route_inspected_play omitted required parameter(s): " + ", ".join(missing)
+            )
+    if event.id == EventId("play_parameter_required"):
+        requested = _path_value(event.payload, "parameter_input.name")
+        if requested not in declared:
+            raise ControllerRuntimeError(
+                "route_inspected_play requested an undeclared parameter"
+            )
+
+
+def _matches_parameter_type(value: Any, declared_type: Any) -> bool:
+    normalized = str(declared_type or "string").casefold()
+    if normalized in {"string", "str"}:
+        return isinstance(value, str)
+    if normalized in {"integer", "int"}:
+        return isinstance(value, int) and not isinstance(value, bool)
+    if normalized in {"number", "float"}:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if normalized in {"boolean", "bool"}:
+        return isinstance(value, bool)
+    if normalized in {"array", "list"}:
+        return isinstance(value, list)
+    if normalized in {"object", "map"}:
+        return isinstance(value, Mapping)
+    return False
 
 
 def cursor_from_dict(payload: Mapping[str, Any]) -> ControllerCursor:
