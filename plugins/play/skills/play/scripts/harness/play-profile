@@ -459,20 +459,20 @@ def reconcile(state: dict[str, object]) -> None:
     recorded_source_available = (source / "SKILL.md").is_file() and (
         source / "scripts" / "bin" / "play-machine"
     ).is_file()
-    orphaned_source_repair = source_changed and not recorded_source_available
+    orphaned_source_restore = source_changed and not recorded_source_available
     portable_source_migration = (
         source_changed
         and mode == "source-linked"
         and portable_source()
     )
     if source_changed and not (
-        orphaned_source_repair
+        orphaned_source_restore
         or (mode == "marketplace" and previous_mode == "marketplace")
         or portable_source_migration
     ):
         raise ProfileError(f"profile state belongs to another Play source: {source}")
     if previous_mode != mode and not (
-        orphaned_source_repair or portable_source_migration
+        orphaned_source_restore or portable_source_migration
     ):
         raise ProfileError(f"activation mode changed; expected {mode}")
     if not play_is_implicit():
@@ -509,7 +509,7 @@ def reconcile(state: dict[str, object]) -> None:
     rollback_files: dict[Path, dict[str, object]] = {}
     created_links: list[Path] = []
     removed_links: list[Path] = []
-    repaired_links: dict[Path, Path | None] = {}
+    restored_links: dict[Path, Path | None] = {}
     rebased_skills: set[Path] = set()
     previous_skills = {Path(str(value)) for value in state["rote_skills"]}
     desired_skills = set(rote_skills)
@@ -618,7 +618,7 @@ def reconcile(state: dict[str, object]) -> None:
             if link.is_symlink():
                 link.unlink()
             link.symlink_to(SOURCE, target_is_directory=True)
-            repaired_links[link] = previous_target
+            restored_links[link] = previous_target
         for link in sorted(desired_link_set - old_link_set, key=str):
             link.symlink_to(SOURCE, target_is_directory=True)
             created_links.append(link)
@@ -628,7 +628,7 @@ def reconcile(state: dict[str, object]) -> None:
             or launchers_changed
             or source_changed
             or policy_changed
-            or repaired_links
+            or restored_links
             or old_link_set != desired_link_set
             or previous_skills != desired_skills
             or list(map(str, roots)) != list(map(str, state["roots"]))
@@ -660,7 +660,7 @@ def reconcile(state: dict[str, object]) -> None:
         for link in reversed(created_links):
             if link.is_symlink():
                 link.unlink()
-        for link, previous_target in reversed(list(repaired_links.items())):
+        for link, previous_target in reversed(list(restored_links.items())):
             if link.is_symlink():
                 link.unlink()
             if previous_target is not None:
@@ -676,10 +676,10 @@ def reconcile(state: dict[str, object]) -> None:
     print(
         f"reconciled Play-first {mode} profile across {len(roots)} harness root(s); "
         f"rebased {len(rebased_skills)} refreshed/new rote skill(s); "
-        f"restored {len(repaired_links)} managed Play link(s)"
+        f"restored {len(restored_links)} managed Play link(s)"
     )
-    if orphaned_source_repair:
-        print(f"repaired activation from missing Play source: {source}")
+    if orphaned_source_restore:
+        print(f"restored activation from missing Play source: {source}")
     if profile_backup is not None:
         print(f"backed up previous activation profile: {profile_backup['path']}")
     print("restart the harness to reload the reconciled activation profile")

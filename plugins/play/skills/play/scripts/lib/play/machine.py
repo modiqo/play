@@ -464,13 +464,13 @@ def validate_bundle(
         if not changed:
             break
     rules = {
-        "use_auth_repair_offer": (
-            "use_auth_repair_handoff",
-            "use_auth_repair_execute",
-            "use_auth_repair_receipt",
+        "use_authentication_offer": (
+            "use_authentication_handoff",
+            "use_authentication_execute",
+            "use_authentication_receipt",
         ),
-        "use_auth_repair_handoff": ("use_auth_repair_execute", "use_auth_repair_receipt"),
-        "use_auth_repair_execute": ("use_auth_repair_receipt",),
+        "use_authentication_handoff": ("use_authentication_execute", "use_authentication_receipt"),
+        "use_authentication_execute": ("use_authentication_receipt",),
         "save_judge": ("crystallize",),
         "crystallize": ("save_prepare", "save_offer", "public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
         "save_prepare": ("save_offer", "public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
@@ -847,7 +847,7 @@ def validate_bundle(
         "exploration",
         "adapter_discovery",
         "handoff",
-        "auth_repair",
+        "authentication",
         "publication_validation",
         "standby",
         "save_judge",
@@ -906,26 +906,26 @@ def validate_bundle(
         == ["unknown", "resolved", "choice_required", "unavailable"],
         "publication context must retain typed pre-save owner resolution",
     )
-    auth_repair_owner_enum = (
+    authentication_owner_enum = (
         context_schema.get("$defs", {})
-        .get("authRepair", {})
+        .get("authentication", {})
         .get("properties", {})
         .get("owner", {})
         .get("enum")
     )
     check(
-        auth_repair_owner_enum == ["rote-adapter-config", None],
-        "auth repair must use a separate closed rote-adapter-config owner",
+        authentication_owner_enum == ["rote-adapter-config", None],
+        "authentication must use a separate closed rote-adapter-config owner",
     )
     check(
-        actions.get("prepare_auth_repair_handoff", {}).get("command")
-        == "scripts/bin/play-handoff prepare-auth-repair --stdin --json",
-        "auth repair availability must use its dedicated handoff gate",
+        actions.get("prepare_authentication_handoff", {}).get("command")
+        == "scripts/bin/play-handoff prepare-authentication --stdin --json",
+        "authentication availability must use its dedicated handoff gate",
     )
     check(
-        actions.get("validate_auth_repair_receipt", {}).get("command")
-        == "scripts/bin/play-handoff verify-auth-repair --stdin --json",
-        "auth repair receipts must use their dedicated verification gate",
+        actions.get("validate_authentication_receipt", {}).get("command")
+        == "scripts/bin/play-handoff verify-authentication --stdin --json",
+        "authentication receipts must use their dedicated verification gate",
     )
     check(
         actions.get("present_birth_certificate", {}).get("command")
@@ -1097,21 +1097,21 @@ def validate_bundle(
         .get("properties", {})
         .get("expected_events", {})
         .get("properties", {})
-        .get("auth_repair_required", {})
+        .get("authentication_required", {})
         .get("const", [])
     )
     check(
-        auth_required_fields == ["auth_repair"],
-        "CALL handoff receipts must expose the typed auth repair event",
+        auth_required_fields == ["authentication"],
+        "CALL handoff receipts must expose the typed authentication event",
     )
     check(
         handoff_schema.get("$defs", {})
-        .get("authRepairPacket", {})
+        .get("authenticationPacket", {})
         .get("properties", {})
         .get("owner", {})
         .get("const")
         == "rote-adapter-config",
-        "auth repair packets must be closed to rote-adapter-config",
+        "authentication packets must be closed to rote-adapter-config",
     )
 
     if errors:

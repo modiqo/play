@@ -64,6 +64,6 @@ resolved version, fused score, unversioned URI, local availability, and next ins
 only in an authorized organization, state that a local pull/install is expected before it can run.
 For an outcome request, deterministically select the first adequate result by that priority. Inspect
 it read-only. If inspection proves the exact Play is already local, continue immediately to
-execution. If it requires a pull, install, replacement, or repair, elicit explicit consent before
+execution. If it requires a pull, install, replacement, or restoration, elicit explicit consent before
 the runtime performs that change. Search-only requests still present structured choices; a choice
 authorizes inspection only.

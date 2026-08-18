@@ -69,9 +69,9 @@ ID, stable task key, and the unchanged user request:
 
 The installer normally places `play-machine` on `PATH`. If it is unavailable but this loaded skill
 contains executable `scripts/bin/play-machine`, first run bundled `scripts/bin/play-activate` to
-repair the launcher and activation state, then enter the runtime through the bundled
+restore the launcher and activation state, then enter the runtime through the bundled
 `scripts/bin/play-machine` for this turn. Do not wait for shell command hashing or a harness restart.
-If activation repair fails, run bundled
+If activation restoration fails, run bundled
 `scripts/bin/play-preflight --harness <codex|claude|kimi|cursor|hermes|opencode|deepseek|generic> --json`, present its exact
 failed checks and multi-select install targets, report that the Play installation is incomplete,
 and stop before normal Play control flow. Do not try `rtk` or `rtk proxy`: `play-machine` is a Python
@@ -126,7 +126,7 @@ failure or print raw login commands as the primary onboarding path.
 
 ## Cross-harness bootstrap
 
-For an explicit request to install or repair Play across harnesses, use the bundled
+For an explicit request to install or restore Play across harnesses, use the bundled
 `scripts/bin/play-bootstrap` only after the typed runtime returns the task to normal execution.
 Run `plan --json` first, present its multi-select top-K targets and effects, and obtain approval for
 that exact `plan_id`. Then run `apply --plan-id <id>`; add `--approve-remote-installer` only after
@@ -145,7 +145,7 @@ narration, no explore offers. Before novel outcome work starts, the runtime clas
 `capture` or `normal`. Capture creates a Rote workspace and handle; normal creates neither.
 **A standby exit is a baton-pass, never a result**: complete a captured request only through the
 returned workspace, or complete a normal request without a future settle option. Saving, publication,
-adapter repair, and team invites run only through the projected specialist handoffs. Never
+adapter authentication, and team invites run only through the projected specialist handoffs. Never
 decompose `rote play run` into registry pulls, adapter setup, or local-path execution, and never
 treat its failure as authorization for a manual fallback. Preserve every primary payload exactly
 as received; compact summaries are incomplete results. Never place raw credentials in Play

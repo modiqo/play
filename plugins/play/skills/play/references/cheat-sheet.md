@@ -30,7 +30,7 @@ Play: returns the verified result and receipt
 
 The normal installer finishes sign-in before touching Play-owned harness state. If a session later
 expires or is revoked, Play’s harness recovery lane guides sign-in and resumes the original
-request. An empty `$play` is also the safest way to check or repair setup.
+request. An empty `$play` is also the safest way to check or restore setup.
 
 ## Find and run an existing Play
 

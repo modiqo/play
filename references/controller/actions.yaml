@@ -119,7 +119,7 @@ mutations:
   - recover_unresolved_reference
   - approve_inspected_run
   - record_play_run_handoff
-  - record_use_auth_repair_required
+  - record_use_authentication_required
   - record_run_dismissal
   - record_controller_run
   - record_incomplete_output
@@ -135,14 +135,14 @@ mutations:
   - enter_settled_judgment
   - record_save_worthiness
   - record_not_worth_saving
-  - approve_auth_repair
-  - decline_auth_repair
-  - record_auth_repair_handoff
-  - record_auth_repair_unavailable
-  - record_auth_repair_response
-  - record_auth_repair_success
-  - record_auth_repair_failure
-  - record_invalid_auth_repair_receipt
+  - approve_authentication
+  - decline_authentication
+  - record_authentication_handoff
+  - record_authentication_unavailable
+  - record_authentication_response
+  - record_authentication_success
+  - record_authentication_failure
+  - record_invalid_authentication_receipt
   - record_verification_failure
   - record_candidate
   - record_public_owner_context
@@ -529,7 +529,7 @@ actions:
     command_policy:
       - Request the first missing required parameter before deciding local readiness or pull consent; repeat until the typed parameter contract is complete.
       - Continue immediately when read-only inspection proves the exact Play is already local.
-      - Require the structured pull consent prompt for install, replacement, repair, or unknown local state.
+      - Require the structured pull consent prompt for install, replacement, restoration, or unknown local state.
     events:
       play_parameter_required: [parameter_input.name, parameter_input.label, parameter_input.type, parameter_input.description]
       local_play_ready: []
@@ -543,9 +543,9 @@ actions:
     command: scripts/bin/play-handoff prepare-play-run --stdin --json
     command_policy:
       - Bind the exact inspected reference, parameters, and disclosure digest before execution.
-      - This packet records the original Play-run contract for a possible rote-adapter-config repair; it performs no pull, configuration, authentication, or execution.
+      - This packet records the original Play-run contract for possible adapter authentication; it performs no pull, configuration, authentication, or execution.
     events:
-      play_run_handoff_ready: [auth_repair.original_packet, auth_repair.original_packet_sha256]
+      play_run_handoff_ready: [authentication.original_packet, authentication.original_packet_sha256]
 
   inspect_registry_play:
     kind: deterministic
@@ -554,7 +554,7 @@ actions:
     input_required: [match.reference, request.parameters]
     command: scripts/bin/play-inspect <match.reference> --json
     command_policy:
-      - Invoke first-class rote play inspect through the reusable wrapper; never pull, install, repair, authenticate, or run during this state.
+      - Invoke first-class rote play inspect through the reusable wrapper; never pull, install, replace, authenticate, or run during this state.
       - Present the exact version, purpose, parameters, declared operations, dependencies, credentials, local convergence, blockers, and declared write permissions.
       - When generic adapter operations do not prove read/write semantics, label the effect unknown rather than claiming read-only execution.
       - An explicit run request selects what to inspect; it is not approval to execute after disclosure.
@@ -569,26 +569,26 @@ actions:
     owner: play
     effect: mixed
     timeout_seconds: 3600
-    input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, inspection.local_change, request.parameters, output_policy, auth_repair.original_packet, auth_repair.original_packet_sha256]
+    input_required: [match.reference, inspection.exact_reference, inspection.disclosure_sha256, inspection.local_change, request.parameters, output_policy, authentication.original_packet, authentication.original_packet_sha256]
     command: scripts/bin/play-run --stdin --json
     command_policy:
       - Execute exactly one rote play run using the approved canonical unversioned URI or owner/name reference; retain the inspected exact version only as disclosure and receipt evidence.
       - Never run info, search, list, a local path, or a second capture run; the prior inspection and prepared packet are the complete execution contract.
       - Use --yes only after local readiness is proven, or after approve_play_run binds a remote pull to the exact inspection digest, reference, and displayed parameters.
-      - Never pull, install, replace, or repair a remote Play without the post-inspection approval.
+      - Never pull, install, replace, or restore a remote Play without the post-inspection approval.
       - If the inspection changes or parameters change, discard approval and return to use_inspect.
       - Never replace this handoff with a manual `rote registry play pull` plus a local-path `rote play run`, even when the Play is already local.
       - Never request summary output. Preserve the complete primary payload, response and artifact references, effects, and any full-output reference returned by Rote.
       - Prefer Rote's human presentation for steps-with-presentation Plays; accept JSON or structured responses only when they retain the full primary result.
       - A compact Play summary cannot prove full detail and must not emit play_run_ready.
-      - Pin ROTE_OUTPUT_MODE=structured for the captured subprocess because rote play run has no JSON switch; accept the same closed authentication fields from Rote's documented marker or prose rendering so an older or inherited shell mode cannot erase the repair route.
-      - If rote play run returns the documented play.auth-required/v1 failure before any adapter call, emit source=rote_auth_repair_required, normalize only its exact static, oauth, oauth_dcr, or google_discovery protocol, and preserve its adapter id, credential variable, failure state, remediation, and evidence as play_auth_repair_required.
+      - Pin ROTE_OUTPUT_MODE=structured for the captured subprocess because rote play run has no JSON switch; accept the same closed authentication fields from Rote's documented marker or prose rendering so an older or inherited shell mode cannot erase the authentication route.
+      - If rote play run returns the documented play.auth-required/v1 failure before any adapter call, emit source=rote_authentication_required, normalize only its exact static, oauth, oauth_dcr, or google_discovery protocol, and preserve its adapter id, credential variable, failure state, remediation, and evidence as play_authentication_required.
       - Reject unknown, incomplete, ambiguous, or post-adapter-call authentication payloads; never guess that an unknown protocol is a static token and never ask a user to paste an OAuth credential.
       - Route non-authentication run failures to blocked with Rote's exact evidence, and present the structured action_blocked reason verbatim so terminal errors cannot disappear into an empty yield or standby exit.
     events:
       play_run_ready: [play.version, resolution.local_state, resolution.pull_performed, result_ref, response_refs, artifact_refs, effects, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
       play_drifted: [reason, evidence_refs]
-      play_auth_repair_required: [auth_repair.source, auth_repair.owner, auth_repair.recoverable, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.evidence_refs]
+      play_authentication_required: [authentication.source, authentication.owner, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.evidence_refs]
 
   verify_play_output:
     kind: deterministic
@@ -638,57 +638,58 @@ actions:
     events:
       onboarding_activation_presented: [onboarding.activation_status, onboarding.activation_markdown, onboarding.activation_ref, onboarding.activation_ns, presentation.markdown]
 
-  prepare_auth_repair_handoff:
+  prepare_authentication_handoff:
     kind: deterministic
     owner: play
     effect: none
-    input_required: [run_id, request.requested_outcome, auth_repair.source, auth_repair.status, auth_repair.owner, auth_repair.recoverable, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.evidence_refs, auth_repair.original_packet, auth_repair.original_packet_sha256, execution.idempotency_key]
-    command: scripts/bin/play-handoff prepare-auth-repair --stdin --json
+    input_required: [run_id, request.requested_outcome, authentication.source, authentication.status, authentication.owner, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.evidence_refs, authentication.original_packet, authentication.original_packet_sha256, execution.idempotency_key]
+    command: scripts/bin/play-handoff prepare-authentication --stdin --json
     command_policy:
-      - Require rote-adapter-config to be callable; it is the only permitted auth-repair owner and never becomes a CALL execution owner.
-      - Bind the repair packet to the validated original CALL packet and its SHA, preserving its requested outcome and idempotency key.
+      - Require rote-adapter-config to be callable; it is the only permitted authentication owner and never becomes a CALL execution owner.
+      - Bind the authentication packet to the validated original CALL packet and its SHA, preserving its requested outcome and idempotency key.
       - Treat classified_rung as opaque Rote-owned classification; Play must not reinterpret or execute ladder mechanics.
       - Never request, accept, or store raw credentials in Play context or the handoff packet.
     events:
-      auth_repair_handoff_ready: [auth_repair.owner, auth_repair.packet, auth_repair.packet_sha256]
-      auth_repair_specialist_unavailable: [auth_repair.owner, auth_repair.blocked_reason, available_owners]
+      authentication_handoff_ready: [authentication.owner, authentication.packet, authentication.packet_sha256]
+      authentication_specialist_unavailable: [authentication.owner, authentication.blocked_reason, available_owners]
 
-  execute_auth_repair:
+  execute_authentication:
     kind: delegated
     owner: rote-specialist
     specialist: rote-adapter-config
     effect: mixed
-    input_required: [auth_repair.owner, auth_repair.packet, auth_repair.packet_sha256, auth_repair.original_packet_sha256]
+    input_required: [authentication.owner, authentication.packet, authentication.packet_sha256, authentication.original_packet_sha256]
     command_policy:
-      - Invoke only rote-adapter-config with the exact play.auth-repair-handoff/v1 packet.
-      - Let rote-adapter-config own classification checks, repair commands, OAuth and secret-entry gates, and ladder termination.
+      - Invoke only rote-adapter-config with the exact play.authentication-handoff/v1 packet.
+      - Let rote-adapter-config own classification checks, authentication commands, OAuth and secret-entry gates, and ladder termination.
       - For oauth_dcr, attempt `rote adapter reauth <adapter_id>` exactly once before considering recovery; keep the browser authorization inside the specialist handoff rather than redirecting the user to a manual terminal command.
       - Apply the temporary MCP-DCR recovery only when that reauth attempt reports the exact missing or absent token-storage-entry condition and fresh `rote adapter info` evidence proves the same installed adapter is backed by a known HTTPS MCP endpoint.
       - Before the temporary recovery changes anything, write a restorable local backup with `rote adapter pack <adapter_id> <backup_path>` and record its reference; if backup creation or validation fails, stop without deleting the adapter.
       - After a valid backup, run `rote adapter delete <adapter_id> --yes`, then recreate only that adapter from its previously verified endpoint with `rote adapter new-from-mcp <adapter_id> <endpoint> --headless`; never substitute a different endpoint, adapter id, or auth family.
       - If recreation or authentication fails after deletion, restore the packed adapter, report the failed recovery with evidence, and do not retry the original Play.
-      - Before reporting repair success, verify the recreated adapter's endpoint, auth family, fingerprint, tool inventory, health, and dependent-Play indexing against the pre-delete evidence; preserve the backup reference and any provenance differences in the receipt.
+      - Before reporting authentication success, verify the recreated adapter's endpoint, auth family, fingerprint, tool inventory, health, and dependent-Play indexing against the pre-delete evidence; preserve the backup reference and any provenance differences in the receipt.
       - Never use a placeholder or fabricated token to make reauth enter this path. Never use this destructive fallback for static, oauth, google_discovery, unknown or ambiguous errors, missing endpoints, post-adapter-call failures, or any condition other than the exact pre-call MCP OAuth DCR token-storage absence.
-      - Return one typed play.auth-repair-receipt/v1 receipt; never call the provider, adapter, or original operation from the repair state.
+      - Return only the verified authentication result fields declared by `authentication_ready`, or the failure fields declared by `authentication_failed`. Play builds the bound play.authentication-receipt/v1 envelope deterministically; the specialist must never construct run, state, action, owner, executor, event, or packet-hash fields.
+      - Never call the provider, adapter, or original operation from the authentication state.
     events:
-      auth_repair_ready: [auth_repair.receipt, auth_repair]
-      auth_repair_failed: [auth_repair.receipt, reason, evidence_refs]
+      authentication_ready: [authentication]
+      authentication_failed: [reason, evidence_refs]
 
-  validate_auth_repair_receipt:
+  validate_authentication_receipt:
     kind: deterministic
     owner: play
     effect: none
-    input_required: [run_id, auth_repair.packet, auth_repair.packet_sha256, auth_repair.receipt]
-    command: scripts/bin/play-handoff verify-auth-repair --stdin --json
+    input_required: [run_id, authentication.packet, authentication.packet_sha256, authentication.receipt]
+    command: scripts/bin/play-handoff verify-authentication --stdin --json
     command_policy:
-      - Accept only a matching rote-adapter-config skill receipt for the exact repair packet, run, state, action, owner, and packet SHA.
-      - On success require the same adapter id, environment variable, and classified rung as the repair request plus a non-empty repair action and evidence.
-      - On success preserve the original operation inputs and idempotency key, then prepare a fresh execution packet carrying the validated repair receipt reference.
-      - Never treat repair success as outcome success; the original CALL must still execute and verify.
+      - Accept only a matching rote-adapter-config skill receipt for the exact authentication packet, run, state, action, owner, and packet SHA.
+      - On success require the same adapter id, environment variable, and classified rung as the authentication request plus a non-empty authentication action and evidence.
+      - On success preserve the original operation inputs and idempotency key, then prepare a fresh execution packet carrying the validated authentication receipt reference.
+      - Never treat authentication success as outcome success; the original CALL must still execute and verify.
     events:
-      specialist_auth_repair_ready: [auth_repair.receipt_ref, auth_repair.receipt_valid, auth_repair]
-      specialist_auth_repair_failed: [auth_repair.receipt_ref, auth_repair.receipt_valid, reason, evidence_refs]
-      auth_repair_receipt_invalid: [auth_repair.receipt_valid, auth_repair.blocked_reason, evidence_refs]
+      specialist_authentication_ready: [authentication.receipt_ref, authentication.receipt_valid, authentication]
+      specialist_authentication_failed: [authentication.receipt_ref, authentication.receipt_valid, reason, evidence_refs]
+      authentication_receipt_invalid: [authentication.receipt_valid, authentication.blocked_reason, evidence_refs]
 
   prepare_candidate:
     kind: delegated
@@ -825,7 +826,7 @@ actions:
       - Compare each selected registry adapter against the receipt-verified installed adapter by source, version, fingerprint, auth family, and declared credential environment-variable names.
       - Read and retain credential metadata only. Never inspect, print, hash, copy, or persist a credential value.
       - Treat equal fingerprints as insufficient when provenance, version, auth family, or credential names differ.
-      - Do not pull, repair, authenticate, delete backup files, or otherwise mutate adapters; return a typed failure and let the Rote-owned repair lifecycle handle remediation.
+      - Do not pull, reconfigure, authenticate, delete backup files, or otherwise mutate adapters; return a typed failure and let the Rote-owned authentication lifecycle handle remediation.
     events:
       associated_credentials_verified: [publication_validation.credential_status, publication_validation.adapter_contracts, publication_validation.credential_contract_sha256, publication_validation.credential_check_ns, publication_validation.evidence_refs]
       associated_credentials_invalid: [reason, failure_class, credential_names, evidence_refs]

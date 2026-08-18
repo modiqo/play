@@ -27,8 +27,8 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
     match = _mapping(payload.get("match"), "match")
     inspection = _mapping(payload.get("inspection"), "inspection")
     request = _mapping(payload.get("request"), "request")
-    auth_repair = _mapping(payload.get("auth_repair"), "auth_repair")
-    packet = _mapping(auth_repair.get("original_packet"), "auth_repair.original_packet")
+    authentication = _mapping(payload.get("authentication"), "authentication")
+    packet = _mapping(authentication.get("original_packet"), "authentication.original_packet")
     output_policy = _mapping(payload.get("output_policy"), "output_policy")
     if output_policy.get("mode") != "detailed":
         raise PlayRunError("output_policy.mode must be detailed")
@@ -285,7 +285,7 @@ def _typed_auth_failure(output: str) -> dict[str, Any] | None:
         sources.append(rendered_source)
 
     # Multiple typed failures in one invocation are ambiguous. Refuse to guess
-    # which adapter or credential should be repaired.
+    # which adapter or credential should be authenticated.
     if len(sources) != 1:
         return None
     source = sources[0]
@@ -317,9 +317,9 @@ def _typed_auth_failure(output: str) -> dict[str, Any] | None:
     return {
         "schema": "play.run-result/v1",
         "ok": False,
-        "event": "play_auth_repair_required",
-        "auth_repair": {
-            "source": "rote_auth_repair_required",
+        "event": "play_authentication_required",
+        "authentication": {
+            "source": "rote_authentication_required",
             "owner": "rote-adapter-config",
             "recoverable": True,
             "adapter_id": adapter_id.strip(),
@@ -358,7 +358,11 @@ _AUTH_MARKER_FIELDS = {
     "Credential": "credential",
     "State": "state",
     "Protocol": "protocol",
-    "Repair interaction": "repair_interaction",
+    "Authentication interaction": "authentication_interaction",
+    # Backward-compatible input for Rote versions released before the
+    # authentication vocabulary became canonical. This label is accepted but
+    # never emitted by Play.
+    "Repair interaction": "authentication_interaction",
     "Network required": "network_required",
     "Remediation": "remediation",
     "Adapter calls started": "adapter_calls_started",

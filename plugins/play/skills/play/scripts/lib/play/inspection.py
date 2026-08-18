@@ -133,7 +133,7 @@ def normalize_inspection(requested_reference: str, inspected: dict[str, Any]) ->
     local_state = play_check.get("local_state")
     local_change = {
         "install_required": "install",
-        "repair_required": "replace_or_repair",
+        "repair_required": "replace_or_restore",
         "ready": "none",
     }.get(decision, "unknown")
     write_permissions = _items(requirements.get("write_permissions"))
@@ -193,7 +193,7 @@ def normalize_inspection(requested_reference: str, inspected: dict[str, Any]) ->
             "play_local_state": local_state,
             "decision": decision,
             "local_change": local_change,
-            "pull_or_install_required": local_change in {"install", "replace_or_repair"},
+            "pull_or_install_required": local_change in {"install", "replace_or_restore"},
             "reason": play_check.get("reason"),
             "user_action": play_check.get("user_action"),
             "host": host,
@@ -203,7 +203,7 @@ def normalize_inspection(requested_reference: str, inspected: dict[str, Any]) ->
             "required": True,
             "allowed": run_eligible,
             "scope": exact_reference,
-            "notice": "Inspection is read-only. Nothing has been installed, repaired, or run.",
+            "notice": "Inspection is read-only. Nothing has been installed, changed, or run.",
         },
     }
     digest_source = json.dumps(disclosure, sort_keys=True, separators=(",", ":"))

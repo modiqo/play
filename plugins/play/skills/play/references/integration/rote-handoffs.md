@@ -61,7 +61,7 @@ not a suggestion:
    Detect `openapi`, `graphql`, or `mcp` from that ordered evidence. MCP uses
    `rote adapter new-from-mcp`; OpenAPI and GraphQL use the dry-run-first `rote adapter new` path.
 4. Complete initial authentication through the Rote creation flow. For a recoverable failure on an
-   existing adapter, return the typed repair request described below. Do not ask Play to classify
+   existing adapter, return the typed authentication request described below. Do not ask Play to classify
    authentication or handle credentials.
 5. Only an `installed_ready` convergence receipt may prepare the execution packet. Execute the
    requested capability through `rote-using-adapters`.
@@ -83,22 +83,22 @@ recording the adapter id,
 detected substrate and evidence, creation/reuse status, auth status/owner, orchestration owner,
 `adapter_execute_owner=rote-using-adapters`, and `direct_tool_execution=false`.
 
-## Recoverable authentication repair
+## Recoverable authentication
 
-The same repair contract applies when `rote play run` encounters adapter authentication. Before a
+The same authentication contract applies when `rote play run` encounters adapter authentication. Before a
 Play run, bind the exact reference, parameters, disclosure SHA, and expected events into
 `play.run-handoff/v1` with `scripts/bin/play-handoff prepare-play-run --stdin --json`. Preserve that
 packet and SHA as the original contract; do not expand the Play run into adapter commands.
 
 Do not collapse a recoverable CALL authentication failure into `route_exhausted`. The execution
-owner returns `auth_repair_required` with `source=rote_auth_repair_required`, `recoverable=true`, the
+owner returns `authentication_required` with `source=rote_authentication_required`, `recoverable=true`, the
 adapter id, environment variable name, opaque classified rung, distinguishing error, and evidence.
 The packet must not contain a token, secret, credential value, or other undeclared field.
 
-After Play receives explicit approval, prepare `play.auth-repair-handoff/v1` with
-`scripts/bin/play-handoff prepare-auth-repair --stdin --json`. This is a separate closed handoff to
+After Play receives explicit approval, prepare `play.authentication-handoff/v1` with
+`scripts/bin/play-handoff prepare-authentication --stdin --json`. This is a separate closed handoff to
 `rote-adapter-config`; it neither adds that skill to the CALL execution owner set nor authorizes the
-provider operation. Bind the repair packet to the exact original CALL packet and SHA.
+provider operation. Bind the authentication packet to the exact original CALL packet and SHA.
 
 Until Rote can bootstrap a missing OAuth DCR token-storage entry in place, the approval disclosure
 also covers one narrow MCP recovery owned by `rote-adapter-config`. First try
@@ -111,19 +111,19 @@ browser authorization; it must not redirect the user to reconstruct the flow man
 Fail closed before deletion if the backup is unavailable. If recreation or authentication fails,
 restore the backup and do not resume the Play. Success requires fresh evidence for endpoint, auth
 family, fingerprint, tool inventory, health, and dependent-Play indexing, with any provenance
-change recorded in the repair receipt. This temporary path never applies to static credentials,
+change recorded in the authentication receipt. This temporary path never applies to static credentials,
 ordinary OAuth, Google discovery, ambiguous failures, or post-call authentication failures, and a
 placeholder token must never be created to trigger it.
 
-Require `play.auth-repair-receipt/v1` and validate it with
-`scripts/bin/play-handoff verify-auth-repair --stdin --json`. A successful receipt must match the
-requested adapter, environment variable, and classified rung, name the repair action, and include
-evidence. A declined, unavailable, failed, mismatched, or malformed repair enters `blocked`.
+Require `play.authentication-receipt/v1` and validate it with
+`scripts/bin/play-handoff verify-authentication --stdin --json`. A successful receipt must match the
+requested adapter, environment variable, and classified rung, name the authentication action, and include
+evidence. A declined, unavailable, failed, mismatched, or malformed authentication enters `blocked`.
 
-After validated repair, invalidate the prior execution packet and prepare a fresh
+After validated authentication, invalidate the prior execution packet and prepare a fresh
 `play.handoff/v1` packet for the original owner. Preserve the original requested outcome,
 modalities, constraints, inputs, effect policy, evidence contract, and idempotency key; attach only
-the original packet SHA, repair receipt reference, adapter id, and classified rung as resume
+the original packet SHA, authentication receipt reference, adapter id, and classified rung as resume
 provenance. The original CALL must execute and pass normal receipt and outcome verification.
 
 ## Play-request setup handoff
@@ -131,7 +131,7 @@ provenance. The original CALL must execute and pass normal receipt and outcome v
 Any `$play` or `/play` request may hand off to `rote-setup` after typed live preflight reports the
 binary missing, or reports a structurally healthy installation whose only failed check is an
 unauthenticated identity. This is normal onboarding, not an Explore execution owner, a CALL
-authentication-repair packet, or an installation-error presentation. Preserve the original request
+authentication packet, or an installation-error presentation. Preserve the original request
 and opaque continuation while setup runs.
 
 Pass the onboarding intent, live Rote status, resolved command when present, and expected closed

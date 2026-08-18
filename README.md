@@ -215,8 +215,8 @@ stateDiagram-v2
     use_offer --> use_prepare : approved
     use_prepare --> use_run : run handoff bound
     use_run --> use_verify : unchanged output
-    use_run --> use_auth_repair : recoverable adapter auth
-    use_auth_repair --> use_inspect : validated rote-adapter-config repair
+    use_run --> use_authentication : recoverable adapter auth
+    use_authentication --> use_inspect : validated adapter authentication
     use_run --> standby_exit : drifted / failed
     use_verify --> use_receipt : outcome verified
     use_verify --> standby_exit : not verified
@@ -264,7 +264,7 @@ stateDiagram-v2
     blocked --> [*]
 ```
 
-(The diagram groups the onboarding, team-invite, auth-repair, and publication sub-chains for
+(The diagram groups the onboarding, team-invite, authentication, and publication sub-chains for
 readability; [`machine.yaml`](references/controller/machine.yaml) is the exact authority.)
 
 There is deliberately **no Explore lane**. Earlier versions of this machine orchestrated
@@ -362,8 +362,8 @@ Identity is an early setup gate. If Rote is unsigned, the terminal wizard offers
 before any Play-owned backup, plugin, skill, or hook is changed. OAuth login also creates a new
 account when the provider identity has not been seen before. A non-interactive install without an
 authenticated profile or explicit provider pauses at **SETUP PAUSED — SIGN IN REQUIRED**; rerun it
-with a terminal or provide `PLAY_LOGIN_PROVIDER=google|github`. The harness identity lane remains a
-repair path for sessions that expire or are revoked later. Managed activation also self-repairs a
+with a terminal or provide `PLAY_LOGIN_PROVIDER=google|github`. The harness identity lane remains an
+authentication path for sessions that expire or are revoked later. Managed activation also restores a
 launcher whose recorded Play source no longer exists; it will not take over a different source that
 is still present.
 
@@ -453,8 +453,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.10/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.10 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.11/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.11 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -505,7 +505,7 @@ pinned environment (bootstrapping through `uv` when needed). The preflight disti
 launcher, an incomplete bundled runtime, an unavailable Python environment bootstrap (`uv` or an
 already active pinned environment), a missing Rote CLI, missing Rote skills in the active harness,
 authentication, and `rote play` capability; it also reports cross-harness coverage and
-multi-select repair targets. An empty `$play` or `/play` probes
+multi-select restoration targets. An empty `$play` or `/play` probes
 the local binary and identity. If either
 is missing, Play invokes `rote-setup`; that specialist asks before downloaded installer code, login,
 credentials, or optional onboarding. Ordinary requests are lexically classified and qualified
@@ -513,7 +513,7 @@ first; only Play-bound evaluator events run the full preflight, so excluded conv
 repository work do not pay the identity/capability probe.
 Public Play URIs can still show their read-only public card before the CLI exists.
 
-Marketplace installs repair this launcher automatically from Play's session-start hook. If a
+Marketplace installs restore this launcher automatically from Play's session-start hook. If a
 harness cached or enabled the plugin without completing activation, `$play` also runs the bundled
 `scripts/bin/play-activate` and continues through the bundled runtime in the same turn. This works
 before Rote skills are present; later sessions converge Rote skills discovered in Codex or Claude

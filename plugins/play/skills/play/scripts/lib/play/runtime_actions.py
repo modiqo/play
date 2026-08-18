@@ -36,8 +36,8 @@ _SELECTOR_ACTIONS = {
     "inspect_onboarding_experience",
     "inspect_registry_play",
     "collect_awareness_digest",
-    "prepare_auth_repair_handoff",
-    "validate_auth_repair_receipt",
+    "prepare_authentication_handoff",
+    "validate_authentication_receipt",
     "resolve_public_owner",
     "inspect_publication_credentials",
     "classify_adequacy",
@@ -213,10 +213,10 @@ def _execute_instruction(
         reason = payload.get("reason")
         if isinstance(reason, str) and reason.strip():
             presentation = reason.strip()
-    if event_id == "auth_repair_receipt_invalid" and presentation is None:
-        auth_repair = payload.get("auth_repair")
-        if isinstance(auth_repair, Mapping):
-            reason = auth_repair.get("blocked_reason")
+    if event_id == "authentication_receipt_invalid" and presentation is None:
+        authentication = payload.get("authentication")
+        if isinstance(authentication, Mapping):
+            reason = authentication.get("blocked_reason")
             if isinstance(reason, str) and reason.strip():
                 presentation = reason.strip()
     if (
@@ -772,7 +772,7 @@ def _build_payload(
     payload: dict[str, Any] = {}
     # A contract may require both an object and fields nested beneath it. Build
     # parents first so a later child assignment cannot be erased by assigning
-    # the parent object afterward (for example auth_repair plus its validated
+    # the parent object afterward (for example authentication plus its validated
     # receipt_ref and receipt_valid fields).
     ordered = sorted(enumerate(required), key=lambda item: (item[1].count("."), item[0]))
     for _, path in ordered:

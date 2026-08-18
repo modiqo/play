@@ -186,11 +186,11 @@ prompts:
       search_dismissed: [prompt_version, selected_at]
 
   approve_play_run:
-    question: Pull or repair this remote Play as disclosed, then run it with the displayed parameters and effects?
+    question: Pull or replace this remote Play as disclosed, then run it with the displayed parameters and effects?
     selection: single
     choices:
-      - {id: run, label: Pull and run, description: "Authorize rote to install, replace, or repair the exact remote Play and dependencies, then execute it with the displayed parameters.", event: play_run_approved}
-      - {id: cancel, label: Not now, description: "Stop without installing, repairing, authenticating, or running anything.", event: play_run_declined}
+      - {id: run, label: Pull and run, description: "Authorize rote to install or replace the exact remote Play and dependencies, then execute it with the displayed parameters.", event: play_run_approved}
+      - {id: cancel, label: Not now, description: "Stop without installing, replacing, authenticating, or running anything.", event: play_run_declined}
     events:
       play_run_approved: [prompt_version, selected_at, inspection.exact_reference, inspection.disclosure_sha256, request.parameters]
       play_run_declined: [prompt_version, selected_at]
@@ -203,16 +203,16 @@ prompts:
     events:
       play_parameter_supplied: [prompt_version, selected_at, parameter_input.name, parameter_input.value]
 
-  approve_auth_repair:
-    question: "{auth_repair.adapter_id} needs {auth_repair.classified_rung} authentication before this Play can run. Continue with its guided sign-in?"
-    template_fields: [auth_repair.adapter_id, auth_repair.classified_rung]
+  approve_authentication:
+    question: "{authentication.adapter_id} needs {authentication.classified_rung} authentication before this Play can run. Sign in now?"
+    template_fields: [authentication.adapter_id, authentication.classified_rung]
     selection: single
     choices:
-      - {id: repair, label: Continue guided repair, description: "Open the protocol-appropriate secure prompt or browser flow. For MCP OAuth DCR only, if normal reauth finds no token-storage entry, this also approves backing up, deleting, and recreating that adapter from its verified endpoint before authentication is verified and the exact Play is retried.", event: auth_repair_approved}
-      - {id: stop, label: Do not repair, description: Stop without changing credentials, adapter authentication, or the original operation., event: auth_repair_declined}
+      - {id: authenticate, label: Continue secure sign-in, description: "Open the protocol-appropriate secure prompt or browser flow. For MCP OAuth DCR only, if normal sign-in finds no token-storage entry, this also approves backing up, deleting, and recreating that adapter from its verified endpoint before authentication is verified and the exact Play is retried.", event: authentication_approved}
+      - {id: stop, label: Not now, description: Stop without changing credentials, adapter authentication, or the original operation., event: authentication_declined}
     events:
-      auth_repair_approved: [prompt_version, selected_at, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.original_packet_sha256]
-      auth_repair_declined: [prompt_version, selected_at, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.original_packet_sha256]
+      authentication_approved: [prompt_version, selected_at, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.original_packet_sha256]
+      authentication_declined: [prompt_version, selected_at, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.original_packet_sha256]
 
   private_public_or_skip:
     question: "{publication.owner_summary} How should I preserve this verified Play?"

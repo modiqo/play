@@ -316,7 +316,7 @@ class ActivationProfileTest(unittest.TestCase):
 
         result = self.run_profile("install")
 
-        self.assertIn("repaired activation from missing Play source", result.stdout)
+        self.assertIn("restored activation from missing Play source", result.stdout)
         self.assertIn(
             str(repaired_source / "scripts/bin/play-machine"), self.launcher.read_text()
         )

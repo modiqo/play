@@ -228,21 +228,21 @@
       "orb": "connecting",
       "label": "Running the approved Play…"
     },
-    "use_auth_repair_offer": {
+    "use_authentication_offer": {
       "orb": "listening",
-      "label": "Waiting for Play authentication repair approval…"
+      "label": "Waiting for Play authentication approval…"
     },
-    "use_auth_repair_handoff": {
+    "use_authentication_handoff": {
       "orb": "connecting",
-      "label": "Connecting the Play authentication repair specialist…"
+      "label": "Connecting the Play authentication specialist…"
     },
-    "use_auth_repair_execute": {
+    "use_authentication_execute": {
       "orb": "weaving",
-      "label": "Coordinating the Play authentication repair…"
+      "label": "Coordinating Play authentication…"
     },
-    "use_auth_repair_receipt": {
+    "use_authentication_receipt": {
       "orb": "solving",
-      "label": "Checking the Play authentication repair receipt…"
+      "label": "Checking the Play authentication receipt…"
     },
     "use_verify": {
       "orb": "solving",

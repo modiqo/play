@@ -10,6 +10,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
+from .digest_state import stable_sha
 from .onboarding import STARTER_PLAY_URI
 
 
@@ -17,7 +18,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "343c10f888158580d2cb17b657e1a51afbf1f8257bb983d9f8e8950f60c50dec"
+SUPPORTED_MUTATION_SET_SHA256 = "9fec303cee4552000752a5f5c084ccd6c4fd0a4e54bd1f2213b2f4312045113d"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -197,7 +198,7 @@ def initial_context(
             "receipt_valid": False,
             "blocked_reason": None,
         },
-        "auth_repair": {
+        "authentication": {
             "source": None,
             "status": "none",
             "owner": None,
@@ -206,7 +207,7 @@ def initial_context(
             "env_var": None,
             "classified_rung": None,
             "distinguishing_error": None,
-            "repair_action": None,
+            "authentication_action": None,
             "original_packet": None,
             "original_packet_sha256": None,
             "packet": None,
@@ -476,15 +477,15 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
         "capture.status": "normal",
     },
     "attach_onboarding_starter_receipt": {"onboarding.starter_status": "completed"},
-    "record_use_auth_repair_required": {"auth_repair.status": "required"},
+    "record_use_authentication_required": {"authentication.status": "required"},
     "record_save_hook": {"mode": "exited"},
     "enter_settled_judgment": {"mode": "settle"},
     "record_not_worth_saving": {"mode": "exited"},
-    "approve_auth_repair": {"auth_repair.status": "approved"},
-    "decline_auth_repair": {"auth_repair.status": "declined"},
-    "record_auth_repair_handoff": {"auth_repair.status": "repairing"},
-    "record_auth_repair_success": {"auth_repair.status": "repaired"},
-    "record_auth_repair_failure": {"auth_repair.status": "failed"},
+    "approve_authentication": {"authentication.status": "approved"},
+    "decline_authentication": {"authentication.status": "declined"},
+    "record_authentication_handoff": {"authentication.status": "authenticating"},
+    "record_authentication_success": {"authentication.status": "authenticated"},
+    "record_authentication_failure": {"authentication.status": "failed"},
     "record_unpublished_result": {"candidate.publication_status": "unknown"},
     "choose_private": {"consent.save": "private"},
     "choose_public": {"consent.save": "public"},
@@ -515,6 +516,42 @@ def _apply_mutation_semantics(
 
     if mutation == "record_team_space":
         context["team"]["status"] = "ready"
+
+    if mutation == "record_authentication_response":
+        packet = context["authentication"].get("packet")
+        if not isinstance(packet, Mapping):
+            raise RuntimeContextError(
+                "authentication response cannot be recorded without its packet"
+            )
+        result = payload.get("authentication")
+        if isinstance(result, Mapping):
+            event = "authentication_ready"
+            result_payload: dict[str, Any] = {
+                "authentication": copy.deepcopy(dict(result))
+            }
+            evidence_refs = result.get("evidence_refs")
+        else:
+            event = "authentication_failed"
+            reason = payload.get("reason")
+            evidence_refs = payload.get("evidence_refs")
+            result_payload = {
+                "reason": copy.deepcopy(reason),
+                "evidence_refs": copy.deepcopy(evidence_refs),
+            }
+        if not isinstance(evidence_refs, list):
+            evidence_refs = []
+        context["authentication"]["receipt"] = {
+            "schema": "play.authentication-receipt/v1",
+            "packet_sha256": stable_sha(packet),
+            "run_id": packet.get("run_id"),
+            "state": packet.get("state"),
+            "action": packet.get("action"),
+            "owner": packet.get("owner"),
+            "executor": {"kind": "skill", "name": "rote-adapter-config"},
+            "event": event,
+            "payload": result_payload,
+            "evidence_refs": copy.deepcopy(evidence_refs),
+        }
 
     if mutation == "record_team_presentation":
         context["team"]["status"] = "presented"

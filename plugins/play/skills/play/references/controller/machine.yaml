@@ -453,47 +453,47 @@ states:
     "on":
       play_run_ready: [{target: use_verify, mutate: record_controller_run}]
       play_drifted: [{target: standby_exit, mutate: record_failed_receipt}]
-      play_auth_repair_required: [{target: use_auth_repair_offer, mutate: record_use_auth_repair_required}]
+      play_authentication_required: [{target: use_authentication_offer, mutate: record_use_authentication_required}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
-  use_auth_repair_offer:
+  use_authentication_offer:
     owner: play
     checkpoint: after
-    requires: [auth_repair.source, auth_repair.status, auth_repair.recoverable, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.evidence_refs, auth_repair.original_packet, auth_repair.original_packet_sha256]
-    prompt: approve_auth_repair
+    requires: [authentication.source, authentication.status, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.evidence_refs, authentication.original_packet, authentication.original_packet_sha256]
+    prompt: approve_authentication
     "on":
-      auth_repair_approved: [{target: use_auth_repair_handoff, mutate: approve_auth_repair}]
-      auth_repair_declined: [{target: blocked, mutate: decline_auth_repair}]
+      authentication_approved: [{target: use_authentication_handoff, mutate: approve_authentication}]
+      authentication_declined: [{target: blocked, mutate: decline_authentication}]
 
-  use_auth_repair_handoff:
+  use_authentication_handoff:
     owner: play
     checkpoint: after
-    requires: [auth_repair.source, auth_repair.status, auth_repair.owner, auth_repair.recoverable, auth_repair.adapter_id, auth_repair.env_var, auth_repair.classified_rung, auth_repair.distinguishing_error, auth_repair.evidence_refs, auth_repair.original_packet, auth_repair.original_packet_sha256]
-    entry: {action: prepare_auth_repair_handoff}
+    requires: [authentication.source, authentication.status, authentication.owner, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.evidence_refs, authentication.original_packet, authentication.original_packet_sha256]
+    entry: {action: prepare_authentication_handoff}
     "on":
-      auth_repair_handoff_ready: [{target: use_auth_repair_execute, mutate: record_auth_repair_handoff}]
-      auth_repair_specialist_unavailable: [{target: blocked, mutate: record_auth_repair_unavailable}]
+      authentication_handoff_ready: [{target: use_authentication_execute, mutate: record_authentication_handoff}]
+      authentication_specialist_unavailable: [{target: blocked, mutate: record_authentication_unavailable}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
-  use_auth_repair_execute:
+  use_authentication_execute:
     owner: rote-specialist
     checkpoint: both
-    requires: [auth_repair.owner, auth_repair.packet, auth_repair.packet_sha256, auth_repair.original_packet_sha256]
-    entry: {action: execute_auth_repair}
+    requires: [authentication.owner, authentication.packet, authentication.packet_sha256, authentication.original_packet_sha256]
+    entry: {action: execute_authentication}
     "on":
-      auth_repair_ready: [{target: use_auth_repair_receipt, mutate: record_auth_repair_response}]
-      auth_repair_failed: [{target: use_auth_repair_receipt, mutate: record_auth_repair_response}]
+      authentication_ready: [{target: use_authentication_receipt, mutate: record_authentication_response}]
+      authentication_failed: [{target: use_authentication_receipt, mutate: record_authentication_response}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
-  use_auth_repair_receipt:
+  use_authentication_receipt:
     owner: play
     checkpoint: after
-    requires: [auth_repair.packet, auth_repair.packet_sha256, auth_repair.receipt]
-    entry: {action: validate_auth_repair_receipt}
+    requires: [authentication.packet, authentication.packet_sha256, authentication.receipt]
+    entry: {action: validate_authentication_receipt}
     "on":
-      specialist_auth_repair_ready: [{target: use_inspect, mutate: record_auth_repair_success}]
-      specialist_auth_repair_failed: [{target: blocked, mutate: record_auth_repair_failure}]
-      auth_repair_receipt_invalid: [{target: blocked, mutate: record_invalid_auth_repair_receipt}]
+      specialist_authentication_ready: [{target: use_inspect, mutate: record_authentication_success}]
+      specialist_authentication_failed: [{target: blocked, mutate: record_authentication_failure}]
+      authentication_receipt_invalid: [{target: blocked, mutate: record_invalid_authentication_receipt}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_verify:

@@ -36,7 +36,7 @@ def payload(reference: str = URI) -> dict:
             "max_inline_bytes": 200_000,
             "overflow": "artifact",
         },
-        "auth_repair": {
+        "authentication": {
             "original_packet": {
                 "exact_reference": EXACT,
                 "disclosure_sha256": "a" * 64,
@@ -57,7 +57,7 @@ def auth_markers(protocol: str, *, adapter_calls_started: bool = False) -> str:
             "Credential: ADAPTER_CRUCIBLE_TOKEN",
             "State: missing",
             f"Protocol: {AUTH_PROTOCOLS[protocol]}",
-            "Repair interaction: browser",
+            "Authentication interaction: browser",
             "Network required: yes",
             "Remediation: retry in an interactive terminal to authorize",
             f"Adapter calls started: {str(adapter_calls_started).lower()}",
@@ -75,7 +75,7 @@ def auth_prose(protocol: str) -> str:
             "  Credential: ADAPTER_CRUCIBLE_TOKEN",
             "  State: missing",
             f"  Protocol: {AUTH_PROTOCOLS[protocol]}",
-            "  Repair interaction: browser",
+            "  Authentication interaction: browser",
             "  Network required: yes",
             "  Remediation: retry in an interactive terminal to authorize",
             "  Adapter calls started: false",
@@ -100,7 +100,7 @@ def auth_json(protocol: str) -> str:
                     "automatic_authorization": True,
                     "required_capability": "browser_loopback",
                     "interactive_required": True,
-                    "repair_interaction": "browser",
+                    "authentication_interaction": "browser",
                     "interaction_mode": "non_interactive",
                     "network_required": True,
                     "remediation": "retry in an interactive terminal to authorize",
@@ -148,7 +148,7 @@ class UniversalPlayRunTest(unittest.TestCase):
     @patch("scripts.lib.play.play_run.subprocess.run")
     def test_packet_mismatch_blocks_before_execution(self, run) -> None:
         request = payload()
-        request["auth_repair"]["original_packet"]["disclosure_sha256"] = "c" * 64
+        request["authentication"]["original_packet"]["disclosure_sha256"] = "c" * 64
 
         with self.assertRaisesRegex(PlayRunError, "digest differs"):
             execute(request)
@@ -206,9 +206,9 @@ class UniversalPlayRunTest(unittest.TestCase):
 
                 result = execute(payload())
 
-                self.assertEqual("play_auth_repair_required", result["event"])
-                repair = result["auth_repair"]
-                self.assertEqual("rote_auth_repair_required", repair["source"])
+                self.assertEqual("play_authentication_required", result["event"])
+                repair = result["authentication"]
+                self.assertEqual("rote_authentication_required", repair["source"])
                 self.assertEqual("rote-adapter-config", repair["owner"])
                 self.assertEqual("crucible", repair["adapter_id"])
                 self.assertEqual("ADAPTER_CRUCIBLE_TOKEN", repair["env_var"])
@@ -228,8 +228,8 @@ class UniversalPlayRunTest(unittest.TestCase):
 
                 result = execute(payload())
 
-                self.assertEqual("play_auth_repair_required", result["event"])
-                self.assertEqual(protocol, result["auth_repair"]["classified_rung"])
+                self.assertEqual("play_authentication_required", result["event"])
+                self.assertEqual(protocol, result["authentication"]["classified_rung"])
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")
@@ -244,8 +244,8 @@ class UniversalPlayRunTest(unittest.TestCase):
 
                 result = execute(payload())
 
-                self.assertEqual("play_auth_repair_required", result["event"])
-                self.assertEqual(protocol, result["auth_repair"]["classified_rung"])
+                self.assertEqual("play_authentication_required", result["event"])
+                self.assertEqual(protocol, result["authentication"]["classified_rung"])
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")

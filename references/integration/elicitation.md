@@ -25,6 +25,6 @@ declared event and payload.
 Skip redundant elicitation when the user's explicit request already supplies the exact declared
 event, reference, parameters, or creator intent. After inspection, an exact local Play proceeds
 without a pull prompt. `approve_play_run` is mandatory when inspection reports that a remote Play
-must be installed, replaced, or repaired; the original request never supplies that pull consent.
+must be installed, replaced, or restored; the original request never supplies that pull consent.
 Always show the inspection disclosure before asking that question. Never skip authentication,
 effect, modality widening, remote pull, or publication visibility gates.

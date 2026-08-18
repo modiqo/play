@@ -112,14 +112,14 @@ SETUP_COMMANDS = {
     ],
 }
 
-PLAY_REPAIR_COMMANDS = {
+PLAY_RESTORE_COMMANDS = {
     "codex": [
-        "Run this Play skill's bundled scripts/bin/play-activate to repair the launcher and activation state.",
+        "Run this Play skill's bundled scripts/bin/play-activate to restore the launcher and activation state.",
         "In Codex, use /skills to ensure Play is enabled.",
         "Restart Codex.",
     ],
     "claude": [
-        "Run this Play skill's bundled scripts/bin/play-activate to repair the launcher and activation state.",
+        "Run this Play skill's bundled scripts/bin/play-activate to restore the launcher and activation state.",
         "Restart Claude Code.",
     ],
     "kimi": ["Install Play in ~/.agents/skills or ~/.kimi/skills, then restart Kimi."],
@@ -363,7 +363,7 @@ def inspect(harness: str) -> dict[str, Any]:
     )
     setup_commands: list[str] = []
     if not checks[0].ok or not checks[1].ok:
-        setup_commands.extend(PLAY_REPAIR_COMMANDS[harness])
+        setup_commands.extend(PLAY_RESTORE_COMMANDS[harness])
     if not checks[2].ok:
         setup_commands.append("Install uv, then rerun the Play installer to verify the pinned environment.")
     if executable is None or (active_status is not None and not active_status["rote_skills_installed"]):
@@ -373,7 +373,7 @@ def inspect(harness: str) -> dict[str, Any]:
         for check in checks
     ):
         setup_commands.append(
-            "Invoke $rote-setup (or /rote-setup in Claude Code) to repair sign-in or Rote Play support."
+            "Invoke $rote-setup (or /rote-setup in Claude Code) to restore sign-in or Rote Play support."
         )
     return {
         "schema": SCHEMA,

@@ -101,15 +101,15 @@ class MachineConformanceTest(unittest.TestCase):
             "context_schema": CONTEXT,
             "handoff_schema": json.loads((CONTROLLER / "handoff.schema.json").read_text()),
         }
-        documents["machine"]["states"]["use_auth_repair_offer"]["requires"].append(
-            "auth_repair.undeclared"
+        documents["machine"]["states"]["use_authentication_offer"]["requires"].append(
+            "authentication.undeclared"
         )
 
         with self.assertRaises(MachineValidationError) as caught:
             validate_bundle(ROOT, documents=documents)
 
         self.assertIn(
-            "use_auth_repair_offer: required context path 'auth_repair.undeclared' is absent from context schema",
+            "use_authentication_offer: required context path 'authentication.undeclared' is absent from context schema",
             caught.exception.errors,
         )
 
@@ -795,55 +795,55 @@ class MachineConformanceTest(unittest.TestCase):
 
     def test_recoverable_auth_uses_separate_approved_repair_loop(self) -> None:
         self.assertEqual(
-            "use_auth_repair_offer",
-            MACHINE["states"]["use_run"]["on"]["play_auth_repair_required"][0][
+            "use_authentication_offer",
+            MACHINE["states"]["use_run"]["on"]["play_authentication_required"][0][
                 "target"
             ],
         )
         self.assertEqual(
-            "approve_auth_repair", MACHINE["states"]["use_auth_repair_offer"]["prompt"]
+            "approve_authentication", MACHINE["states"]["use_authentication_offer"]["prompt"]
         )
         self.assertEqual(
-            "use_auth_repair_handoff",
-            MACHINE["states"]["use_auth_repair_offer"]["on"]["auth_repair_approved"][0][
+            "use_authentication_handoff",
+            MACHINE["states"]["use_authentication_offer"]["on"]["authentication_approved"][0][
                 "target"
             ],
         )
         self.assertEqual(
             "blocked",
-            MACHINE["states"]["use_auth_repair_offer"]["on"]["auth_repair_declined"][0][
+            MACHINE["states"]["use_authentication_offer"]["on"]["authentication_declined"][0][
                 "target"
             ],
         )
         self.assertEqual(
             "rote-adapter-config",
-            CONTEXT["$defs"]["authRepair"]["properties"]["owner"]["enum"][0],
+            CONTEXT["$defs"]["authentication"]["properties"]["owner"]["enum"][0],
         )
         self.assertNotIn("rote-adapter-config", ACTIONS_DOC["specialist_owners"])
         self.assertEqual(
-            "scripts/bin/play-handoff prepare-auth-repair --stdin --json",
-            ACTIONS["prepare_auth_repair_handoff"]["command"],
+            "scripts/bin/play-handoff prepare-authentication --stdin --json",
+            ACTIONS["prepare_authentication_handoff"]["command"],
         )
         self.assertEqual(
-            "scripts/bin/play-handoff verify-auth-repair --stdin --json",
-            ACTIONS["validate_auth_repair_receipt"]["command"],
+            "scripts/bin/play-handoff verify-authentication --stdin --json",
+            ACTIONS["validate_authentication_receipt"]["command"],
         )
         self.assertEqual(
             "use_inspect",
-            MACHINE["states"]["use_auth_repair_receipt"]["on"][
-                "specialist_auth_repair_ready"
+            MACHINE["states"]["use_authentication_receipt"]["on"][
+                "specialist_authentication_ready"
             ][0]["target"],
         )
         self.assertEqual(
             "blocked",
-            MACHINE["states"]["use_auth_repair_receipt"]["on"][
-                "auth_repair_receipt_invalid"
+            MACHINE["states"]["use_authentication_receipt"]["on"][
+                "authentication_receipt_invalid"
             ][0]["target"],
         )
         self.assertIn("Never place raw credentials", SKILL_TEXT)
-        prompt = PROMPTS["approve_auth_repair"]
+        prompt = PROMPTS["approve_authentication"]
         self.assertEqual(
-            ["auth_repair.adapter_id", "auth_repair.classified_rung"],
+            ["authentication.adapter_id", "authentication.classified_rung"],
             prompt["template_fields"],
         )
         run_policy = " ".join(ACTIONS["run_registry_play"]["command_policy"])
@@ -851,24 +851,29 @@ class MachineConformanceTest(unittest.TestCase):
             self.assertIn(protocol, run_policy)
         self.assertIn("marker or prose", run_policy)
         self.assertIn("present the structured action_blocked reason verbatim", run_policy)
-        repair_policy = " ".join(ACTIONS["execute_auth_repair"]["command_policy"])
-        self.assertIn("rote adapter reauth <adapter_id>", repair_policy)
-        self.assertIn("missing or absent token-storage-entry", repair_policy)
-        self.assertIn("rote adapter pack <adapter_id> <backup_path>", repair_policy)
-        self.assertIn("rote adapter delete <adapter_id> --yes", repair_policy)
+        authentication_policy = " ".join(ACTIONS["execute_authentication"]["command_policy"])
+        self.assertIn("rote adapter reauth <adapter_id>", authentication_policy)
+        self.assertIn("missing or absent token-storage-entry", authentication_policy)
+        self.assertIn("rote adapter pack <adapter_id> <backup_path>", authentication_policy)
+        self.assertIn("rote adapter delete <adapter_id> --yes", authentication_policy)
         self.assertIn(
             "rote adapter new-from-mcp <adapter_id> <endpoint> --headless",
-            repair_policy,
+            authentication_policy,
         )
-        self.assertIn("restore the packed adapter", repair_policy)
-        self.assertIn("Never use a placeholder or fabricated token", repair_policy)
+        self.assertIn("restore the packed adapter", authentication_policy)
+        self.assertIn("Never use a placeholder or fabricated token", authentication_policy)
         for excluded_protocol in ("static", "oauth", "google_discovery"):
-            self.assertIn(excluded_protocol, repair_policy)
-        repair_choice = next(
-            choice for choice in prompt["choices"] if choice["id"] == "repair"
+            self.assertIn(excluded_protocol, authentication_policy)
+        authentication_choice = next(
+            choice for choice in prompt["choices"] if choice["id"] == "authenticate"
         )
-        self.assertIn("MCP OAuth DCR only", repair_choice["description"])
-        self.assertIn("backing up, deleting, and recreating", repair_choice["description"])
+        self.assertEqual("Continue secure sign-in", authentication_choice["label"])
+        stop_choice = next(
+            choice for choice in prompt["choices"] if choice["id"] == "stop"
+        )
+        self.assertEqual("Not now", stop_choice["label"])
+        self.assertIn("MCP OAuth DCR only", authentication_choice["description"])
+        self.assertIn("backing up, deleting, and recreating", authentication_choice["description"])
         self.assertEqual(
             "blocked",
             MACHINE["states"]["use_run"]["on"]["action_blocked"][0]["target"],

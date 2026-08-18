@@ -64,7 +64,7 @@ then index the canonical Playcard locally and run `rote play inspect <org/name> 
 canonical reference. Record the birth SHA, canonical reference, version, visibility, owner, index
 reference, inspect response reference, title, description, content hash, and returned URIs.
 If the inspected owner, visibility, or version differs from the authorized publication, block
-instead of repairing it silently.
+instead of changing it silently.
 
 For a matching Public readback, run `scripts/bin/play-publication-gate credentials --stdin --json`
 before any link, share copy, or congratulations. For each associated adapter, require the selected

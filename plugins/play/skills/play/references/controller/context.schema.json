@@ -32,7 +32,7 @@
     "output",
     "execution",
     "handoff",
-    "auth_repair",
+    "authentication",
     "evidence",
     "candidate",
     "birth",
@@ -156,8 +156,8 @@
     "handoff": {
       "$ref": "#/$defs/handoff"
     },
-    "auth_repair": {
-      "$ref": "#/$defs/authRepair"
+    "authentication": {
+      "$ref": "#/$defs/authentication"
     },
     "evidence": {
       "$ref": "#/$defs/evidence"
@@ -628,7 +628,7 @@
           "enum": [
             "none",
             "install",
-            "replace_or_repair",
+            "replace_or_restore",
             "unknown",
             null
           ]
@@ -1730,7 +1730,7 @@
         }
       }
     },
-    "authRepair": {
+    "authentication": {
       "type": "object",
       "required": [
         "source",
@@ -1741,7 +1741,7 @@
         "env_var",
         "classified_rung",
         "distinguishing_error",
-        "repair_action",
+        "authentication_action",
         "original_packet",
         "original_packet_sha256",
         "packet",
@@ -1760,8 +1760,8 @@
             "null"
           ],
           "enum": [
-            "rote_auth_repair_required",
-            "rote_auth_repair_result",
+            "rote_authentication_required",
+            "rote_authentication_result",
             null
           ]
         },
@@ -1770,8 +1770,8 @@
             "none",
             "required",
             "approved",
-            "repairing",
-            "repaired",
+            "authenticating",
+            "authenticated",
             "declined",
             "failed"
           ]
@@ -1804,7 +1804,7 @@
         "distinguishing_error": {
           "$ref": "#/$defs/nullableString"
         },
-        "repair_action": {
+        "authentication_action": {
           "$ref": "#/$defs/nullableString"
         },
         "original_packet": {

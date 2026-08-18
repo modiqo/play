@@ -1436,6 +1436,132 @@ def _nested_hook(command: str, *, matcher: str | None = None) -> dict[str, Any]:
     return value
 
 
+def _codex_hook_event_name(event: str) -> str:
+    """Return the snake-case event name Codex uses in hooks.state keys."""
+
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", event).lower()
+
+
+def _codex_play_hook_state_keys(
+    value: dict[str, Any], hook_path: Path
+) -> set[str]:
+    """Resolve only the Codex state keys owned by Play hook commands."""
+
+    keys = {
+        f"{PLAY_PLUGIN}:hooks/hooks.json:session_start:0:0",
+        f"{PLAY_PLUGIN}:hooks/hooks.json:user_prompt_submit:0:0",
+        f"{PLAY_PLUGIN}:hooks/hooks.json:stop:0:0",
+    }
+    hooks = value.get("hooks")
+    if not isinstance(hooks, dict):
+        return keys
+    for event, entries in hooks.items():
+        if not isinstance(event, str) or not isinstance(entries, list):
+            continue
+        for entry_index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+            handlers = entry.get("hooks")
+            if not isinstance(handlers, list):
+                continue
+            for handler_index, handler in enumerate(handlers):
+                if _is_play_hook(handler):
+                    keys.add(
+                        f"{hook_path}:{_codex_hook_event_name(event)}:"
+                        f"{entry_index}:{handler_index}"
+                    )
+    return keys
+
+
+def _enable_codex_play_hook_state(
+    value: dict[str, Any], hook_path: Path
+) -> int:
+    """Clear Play-only disabled flags while preserving all unrelated Codex state."""
+
+    codex_home = Path(
+        os.environ.get("CODEX_HOME", _home() / ".codex")
+    ).expanduser()
+    config_path = codex_home / "config.toml"
+    if not config_path.is_file():
+        return 0
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise BootstrapError(
+            f"cannot safely read Codex configuration {config_path}: {error}"
+        ) from error
+    # Reuse the bootstrap's Python 3.10-compatible TOML validation path before
+    # preserving the document's formatting with a targeted textual update.
+    _codex_skill_config_entries(text, config_path)
+
+    owned_keys = _codex_play_hook_state_keys(value, hook_path)
+    header = re.compile(r'(?m)^\[hooks\.state\."([^"]+)"\]\s*(?:\r?\n|$)')
+    matches = list(header.finditer(text))
+    table_headers = list(re.finditer(r"(?m)^\[", text))
+    updated = text
+    replacements: list[tuple[int, int, str]] = []
+    enabled_count = 0
+    for match in matches:
+        if match.group(1) not in owned_keys:
+            continue
+        start = match.start()
+        end = next(
+            (candidate.start() for candidate in table_headers if candidate.start() > start),
+            len(text),
+        )
+        block = text[start:end]
+        enabled_block, count = re.subn(
+            r"(?m)^enabled\s*=\s*false\s*$", "enabled = true", block
+        )
+        if count:
+            replacements.append((start, end, enabled_block))
+            enabled_count += count
+    for start, end, replacement in reversed(replacements):
+        updated = updated[:start] + replacement + updated[end:]
+    if not enabled_count:
+        return 0
+    mode = config_path.stat().st_mode & 0o777
+    temporary = config_path.with_name(f".{config_path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(updated, encoding="utf-8")
+        temporary.chmod(mode)
+        os.replace(temporary, config_path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return enabled_count
+
+
+def _verify_prompt_intercept(source: Path) -> None:
+    """Execute a deterministic prompt-hook probe after replacement."""
+
+    command = source / "scripts" / "bin" / "play-intercept"
+    try:
+        result = subprocess.run(
+            [str(command), "prompt"],
+            input=json.dumps({"prompt": "play cheat-sheet"}),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise BootstrapError(f"Play prompt hook smoke check failed: {error}") from error
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise BootstrapError(
+            "Play prompt hook smoke check returned invalid output: "
+            f"{(result.stderr or result.stdout).strip() or f'exit {result.returncode}'}"
+        ) from error
+    context = payload.get("hookSpecificOutput", {}).get("additionalContext")
+    if result.returncode != 0 or not isinstance(context, str) or "cheat-sheet" not in context:
+        raise BootstrapError(
+            "Play prompt hook smoke check did not emit activation context: "
+            f"{(result.stderr or result.stdout).strip() or f'exit {result.returncode}'}"
+        )
+
+
 def _managed_hook_entries(harness: str, source: Path) -> dict[str, list[dict[str, Any]]]:
     intercept = shlex.quote(str(source / "scripts" / "bin" / "play-intercept"))
     inbox = shlex.quote(str(source / "scripts" / "bin" / "play-inbox"))
@@ -1466,21 +1592,17 @@ def install_hooks(harness: str, source: Path, *, run_id: str) -> Step:
     if not isinstance(hooks, dict):
         raise BootstrapError(f"hooks must be an object in {path}")
     desired = _managed_hook_entries(harness, source)
-    changed = False
     for event, entries in desired.items():
         current = hooks.get(event, [])
         if not isinstance(current, list):
             raise BootstrapError(f"hook event {event} must be a list in {path}")
         preserved = [entry for entry in current if not _is_play_hook(entry)]
-        updated = [*preserved, *entries]
-        if updated != current:
-            hooks[event] = updated
-            changed = True
-    if harness == "cursor" and value.get("version") != 1:
+        # An approved install is a convergence boundary: remove every prior
+        # Play-owned entry and append a fresh canonical copy even when the
+        # serialized command happens to be unchanged.
+        hooks[event] = [*preserved, *entries]
+    if harness == "cursor":
         value["version"] = 1
-        changed = True
-    if not changed:
-        return Step("install_hooks", "unchanged", f"Managed hooks already active in {path}.", target=harness)
     backup: Path | None = None
     if path.exists():
         backup = path.with_name(f"{path.name}.play-backup-{run_id}")
@@ -1489,10 +1611,21 @@ def install_hooks(harness: str, source: Path, *, run_id: str) -> Step:
         backup.write_bytes(path.read_bytes())
         backup.chmod(0o600)
     _atomic_json(path, value)
+    enabled_count = (
+        _enable_codex_play_hook_state(value, path) if harness == "codex" else 0
+    )
+    _verify_prompt_intercept(source)
+    state_detail = (
+        f" Reset {enabled_count} disabled Play-only Codex hook state entr"
+        f"{'y' if enabled_count == 1 else 'ies'}."
+        if enabled_count
+        else ""
+    )
     return Step(
         "install_hooks",
         "completed",
-        f"Installed managed pre, post, and session hooks in {path}.",
+        f"Backed up and replaced Play prompt, stop, and session hooks in {path}; "
+        f"the prompt hook smoke check passed.{state_detail}",
         target=harness,
         changed=True,
         evidence=str(backup) if backup else str(path),

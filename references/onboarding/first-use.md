@@ -12,7 +12,7 @@ GitHub sign in/account creation. After the browser flow, require a live `rote wh
 complete preflight, and continue the original request. A paused login explains how to resume; it
 must not be relabeled as an installation failure.
 
-Repair activation before evaluating identity. A managed launcher that names a missing recorded
+Restore activation before evaluating identity. A managed launcher that names a missing recorded
 Play source may migrate to the currently loaded marketplace source. Never take over a different
 source that still exists, and never ask login to compensate for a broken launcher.
 

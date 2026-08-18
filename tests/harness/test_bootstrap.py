@@ -167,6 +167,56 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("Stop", value["hooks"])
         self.assertIn("SessionStart", value["hooks"])
 
+    def test_codex_hook_reinstall_resets_only_play_disabled_state(self) -> None:
+        path = self.home / ".codex" / "hooks.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {"hooks": [{"command": "keep-me", "type": "command"}]},
+                            {"hooks": [{"command": "/old/play-intercept prompt"}]},
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        config = self.home / ".codex" / "config.toml"
+        config.write_text(
+            f'[hooks.state."{path}:user_prompt_submit:0:0"]\n'
+            'trusted_hash = "sha256:keep"\n'
+            "enabled = false\n\n"
+            f'[hooks.state."{path}:user_prompt_submit:1:0"]\n'
+            'trusted_hash = "sha256:play"\n'
+            "enabled = false\n\n"
+            '[hooks.state."play@play-skills:hooks/hooks.json:user_prompt_submit:0:0"]\n'
+            'trusted_hash = "sha256:plugin-play"\n'
+            "enabled = false\n",
+            encoding="utf-8",
+        )
+
+        step = install_hooks("codex", ROOT, run_id="replace-hooks")
+
+        self.assertEqual("completed", step.status)
+        text = config.read_text(encoding="utf-8")
+        self.assertIn('trusted_hash = "sha256:keep"\nenabled = false', text)
+        self.assertIn('trusted_hash = "sha256:play"\nenabled = true', text)
+        self.assertIn('trusted_hash = "sha256:plugin-play"\nenabled = true', text)
+        self.assertIn("prompt hook smoke check passed", step.detail)
+
+    def test_codex_hooks_are_backed_up_and_replaced_even_when_current(self) -> None:
+        first = install_hooks("codex", ROOT, run_id="first-hooks")
+        before = (self.home / ".codex" / "hooks.json").read_text(encoding="utf-8")
+
+        second = install_hooks("codex", ROOT, run_id="second-hooks")
+
+        self.assertEqual("completed", first.status)
+        self.assertEqual("completed", second.status)
+        backup = self.home / ".codex" / "hooks.json.play-backup-second-hooks"
+        self.assertEqual(before, backup.read_text(encoding="utf-8"))
+
     def test_cursor_hooks_use_native_flat_schema(self) -> None:
         step = install_hooks("cursor", ROOT, run_id="cursor-run")
 
@@ -227,7 +277,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.10",
+                                "version": "0.4.11",
                                 "enabled": True,
                             }
                         ]
@@ -238,7 +288,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.10", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.11", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -259,7 +309,7 @@ class BootstrapTest(unittest.TestCase):
             ["/bin/codex", "plugin", "add", "play@play-skills"], commands[4]
         )
         self.assertEqual("completed", steps[-1].status)
-        self.assertIn("0.4.10", steps[-1].detail)
+        self.assertIn("0.4.11", steps[-1].detail)
 
     def test_claude_marketplace_convergence_refreshes_user_scope(self) -> None:
         runner = MagicMock()
@@ -292,7 +342,7 @@ class BootstrapTest(unittest.TestCase):
                     [
                         {
                             "id": "play@play-skills",
-                            "version": "0.4.10",
+                            "version": "0.4.11",
                             "enabled": True,
                             "scope": "user",
                         }
@@ -303,7 +353,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "claude", "/bin/claude", expected_version="0.4.10", runner=runner
+            "claude", "/bin/claude", expected_version="0.4.11", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -356,7 +406,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.10",
+                                "version": "0.4.11",
                                 "enabled": True,
                             }
                         ]
@@ -374,7 +424,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.10",
+                                "version": "0.4.11",
                                 "enabled": True,
                             }
                         ]
@@ -385,7 +435,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.10", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.11", runner=runner
         )
 
         self.assertEqual(6, runner.call_count)
@@ -894,14 +944,18 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.10 is installed and enabled.",
+                "Play 0.4.11 is installed and enabled.",
                 target="codex",
             )
         ],
     )
+    @patch("scripts.lib.play.bootstrap._verify_prompt_intercept")
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
     def test_apply_existing_rote_updates_converges_installs_hooks_and_verifies(
-        self, _resolve_rote: MagicMock, _converge_marketplace: MagicMock
+        self,
+        _resolve_rote: MagicMock,
+        verify_prompt_intercept: MagicMock,
+        _converge_marketplace: MagicMock,
     ) -> None:
         runner = MagicMock()
         runner.side_effect = [
@@ -971,8 +1025,9 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.10", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.11", _converge_marketplace.call_args.kwargs["expected_version"]
         )
+        verify_prompt_intercept.assert_called_once()
 
     @patch("scripts.lib.play.bootstrap._choose_login_provider", return_value="google")
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)

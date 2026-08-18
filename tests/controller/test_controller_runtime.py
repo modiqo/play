@@ -24,7 +24,7 @@ from play.controller import (
 )
 from play.runtime_actions import _execute_instruction, advance_until_yield
 from play.runtime_context import RuntimeContextError, validate_mutation_contract
-from play.handoff import prepare_play_run_handoff, verify_auth_repair_receipt
+from play.handoff import prepare_play_run_handoff, verify_authentication_receipt
 
 
 class ControllerRuntimeTest(unittest.TestCase):
@@ -115,7 +115,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             request_original="Fetch recent emails",
         )
         for state, expected in (
-            ("use_auth_repair_execute", "rote-adapter-config"),
+            ("use_authentication_execute", "rote-adapter-config"),
             ("onboarding_team_create", "rote-org"),
             ("crystallize", "rote-flow-crystallization"),
             ("author_release", "rote-flow-authoring"),
@@ -168,7 +168,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("play.context/v1", session.context["schema"])
         self.assertEqual("invoke", session.context["state"])
         self.assertEqual("detailed", session.context["output_policy"]["mode"])
-        self.assertIsNone(session.context["auth_repair"]["source"])
+        self.assertIsNone(session.context["authentication"]["source"])
         self.assertEqual("unknown", session.context["candidate"]["publication_status"])
         projection = self.runtime.project_session(session).as_dict()
         self.assertEqual(
@@ -193,8 +193,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             "exact_reference": "crucible-heavybit/landing-page-assessment@0.2.0",
             "disclosure_sha256": "a" * 64,
         }
-        context["auth_repair"] = {
-            **context["auth_repair"],
+        context["authentication"] = {
+            **context["authentication"],
             "original_packet": {"schema": "play.run-handoff/v1"},
             "original_packet_sha256": "b" * 64,
         }
@@ -207,10 +207,10 @@ class ControllerRuntimeTest(unittest.TestCase):
         advanced = self.runtime.advance_session(
             bound,
             ControllerEvent(
-                id=EventId("play_auth_repair_required"),
+                id=EventId("play_authentication_required"),
                 payload={
-                    "auth_repair": {
-                        "source": "rote_auth_repair_required",
+                    "authentication": {
+                        "source": "rote_authentication_required",
                         "owner": "rote-adapter-config",
                         "recoverable": True,
                         "adapter_id": "crucible",
@@ -224,22 +224,22 @@ class ControllerRuntimeTest(unittest.TestCase):
             ),
         )
 
-        self.assertEqual("use_auth_repair_offer", advanced.session.context["state"])
+        self.assertEqual("use_authentication_offer", advanced.session.context["state"])
         self.assertEqual(
-            "rote_auth_repair_required",
-            advanced.session.context["auth_repair"]["source"],
+            "rote_authentication_required",
+            advanced.session.context["authentication"]["source"],
         )
-        self.assertEqual("required", advanced.session.context["auth_repair"]["status"])
+        self.assertEqual("required", advanced.session.context["authentication"]["status"])
         self.assertEqual("human", advanced.projection.as_dict()["state"]["boundary"])
         self.assertIn("oauth_dcr", advanced.projection.as_dict()["instruction"]["question"])
-        repair_choice = next(
+        authentication_choice = next(
             choice
             for choice in advanced.projection.as_dict()["instruction"]["choices"]
-            if choice["id"] == "repair"
+            if choice["id"] == "authenticate"
         )
-        self.assertIn("backing up, deleting, and recreating", repair_choice["description"])
+        self.assertIn("backing up, deleting, and recreating", authentication_choice["description"])
 
-    def test_approved_auth_repair_redirects_harness_to_adapter_specialist(self) -> None:
+    def test_approved_authentication_redirects_harness_to_adapter_specialist(self) -> None:
         session = self.runtime.initial_session(
             run_id="session-auth-redirect",
             task_key="task-auth-redirect",
@@ -259,7 +259,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             }
         )
         context = dict(session.context)
-        context["state"] = "use_auth_repair_offer"
+        context["state"] = "use_authentication_offer"
         context["request"] = {
             **context["request"],
             "requested_outcome": "Assess https://www.modiqo.ai",
@@ -268,9 +268,9 @@ class ControllerRuntimeTest(unittest.TestCase):
             **context["match"],
             "reference": "crucible-heavybit/landing-page-assessment",
         }
-        context["auth_repair"] = {
-            **context["auth_repair"],
-            "source": "rote_auth_repair_required",
+        context["authentication"] = {
+            **context["authentication"],
+            "source": "rote_authentication_required",
             "status": "required",
             "owner": "rote-adapter-config",
             "recoverable": True,
@@ -278,30 +278,30 @@ class ControllerRuntimeTest(unittest.TestCase):
             "env_var": "ADAPTER_CRUCIBLE_TOKEN",
             "classified_rung": "oauth_dcr",
             "distinguishing_error": "missing: browser authorization required",
-            "original_packet": prepared["auth_repair"]["original_packet"],
-            "original_packet_sha256": prepared["auth_repair"][
+            "original_packet": prepared["authentication"]["original_packet"],
+            "original_packet_sha256": prepared["authentication"][
                 "original_packet_sha256"
             ],
             "evidence_refs": ["sha256:auth-required"],
         }
         bound = replace(
             session,
-            cursor=replace(session.cursor, state=StateId("use_auth_repair_offer")),
+            cursor=replace(session.cursor, state=StateId("use_authentication_offer")),
             context=context,
         )
         approved = self.runtime.advance_session(
             bound,
             ControllerEvent(
-                id=EventId("auth_repair_approved"),
+                id=EventId("authentication_approved"),
                 payload={
-                    "prompt_version": "approve_auth_repair/v1",
+                    "prompt_version": "approve_authentication/v1",
                     "selected_at": "2026-08-15T23:59:00-07:00",
-                    "auth_repair": {
+                    "authentication": {
                         "adapter_id": "crucible",
                         "env_var": "ADAPTER_CRUCIBLE_TOKEN",
                         "classified_rung": "oauth_dcr",
                         "distinguishing_error": "missing: browser authorization required",
-                        "original_packet_sha256": prepared["auth_repair"][
+                        "original_packet_sha256": prepared["authentication"][
                             "original_packet_sha256"
                         ],
                     },
@@ -312,64 +312,52 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         yielded = advance_until_yield(self.runtime, approved.session, root=ROOT)
 
-        self.assertEqual("use_auth_repair_execute", yielded.projection["state"]["id"])
+        self.assertEqual("use_authentication_execute", yielded.projection["state"]["id"])
         self.assertEqual("specialist", yielded.projection["state"]["boundary"])
         self.assertEqual(
             "rote-adapter-config", yielded.projection["instruction"]["specialist"]
         )
-        repair_policy = " ".join(yielded.projection["instruction"]["command_policy"])
+        authentication_policy = " ".join(yielded.projection["instruction"]["command_policy"])
         self.assertIn(
             "rote adapter new-from-mcp <adapter_id> <endpoint> --headless",
-            repair_policy,
+            authentication_policy,
         )
-        self.assertIn("Never use a placeholder or fabricated token", repair_policy)
+        self.assertIn("Never use a placeholder or fabricated token", authentication_policy)
         self.assertEqual(
             "required",
-            yielded.projection["instruction"]["input"]["auth_repair"]["packet"][
-                "auth_repair"
+            yielded.projection["instruction"]["input"]["authentication"]["packet"][
+                "authentication"
             ]["status"],
         )
 
-        repair_input = yielded.projection["instruction"]["input"]["auth_repair"]
-        repair_packet = repair_input["packet"]
         evidence_refs = ["rote:adapter-health/crucible:fresh"]
-        receipt = {
-            "schema": "play.auth-repair-receipt/v1",
-            "packet_sha256": repair_input["packet_sha256"],
-            "run_id": repair_packet["run_id"],
-            "state": repair_packet["state"],
-            "action": repair_packet["action"],
-            "owner": repair_packet["owner"],
-            "executor": {"kind": "skill", "name": "rote-adapter-config"},
-            "event": "auth_repair_ready",
-            "payload": {
-                "auth_repair": {
-                    "source": "rote_auth_repair_result",
-                    "status": "repaired",
-                    "adapter_id": "crucible",
-                    "env_var": "ADAPTER_CRUCIBLE_TOKEN",
-                    "classified_rung": "oauth_dcr",
-                    "repair_action": "reauth",
-                    "evidence_refs": evidence_refs,
-                }
-            },
+        result = {
+            "source": "rote_authentication_result",
+            "status": "authenticated",
+            "adapter_id": "crucible",
+            "env_var": "ADAPTER_CRUCIBLE_TOKEN",
+            "classified_rung": "oauth_dcr",
+            "authentication_action": "reauth",
             "evidence_refs": evidence_refs,
         }
         received = self.runtime.advance_session(
             yielded.session,
             ControllerEvent(
-                id=EventId("auth_repair_ready"),
-                payload={"auth_repair": {"receipt": receipt}},
+                id=EventId("authentication_ready"),
+                payload={"authentication": result},
                 guards={},
             ),
         )
 
-        self.assertEqual("use_auth_repair_receipt", received.session.context["state"])
-        validation = verify_auth_repair_receipt(
+        self.assertEqual("use_authentication_receipt", received.session.context["state"])
+        receipt = received.session.context["authentication"]["receipt"]
+        self.assertEqual("play.authentication-receipt/v1", receipt["schema"])
+        self.assertEqual(result, receipt["payload"]["authentication"])
+        validation = verify_authentication_receipt(
             received.projection.as_dict()["instruction"]["input"]
         )
         self.assertTrue(validation["ok"])
-        self.assertEqual("specialist_auth_repair_ready", validation["event"])
+        self.assertEqual("specialist_authentication_ready", validation["event"])
 
         receipt_projection = received.projection.as_dict()
         receipt_event, _ = _execute_instruction(
@@ -381,10 +369,10 @@ class ControllerRuntimeTest(unittest.TestCase):
         validated = self.runtime.advance_session(received.session, receipt_event)
 
         self.assertEqual("use_inspect", validated.session.context["state"])
-        self.assertEqual("specialist_auth_repair_ready", receipt_event.id)
-        self.assertTrue(validated.session.context["auth_repair"]["receipt_valid"])
+        self.assertEqual("specialist_authentication_ready", receipt_event.id)
+        self.assertTrue(validated.session.context["authentication"]["receipt_valid"])
         self.assertIsInstance(
-            validated.session.context["auth_repair"]["receipt_ref"], str
+            validated.session.context["authentication"]["receipt_ref"], str
         )
 
     def test_session_advance_applies_event_and_checkpoints_context(self) -> None:
@@ -808,7 +796,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                         "schema": "play.run-handoff-preparation/v1",
                         "ok": True,
                         "event": "play_run_handoff_ready",
-                        "auth_repair": {
+                        "authentication": {
                             "original_packet": {"schema": "play.run-handoff/v1"},
                             "original_packet_sha256": "c" * 64,
                         },
@@ -1527,8 +1515,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             "disclosure_sha256": "a" * 64,
             "local_change": "none",
         }
-        context["auth_repair"] = {
-            **context["auth_repair"],
+        context["authentication"] = {
+            **context["authentication"],
             "original_packet": {"schema": "play.run-handoff/v1"},
             "original_packet_sha256": "b" * 64,
         }
@@ -1548,7 +1536,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("action_blocked", yielded.trace[0].event)
 
     @patch("play.runtime_actions.subprocess.run")
-    def test_invalid_auth_repair_receipt_surfaces_its_reason_at_terminal(
+    def test_invalid_authentication_receipt_surfaces_its_reason_at_terminal(
         self, run
     ) -> None:
         run.return_value = SimpleNamespace(
@@ -1556,9 +1544,9 @@ class ControllerRuntimeTest(unittest.TestCase):
             stderr="",
             stdout=json.dumps(
                 {
-                    "schema": "play.auth-repair-handoff-verification/v1",
+                    "schema": "play.authentication-handoff-verification/v1",
                     "ok": False,
-                    "event": "auth_repair_receipt_invalid",
+                    "event": "authentication_receipt_invalid",
                     "receipt_valid": False,
                     "blocked_reason": "packet and receipt must be objects",
                     "evidence_refs": [],
@@ -1572,16 +1560,16 @@ class ControllerRuntimeTest(unittest.TestCase):
             request_original="Run Crucible assessment",
         )
         context = dict(session.context)
-        context["state"] = "use_auth_repair_receipt"
-        context["auth_repair"] = {
-            **context["auth_repair"],
-            "packet": {"schema": "play.auth-repair-handoff/v1"},
+        context["state"] = "use_authentication_receipt"
+        context["authentication"] = {
+            **context["authentication"],
+            "packet": {"schema": "play.authentication-handoff/v1"},
             "packet_sha256": "a" * 64,
-            "receipt": {"schema": "play.auth-repair-receipt/v1"},
+            "receipt": {"schema": "play.authentication-receipt/v1"},
         }
         bound = replace(
             session,
-            cursor=replace(session.cursor, state=StateId("use_auth_repair_receipt")),
+            cursor=replace(session.cursor, state=StateId("use_authentication_receipt")),
             context=context,
         )
 
@@ -1591,7 +1579,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual(
             ("packet and receipt must be objects",), yielded.presentations
         )
-        self.assertEqual("auth_repair_receipt_invalid", yielded.trace[0].event)
+        self.assertEqual("authentication_receipt_invalid", yielded.trace[0].event)
 
     @patch("play.runtime_actions.subprocess.run")
     def test_advance_until_yield_auto_inspects_and_routes_local_play(self, run) -> None:
@@ -1634,7 +1622,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                         "schema": "play.run-handoff-preparation/v1",
                         "ok": True,
                         "event": "play_run_handoff_ready",
-                        "auth_repair": {
+                        "authentication": {
                             "original_packet": {"schema": "play.run-handoff/v1"},
                             "original_packet_sha256": "c" * 64,
                         },
@@ -2013,7 +2001,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             ControllerEvent(
                 id=EventId("play_run_handoff_ready"),
                 payload={
-                    "auth_repair": {
+                    "authentication": {
                         "original_packet": {"schema": "play.run-handoff/v1"},
                         "original_packet_sha256": "c" * 64,
                     }

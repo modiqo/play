@@ -13,10 +13,10 @@ from .digest_state import stable_sha
 
 PACKET_SCHEMA = "play.handoff/v1"
 RECEIPT_SCHEMA = "play.handoff-receipt/v1"
-AUTH_REPAIR_PACKET_SCHEMA = "play.auth-repair-handoff/v1"
-AUTH_REPAIR_RECEIPT_SCHEMA = "play.auth-repair-receipt/v1"
+AUTHENTICATION_PACKET_SCHEMA = "play.authentication-handoff/v1"
+AUTHENTICATION_RECEIPT_SCHEMA = "play.authentication-receipt/v1"
 PLAY_RUN_PACKET_SCHEMA = "play.run-handoff/v1"
-AUTH_REPAIR_OWNER = "rote-adapter-config"
+AUTHENTICATION_OWNER = "rote-adapter-config"
 SPECIALIST_OWNERS = (
     "rote-using-adapters",
     "rote-shell",
@@ -34,11 +34,11 @@ EXPECTED_EVENTS = {
     ),
     "route_exhausted": ("reason", "evidence_refs"),
     "confirmation_required": ("effect_confirmation",),
-    "auth_repair_required": ("auth_repair",),
+    "authentication_required": ("authentication",),
 }
-AUTH_REPAIR_EXPECTED_EVENTS = {
-    "auth_repair_ready": ("auth_repair",),
-    "auth_repair_failed": ("reason", "evidence_refs"),
+AUTHENTICATION_EXPECTED_EVENTS = {
+    "authentication_ready": ("authentication",),
+    "authentication_failed": ("reason", "evidence_refs"),
 }
 
 
@@ -76,7 +76,7 @@ class HandoffError(ValueError):
 
 
 def prepare_play_run_handoff(payload: dict[str, Any]) -> dict[str, Any]:
-    """Bind one inspected Play run before any install, auth repair, or execution."""
+    """Bind one inspected Play run before any install, authentication, or execution."""
 
     run_id = _string(payload, "run_id")
     requested_outcome = _dotted_path(payload, "request.requested_outcome")
@@ -104,7 +104,7 @@ def prepare_play_run_handoff(payload: dict[str, Any]) -> dict[str, Any]:
         "expected_events": [
             "play_run_ready",
             "play_drifted",
-            "play_auth_repair_required",
+            "play_authentication_required",
         ],
     }
     packet_sha256 = stable_sha(packet)
@@ -112,7 +112,7 @@ def prepare_play_run_handoff(payload: dict[str, Any]) -> dict[str, Any]:
         "schema": "play.run-handoff-preparation/v1",
         "ok": True,
         "event": "play_run_handoff_ready",
-        "auth_repair": {
+        "authentication": {
             "original_packet": packet,
             "original_packet_sha256": packet_sha256,
         },
@@ -362,48 +362,54 @@ def prepare_handoff(payload: dict[str, Any]) -> dict[str, Any]:
     evidence_contract = _string_list(payload, "evidence_contract")
     idempotency_key = _string(payload, "idempotency_key")
     resume: dict[str, Any] | None = None
-    resume_payload = payload.get("auth_repair_resume")
+    resume_payload = payload.get("authentication_resume")
     adapter_discovery = (
         _adapter_discovery(payload, modalities) if resume_payload is None else None
     )
     if resume_payload is not None:
         if not isinstance(resume_payload, dict):
-            raise HandoffError("auth_repair_resume must be an object")
+            raise HandoffError("authentication_resume must be an object")
         original_packet = resume_payload.get("original_packet")
         original_packet_sha256 = resume_payload.get("original_packet_sha256")
-        repair_packet = resume_payload.get("repair_packet")
-        repair_receipt = resume_payload.get("repair_receipt")
-        repair_receipt_ref = resume_payload.get("repair_receipt_ref")
-        repair_result = resume_payload.get("auth_repair")
+        authentication_packet = resume_payload.get("authentication_packet")
+        authentication_receipt = resume_payload.get("authentication_receipt")
+        authentication_receipt_ref = resume_payload.get("authentication_receipt_ref")
+        authentication_result = resume_payload.get("authentication")
         if not isinstance(original_packet, dict):
-            raise HandoffError("auth_repair_resume original_packet must be an object")
+            raise HandoffError("authentication_resume original_packet must be an object")
         if original_packet.get("schema") != PACKET_SCHEMA:
-            raise HandoffError(f"auth_repair_resume original_packet must use {PACKET_SCHEMA}")
+            raise HandoffError(f"authentication_resume original_packet must use {PACKET_SCHEMA}")
         if not isinstance(original_packet_sha256, str) or not original_packet_sha256:
-            raise HandoffError("auth_repair_resume original_packet_sha256 must be non-empty")
+            raise HandoffError("authentication_resume original_packet_sha256 must be non-empty")
         if stable_sha(original_packet) != original_packet_sha256:
-            raise HandoffError("auth_repair_resume original packet hash does not match")
-        if not isinstance(repair_receipt_ref, str) or not repair_receipt_ref:
-            raise HandoffError("auth_repair_resume repair_receipt_ref must be non-empty")
-        verified_repair = verify_auth_repair_receipt(
-            {"packet": repair_packet, "receipt": repair_receipt}
+            raise HandoffError("authentication_resume original packet hash does not match")
+        if not isinstance(authentication_receipt_ref, str) or not authentication_receipt_ref:
+            raise HandoffError("authentication_resume authentication_receipt_ref must be non-empty")
+        verified_authentication = verify_authentication_receipt(
+            {"packet": authentication_packet, "receipt": authentication_receipt}
         )
-        if not verified_repair.get("ok"):
-            reasons = verified_repair.get("reasons", ["repair receipt is invalid"])
-            raise HandoffError(f"auth_repair_resume {'; '.join(reasons)}")
-        if verified_repair.get("receipt_ref") != repair_receipt_ref:
-            raise HandoffError("auth_repair_resume repair receipt reference does not match")
-        if verified_repair.get("auth_repair") != repair_result:
-            raise HandoffError("auth_repair_resume repair result differs from validated receipt")
-        repair_reasons = _validate_auth_repair_result(repair_result, None)
-        if repair_reasons:
-            raise HandoffError("; ".join(repair_reasons))
+        if not verified_authentication.get("ok"):
+            reasons = verified_authentication.get(
+                "reasons", ["authentication receipt is invalid"]
+            )
+            raise HandoffError(f"authentication_resume {'; '.join(reasons)}")
+        if verified_authentication.get("receipt_ref") != authentication_receipt_ref:
+            raise HandoffError(
+                "authentication_resume authentication receipt reference does not match"
+            )
+        if verified_authentication.get("authentication") != authentication_result:
+            raise HandoffError(
+                "authentication_resume result differs from validated receipt"
+            )
+        authentication_reasons = _validate_authentication_result(authentication_result, None)
+        if authentication_reasons:
+            raise HandoffError("; ".join(authentication_reasons))
         if original_packet.get("run_id") != run_id:
-            raise HandoffError("auth_repair_resume run_id differs from original packet")
+            raise HandoffError("authentication_resume run_id differs from original packet")
         if original_packet.get("owner") != selected_owner:
-            raise HandoffError("auth_repair_resume owner differs from original packet")
+            raise HandoffError("authentication_resume owner differs from original packet")
         if original_packet.get("modalities") != modalities:
-            raise HandoffError("auth_repair_resume modalities differ from original packet")
+            raise HandoffError("authentication_resume modalities differ from original packet")
         requested_outcome = original_packet.get("requested_outcome")
         constraints = original_packet.get("constraints")
         inputs = original_packet.get("inputs")
@@ -417,15 +423,15 @@ def prepare_handoff(payload: dict[str, Any]) -> dict[str, Any]:
         if not all(
             isinstance(value, dict) for value in (constraints, inputs, effect_policy)
         ):
-            raise HandoffError("auth_repair_resume original packet objects are malformed")
+            raise HandoffError("authentication_resume original packet objects are malformed")
         if not isinstance(evidence_contract, list) or not isinstance(idempotency_key, str):
-            raise HandoffError("auth_repair_resume original packet contract is malformed")
+            raise HandoffError("authentication_resume original packet contract is malformed")
         resume = {
-            "kind": "auth_repair",
+            "kind": "authentication",
             "original_packet_sha256": original_packet_sha256,
-            "repair_receipt_ref": repair_receipt_ref,
-            "adapter_id": repair_result["adapter_id"],
-            "classified_rung": repair_result["classified_rung"],
+            "authentication_receipt_ref": authentication_receipt_ref,
+            "adapter_id": authentication_result["adapter_id"],
+            "classified_rung": authentication_result["classified_rung"],
         }
 
     packet = {
@@ -460,9 +466,9 @@ def prepare_handoff(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _validate_auth_repair_required(repair: Any) -> list[str]:
-    if not isinstance(repair, dict):
-        return ["auth_repair must be an object"]
+def _validate_authentication_required(authentication: Any) -> list[str]:
+    if not isinstance(authentication, dict):
+        return ["authentication must be an object"]
     reasons: list[str] = []
     allowed = {
         "source",
@@ -474,59 +480,59 @@ def _validate_auth_repair_required(repair: Any) -> list[str]:
         "distinguishing_error",
         "evidence_refs",
     }
-    unknown = set(repair) - allowed
+    unknown = set(authentication) - allowed
     if unknown:
         reasons.append(
-            f"auth repair contains undeclared fields: {', '.join(sorted(unknown))}"
+            f"authentication contains undeclared fields: {', '.join(sorted(unknown))}"
         )
-    if repair.get("source") != "rote_auth_repair_required":
-        reasons.append("auth repair source must be rote_auth_repair_required")
-    if repair.get("status") != "required":
-        reasons.append("auth repair status must be required")
-    if repair.get("recoverable") is not True:
-        reasons.append("auth repair must be explicitly recoverable")
+    if authentication.get("source") != "rote_authentication_required":
+        reasons.append("authentication source must be rote_authentication_required")
+    if authentication.get("status") != "required":
+        reasons.append("authentication status must be required")
+    if authentication.get("recoverable") is not True:
+        reasons.append("authentication must be explicitly recoverable")
     for field in (
         "adapter_id",
         "env_var",
         "classified_rung",
         "distinguishing_error",
     ):
-        value = repair.get(field)
+        value = authentication.get(field)
         if not isinstance(value, str) or not value:
-            reasons.append(f"auth repair requires non-empty {field}")
-    evidence_refs = repair.get("evidence_refs")
+            reasons.append(f"authentication requires non-empty {field}")
+    evidence_refs = authentication.get("evidence_refs")
     if (
         not isinstance(evidence_refs, list)
         or not evidence_refs
         or any(not isinstance(item, str) or not item for item in evidence_refs)
     ):
-        reasons.append("auth repair requires non-empty evidence_refs")
+        reasons.append("authentication requires non-empty evidence_refs")
     return reasons
 
 
-def prepare_auth_repair_handoff(payload: dict[str, Any]) -> dict[str, Any]:
-    """Build a dedicated repair packet without widening the execution owner set."""
+def prepare_authentication_handoff(payload: dict[str, Any]) -> dict[str, Any]:
+    """Build a dedicated authentication packet without widening execution ownership."""
 
     run_id = _string(payload, "run_id")
-    available_value = payload.get("available_owners", [AUTH_REPAIR_OWNER])
+    available_value = payload.get("available_owners", [AUTHENTICATION_OWNER])
     available_owners = _string_list(
         {"available_owners": available_value}, "available_owners"
     )
-    if AUTH_REPAIR_OWNER not in available_owners:
-        reason = f"required Rote specialist {AUTH_REPAIR_OWNER} is not callable in this harness"
+    if AUTHENTICATION_OWNER not in available_owners:
+        reason = f"required Rote specialist {AUTHENTICATION_OWNER} is not callable in this harness"
         return {
-            "schema": "play.auth-repair-handoff-preparation/v1",
+            "schema": "play.authentication-handoff-preparation/v1",
             "ok": False,
-            "event": "auth_repair_specialist_unavailable",
+            "event": "authentication_specialist_unavailable",
             "available": False,
             "reason": reason,
             "blocked_reason": reason,
-            "required_owner": AUTH_REPAIR_OWNER,
+            "required_owner": AUTHENTICATION_OWNER,
             "available_owners": sorted(set(available_owners)),
         }
 
-    auth_repair_record = _object(payload, "auth_repair")
-    repair_fields = {
+    authentication_record = _object(payload, "authentication")
+    authentication_fields = {
         "source",
         "status",
         "recoverable",
@@ -536,22 +542,22 @@ def prepare_auth_repair_handoff(payload: dict[str, Any]) -> dict[str, Any]:
         "distinguishing_error",
         "evidence_refs",
     }
-    auth_repair = {
-        key: auth_repair_record[key]
-        for key in repair_fields
-        if key in auth_repair_record
+    authentication = {
+        key: authentication_record[key]
+        for key in authentication_fields
+        if key in authentication_record
     }
-    if auth_repair.get("status") != "approved":
-        raise HandoffError("auth repair must be approved before specialist handoff")
+    if authentication.get("status") != "approved":
+        raise HandoffError("authentication must be approved before specialist handoff")
     # Context records the completed human decision. The outgoing packet is a
     # fresh request to the specialist, whose closed contract correctly uses
-    # `required` until a validated repair receipt returns `repaired`.
-    auth_repair["status"] = "required"
-    repair_reasons = _validate_auth_repair_required(auth_repair)
-    if repair_reasons:
-        raise HandoffError("; ".join(repair_reasons))
-    original_packet = auth_repair_record.get("original_packet")
-    original_packet_sha256 = auth_repair_record.get("original_packet_sha256")
+    # `required` until a validated authentication receipt returns `authenticated`.
+    authentication["status"] = "required"
+    authentication_reasons = _validate_authentication_required(authentication)
+    if authentication_reasons:
+        raise HandoffError("; ".join(authentication_reasons))
+    original_packet = authentication_record.get("original_packet")
+    original_packet_sha256 = authentication_record.get("original_packet_sha256")
     if not isinstance(original_packet, dict):
         original_packet = _object(payload, "original_packet")
     if not isinstance(original_packet_sha256, str) or not original_packet_sha256:
@@ -564,34 +570,34 @@ def prepare_auth_repair_handoff(payload: dict[str, Any]) -> dict[str, Any]:
     if stable_sha(original_packet) != original_packet_sha256:
         raise HandoffError("original_packet_sha256 does not match original_packet")
     if original_packet.get("run_id") != run_id:
-        raise HandoffError("original_packet run_id does not match auth repair run")
+        raise HandoffError("original_packet run_id does not match authentication run")
     if original_schema == PACKET_SCHEMA:
         modalities = original_packet.get("modalities")
         if not isinstance(modalities, list) or "call" not in modalities:
-            raise HandoffError("auth repair requires an original CALL packet")
+            raise HandoffError("authentication requires an original CALL packet")
         capability = original_packet.get("capability_policy")
         if not isinstance(capability, dict) or capability.get("kind") != "rote_adapter":
-            raise HandoffError("auth repair requires original Rote adapter provenance")
+            raise HandoffError("authentication requires original Rote adapter provenance")
     else:
         if (
             original_packet.get("owner") != "flow-runtime"
             or original_packet.get("action") != "run_registry_play"
             or not isinstance(original_packet.get("exact_reference"), str)
         ):
-            raise HandoffError("auth repair requires a bound Play run packet")
+            raise HandoffError("authentication requires a bound Play run packet")
 
     packet = {
-        "schema": AUTH_REPAIR_PACKET_SCHEMA,
+        "schema": AUTHENTICATION_PACKET_SCHEMA,
         "run_id": run_id,
-        "state": "auth_repair_execute",
-        "action": "execute_auth_repair",
-        "owner": AUTH_REPAIR_OWNER,
+        "state": "authentication_execute",
+        "action": "execute_authentication",
+        "owner": AUTHENTICATION_OWNER,
         "requested_outcome": original_packet.get("requested_outcome"),
-        "auth_repair": auth_repair,
+        "authentication": authentication,
         "original_packet": original_packet,
         "original_packet_sha256": original_packet_sha256,
         "expected_events": {
-            key: list(value) for key, value in AUTH_REPAIR_EXPECTED_EVENTS.items()
+            key: list(value) for key, value in AUTHENTICATION_EXPECTED_EVENTS.items()
         },
         "evidence_contract": _string_list(
             {
@@ -604,19 +610,19 @@ def prepare_auth_repair_handoff(payload: dict[str, Any]) -> dict[str, Any]:
         "idempotency_key": (
             _dotted_path(payload, "execution.idempotency_key")
             if isinstance(_dotted_path(payload, "execution.idempotency_key"), str)
-            else f"{run_id}:auth-repair"
+            else f"{run_id}:authentication"
         ),
     }
     packet_sha256 = stable_sha(packet)
     return {
-        "schema": "play.auth-repair-handoff-preparation/v1",
+        "schema": "play.authentication-handoff-preparation/v1",
         "ok": True,
-        "event": "auth_repair_handoff_ready",
+        "event": "authentication_handoff_ready",
         "available": True,
-        "owner": AUTH_REPAIR_OWNER,
+        "owner": AUTHENTICATION_OWNER,
         "packet": packet,
         "packet_sha256": packet_sha256,
-        "expected_events": sorted(AUTH_REPAIR_EXPECTED_EVENTS),
+        "expected_events": sorted(AUTHENTICATION_EXPECTED_EVENTS),
     }
 
 
@@ -632,11 +638,11 @@ def _invalid_receipt(*reasons: str) -> dict[str, Any]:
     }
 
 
-def _invalid_auth_repair_receipt(*reasons: str) -> dict[str, Any]:
+def _invalid_authentication_receipt(*reasons: str) -> dict[str, Any]:
     return {
-        "schema": "play.auth-repair-handoff-verification/v1",
+        "schema": "play.authentication-handoff-verification/v1",
         "ok": False,
-        "event": "auth_repair_receipt_invalid",
+        "event": "authentication_receipt_invalid",
         "receipt_valid": False,
         "blocked_reason": "; ".join(reasons),
         "evidence_refs": [],
@@ -826,16 +832,16 @@ def verify_receipt(payload: dict[str, Any]) -> dict[str, Any]:
             reasons.extend(
                 _validate_effect_confirmation(result_payload.get("effect_confirmation"))
             )
-        elif event == "auth_repair_required":
+        elif event == "authentication_required":
             if not isinstance(modalities, list) or "call" not in modalities:
-                reasons.append("auth repair required is valid only for a CALL route")
-            unknown = set(result_payload) - {"auth_repair"}
+                reasons.append("authentication required is valid only for a CALL route")
+            unknown = set(result_payload) - {"authentication"}
             if unknown:
                 reasons.append(
-                    "auth repair receipt payload contains undeclared fields: "
+                    "authentication receipt payload contains undeclared fields: "
                     + ", ".join(sorted(unknown))
                 )
-            reasons.extend(_validate_auth_repair_required(result_payload.get("auth_repair")))
+            reasons.extend(_validate_authentication_required(result_payload.get("authentication")))
     evidence_refs = receipt.get("evidence_refs")
     if not isinstance(evidence_refs, list) or any(not isinstance(item, str) for item in evidence_refs):
         reasons.append("receipt evidence_refs must be a string list")
@@ -850,7 +856,7 @@ def verify_receipt(payload: dict[str, Any]) -> dict[str, Any]:
             "outcome_ready": "specialist_outcome_ready",
             "route_exhausted": "specialist_route_exhausted",
             "confirmation_required": "specialist_confirmation_required",
-            "auth_repair_required": "specialist_auth_repair_required",
+            "authentication_required": "specialist_authentication_required",
         }[event],
         "owner": packet["owner"],
         "packet_sha256": packet_sha256,
@@ -860,9 +866,9 @@ def verify_receipt(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _validate_auth_repair_result(result: Any, requested: Any) -> list[str]:
+def _validate_authentication_result(result: Any, requested: Any) -> list[str]:
     if not isinstance(result, dict):
-        return ["receipt auth_repair must be an object"]
+        return ["receipt authentication must be an object"]
     reasons: list[str] = []
     allowed = {
         "source",
@@ -870,71 +876,71 @@ def _validate_auth_repair_result(result: Any, requested: Any) -> list[str]:
         "adapter_id",
         "env_var",
         "classified_rung",
-        "repair_action",
+        "authentication_action",
         "evidence_refs",
     }
     unknown = set(result) - allowed
     if unknown:
         reasons.append(
-            f"auth repair result contains undeclared fields: {', '.join(sorted(unknown))}"
+            f"authentication result contains undeclared fields: {', '.join(sorted(unknown))}"
         )
-    if result.get("source") != "rote_auth_repair_result":
-        reasons.append("auth repair result source must be rote_auth_repair_result")
-    if result.get("status") != "repaired":
-        reasons.append("auth repair result status must be repaired")
+    if result.get("source") != "rote_authentication_result":
+        reasons.append("authentication result source must be rote_authentication_result")
+    if result.get("status") != "authenticated":
+        reasons.append("authentication result status must be authenticated")
     for field in ("adapter_id", "env_var", "classified_rung"):
         value = result.get(field)
         if not isinstance(value, str) or not value:
-            reasons.append(f"auth repair result requires non-empty {field}")
+            reasons.append(f"authentication result requires non-empty {field}")
         elif isinstance(requested, dict) and value != requested.get(field):
-            reasons.append(f"auth repair result {field} does not match request")
-    repair_action = result.get("repair_action")
-    if not isinstance(repair_action, str) or not repair_action:
-        reasons.append("auth repair result requires non-empty repair_action")
+            reasons.append(f"authentication result {field} does not match request")
+    authentication_action = result.get("authentication_action")
+    if not isinstance(authentication_action, str) or not authentication_action:
+        reasons.append("authentication result requires non-empty authentication_action")
     evidence_refs = result.get("evidence_refs")
     if (
         not isinstance(evidence_refs, list)
         or not evidence_refs
         or any(not isinstance(item, str) or not item for item in evidence_refs)
     ):
-        reasons.append("auth repair result requires non-empty evidence_refs")
+        reasons.append("authentication result requires non-empty evidence_refs")
     return reasons
 
 
-def verify_auth_repair_receipt(payload: dict[str, Any]) -> dict[str, Any]:
-    """Validate a repair receipt against its exact repair packet."""
+def verify_authentication_receipt(payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate an authentication receipt against its exact packet."""
 
     packet = payload.get("packet")
     receipt = payload.get("receipt")
     # Direct CLI callers use top-level packet/receipt fields. The controller's
     # deterministic action projection preserves context paths, so it supplies
-    # the same values under auth_repair.packet/auth_repair.receipt. Accept both
+    # the same values under authentication.packet/authentication.receipt. Accept both
     # closed shapes and fail if a caller tries to provide conflicting copies.
-    auth_repair_context = payload.get("auth_repair")
-    if isinstance(auth_repair_context, dict):
-        nested_packet = auth_repair_context.get("packet")
-        nested_receipt = auth_repair_context.get("receipt")
+    authentication_context = payload.get("authentication")
+    if isinstance(authentication_context, dict):
+        nested_packet = authentication_context.get("packet")
+        nested_receipt = authentication_context.get("receipt")
         if packet is not None and nested_packet is not None and packet != nested_packet:
-            return _invalid_auth_repair_receipt(
-                "top-level and context auth repair packets differ"
+            return _invalid_authentication_receipt(
+                "top-level and context authentication packets differ"
             )
         if receipt is not None and nested_receipt is not None and receipt != nested_receipt:
-            return _invalid_auth_repair_receipt(
-                "top-level and context auth repair receipts differ"
+            return _invalid_authentication_receipt(
+                "top-level and context authentication receipts differ"
             )
         if packet is None:
             packet = nested_packet
         if receipt is None:
             receipt = nested_receipt
     if not isinstance(packet, dict) or not isinstance(receipt, dict):
-        return _invalid_auth_repair_receipt("packet and receipt must be objects")
-    if packet.get("schema") != AUTH_REPAIR_PACKET_SCHEMA:
-        return _invalid_auth_repair_receipt(
-            f"packet must use {AUTH_REPAIR_PACKET_SCHEMA}"
+        return _invalid_authentication_receipt("packet and receipt must be objects")
+    if packet.get("schema") != AUTHENTICATION_PACKET_SCHEMA:
+        return _invalid_authentication_receipt(
+            f"packet must use {AUTHENTICATION_PACKET_SCHEMA}"
         )
-    if receipt.get("schema") != AUTH_REPAIR_RECEIPT_SCHEMA:
-        return _invalid_auth_repair_receipt(
-            f"receipt must use {AUTH_REPAIR_RECEIPT_SCHEMA}"
+    if receipt.get("schema") != AUTHENTICATION_RECEIPT_SCHEMA:
+        return _invalid_authentication_receipt(
+            f"receipt must use {AUTHENTICATION_RECEIPT_SCHEMA}"
         )
 
     reasons: list[str] = []
@@ -945,7 +951,7 @@ def verify_auth_repair_receipt(payload: dict[str, Any]) -> dict[str, Any]:
         "action",
         "owner",
         "requested_outcome",
-        "auth_repair",
+        "authentication",
         "original_packet",
         "original_packet_sha256",
         "expected_events",
@@ -955,7 +961,7 @@ def verify_auth_repair_receipt(payload: dict[str, Any]) -> dict[str, Any]:
     packet_unknown = set(packet) - packet_allowed
     if packet_unknown:
         reasons.append(
-            "auth repair packet contains undeclared fields: "
+            "authentication packet contains undeclared fields: "
             + ", ".join(sorted(packet_unknown))
         )
     receipt_allowed = {
@@ -973,88 +979,88 @@ def verify_auth_repair_receipt(payload: dict[str, Any]) -> dict[str, Any]:
     receipt_unknown = set(receipt) - receipt_allowed
     if receipt_unknown:
         reasons.append(
-            "auth repair receipt contains undeclared fields: "
+            "authentication receipt contains undeclared fields: "
             + ", ".join(sorted(receipt_unknown))
         )
-    if packet.get("state") != "auth_repair_execute":
-        reasons.append("auth repair packet state must be auth_repair_execute")
-    if packet.get("action") != "execute_auth_repair":
-        reasons.append("auth repair packet action must be execute_auth_repair")
-    if packet.get("owner") != AUTH_REPAIR_OWNER:
-        reasons.append(f"auth repair packet owner must be {AUTH_REPAIR_OWNER}")
+    if packet.get("state") != "authentication_execute":
+        reasons.append("authentication packet state must be authentication_execute")
+    if packet.get("action") != "execute_authentication":
+        reasons.append("authentication packet action must be execute_authentication")
+    if packet.get("owner") != AUTHENTICATION_OWNER:
+        reasons.append(f"authentication packet owner must be {AUTHENTICATION_OWNER}")
     if packet.get("expected_events") != {
-        key: list(value) for key, value in AUTH_REPAIR_EXPECTED_EVENTS.items()
+        key: list(value) for key, value in AUTHENTICATION_EXPECTED_EVENTS.items()
     }:
-        reasons.append("auth repair packet expected events differ from the closed contract")
+        reasons.append("authentication packet expected events differ from the closed contract")
     packet_sha256 = stable_sha(packet)
     if receipt.get("packet_sha256") != packet_sha256:
-        reasons.append("auth repair receipt packet hash does not match")
+        reasons.append("authentication receipt packet hash does not match")
     for field in ("run_id", "state", "action", "owner"):
         if receipt.get(field) != packet.get(field):
-            reasons.append(f"auth repair receipt {field} does not match packet")
+            reasons.append(f"authentication receipt {field} does not match packet")
     executor = receipt.get("executor")
     if not isinstance(executor, dict):
-        reasons.append("auth repair receipt executor is missing")
+        reasons.append("authentication receipt executor is missing")
     else:
         if executor.get("kind") != "skill":
-            reasons.append("auth repair receipt executor kind must be skill")
-        if executor.get("name") != AUTH_REPAIR_OWNER:
-            reasons.append("auth repair receipt executor must be rote-adapter-config")
+            reasons.append("authentication receipt executor kind must be skill")
+        if executor.get("name") != AUTHENTICATION_OWNER:
+            reasons.append("authentication receipt executor must be rote-adapter-config")
 
     event = receipt.get("event")
-    required_fields = AUTH_REPAIR_EXPECTED_EVENTS.get(event)
+    required_fields = AUTHENTICATION_EXPECTED_EVENTS.get(event)
     if not isinstance(event, str) or required_fields is None:
-        reasons.append("auth repair receipt event is not declared")
+        reasons.append("authentication receipt event is not declared")
     result_payload = receipt.get("payload")
     if not isinstance(result_payload, dict):
-        reasons.append("auth repair receipt payload must be an object")
+        reasons.append("authentication receipt payload must be an object")
     elif required_fields is not None:
         missing = [field for field in required_fields if field not in result_payload]
         if missing:
-            reasons.append(f"auth repair receipt payload is missing: {', '.join(missing)}")
+            reasons.append(f"authentication receipt payload is missing: {', '.join(missing)}")
         unknown = set(result_payload) - set(required_fields)
         if unknown:
             reasons.append(
-                "auth repair receipt payload contains undeclared fields: "
+                "authentication receipt payload contains undeclared fields: "
                 + ", ".join(sorted(unknown))
             )
-        if event == "auth_repair_ready":
+        if event == "authentication_ready":
             reasons.extend(
-                _validate_auth_repair_result(
-                    result_payload.get("auth_repair"), packet.get("auth_repair")
+                _validate_authentication_result(
+                    result_payload.get("authentication"), packet.get("authentication")
                 )
             )
-        elif event == "auth_repair_failed":
+        elif event == "authentication_failed":
             reason = result_payload.get("reason")
             if not isinstance(reason, str) or not reason:
-                reasons.append("auth repair failure requires a non-empty reason")
+                reasons.append("authentication failure requires a non-empty reason")
             failure_evidence = result_payload.get("evidence_refs")
             if (
                 not isinstance(failure_evidence, list)
                 or not failure_evidence
                 or any(not isinstance(item, str) or not item for item in failure_evidence)
             ):
-                reasons.append("auth repair failure requires non-empty evidence_refs")
+                reasons.append("authentication failure requires non-empty evidence_refs")
     evidence_refs = receipt.get("evidence_refs")
     if (
         not isinstance(evidence_refs, list)
         or not evidence_refs
         or any(not isinstance(item, str) or not item for item in evidence_refs)
     ):
-        reasons.append("auth repair receipt evidence_refs must be a non-empty string list")
+        reasons.append("authentication receipt evidence_refs must be a non-empty string list")
     if reasons:
-        return _invalid_auth_repair_receipt(*reasons)
+        return _invalid_authentication_receipt(*reasons)
 
     return {
         **result_payload,
-        "schema": "play.auth-repair-handoff-verification/v1",
+        "schema": "play.authentication-handoff-verification/v1",
         "ok": True,
         "event": (
-            "specialist_auth_repair_ready"
-            if event == "auth_repair_ready"
-            else "specialist_auth_repair_failed"
+            "specialist_authentication_ready"
+            if event == "authentication_ready"
+            else "specialist_authentication_failed"
         ),
-        "owner": AUTH_REPAIR_OWNER,
+        "owner": AUTHENTICATION_OWNER,
         "packet_sha256": packet_sha256,
         "receipt_ref": stable_sha(receipt),
         "receipt_valid": True,
@@ -1070,8 +1076,8 @@ def _parser() -> argparse.ArgumentParser:
             "prepare",
             "verify",
             "prepare-play-run",
-            "prepare-auth-repair",
-            "verify-auth-repair",
+            "prepare-authentication",
+            "verify-authentication",
         ),
     )
     parser.add_argument("--stdin", action="store_true", required=True, help="Read one JSON object")
@@ -1090,8 +1096,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "prepare": prepare_handoff,
             "verify": verify_receipt,
             "prepare-play-run": prepare_play_run_handoff,
-            "prepare-auth-repair": prepare_auth_repair_handoff,
-            "verify-auth-repair": verify_auth_repair_receipt,
+            "prepare-authentication": prepare_authentication_handoff,
+            "verify-authentication": verify_authentication_receipt,
         }
         result = handlers[args.command](payload)
     except (HandoffError, json.JSONDecodeError) as error:
