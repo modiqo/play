@@ -1,4 +1,4 @@
-"""Owner-private Play achievement events and one-time learning nudges."""
+"""Owner-private Play achievements and repeatable event-backed learning nudges."""
 
 from __future__ import annotations
 
@@ -52,6 +52,36 @@ _NUDGES = {
     ),
 }
 
+_REPEAT_PREFIXES = {
+    "play_run_completed": "🎭 **Play complete**",
+    "play_created": "🛠️ **Play created**",
+    "play_shared_private": "🤝 **Team Play shared**",
+    "play_published_public": "🌍 **Community Play published**",
+}
+
+_REPEAT_COACHING = {
+    "play_run_completed": (
+        "Run another outcome with `$play <what you want in English>`, or say **save this Play** if this run revealed a reusable improvement.",
+        "Want a variation? Ask with `$play <the next outcome>`; when the method becomes repeatable, say **save this Play**.",
+        "Keep the momentum with `$play <play URI>` or a plain-English outcome. If your guidance improved the method, say **save this Play**.",
+    ),
+    "play_created": (
+        "Try one real edge case next, then share the Play privately with teammates or publicly with the community.",
+        "Run it once with different inputs; the best reusable Plays improve through real feedback.",
+        "Your expertise is reusable now. Invite a teammate to test it, or publish it when the method is ready for the community.",
+    ),
+    "play_shared_private": (
+        "Ask a teammate to run it with a real edge case—their feedback can sharpen the shared method.",
+        "The next level is team reuse: have someone else run it, then fold their domain guidance back into the Play.",
+        "One teammate run will teach you more than another draft. Use their feedback to refine the Play.",
+    ),
+    "play_published_public": (
+        "Try finding it by outcome or adapter—the community experience starts with successful discovery.",
+        "Share the outcome it unlocks, not just its name, so the right people can discover and run it.",
+        "Watch how others use it; community edge cases are fuel for the next revision.",
+    ),
+}
+
 
 def _path() -> Path:
     override = os.environ.get("PLAY_MILESTONE_PATH")
@@ -68,13 +98,33 @@ def _load(path: Path) -> dict[str, Any]:
     except (OSError, ValueError):
         value = None
     if not isinstance(value, Mapping) or value.get("schema") != SCHEMA:
-        return {"schema": SCHEMA, "events": [], "claimed_event_ids": []}
+        return {
+            "schema": SCHEMA,
+            "events": [],
+            "claimed_event_ids": [],
+            "unlocked_kinds": [],
+        }
     events = value.get("events")
     claimed = value.get("claimed_event_ids")
+    event_values = list(events) if isinstance(events, list) else []
+    claimed_values = list(claimed) if isinstance(claimed, list) else []
+    unlocked = value.get("unlocked_kinds")
+    if isinstance(unlocked, list):
+        unlocked_values = [kind for kind in unlocked if kind in EVENT_KINDS]
+    else:
+        claimed_ids = {item for item in claimed_values if isinstance(item, str)}
+        unlocked_values = [
+            str(event["kind"])
+            for event in event_values
+            if isinstance(event, Mapping)
+            and event.get("id") in claimed_ids
+            and event.get("kind") in EVENT_KINDS
+        ]
     return {
         "schema": SCHEMA,
-        "events": list(events) if isinstance(events, list) else [],
-        "claimed_event_ids": list(claimed) if isinstance(claimed, list) else [],
+        "events": event_values,
+        "claimed_event_ids": claimed_values,
+        "unlocked_kinds": list(dict.fromkeys(unlocked_values)),
     }
 
 
@@ -93,23 +143,23 @@ def record_event(
     reference: str | None = None,
     path: Path | None = None,
 ) -> dict[str, Any] | None:
-    """Record the first unlock of one milestone kind without storing secrets."""
+    """Record one unique achievement event without storing secrets."""
 
     if kind not in EVENT_KINDS:
         raise ValueError(f"unknown Play milestone event {kind!r}")
     target = path or _path()
     store = _load(target)
     events = [event for event in store["events"] if isinstance(event, Mapping)]
-    if any(event.get("kind") == kind for event in events):
-        return None
-    identity = {
-        "kind": kind,
-        "run_id": run_id if isinstance(run_id, str) else None,
-        "reference": reference if isinstance(reference, str) else None,
-    }
+    identity = {"kind": kind}
+    if isinstance(run_id, str) and run_id:
+        identity["run_id"] = run_id
+    elif isinstance(reference, str) and reference:
+        identity["reference"] = reference
     event_id = "evt_" + hashlib.sha256(
         json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()[:24]
+    if any(event.get("id") == event_id for event in events):
+        return None
     event = {
         "schema": "play.milestone-event/v1",
         "id": event_id,
@@ -206,11 +256,39 @@ def claim_nudge(
         for event in pending
         if _PRIORITY[str(event["kind"])] <= selected_priority
     }
+    unlocked = {
+        value for value in store.get("unlocked_kinds", []) if value in EVENT_KINDS
+    }
+    selected_kind = str(selected["kind"])
+    first_unlock = selected_kind not in unlocked
+    unlocked.update(
+        str(event["kind"])
+        for event in pending
+        if str(event["id"]) in consumed
+    )
     store["claimed_event_ids"] = sorted(claimed | consumed)
+    store["unlocked_kinds"] = sorted(unlocked, key=_PRIORITY.__getitem__)
     store["last_claim"] = {
         "event_id": selected["id"],
+        "kind": selected_kind,
         "claimed_at": _now(),
         **({"session_id": session_id} if isinstance(session_id, str) else {}),
     }
     _write(target, store)
-    return _NUDGES[str(selected["kind"])]
+    if first_unlock:
+        return _NUDGES[selected_kind]
+    return _repeat_nudge(selected)
+
+
+def _repeat_nudge(event: Mapping[str, Any]) -> str:
+    kind = str(event["kind"])
+    choices = _REPEAT_COACHING[kind]
+    event_id = str(event["id"])
+    choice = choices[int(hashlib.sha256(event_id.encode()).hexdigest()[:8], 16) % len(choices)]
+    reference = event.get("reference")
+    subject = (
+        f" `{reference}`"
+        if isinstance(reference, str) and reference
+        else ""
+    )
+    return f"{_REPEAT_PREFIXES[kind]}{subject}\n\n{choice}"

@@ -295,6 +295,17 @@ class InterceptTest(unittest.TestCase):
         self.assertIsNone(milestone_nudge("session-a"))
         self.assertIsNone(milestone_nudge("session-b"))
 
+        record_event(
+            "play_run_completed",
+            run_id="run-recent-emails",
+            reference="modiqo/retrieve-recent-emails",
+        )
+        follow_up = milestone_nudge("session-b")
+        assert follow_up is not None
+        self.assertIn("Play complete", follow_up)
+        self.assertIn("modiqo/retrieve-recent-emails", follow_up)
+        self.assertNotIn("Playrunner unlocked", follow_up)
+
     def test_milestone_nudge_silent_without_an_event(self) -> None:
         self.assertIsNone(settle_nudge("session-a"))
 

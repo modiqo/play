@@ -16,7 +16,7 @@ class PlayMilestoneTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def test_each_achievement_kind_unlocks_only_once(self) -> None:
+    def test_events_dedupe_by_run_identity_not_achievement_kind(self) -> None:
         first = record_event(
             "play_run_completed",
             run_id="run-1",
@@ -25,6 +25,12 @@ class PlayMilestoneTest(unittest.TestCase):
         )
         duplicate = record_event(
             "play_run_completed",
+            run_id="run-1",
+            reference="modiqo/changed-presentation-reference",
+            path=self.path,
+        )
+        second = record_event(
+            "play_run_completed",
             run_id="run-2",
             reference="modiqo/hello",
             path=self.path,
@@ -32,7 +38,34 @@ class PlayMilestoneTest(unittest.TestCase):
 
         self.assertIsNotNone(first)
         self.assertIsNone(duplicate)
-        self.assertEqual(1, len(load_json(self.path)["events"]))
+        self.assertIsNotNone(second)
+        self.assertEqual(2, len(load_json(self.path)["events"]))
+
+    def test_each_completed_run_gets_a_nudge_but_unlocks_playrunner_once(self) -> None:
+        record_event(
+            "play_run_completed",
+            run_id="run-1",
+            reference="modiqo/hello",
+            path=self.path,
+        )
+
+        first = claim_nudge(session_id="session-1", path=self.path)
+        assert first is not None
+        self.assertIn("Playrunner unlocked", first)
+
+        record_event(
+            "play_run_completed",
+            run_id="run-2",
+            reference="modiqo/retrieve-recent-emails",
+            path=self.path,
+        )
+        second = claim_nudge(session_id="session-2", path=self.path)
+
+        assert second is not None
+        self.assertIn("Play complete", second)
+        self.assertIn("modiqo/retrieve-recent-emails", second)
+        self.assertNotIn("Playrunner unlocked", second)
+        self.assertIsNone(claim_nudge(session_id="session-2", path=self.path))
 
     def test_highest_pending_achievement_coalesces_lower_nudges(self) -> None:
         for kind in (
