@@ -329,6 +329,59 @@ class InterceptTest(unittest.TestCase):
         self.assertIn("inspects first", line)
         self.assertIn("never pull plays or adapters manually", line)
 
+    def test_followup_adverb_does_not_silence_cached_rideshare_match(self) -> None:
+        from play.private_store import atomic_write_json
+
+        atomic_write_json(
+            Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
+            {
+                "schema": "play.inbox-cache/v1",
+                "catalog": [
+                    {
+                        "reference": "modiqo/retrieve-rideshare-receipts",
+                        "name": "retrieve-rideshare-receipts",
+                        "description": "Retrieves Uber, Lyft, and Waymo receipts from email.",
+                        "visibility": "public",
+                    }
+                ],
+            },
+        )
+
+        prompt = "can you now retrieve rideshare receipts"
+        self.assertTrue(is_action_request(prompt))
+        line = intercept_prompt(prompt)
+        assert line is not None
+        self.assertIn("modiqo/retrieve-rideshare-receipts", line)
+
+    def test_current_hub_namespace_wins_over_stale_local_owner(self) -> None:
+        from play.private_store import atomic_write_json
+
+        self._write_flow(
+            "retrieve-rideshare-receipts",
+            "Old locally pulled rideshare receipt workflow.",
+            "receipts",
+            owner="workplace-automation",
+        )
+        atomic_write_json(
+            Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
+            {
+                "schema": "play.inbox-cache/v1",
+                "catalog": [
+                    {
+                        "reference": "modiqo/retrieve-rideshare-receipts",
+                        "name": "retrieve-rideshare-receipts",
+                        "description": "Current rideshare receipt Play.",
+                        "visibility": "public",
+                    }
+                ],
+            },
+        )
+
+        line = intercept_prompt("can you now retrieve rideshare receipts")
+        assert line is not None
+        self.assertIn("modiqo/retrieve-rideshare-receipts", line)
+        self.assertNotIn("workplace-automation", line)
+
 
 if __name__ == "__main__":
     unittest.main()

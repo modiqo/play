@@ -39,7 +39,7 @@ FRONTMATTER_BYTES = 4096
 MIN_PROMPT_CHARS = 8
 
 _FAST_OUTCOME = re.compile(
-    r"^(?:(?:please|kindly)\s+)?(?:(?:can|could|would)\s+you\s+)?"
+    r"^(?:(?:please|kindly)\s+)?(?:(?:can|could|would)\s+you(?:\s+(?:now|please)){0,2}\s+)?"
     r"(?:(?:help\s+me|help)\s+)?"
     r"(?:retrieve|fetch|get|find|collect|download|export|list|summarize|check|"
     r"monitor|calculate|compare|deploy|publish|ship)\b",
@@ -54,7 +54,7 @@ _CHEAT_SHEET_REQUEST = re.compile(
     re.IGNORECASE,
 )
 _ACTION_REQUEST = re.compile(
-    r"^(?:(?:please|kindly)\s+)?(?:(?:can|could|would)\s+you\s+)?"
+    r"^(?:(?:please|kindly)\s+)?(?:(?:can|could|would)\s+you(?:\s+(?:now|please)){0,2}\s+)?"
     r"(?:(?:help\s+me|help|(?:let'?s|i\s+want\s+you\s+to))\s+)?"
     r"(?:use|run|execute|create|make|write|edit|change|update|fix|implement|"
     r"refactor|review|test|verify|investigate|diagnose|build|configure|install|"
@@ -349,7 +349,15 @@ def intercept_prompt(
     ):
         return None
     entries = load_index()
-    entries = [*entries, *_hub_entries({entry["name"] for entry in entries})]
+    hub_entries = _hub_entries(set())
+    # The refreshed authorized catalog is the canonical publication namespace.
+    # Do not let a stale locally pulled copy under a retired organization shadow
+    # the current hub reference merely because both share the same Play name.
+    hub_names = {entry["name"] for entry in hub_entries}
+    entries = [
+        *[entry for entry in entries if entry.get("name") not in hub_names],
+        *hub_entries,
+    ]
     match = best_match(stripped, entries)
     if match is not None:
         description = match.get("description") or "a saved Play"

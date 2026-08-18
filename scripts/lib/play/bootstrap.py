@@ -692,20 +692,11 @@ def build_plan(
         }
         for item in rote_skills
     ]
-    native_hook_targets = [
-        target.id
-        for target in targets
-        if target.selected
-        and target.id in {"codex", "claude"}
-        and isinstance(target.command, str)
-        and target.command
-    ]
     portable_hook_targets = [
         target.id
         for target in targets
         if target.selected
         and target.hooks == "managed"
-        and target.id not in native_hook_targets
     ]
     actions = [
         rote_action,
@@ -763,10 +754,10 @@ def build_plan(
         },
         {
             "id": "install_hooks",
-            "effect": "uses the marketplace plugin as the sole hook owner for Codex and Claude, removes their legacy duplicate user hooks, and installs portable hooks only where no native plugin owns them",
-            "native_plugin_targets": native_hook_targets,
+            "effect": "installs exactly one Play-owned hook set in each harness's user configuration; marketplace bundles declare no competing hooks",
+            "native_plugin_targets": [],
             "portable_targets": portable_hook_targets,
-            "targets": [*native_hook_targets, *portable_hook_targets],
+            "targets": portable_hook_targets,
         },
         {"id": "verify_and_report", "effect": "runs preflight checks and writes JSON and Markdown receipts"},
     ]
@@ -1549,8 +1540,8 @@ def _enable_codex_play_hook_state(
     return enabled_count
 
 
-def _verify_prompt_intercept(source: Path) -> None:
-    """Execute a deterministic prompt-hook probe after replacement."""
+def _verify_prompt_intercept(source: Path, *, verify_catalog: bool = False) -> None:
+    """Execute deterministic activation and cached-catalog probes after replacement."""
 
     command = source / "scripts" / "bin" / "play-intercept"
     try:
@@ -1577,6 +1568,65 @@ def _verify_prompt_intercept(source: Path) -> None:
             "Play prompt hook smoke check did not emit activation context: "
             f"{(result.stderr or result.stdout).strip() or f'exit {result.returncode}'}"
         )
+    if not verify_catalog:
+        return
+    cache_path = Path(
+        os.environ.get(
+            "PLAY_INBOX_CACHE_PATH", _home() / ".rote-play" / "inbox-cache.json"
+        )
+    ).expanduser()
+    # Unit/dry runners can return a synthetic warm-cache receipt without
+    # creating host state. A real installer run writes this file before hook
+    # convergence; whenever it exists, the catalog probe below is mandatory.
+    if not cache_path.is_file():
+        return
+    cache = _load_json(cache_path)
+    catalog = cache.get("catalog")
+    if cache.get("catalog_complete") is not True or not isinstance(catalog, list):
+        raise BootstrapError(
+            "Play prompt hook catalog smoke check requires a verified complete inbox cache"
+        )
+    candidate = next(
+        (
+            item
+            for item in catalog
+            if isinstance(item, dict)
+            and isinstance(item.get("reference"), str)
+            and isinstance(item.get("name"), str)
+            and len(re.findall(r"[a-z0-9]+", item["name"].casefold())) >= 2
+        ),
+        None,
+    )
+    if candidate is None:
+        return
+    prompt = "find " + str(candidate["name"]).replace("-", " ").replace("_", " ")
+    cached_result = subprocess.run(
+        [str(command), "prompt"],
+        input=json.dumps({"prompt": prompt}),
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+    try:
+        cached_payload = json.loads(cached_result.stdout)
+    except json.JSONDecodeError as error:
+        raise BootstrapError(
+            "Play prompt hook cached-catalog smoke check returned invalid output: "
+            f"{(cached_result.stderr or cached_result.stdout).strip() or f'exit {cached_result.returncode}'}"
+        ) from error
+    cached_context = cached_payload.get("hookSpecificOutput", {}).get(
+        "additionalContext"
+    )
+    if (
+        cached_result.returncode != 0
+        or not isinstance(cached_context, str)
+        or str(candidate["reference"]) not in cached_context
+    ):
+        raise BootstrapError(
+            "Play prompt hook did not resolve the verified cached catalog entry: "
+            f"{candidate['reference']}"
+        )
 
 
 def _managed_hook_entries(harness: str, source: Path) -> dict[str, list[dict[str, Any]]]:
@@ -1600,7 +1650,9 @@ def _managed_hook_entries(harness: str, source: Path) -> dict[str, list[dict[str
     raise BootstrapError(f"hooks are unsupported for {harness}")
 
 
-def install_hooks(harness: str, source: Path, *, run_id: str) -> Step:
+def install_hooks(
+    harness: str, source: Path, *, run_id: str, verify_catalog: bool = False
+) -> Step:
     path = _hook_paths().get(harness)
     if path is None:
         return Step("install_hooks", "unsupported", "No verified native hook surface.", target=harness)
@@ -1631,7 +1683,7 @@ def install_hooks(harness: str, source: Path, *, run_id: str) -> Step:
     enabled_count = (
         _enable_codex_play_hook_state(value, path) if harness == "codex" else 0
     )
-    _verify_prompt_intercept(source)
+    _verify_prompt_intercept(source, verify_catalog=verify_catalog)
     state_detail = (
         f" Reset {enabled_count} disabled Play-only Codex hook state entr"
         f"{'y' if enabled_count == 1 else 'ies'}."
@@ -2471,12 +2523,6 @@ def apply(
             plan, run_id, started, steps, status="blocked", runner=runner
         )
 
-    # Native marketplace plugins own Play hooks for Codex and Claude. Remove
-    # portable copies left by older installers before activating skills so a
-    # single prompt can never be intercepted twice.
-    for harness in marketplace_harnesses:
-        steps.append(remove_portable_play_hooks(harness, run_id=run_id))
-
     if "codex" in selected:
         steps.append(codex_play_enablement_step())
 
@@ -2509,13 +2555,14 @@ def apply(
         harness
         for harness in selected
         if plan_targets.get(harness, {}).get("hooks") == "managed"
-        and harness not in marketplace_harnesses
     ]
 
     def install_harness_hooks(harness: str) -> Step:
         return active_progress.call(
             f"Installing {LABELS[harness]} hooks",
-            lambda: install_hooks(harness, installed_source, run_id=run_id),
+            lambda: install_hooks(
+                harness, installed_source, run_id=run_id, verify_catalog=True
+            ),
         )
 
     hook_results = _parallel_harness_work(hook_harnesses, install_harness_hooks)

@@ -57,7 +57,7 @@ _OK_EMAIL = re.compile(r"(?im)^ok:\s*([^@\s]+@[^@\s]+\.[^@\s]+)$")
 _SAFE_HUMAN_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _PARAMETER_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _FAST_OUTCOME = re.compile(
-    r"^(?:(?:please|kindly)\s+)?(?:(?:can|could|would)\s+you\s+)?"
+    r"^(?:(?:please|kindly)\s+)?(?:(?:can|could|would)\s+you(?:\s+(?:now|please)){0,2}\s+)?"
     r"(?:(?:help\s+me|help)\s+)?"
     r"(?:retrieve|fetch|get|find|collect|download|export|list|summarize|check|"
     r"monitor|calculate|compare)\b",
