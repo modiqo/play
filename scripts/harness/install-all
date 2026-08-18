@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from scripts.lib.play.preflight import REQUIRED_PLAY_EXECUTABLES
+from scripts.lib.play.bootstrap import backup_play_state
 
 COPY_MARKER_SCHEMA = "play.portable-install/v1"
 OPENCODE_COMMAND_MARKER = "<!-- managed-by: modiqo/play -->"
@@ -234,6 +236,11 @@ def run_profile(source: Path, command: str, harnesses: list[Harness]) -> None:
     validate_source(source)
     environment = os.environ.copy()
     environment["PLAY_PROFILE_SOURCE"] = str(source.resolve())
+    if command == "install":
+        # An approved install is the convergence boundary: the complete current
+        # Play package replaces prior Play-owned links/profile state after the
+        # installer layer has taken its durable backup.
+        environment["PLAY_PROFILE_OVERWRITE"] = "1"
     environment["PLAY_HARNESS_ROOTS"] = os.pathsep.join(
         str(root)
         for harness in harnesses
@@ -443,6 +450,7 @@ def execute(
     copy_install: bool,
     requested_harnesses: list[str] | None = None,
     include_all: bool = False,
+    prepared_backup: Path | None = None,
 ) -> None:
     harnesses = selected_harnesses(requested_harnesses, include_all=include_all)
     if not harnesses:
@@ -458,6 +466,38 @@ def execute(
     if command == "plan":
         run_profile(ROOT, "plan", harnesses)
         return
+
+    if command == "install":
+        if prepared_backup is not None:
+            try:
+                prepared = json.loads(prepared_backup.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise InstallError(
+                    f"cannot use prepared Play backup {prepared_backup}: {error}"
+                ) from error
+            expected_harnesses = [harness.name for harness in harnesses]
+            if (
+                not isinstance(prepared, dict)
+                or prepared.get("schema") != "play.install-backup/v1"
+                or prepared.get("selected_harnesses") != expected_harnesses
+            ):
+                raise InstallError(
+                    f"prepared Play backup does not cover this install: {prepared_backup}"
+                )
+            backup_manifest = prepared_backup
+        else:
+            targets = {
+                harness.name: {
+                    "skill_roots": [str(root) for root in harness.skill_roots]
+                }
+                for harness in harnesses
+            }
+            backup_manifest = backup_play_state(
+                [harness.name for harness in harnesses],
+                targets,
+                run_id=f"install-all-{time.time_ns()}-{os.getpid()}",
+            )
+        print(f"Play state backup: {backup_manifest}")
 
     source = ROOT
     destination: Path | None = None
@@ -556,10 +596,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="target every supported harness, including ones whose command is not on PATH",
     )
+    parser.add_argument(
+        "--prepared-backup",
+        type=Path,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--json", action="store_true", help="emit machine-readable target choices")
     args = parser.parse_args(argv)
     if args.copy and args.command != "install":
         parser.error("--copy is available only with install")
+    if args.prepared_backup is not None and args.command != "install":
+        parser.error("--prepared-backup is available only with install")
     if args.command == "targets":
         if args.harnesses or args.all_harnesses or args.copy:
             parser.error("targets does not accept install selection flags")
@@ -578,6 +625,7 @@ def main(argv: list[str] | None = None) -> int:
             copy_install=args.copy,
             requested_harnesses=args.harnesses,
             include_all=args.all_harnesses,
+            prepared_backup=args.prepared_backup,
         )
     except (InstallError, OSError) as error:
         print(f"install-all: {error}", file=sys.stderr)

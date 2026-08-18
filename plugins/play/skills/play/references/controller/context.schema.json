@@ -897,6 +897,8 @@
         "email_handle",
         "identity_ref",
         "whoami_ns",
+        "login_provider",
+        "login_status",
         "experience_status",
         "experience_ref",
         "experience_ns",
@@ -960,6 +962,20 @@
             "unknown",
             "authenticated",
             "setup_required"
+          ]
+        },
+        "login_provider": {
+          "type": ["string", "null"],
+          "enum": [null, "google", "github"]
+        },
+        "login_status": {
+          "enum": [
+            "not_required",
+            "choice_required",
+            "in_progress",
+            "authenticated",
+            "paused",
+            "deferred"
           ]
         },
         "email": {

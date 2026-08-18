@@ -167,7 +167,7 @@ class MachineConformanceTest(unittest.TestCase):
             ACTIONS["inspect_onboarding_identity"]["command"],
         )
         self.assertEqual(
-            "onboarding_setup",
+            "onboarding_login_offer",
             MACHINE["states"]["onboarding_identity"]["on"][
                 "onboarding_identity_setup_required"
             ][0]["target"],
@@ -183,6 +183,12 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["onboarding_identity"]["on"][
                 "onboarding_identity_ready"
             ][0]["target"],
+        )
+        self.assertEqual(
+            "use_inspect",
+            MACHINE["states"]["onboarding_identity"]["on"][
+                "onboarding_identity_ready"
+            ][1]["target"],
         )
         self.assertEqual(
             "onboarding_first_present",
@@ -215,11 +221,25 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertEqual(
             "local-write", ACTIONS["remember_first_use_orientation"]["effect"]
         )
+        login_prompt = PROMPTS["choose_login_provider"]
+        self.assertEqual(
+            ["google", "github", "defer"],
+            [choice["id"] for choice in login_prompt["choices"]],
+        )
+        self.assertTrue(login_prompt["choices"][0]["recommended"])
+        login_policy = " ".join(ACTIONS["handoff_rote_login"]["command_policy"])
+        self.assertIn("login --provider", login_policy)
+        self.assertIn("exactly one", login_policy)
+        self.assertIn("Never ask for", login_policy)
 
     def test_play_uri_uses_inspect_or_bounded_public_card(self) -> None:
         available = MACHINE["states"]["onboarding_probe"]["on"]["rote_available"]
         missing = MACHINE["states"]["onboarding_probe"]["on"]["rote_missing"]
-        self.assertEqual("use_inspect", available[1]["target"])
+        self.assertEqual("onboarding_identity", available[1]["target"])
+        ready = MACHINE["states"]["onboarding_identity"]["on"][
+            "onboarding_identity_ready"
+        ]
+        self.assertEqual("use_inspect", ready[1]["target"])
         self.assertEqual("onboarding_card_fetch", missing[1]["target"])
         card_action = ACTIONS["fetch_onboarding_play_card"]
         self.assertEqual("read", card_action["effect"])
@@ -235,6 +255,8 @@ class MachineConformanceTest(unittest.TestCase):
             "rote_status",
             "rote_command",
             "identity_status",
+            "login_provider",
+            "login_status",
             "email",
             "email_handle",
             "play_uri",

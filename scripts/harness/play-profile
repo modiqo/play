@@ -164,6 +164,51 @@ def portable_source() -> bool:
     )
 
 
+def overwrite_requested() -> bool:
+    """Return whether an approved installer requested full Play convergence."""
+
+    return os.environ.get("PLAY_PROFILE_OVERWRITE") == "1"
+
+
+def remove_path(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        import shutil
+
+        shutil.rmtree(path)
+
+
+def displace_paths(paths: list[Path]) -> dict[Path, Path]:
+    """Move conflicting Play paths aside until the profile transaction commits."""
+
+    displaced: dict[Path, Path] = {}
+    for path in paths:
+        if not path.exists() and not path.is_symlink():
+            continue
+        staged = path.with_name(f".{path.name}.play-overwrite-{os.getpid()}")
+        if staged.exists() or staged.is_symlink():
+            raise ProfileError(f"refusing unsafe overwrite staging path: {staged}")
+        path.rename(staged)
+        displaced[path] = staged
+    return displaced
+
+
+def discard_displaced(displaced: dict[Path, Path]) -> None:
+    for staged in displaced.values():
+        if staged.exists() or staged.is_symlink():
+            remove_path(staged)
+
+
+def restore_displaced(displaced: dict[Path, Path]) -> None:
+    for original, staged in reversed(list(displaced.items())):
+        if not staged.exists() and not staged.is_symlink():
+            continue
+        if original.exists() or original.is_symlink():
+            remove_path(original)
+        staged.rename(original)
+
+
 def read_bytes(path: Path) -> bytes:
     try:
         return path.read_bytes()
@@ -418,7 +463,6 @@ def reconcile(state: dict[str, object]) -> None:
     portable_source_migration = (
         source_changed
         and mode == "source-linked"
-        and previous_mode == "source-linked"
         and portable_source()
     )
     if source_changed and not (
@@ -427,7 +471,9 @@ def reconcile(state: dict[str, object]) -> None:
         or portable_source_migration
     ):
         raise ProfileError(f"profile state belongs to another Play source: {source}")
-    if previous_mode != mode and not orphaned_source_repair:
+    if previous_mode != mode and not (
+        orphaned_source_repair or portable_source_migration
+    ):
         raise ProfileError(f"activation mode changed; expected {mode}")
     if not play_is_implicit():
         raise ProfileError("Play source is not configured for implicit invocation")
@@ -436,22 +482,28 @@ def reconcile(state: dict[str, object]) -> None:
     old_links = [Path(str(value)) for value in state["play_links"]]
     old_link_set = set(old_links)
     desired_link_set = set(play_links)
+    overwrite = overwrite_requested()
+    displaced: dict[Path, Path] = {}
+    invalid_old_links: list[Path] = []
     for link in old_links:
         if link.is_symlink() and link.resolve() in {source, SOURCE}:
             continue
         if not link.exists() and not link.is_symlink():
             continue
-        raise ProfileError(f"refusing to replace changed Play install: {link}")
+        invalid_old_links.append(link)
     conflicts = [
         link
         for link in desired_link_set - old_link_set
         if link.exists() or link.is_symlink()
     ]
-    if conflicts:
+    overwrite_conflicts = list(dict.fromkeys([*invalid_old_links, *conflicts]))
+    if overwrite_conflicts and not overwrite:
         raise ProfileError(
             "refusing to replace existing Play installs:\n  "
-            + "\n  ".join(map(str, conflicts))
+            + "\n  ".join(map(str, overwrite_conflicts))
         )
+    if overwrite_conflicts:
+        displaced = displace_paths(overwrite_conflicts)
 
     backups = copy.deepcopy(state["backups"])
     rollback_files: dict[Path, dict[str, object]] = {}
@@ -603,6 +655,7 @@ def reconcile(state: dict[str, object]) -> None:
             (json.dumps(updated, indent=2, sort_keys=True) + "\n").encode(),
             0o600,
         )
+        discard_displaced(displaced)
     except Exception:
         for link in reversed(created_links):
             if link.is_symlink():
@@ -617,6 +670,7 @@ def reconcile(state: dict[str, object]) -> None:
                 link.symlink_to(SOURCE, target_is_directory=True)
         for path, record in reversed(list(rollback_files.items())):
             restore(path, record)
+        restore_displaced(displaced)
         raise
 
     print(
@@ -645,11 +699,14 @@ def install() -> None:
     for managed_launcher, _content in managed_launchers():
         if managed_launcher.exists() or managed_launcher.is_symlink():
             conflicts.append(managed_launcher)
-    if conflicts:
+    overwrite = overwrite_requested()
+    if conflicts and not overwrite:
         raise ProfileError(
             "refusing to replace existing Play installs:\n  "
             + "\n  ".join(map(str, conflicts))
         )
+
+    displaced = displace_paths(conflicts) if conflicts else {}
 
     backups: dict[str, dict[str, object]] = {}
     created_links: list[Path] = []
@@ -704,7 +761,10 @@ def install() -> None:
                 link.unlink()
         for value, record in reversed(list(backups.items())):
             restore(Path(value), record)
+        restore_displaced(displaced)
         raise
+
+    discard_displaced(displaced)
 
     print(
         f"activated Play-first {mode} profile across {len(roots)} harness root(s); "

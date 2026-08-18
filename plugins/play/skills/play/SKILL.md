@@ -109,11 +109,13 @@ If `instruction.preflight_required_for_events` names your selected event, run
 `play-machine preflight --harness <codex|claude|kimi|cursor|hermes|opencode|deepseek|generic> --json` first and pass its complete
 unchanged output as `preflight`. Missing Rote setup delegates to the `rote-setup` skill.
 When the preflight is structurally healthy and its only failed check is `authenticated`, treat that
-as the normal first-use entrance, not an error or blocker: keep the Play continuation opaque, invoke
-`rote-setup`, and lead with sign in or create an account through Google or GitHub. After the setup
-specialist verifies `rote whoami`, rerun the complete preflight and resume the same declared event
-with the now-ready output. If the user pauses setup, preserve the original request and say how to
-resume it; do not replace the requested outcome with a generic installation failure.
+as the normal first-use entrance, not an error or blocker: keep the Play continuation opaque and
+resume the harness-owned login states. Present `choose_login_provider` (Google, GitHub, or Not now),
+delegate only the selected OAuth login to `rote-setup`, and let the browser own credentials and
+consent. After the specialist verifies exactly one `rote whoami`, return to `onboarding_identity`
+and resume the same greeting or Play URI. If the user pauses or defers login, preserve the original
+request and say how to resume it; do not replace the requested outcome with a generic installation
+failure or print raw login commands as the primary onboarding path.
 
 ## Cross-harness bootstrap
 
@@ -121,9 +123,12 @@ For an explicit request to install or repair Play across harnesses, use the bund
 `scripts/bin/play-bootstrap` only after the typed runtime returns the task to normal execution.
 Run `plan --json` first, present its multi-select top-K targets and effects, and obtain approval for
 that exact `plan_id`. Then run `apply --plan-id <id>`; add `--approve-remote-installer` only after
-the user separately approves the official Rote installer. If the receipt reports
-`human_action_required`, invoke the installed `rote-setup` skill through the harness, then rerun a
-fresh plan/apply convergence pass. Never collect credentials in bootstrap context or reports.
+the user separately approves the official Rote installer. Apply first creates an owner-private,
+restorable backup manifest under the Play bootstrap state directory, then fully replaces Play-owned
+plugin, skill, hook, launcher, portable-copy, and activation-profile state while preserving
+unrelated harness settings. A logged-out receipt is `onboarding_required`, not an install failure:
+open a selected harness and invoke Play so its typed Google/GitHub login states can continue there.
+Never collect credentials in bootstrap context, backups, or reports.
 
 ## Stay out of the way
 

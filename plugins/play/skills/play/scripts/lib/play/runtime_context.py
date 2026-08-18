@@ -17,7 +17,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "2707f4117033fa2d404d2ef34d49c23ce7a4a428d802987a14d3c644679e7731"
+SUPPORTED_MUTATION_SET_SHA256 = "f39cadcfa4041d7365582fe4310de5784aea986ac94e936449b63a658db07dd5"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -102,6 +102,8 @@ def initial_context(
             "email_handle": None,
             "identity_ref": None,
             "whoami_ns": None,
+            "login_provider": None,
+            "login_status": "not_required",
             "experience_status": "unknown",
             "experience_ref": None,
             "experience_ns": None,
@@ -387,6 +389,21 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
         "capture.decision": "normal",
         "capture.status": "normal",
     },
+    "require_onboarding_login": {
+        "onboarding.login_provider": None,
+        "onboarding.login_status": "choice_required",
+    },
+    "select_google_login": {
+        "onboarding.login_provider": "google",
+        "onboarding.login_status": "in_progress",
+    },
+    "select_github_login": {
+        "onboarding.login_provider": "github",
+        "onboarding.login_status": "in_progress",
+    },
+    "record_onboarding_login": {"onboarding.login_status": "authenticated"},
+    "record_onboarding_login_pause": {"onboarding.login_status": "paused"},
+    "record_onboarding_login_deferred": {"onboarding.login_status": "deferred"},
     "enter_uri_setup": {"onboarding.setup_status": "required"},
     "enter_onboarding_uri_use": {"mode": "use"},
     "enter_onboarding_starter_use": {

@@ -56,6 +56,14 @@
       "orb": "connecting",
       "label": "Checking the signed-in Rote identity…"
     },
+    "onboarding_login_offer": {
+      "orb": "listening",
+      "label": "Waiting for your Rote sign-in choice…"
+    },
+    "onboarding_login": {
+      "orb": "connecting",
+      "label": "Connecting your selected Rote identity…"
+    },
     "onboarding_experience": {
       "orb": "searching",
       "label": "Checking whether to show the first-use guide…"

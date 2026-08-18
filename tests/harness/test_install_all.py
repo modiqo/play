@@ -71,7 +71,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '{\"marketplaces\":[]}'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.7\",\"enabled\":true}],\"available\":[]}'\n"
+                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.8\",\"enabled\":true}],\"available\":[]}'\n"
                     "  else\n"
                     "    printf '%s\\n' '{\"installed\":[],\"available\":[]}'\n"
                     "  fi\n"
@@ -88,7 +88,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '[]'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.7\",\"enabled\":true,\"scope\":\"user\"}]'\n"
+                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.8\",\"enabled\":true,\"scope\":\"user\"}]'\n"
                     "  else\n"
                     "    printf '%s\\n' '[]'\n"
                     "  fi\n"
@@ -219,6 +219,35 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("Python launcher", result.stdout)
         self.uninstall(ROOT)
 
+    def test_install_backs_up_then_overwrites_existing_play_owned_paths(self) -> None:
+        old_play = self.roots["codex"] / "play"
+        old_play.mkdir()
+        (old_play / "SKILL.md").write_text("old play\n", encoding="utf-8")
+        old_launcher = self.home / ".local" / "bin" / "play-machine"
+        old_launcher.parent.mkdir(parents=True)
+        old_launcher.write_text("old launcher\n", encoding="utf-8")
+
+        result = self.run_installer("install", "--harness", "codex")
+
+        self.assertIn("Play state backup:", result.stdout)
+        self.assertTrue(old_play.is_symlink())
+        self.assertEqual(ROOT, old_play.resolve())
+        manifests = list(
+            (self.home / "bootstrap-state" / "backups").glob(
+                "install-all-*/manifest.json"
+            )
+        )
+        self.assertEqual(1, len(manifests))
+        manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
+        entries = {entry["path"]: entry for entry in manifest["entries"]}
+        self.assertIn(str(old_play), entries)
+        self.assertIn(str(old_launcher), entries)
+        backed_play = manifests[0].parent / entries[str(old_play)]["backup"]
+        backed_launcher = manifests[0].parent / entries[str(old_launcher)]["backup"]
+        self.assertEqual("old play\n", (backed_play / "SKILL.md").read_text())
+        self.assertEqual("old launcher\n", backed_launcher.read_text())
+        self.uninstall(ROOT)
+
     def test_opencode_install_adds_managed_slash_command_and_preserves_conflict(self) -> None:
         skill_root = self.home / ".config" / "opencode" / "skills"
         rote = skill_root / "rote"
@@ -249,7 +278,7 @@ class InstallAllTest(unittest.TestCase):
 
         self.run_installer("install", "--copy")
         installed = install_home / "skill"
-        self.assertEqual("0.4.7", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.8", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():
@@ -317,7 +346,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("◐ Checking the Play setup plan", result.stderr)
         self.assertIn("✓ Verifying Codex", result.stderr)
         self.assertIn("| Play setup plan", result.stdout)
-        self.assertIn("Version: 0.4.7", result.stdout)
+        self.assertIn("Version: 0.4.8", result.stdout)
         self.assertIn("| Play setup", result.stdout)
         self.assertIn("Status: READY", result.stdout)
         self.assertIn("Congratulations — step 1", result.stdout)
@@ -399,8 +428,8 @@ class InstallAllTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
         self.assertIn("Status: READY — SIGN IN TO CONTINUE", result.stdout)
         self.assertIn("Sign in to start", result.stdout)
-        self.assertIn("rote login --provider google", result.stdout)
-        self.assertIn("rote login --provider github", result.stdout)
+        self.assertIn("offer Google or GitHub", result.stdout)
+        self.assertNotIn("rote login --provider", result.stdout)
         self.assertNotIn("Status: INCOMPLETE", result.stdout)
         reports = list((self.home / "bootstrap-state" / "runs").glob("*.json"))
         self.assertEqual(1, len(reports))
@@ -435,9 +464,10 @@ class InstallAllTest(unittest.TestCase):
         )
 
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertIn("Status: READY — ACTION REQUIRED", result.stdout)
+        self.assertIn("Status: READY — SIGN IN TO CONTINUE", result.stdout)
         self.assertIn("Sign in to start", result.stdout)
-        self.assertIn("Codex: Codex has an explicit disabled Play skill override", result.stdout)
+        self.assertNotIn("explicit disabled Play skill override", result.stdout)
+        self.assertNotIn("[[skills.config]]", config.read_text(encoding="utf-8"))
         self.assertNotIn("Status: INCOMPLETE", result.stdout)
         self.uninstall(install_home / "skill")
 

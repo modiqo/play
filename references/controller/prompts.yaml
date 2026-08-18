@@ -1,6 +1,18 @@
 schema: play.prompts/v1
 
 prompts:
+  choose_login_provider:
+    question: Sign in to Rote to continue this Play request. Which identity provider would you like to use?
+    selection: single
+    choices:
+      - {id: google, label: Continue with Google, description: Opens the Rote Google OAuth flow in your browser., event: onboarding_google_login_selected, recommended: true}
+      - {id: github, label: Continue with GitHub, description: Opens the Rote GitHub OAuth flow in your browser., event: onboarding_github_login_selected}
+      - {id: defer, label: Not now, description: Stop without signing in; your original request is not executed., event: onboarding_login_deferred}
+    events:
+      onboarding_google_login_selected: [prompt_version, selected_at]
+      onboarding_github_login_selected: [prompt_version, selected_at]
+      onboarding_login_deferred: [prompt_version, selected_at]
+
   welcome_play_request:
     question: How are you, {onboarding.email_handle}? What can I help you with?
     template_fields: [onboarding.email_handle]

@@ -8,7 +8,10 @@ cases:
         event: rote_available
         guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
         target: onboarding_identity
-      - {state: onboarding_identity, event: onboarding_identity_ready, target: onboarding_experience}
+      - state: onboarding_identity
+        event: onboarding_identity_ready
+        guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
+        target: onboarding_experience
       - {state: onboarding_experience, event: onboarding_returning, target: onboarding_welcome}
       - {state: onboarding_welcome, event: welcome_request_described, target: invoke}
       - {state: invoke, event: ordinary_play_invocation, target: qualify}
@@ -28,7 +31,10 @@ cases:
         event: rote_available
         guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
         target: onboarding_identity
-      - {state: onboarding_identity, event: onboarding_identity_ready, target: onboarding_experience}
+      - state: onboarding_identity
+        event: onboarding_identity_ready
+        guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
+        target: onboarding_experience
       - {state: onboarding_experience, event: onboarding_first_use, target: onboarding_first_present}
       - {state: onboarding_first_present, event: onboarding_first_use_presented, target: onboarding_first_record}
       - {state: onboarding_first_record, event: onboarding_first_use_recorded, target: onboarding_first_offer}
@@ -73,12 +79,16 @@ cases:
       - state: onboarding_probe
         event: rote_available
         guards: {onboarding_is_greeting: false, onboarding_is_play_uri: true}
+        target: onboarding_identity
+      - state: onboarding_identity
+        event: onboarding_identity_ready
+        guards: {onboarding_is_greeting: false, onboarding_is_play_uri: true}
         target: use_inspect
       - {state: use_inspect, event: play_inspected, target: use_decide}
       - {state: use_decide, event: remote_pull_required, target: use_offer}
       - {state: use_offer, event: play_run_declined, target: completed}
     terminal: completed
-    excludes: [onboarding_identity, onboarding_card_fetch, onboarding_setup, use_run]
+    excludes: [onboarding_card_fetch, onboarding_setup, use_run]
 
   - name: Play URI reads its public card when Rote is missing
     steps:
@@ -107,12 +117,40 @@ cases:
       - state: onboarding_probe
         event: rote_available
         guards: {onboarding_is_greeting: false, onboarding_is_play_uri: true}
+        target: onboarding_identity
+      - state: onboarding_identity
+        event: onboarding_identity_ready
+        guards: {onboarding_is_greeting: false, onboarding_is_play_uri: true}
         target: use_inspect
       - {state: use_inspect, event: play_inspected, target: use_decide}
       - {state: use_decide, event: remote_pull_required, target: use_offer}
     terminal: use_offer
     includes_once: [onboarding_card_offer, onboarding_setup]
     excludes: [qualify, search]
+
+  - name: installed but logged-out Rote offers Google login then reprobes identity
+    steps:
+      - {state: invoke, event: empty_play_invocation, target: onboarding_probe}
+      - state: onboarding_probe
+        event: rote_available
+        guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
+        target: onboarding_identity
+      - {state: onboarding_identity, event: onboarding_identity_setup_required, target: onboarding_login_offer}
+      - {state: onboarding_login_offer, event: onboarding_google_login_selected, target: onboarding_login}
+      - {state: onboarding_login, event: rote_login_completed, target: onboarding_identity}
+      - state: onboarding_identity
+        event: onboarding_identity_ready
+        guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
+        target: onboarding_experience
+    terminal: onboarding_experience
+    includes_once: [onboarding_login_offer, onboarding_login]
+
+  - name: installed but logged-out Rote can defer login without running the request
+    steps:
+      - {state: onboarding_identity, event: onboarding_identity_setup_required, target: onboarding_login_offer}
+      - {state: onboarding_login_offer, event: onboarding_login_deferred, target: completed}
+    terminal: completed
+    excludes: [onboarding_login, use_inspect, use_run]
 
   - name: missing setup specialist blocks without installing directly
     steps:

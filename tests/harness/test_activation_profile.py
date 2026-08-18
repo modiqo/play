@@ -400,6 +400,46 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertEqual(refreshed_metadata, metadata.read_bytes())
         self.assertTrue(backup.is_file())
 
+    def test_portable_install_takes_over_available_marketplace_profile(self) -> None:
+        plugin = Path(self.temporary.name) / "plugin-current"
+        plugin_source = plugin / "skills" / "play"
+        portable = Path(self.temporary.name) / "portable-current" / "skill"
+        (plugin / ".codex-plugin").mkdir(parents=True)
+        (plugin / ".codex-plugin" / "plugin.json").write_text("{}\n")
+        for source in (plugin_source, portable):
+            (source / "agents").mkdir(parents=True)
+            (source / "scripts" / "bin").mkdir(parents=True)
+            (source / "SKILL.md").write_bytes((ROOT / "SKILL.md").read_bytes())
+            (source / "agents" / "openai.yaml").write_bytes(
+                (ROOT / "agents" / "openai.yaml").read_bytes()
+            )
+            (source / "scripts" / "bin" / "play-machine").write_text("#!/bin/sh\n")
+        (portable / ".play-install.json").write_text(
+            json.dumps(
+                {
+                    "schema": "play.portable-install/v1",
+                    "source": "portable-copy",
+                    "version": "test",
+                }
+            )
+            + "\n"
+        )
+
+        self.source = plugin_source
+        self.run_profile("install")
+        previous_state = self.state.read_bytes()
+        self.source = portable
+
+        result = self.run_profile("install")
+
+        self.assertIn("backed up previous activation profile", result.stdout)
+        state = json.loads(self.state.read_text())
+        self.assertEqual("source-linked", state["mode"])
+        self.assertEqual(str(portable.resolve()), state["source"])
+        self.assertEqual(previous_state, Path(state["profile_backups"][0]["path"]).read_bytes())
+        for root in self.roots:
+            self.assertEqual(portable.resolve(), (root / "play").resolve())
+
     def test_portable_migration_fails_closed_when_backup_path_is_unsafe(self) -> None:
         checkout = Path(self.temporary.name) / "checkout-unsafe" / "skill"
         portable = Path(self.temporary.name) / "portable-unsafe" / "skill"

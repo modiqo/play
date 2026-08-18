@@ -26,7 +26,7 @@ states:
     "on":
       rote_available:
         - {guard: onboarding_is_greeting, target: onboarding_identity, mutate: record_rote_probe}
-        - {guard: onboarding_is_play_uri, target: use_inspect, mutate: enter_onboarding_uri_use}
+        - {guard: onboarding_is_play_uri, target: onboarding_identity, mutate: record_rote_probe}
         - {target: blocked, mutate: record_onboarding_intent_mismatch}
       rote_missing:
         - {guard: onboarding_is_greeting, target: onboarding_setup, mutate: record_rote_probe}
@@ -40,8 +40,31 @@ states:
     requires: [onboarding.rote_status, onboarding.rote_command]
     entry: {action: inspect_onboarding_identity}
     "on":
-      onboarding_identity_ready: [{target: onboarding_experience, mutate: record_onboarding_identity}]
-      onboarding_identity_setup_required: [{target: onboarding_setup, mutate: record_onboarding_identity}]
+      onboarding_identity_ready:
+        - {guard: onboarding_is_greeting, target: onboarding_experience, mutate: record_onboarding_identity}
+        - {guard: onboarding_is_play_uri, target: use_inspect, mutate: enter_onboarding_uri_use}
+        - {target: blocked, mutate: record_onboarding_intent_mismatch}
+      onboarding_identity_setup_required: [{target: onboarding_login_offer, mutate: require_onboarding_login}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_login_offer:
+    owner: play
+    checkpoint: after
+    requires: [onboarding.identity_status, onboarding.rote_command, onboarding.login_status]
+    prompt: choose_login_provider
+    "on":
+      onboarding_google_login_selected: [{target: onboarding_login, mutate: select_google_login}]
+      onboarding_github_login_selected: [{target: onboarding_login, mutate: select_github_login}]
+      onboarding_login_deferred: [{target: completed, mutate: record_onboarding_login_deferred}]
+
+  onboarding_login:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [onboarding.rote_command, onboarding.login_provider, onboarding.login_status]
+    entry: {action: handoff_rote_login}
+    "on":
+      rote_login_completed: [{target: onboarding_identity, mutate: record_onboarding_login}]
+      rote_login_paused: [{target: blocked, mutate: record_onboarding_login_pause}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   onboarding_experience:

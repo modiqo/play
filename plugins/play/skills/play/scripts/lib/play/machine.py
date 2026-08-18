@@ -549,8 +549,9 @@ def validate_bundle(
     )
     check(
         _target(states, "onboarding_probe", "rote_available") == "onboarding_identity"
-        and _target(states, "onboarding_probe", "rote_available", 1) == "use_inspect",
-        "installed Rote must route greeting to identity and URI to first-class inspection",
+        and _target(states, "onboarding_probe", "rote_available", 1)
+        == "onboarding_identity",
+        "installed Rote must identity-gate greetings and Play URIs",
     )
     check(
         _target(states, "onboarding_probe", "rote_missing") == "onboarding_setup"
@@ -565,12 +566,17 @@ def validate_bundle(
     )
     check(
         _target(states, "onboarding_identity", "onboarding_identity_setup_required")
-        == "onboarding_setup",
-        "an installed but unauthenticated Rote must enter setup",
+        == "onboarding_login_offer"
+        and states.get("onboarding_login_offer", {}).get("prompt")
+        == "choose_login_provider"
+        and actions.get("handoff_rote_login", {}).get("specialist") == "rote-setup",
+        "an installed but unauthenticated Rote must enter the harness login state machine",
     )
     check(
         _target(states, "onboarding_identity", "onboarding_identity_ready")
         == "onboarding_experience"
+        and _target(states, "onboarding_identity", "onboarding_identity_ready", 1)
+        == "use_inspect"
         and _target(states, "onboarding_experience", "onboarding_first_use")
         == "onboarding_first_present"
         and _target(states, "onboarding_experience", "onboarding_returning")

@@ -48,7 +48,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(72, len(self.runtime.bundle.states))
+        self.assertEqual(74, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -655,6 +655,19 @@ class ControllerRuntimeTest(unittest.TestCase):
                     {"rote_status": "installed", "rote_command": "/usr/bin/rote"}
                 ),
             ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "identity_status": "authenticated",
+                        "email": "friend@example.com",
+                        "email_handle": "friend",
+                        "identity_ref": "sha256:" + "b" * 64,
+                        "whoami_ns": 1,
+                    }
+                ),
+            ),
             SimpleNamespace(returncode=0, stderr="", stdout=json.dumps(disclosure)),
         ]
         session = self.runtime.initial_session(
@@ -770,6 +783,22 @@ class ControllerRuntimeTest(unittest.TestCase):
                     }
                 ),
             ),
+            SimpleNamespace(
+                returncode=0,
+                stderr="",
+                stdout=json.dumps(
+                    {
+                        "schema": "play.onboarding/v1",
+                        "kind": "identity",
+                        "ok": True,
+                        "identity_status": "authenticated",
+                        "email": "friend@example.com",
+                        "email_handle": "friend",
+                        "identity_ref": "sha256:" + "b" * 64,
+                        "whoami_ns": 1,
+                    }
+                ),
+            ),
             SimpleNamespace(returncode=0, stderr="", stdout=json.dumps(disclosure)),
             SimpleNamespace(
                 returncode=0,
@@ -835,6 +864,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             [
                 "classify_play_invocation",
                 "probe_rote_for_onboarding",
+                "inspect_onboarding_identity",
                 "inspect_registry_play",
                 "route_inspected_play",
                 "prepare_play_run_handoff",
@@ -1195,7 +1225,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         self.assertEqual("onboarding_identity", advanced.session.cursor.state)
 
-    def test_session_binds_uri_before_onboarding_probe_routes_to_inspection(self) -> None:
+    def test_session_binds_uri_then_identity_gates_before_inspection(self) -> None:
         uri = "https://play.modiqo.ai/modiqo/hello"
         session = self.runtime.initial_session(
             run_id="session-1", task_key="task-1", request_original=uri
@@ -1228,8 +1258,88 @@ class ControllerRuntimeTest(unittest.TestCase):
             ),
         )
 
-        self.assertEqual("use_inspect", advanced.session.cursor.state)
-        self.assertEqual(uri, advanced.session.context["match"]["reference"])
+        self.assertEqual("onboarding_identity", advanced.session.cursor.state)
+        identified = self.runtime.advance_session(
+            advanced.session,
+            ControllerEvent(
+                id=EventId("onboarding_identity_ready"),
+                payload={
+                    "onboarding": {
+                        "identity_status": "authenticated",
+                        "email": "friend@example.com",
+                        "email_handle": "friend",
+                        "identity_ref": "sha256:" + "a" * 64,
+                        "whoami_ns": 1,
+                    }
+                },
+                guards={},
+            ),
+        )
+
+        self.assertEqual("use_inspect", identified.session.cursor.state)
+        self.assertEqual(uri, identified.session.context["match"]["reference"])
+
+    def test_logged_out_onboarding_selects_provider_and_resumes_identity(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-login", task_key="task-login", request_original="$play"
+        )
+        context = dict(session.context)
+        context["state"] = "onboarding_identity"
+        context["onboarding"] = dict(context["onboarding"])
+        context["onboarding"].update(
+            {
+                "intent": "greeting",
+                "rote_status": "installed",
+                "rote_command": "/tmp/rote",
+            }
+        )
+        session = replace(
+            session,
+            cursor=replace(session.cursor, state=StateId("onboarding_identity")),
+            context=context,
+        )
+
+        offered = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("onboarding_identity_setup_required"),
+                payload={
+                    "onboarding": {
+                        "identity_status": "setup_required",
+                        "email": None,
+                        "email_handle": None,
+                        "identity_ref": None,
+                        "whoami_ns": 1,
+                    }
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("onboarding_login_offer", offered.session.cursor.state)
+        self.assertEqual(
+            ["google", "github", "defer"],
+            [
+                choice["id"]
+                for choice in offered.projection.as_dict()["instruction"]["choices"]
+            ],
+        )
+
+        selected = self.runtime.advance_session(
+            offered.session,
+            ControllerEvent(
+                id=EventId("onboarding_github_login_selected"),
+                payload={
+                    "prompt_version": "choose_login_provider",
+                    "selected_at": "2026-08-17T00:00:00Z",
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("onboarding_login", selected.session.cursor.state)
+        self.assertEqual("github", selected.session.context["onboarding"]["login_provider"])
+        self.assertEqual("in_progress", selected.session.context["onboarding"]["login_status"])
+        instruction = selected.projection.as_dict()["instruction"]
+        self.assertEqual("rote-setup", instruction["specialist"])
 
     def test_advance_until_yield_builds_a_content_bound_receipt(self) -> None:
         session = self.runtime.initial_session(

@@ -24,6 +24,7 @@ from scripts.lib.play.bootstrap import (
     _run_visible,
     _rote_skill_command,
     apply,
+    backup_play_state,
     build_plan,
     codex_disabled_play_entries,
     codex_play_enablement_step,
@@ -224,7 +225,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.7",
+                                "version": "0.4.8",
                                 "enabled": True,
                             }
                         ]
@@ -235,7 +236,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.7", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.8", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -256,7 +257,7 @@ class BootstrapTest(unittest.TestCase):
             ["/bin/codex", "plugin", "add", "play@play-skills"], commands[4]
         )
         self.assertEqual("completed", steps[-1].status)
-        self.assertIn("0.4.7", steps[-1].detail)
+        self.assertIn("0.4.8", steps[-1].detail)
 
     def test_claude_marketplace_convergence_refreshes_user_scope(self) -> None:
         runner = MagicMock()
@@ -289,7 +290,7 @@ class BootstrapTest(unittest.TestCase):
                     [
                         {
                             "id": "play@play-skills",
-                            "version": "0.4.7",
+                            "version": "0.4.8",
                             "enabled": True,
                             "scope": "user",
                         }
@@ -300,7 +301,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "claude", "/bin/claude", expected_version="0.4.7", runner=runner
+            "claude", "/bin/claude", expected_version="0.4.8", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -338,7 +339,7 @@ class BootstrapTest(unittest.TestCase):
         )
         self.assertEqual("completed", steps[-1].status)
 
-    def test_current_plugin_uses_two_read_only_probes_without_reinstall(self) -> None:
+    def test_current_plugin_is_reinstalled_for_full_convergence(self) -> None:
         runner = MagicMock()
         runner.side_effect = [
             MagicMock(
@@ -353,7 +354,25 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.7",
+                                "version": "0.4.8",
+                                "enabled": True,
+                            }
+                        ]
+                    }
+                ),
+                stderr="",
+            ),
+            MagicMock(returncode=0, stdout="updated\n", stderr=""),
+            MagicMock(returncode=0, stdout="removed\n", stderr=""),
+            MagicMock(returncode=0, stdout="installed\n", stderr=""),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "installed": [
+                            {
+                                "pluginId": "play@play-skills",
+                                "version": "0.4.8",
                                 "enabled": True,
                             }
                         ]
@@ -364,12 +383,12 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.7", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.8", runner=runner
         )
 
-        self.assertEqual(2, runner.call_count)
-        self.assertEqual("unchanged", steps[-1].status)
-        self.assertIn("already installed", steps[-1].detail)
+        self.assertEqual(6, runner.call_count)
+        self.assertEqual("completed", steps[-1].status)
+        self.assertIn("installed, enabled, and healthy", steps[-1].detail)
 
     def test_progress_redraws_one_terminal_line_with_elapsed_time(self) -> None:
         stream = StringIO()
@@ -496,8 +515,57 @@ class BootstrapTest(unittest.TestCase):
             codex_disabled_play_entries(),
         )
         step = codex_play_enablement_step()
-        self.assertEqual("human_action_required", step.status)
-        self.assertIn("/skills", step.detail)
+        self.assertEqual("completed", step.status)
+        self.assertIn("plugin now owns enablement", step.detail)
+        self.assertNotIn("play/0.3.0", config.read_text(encoding="utf-8"))
+
+    def test_full_install_backup_captures_play_owned_harness_state(self) -> None:
+        hooks = self.home / ".codex" / "hooks.json"
+        hooks.parent.mkdir(parents=True)
+        hooks.write_text('{"hooks": {}}\n', encoding="utf-8")
+        config = self.home / ".codex" / "config.toml"
+        config.write_text(
+            '[[skills.config]]\nname = "play"\nenabled = false\n',
+            encoding="utf-8",
+        )
+        play = self.home / ".codex" / "skills" / "play"
+        play.mkdir(parents=True)
+        (play / "SKILL.md").write_text("play\n", encoding="utf-8")
+        targets = {"codex": {"skill_roots": [str(play.parent)]}}
+
+        manifest_path = backup_play_state(
+            ["codex"], targets, run_id="full-overwrite"
+        )
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual("play.install-backup/v1", manifest["schema"])
+        backed_up = {entry["path"] for entry in manifest["entries"]}
+        self.assertIn(str(hooks), backed_up)
+        self.assertIn(str(config), backed_up)
+        self.assertIn(str(play), backed_up)
+        self.assertEqual(0o700, manifest_path.parent.stat().st_mode & 0o777)
+        self.assertEqual(0o600, manifest_path.stat().st_mode & 0o777)
+
+    def test_codex_play_override_removal_preserves_unrelated_toml(self) -> None:
+        config = self.home / ".codex" / "config.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(
+            'model = "gpt-5"\n\n'
+            '[[skills.config]]\npath = "/tmp/play/skills/play/SKILL.md"\n'
+            "enabled = false\n\n"
+            '[[skills.config]]\nname = "other"\nenabled = false\n\n'
+            '[features]\napps = true\n',
+            encoding="utf-8",
+        )
+
+        step = codex_play_enablement_step()
+
+        updated = config.read_text(encoding="utf-8")
+        self.assertEqual("completed", step.status)
+        self.assertNotIn("/tmp/play/skills/play/SKILL.md", updated)
+        self.assertIn('model = "gpt-5"', updated)
+        self.assertIn('name = "other"', updated)
+        self.assertIn("[features]\napps = true", updated)
 
     def test_python_310_fallback_reads_only_skills_config_tables(self) -> None:
         entries = _fallback_skill_config_entries(
@@ -592,8 +660,8 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("Status: READY — SIGN IN TO CONTINUE", rendered)
         self.assertIn("Codex          READY", rendered)
         self.assertIn("Sign in to start", rendered)
-        self.assertIn("rote login --provider google", rendered)
-        self.assertIn("rote login --provider github", rendered)
+        self.assertIn("offer Google or GitHub", rendered)
+        self.assertNotIn("rote login --provider", rendered)
         self.assertNotIn("INCOMPLETE", rendered)
 
     def test_status_card_keeps_structured_command_output_in_report(self) -> None:
@@ -717,7 +785,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.7 is installed and enabled.",
+                "Play 0.4.8 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -774,7 +842,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.7", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.8", _converge_marketplace.call_args.kwargs["expected_version"]
         )
 
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)

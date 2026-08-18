@@ -23,6 +23,7 @@ from typing import Any, Callable, Sequence
 SCHEMA = "play.bootstrap/v1"
 PLAN_SCHEMA = "play.bootstrap-plan/v1"
 REPORT_SCHEMA = "play.bootstrap-report/v1"
+BACKUP_SCHEMA = "play.install-backup/v1"
 SUPPORTED_HARNESSES = (
     "codex",
     "claude",
@@ -650,7 +651,7 @@ def build_plan(
         },
         {
             "id": "converge_play_marketplaces",
-            "effect": "keeps current Play plugins and refreshes/reinstalls stale Codex or Claude integrations in parallel",
+            "effect": "reinstalls the selected Play version in Codex and Claude after backing up current Play state",
             "targets": [name for name in selected if name in {"codex", "claude"}],
             "commands": {
                 "codex": [
@@ -667,8 +668,14 @@ def build_plan(
             "recommended": True,
         },
         {
+            "id": "backup_play_state",
+            "effect": "backs up every detected Play-owned skill, hook, launcher, profile, portable copy, and plugin state before overwrite",
+            "targets": selected,
+            "recommended": True,
+        },
+        {
             "id": "install_play",
-            "effect": "copies Play and activates it in selected harness roots",
+            "effect": "fully overwrites Play-owned state with the selected version while preserving unrelated harness settings",
             "targets": selected,
         },
         {
@@ -699,6 +706,162 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temporary.chmod(0o600)
     os.replace(temporary, path)
+
+
+def _activation_profile_state_path() -> Path:
+    override = os.environ.get("PLAY_PROFILE_STATE")
+    if override:
+        return Path(override).expanduser().resolve()
+    state_home = Path(
+        os.environ.get("XDG_STATE_HOME", _home() / ".local" / "state")
+    ).expanduser()
+    return state_home / "play-skill" / "activation-profile.json"
+
+
+def _portable_play_path() -> Path:
+    override = os.environ.get("PLAY_INSTALL_HOME")
+    if override:
+        return Path(override).expanduser().resolve() / "skill"
+    data_home = Path(
+        os.environ.get("XDG_DATA_HOME", _home() / ".local" / "share")
+    ).expanduser()
+    return data_home / "modiqo" / "play" / "skill"
+
+
+def _play_state_candidates(
+    selected: Sequence[str], plan_targets: dict[str, dict[str, Any]]
+) -> list[Path]:
+    """Enumerate Play-owned harness state before an overwrite begins."""
+
+    home = _home()
+    state_path = _activation_profile_state_path()
+    candidates = [
+        state_path,
+        state_path.parent / "profile-backups",
+        _portable_play_path(),
+        Path(
+            os.environ.get(
+                "PLAY_MACHINE_LAUNCHER", home / ".local" / "bin" / "play-machine"
+            )
+        ).expanduser(),
+        Path(
+            os.environ.get(
+                "PLAY_ROUTING_LAUNCHER", home / ".local" / "bin" / "play-routing"
+            )
+        ).expanduser(),
+    ]
+    hooks = _hook_paths()
+    for harness in selected:
+        target = plan_targets.get(harness, {})
+        roots = target.get("skill_roots", []) if isinstance(target, dict) else []
+        if isinstance(roots, list):
+            candidates.extend(Path(str(root)).expanduser() / "play" for root in roots)
+        hook = hooks.get(harness)
+        if hook is not None:
+            candidates.append(hook)
+            if hook.parent.is_dir():
+                candidates.extend(hook.parent.glob(f"{hook.name}*play*"))
+
+    if "codex" in selected:
+        codex = Path(os.environ.get("CODEX_HOME", home / ".codex")).expanduser()
+        candidates.extend(
+            [
+                codex / "config.toml",
+                codex / "plugins" / "cache" / PLAY_MARKETPLACE,
+                codex / ".tmp" / "marketplaces" / PLAY_MARKETPLACE,
+            ]
+        )
+    if "claude" in selected:
+        claude = Path(
+            os.environ.get("CLAUDE_CONFIG_DIR", home / ".claude")
+        ).expanduser()
+        candidates.extend(
+            [
+                claude / "plugins" / "cache" / PLAY_MARKETPLACE,
+                claude / "plugins" / "marketplaces" / PLAY_MARKETPLACE,
+                claude / "plugins" / "data" / "play-play-skills",
+                claude / "plugins" / "installed_plugins.json",
+                claude / "plugins" / "known_marketplaces.json",
+            ]
+        )
+    if "opencode" in selected:
+        opencode = Path(
+            os.environ.get("OPENCODE_CONFIG_DIR", home / ".config" / "opencode")
+        ).expanduser()
+        candidates.append(opencode / "commands" / "play.md")
+
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        absolute = candidate.absolute()
+        key = str(absolute)
+        if key not in seen:
+            seen.add(key)
+            unique.append(absolute)
+    return unique
+
+
+def backup_play_state(
+    selected: Sequence[str],
+    plan_targets: dict[str, dict[str, Any]],
+    *,
+    run_id: str,
+) -> Path:
+    """Create an owner-private, restorable snapshot before Play convergence."""
+
+    root = _report_root() / "backups" / run_id
+    if root.exists() or root.is_symlink():
+        raise BootstrapError(f"refusing to replace existing Play backup: {root}")
+    entries_root = root / "entries"
+    entries_root.mkdir(parents=True, mode=0o700)
+    root.chmod(0o700)
+    entries: list[dict[str, Any]] = []
+    try:
+        for index, source in enumerate(_play_state_candidates(selected, plan_targets)):
+            if not source.exists() and not source.is_symlink():
+                continue
+            relative = Path("entries") / f"{index:03d}-{source.name}"
+            destination = root / relative
+            if source.is_symlink():
+                entries.append(
+                    {
+                        "path": str(source),
+                        "kind": "symlink",
+                        "target": os.readlink(source),
+                        "backup": None,
+                    }
+                )
+                continue
+            if source.is_dir():
+                shutil.copytree(source, destination, symlinks=True)
+                kind = "directory"
+            elif source.is_file():
+                shutil.copy2(source, destination, follow_symlinks=False)
+                kind = "file"
+            else:
+                raise BootstrapError(f"unsupported Play state path: {source}")
+            entries.append(
+                {
+                    "path": str(source),
+                    "kind": kind,
+                    "backup": str(relative),
+                }
+            )
+        manifest = root / "manifest.json"
+        _atomic_json(
+            manifest,
+            {
+                "schema": BACKUP_SCHEMA,
+                "run_id": run_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "selected_harnesses": list(selected),
+                "entries": entries,
+            },
+        )
+        return manifest
+    except Exception:
+        shutil.rmtree(root, ignore_errors=True)
+        raise
 
 
 def _hook_paths() -> dict[str, Path]:
@@ -779,15 +942,6 @@ def _play_plugin_record(
     if harness == "claude" and scope is not None:
         return next((record for record in matches if record.get("scope") == scope), None)
     return matches[0] if matches else None
-
-
-def _play_plugin_is_current(record: dict[str, Any] | None, expected_version: str) -> bool:
-    return bool(
-        record
-        and record.get("version") == expected_version
-        and record.get("enabled") is not False
-        and not record.get("errors")
-    )
 
 
 def _marketplace_list_command(harness: str, executable: str) -> list[str]:
@@ -879,18 +1033,9 @@ def converge_play_marketplace(
                 target=harness,
             )
         )
-        if _play_plugin_is_current(existing, expected_version):
-            steps.append(
-                Step(
-                    "verify_play_plugin",
-                    "unchanged",
-                    f"Play {expected_version} is already installed, enabled, and healthy.",
-                    command=plugin_list,
-                    target=harness,
-                    evidence=json.dumps(existing, sort_keys=True),
-                )
-            )
-            return steps
+        # Even a current healthy plugin is reinstalled. The approved install is
+        # a full convergence boundary, and the pre-overwrite backup makes that
+        # replacement recoverable.
 
     if PLAY_MARKETPLACE in marketplaces:
         refresh_command = [
@@ -1132,19 +1277,73 @@ def codex_disabled_play_entries() -> list[str]:
     ]
 
 
+def _strip_codex_play_skill_blocks(text: str) -> tuple[str, int]:
+    """Remove explicit Play skill overrides while preserving unrelated TOML."""
+
+    header = re.compile(r"(?m)^\[\[skills\.config\]\]\s*(?:\r?\n|$)")
+    matches = list(header.finditer(text))
+    table_headers = list(re.finditer(r"(?m)^\[", text))
+    if not matches:
+        return text, 0
+    pieces: list[str] = []
+    cursor = 0
+    removed = 0
+    for match in matches:
+        start = match.start()
+        end = next(
+            (candidate.start() for candidate in table_headers if candidate.start() > start),
+            len(text),
+        )
+        block = text[start:end]
+        entries = _fallback_skill_config_entries(block)
+        if len(entries) == 1 and _is_play_skill_config(entries[0]):
+            pieces.append(text[cursor:start])
+            cursor = end
+            removed += 1
+    pieces.append(text[cursor:])
+    updated = "".join(pieces)
+    updated = re.sub(r"\n{3,}", "\n\n", updated)
+    return updated, removed
+
+
 def codex_play_enablement_step() -> Step:
-    disabled_entries = codex_disabled_play_entries()
-    if disabled_entries:
+    codex_home = Path(os.environ.get("CODEX_HOME", _home() / ".codex")).expanduser()
+    path = codex_home / "config.toml"
+    if not path.is_file():
         return Step(
             "enable_play_skill",
-            "human_action_required",
-            "Codex has an explicit disabled Play skill override. Open /skills, enable Play, then restart Codex.",
+            "unchanged",
+            "No explicit Codex Play skill override was found.",
             target="codex",
-            evidence=json.dumps(disabled_entries),
+        )
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise BootstrapError(f"cannot safely read Codex configuration {path}: {error}") from error
+    # Parse first so malformed TOML still fails closed before an overwrite.
+    _codex_skill_config_entries(text, path)
+    updated, removed = _strip_codex_play_skill_blocks(text)
+    if removed:
+        mode = path.stat().st_mode & 0o777
+        temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        try:
+            temporary.write_text(updated, encoding="utf-8")
+            temporary.chmod(mode)
+            os.replace(temporary, path)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+        return Step(
+            "enable_play_skill",
+            "completed",
+            f"Removed {removed} explicit Codex Play skill override(s); the reinstalled plugin now owns enablement.",
+            target="codex",
+            changed=True,
+            evidence=str(path),
         )
     return Step(
         "enable_play_skill",
-        "completed",
+        "unchanged",
         "No explicit disabled Play skill override was found in Codex.",
         target="codex",
     )
@@ -1382,10 +1581,8 @@ def _render_status_card(report: dict[str, Any]) -> str:
             [
                 "",
                 "  Sign in to start",
-                "    Your Play library follows your Rote identity. Sign in or create an account:",
-                "    - Google: rote login --provider google",
-                "    - GitHub: rote login --provider github",
-                "    Complete the browser step, then ask Play what’s new.",
+                "    Open a selected harness and invoke Play. It will detect the missing",
+                "    identity, offer Google or GitHub, and resume after browser sign-in.",
             ]
         )
     if action_steps:
@@ -1558,7 +1755,7 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
             "  What happens next",
             "",
             f"    1. Prepare Rote and its skills for {app_count} {app_word}",
-            "    2. Activate Play without replacing unrelated settings",
+            "    2. Back up and replace Play-owned harness state while preserving unrelated settings",
             "    3. Verify every app and save a detailed receipt",
             "",
             "  Credentials stay on this machine. Plays disclose writes before they run.",
@@ -1746,6 +1943,31 @@ def apply(
         for target in plan["targets"]
         if isinstance(target, dict) and isinstance(target.get("id"), str)
     }
+    try:
+        backup_manifest = active_progress.call(
+            "Backing up existing Play state",
+            lambda: backup_play_state(selected, plan_targets, run_id=run_id),
+        )
+    except Exception as error:
+        steps.append(
+            Step(
+                "backup_play_state",
+                "failed",
+                str(error),
+            )
+        )
+        return _finish_report(
+            plan, run_id, started, steps, status="blocked", runner=runner
+        )
+    steps.append(
+        Step(
+            "backup_play_state",
+            "completed",
+            f"Backed up detected Play-owned state before overwrite: {backup_manifest}",
+            changed=True,
+            evidence=str(backup_manifest),
+        )
+    )
     for harness in selected:
         target = plan_targets.get(harness, {})
         executable = target.get("command") if isinstance(target, dict) else None
@@ -1802,7 +2024,13 @@ def apply(
         steps.append(codex_play_enablement_step())
 
     installer = source / "scripts" / "harness" / "install-all"
-    install_command = [str(installer), "install", "--copy"]
+    install_command = [
+        str(installer),
+        "install",
+        "--copy",
+        "--prepared-backup",
+        str(backup_manifest),
+    ]
     for harness in selected:
         install_command.extend(["--harness", harness])
     install_result = active_progress.command(
