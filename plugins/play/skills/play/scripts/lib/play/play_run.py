@@ -6,15 +6,19 @@ import argparse
 import hashlib
 import json
 import os
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from .commands import CommandError, run_json
 from .private_store import ensure_private_directory
 from .state_home import state_path
 
@@ -114,40 +118,85 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
             if auth_failure is None:
                 return _failed(failure_output or f"rote play run exited {completed.returncode}")
 
-            # A static credential cannot be minted by adapter.auth.ensure. The
-            # harness must guide the user to the vendor's first-party token
-            # page and an out-of-band `rote token set ... --stdin` handoff.
-            # Browser-capable auth remains owned by a declared auth.ensure
-            # step; older Plays use the compatibility specialist path.
-            if auth_failure["classified_rung"] == "static" or not play_owns_authentication:
-                return _authentication_required(auth_failure, failure_output)
-
-            # The approved Play run already disclosed authentication. Give the
-            # exact same Rote command a terminal-backed stdin so its declared
-            # adapter.auth.ensure step owns browser authorization. Play
-            # never shells out to OAuth itself and never delegates credentials
-            # to an authentication specialist.
             try:
-                completed, stdout_path, stderr_path = _invoke(
-                    arguments,
+                credential_before = _credential_snapshot(
+                    executable,
+                    auth_failure["adapter_id"],
+                    auth_failure["env_var"],
                     environment,
-                    Path(directory),
-                    suffix="authenticated",
-                    terminal_stdin=True,
                 )
-            except (OSError, subprocess.TimeoutExpired) as error:
-                return _failed(str(error))
-            stdout_value = _completed_bytes(completed.stdout, stdout_path)
-            stderr_value = _completed_bytes(completed.stderr, stderr_path)
-            if completed.returncode != 0:
-                failure_output = _combined_output(
-                    _bounded_edge_text(stdout_value, stdout_path, 10_000),
-                    _bounded_edge_text(stderr_value, stderr_path, 10_000),
-                )
+            except CommandError as error:
                 return _failed(
-                    failure_output
-                    or f"rote play run exited {completed.returncode} after Play authentication"
+                    "Play could not verify the adapter credential contract before "
+                    f"authentication: {error}"
                 )
+            contract_error = _credential_contract_error(
+                credential_before,
+                auth_failure["adapter_id"],
+                auth_failure["env_var"],
+            )
+            if contract_error is not None:
+                return _failed(contract_error)
+
+            # A static credential cannot be minted by adapter.auth.ensure. If
+            # the exact manifest key is already healthy, the out-of-band token
+            # handoff has completed and Play can retry the approved run once.
+            # Otherwise the harness guides the user to the vendor's token page
+            # and `rote token set ... --stdin`. Legacy Plays without an
+            # auth.ensure declaration retain their compatibility specialist.
+            if auth_failure["classified_rung"] == "static":
+                if not credential_before.usable:
+                    return _authentication_required(auth_failure, failure_output)
+                try:
+                    completed, stdout_path, stderr_path = _invoke(
+                        arguments,
+                        environment,
+                        Path(directory),
+                        suffix="credential-confirmed",
+                        terminal_stdin=False,
+                    )
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    return _failed(str(error))
+                stdout_value = _completed_bytes(completed.stdout, stdout_path)
+                stderr_value = _completed_bytes(completed.stderr, stderr_path)
+                if completed.returncode != 0:
+                    failure_output = _combined_output(
+                        _bounded_edge_text(stdout_value, stdout_path, 10_000),
+                        _bounded_edge_text(stderr_value, stderr_path, 10_000),
+                    )
+                    return _failed(
+                        failure_output
+                        or "rote play run failed after the exact static credential "
+                        "was confirmed healthy"
+                    )
+            elif not play_owns_authentication:
+                return _authentication_required(auth_failure, failure_output)
+            else:
+                # The approved Play run already disclosed authentication. Give
+                # the exact same Rote command a terminal-backed stdin so its
+                # declared adapter.auth.ensure step owns browser authorization.
+                # Play never shells out to OAuth itself or handles a secret.
+                try:
+                    completed, stdout_path, stderr_path = _invoke_authenticated(
+                        arguments,
+                        environment,
+                        Path(directory),
+                        auth_failure,
+                        credential_before,
+                    )
+                except (CommandError, OSError, subprocess.TimeoutExpired) as error:
+                    return _failed(str(error))
+                stdout_value = _completed_bytes(completed.stdout, stdout_path)
+                stderr_value = _completed_bytes(completed.stderr, stderr_path)
+                if completed.returncode != 0:
+                    failure_output = _combined_output(
+                        _bounded_edge_text(stdout_value, stdout_path, 10_000),
+                        _bounded_edge_text(stderr_value, stderr_path, 10_000),
+                    )
+                    return _failed(
+                        failure_output
+                        or f"rote play run exited {completed.returncode} after Play authentication"
+                    )
 
         primary_value, primary_path = (
             (stdout_value, stdout_path)
@@ -232,6 +281,314 @@ def _invoke(
         if master_fd is not None:
             os.close(master_fd)
     return completed, stdout_path, stderr_path
+
+
+@dataclass(frozen=True)
+class _CredentialSnapshot:
+    """Non-secret evidence for one adapter's declared credential."""
+
+    adapter_id: str
+    expected_env: str
+    declared_env: str | None
+    token_present: bool
+    token_unreadable: bool
+    healthy: bool
+    health_state: str | None
+    signature: str
+
+    @property
+    def usable(self) -> bool:
+        return (
+            self.declared_env == self.expected_env
+            and self.token_present
+            and not self.token_unreadable
+            and self.healthy
+        )
+
+
+def _credential_snapshot(
+    executable: str,
+    adapter_id: str,
+    expected_env: str,
+    environment: Mapping[str, str],
+) -> _CredentialSnapshot:
+    """Compare the adapter manifest key with Rote's token metadata.
+
+    Neither command exposes the credential value. The adapter health response
+    supplies the manifest-declared ``token_env``; the token inventory confirms
+    that the same named credential exists and is readable.
+    """
+
+    adapters_value = run_json(
+        [executable, "adapter", "list", adapter_id, "--json", "--health"],
+        error_type=CommandError,
+        environment=dict(environment),
+        timeout_seconds=10,
+    )
+    tokens_value = run_json(
+        [executable, "token", "list", "--json"],
+        error_type=CommandError,
+        environment=dict(environment),
+        timeout_seconds=10,
+    )
+    adapter = _matching_adapter(adapters_value, adapter_id)
+    health = adapter.get("health")
+    if not isinstance(health, Mapping):
+        raise CommandError(f"adapter {adapter_id} health metadata is missing")
+    declared_env_value = health.get("token_env")
+    declared_env = (
+        declared_env_value.strip()
+        if isinstance(declared_env_value, str) and declared_env_value.strip()
+        else None
+    )
+    token = _matching_token(tokens_value, expected_env)
+    token_present = token is not None
+    token_unreadable = token.get("unreadable") is True if token is not None else False
+    healthy = health.get("healthy") is True
+    health_state_value = health.get("state")
+    health_state = (
+        health_state_value.strip()
+        if isinstance(health_state_value, str) and health_state_value.strip()
+        else None
+    )
+    # Hash only metadata that cannot contain a secret. A changed signature is
+    # evidence that browser authorization produced or rotated this exact key.
+    token_evidence = (
+        {
+            key: token.get(key)
+            for key in (
+                "name",
+                "type",
+                "created",
+                "expires_in",
+                "refresh",
+                "refresh_state",
+                "is_dcr",
+                "unreadable",
+            )
+        }
+        if token is not None
+        else None
+    )
+    evidence = {
+        "adapter_id": adapter_id,
+        "declared_env": declared_env,
+        "expected_env": expected_env,
+        "health": {"healthy": healthy, "state": health_state},
+        "token": token_evidence,
+    }
+    signature = hashlib.sha256(
+        json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return _CredentialSnapshot(
+        adapter_id=adapter_id,
+        expected_env=expected_env,
+        declared_env=declared_env,
+        token_present=token_present,
+        token_unreadable=token_unreadable,
+        healthy=healthy,
+        health_state=health_state,
+        signature=signature,
+    )
+
+
+def _matching_adapter(value: object, adapter_id: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise CommandError("adapter health response must be an object")
+    adapters = value.get("adapters")
+    if not isinstance(adapters, list):
+        raise CommandError("adapter health response lacks adapters")
+    matches = [
+        item
+        for item in adapters
+        if isinstance(item, Mapping) and item.get("id") == adapter_id
+    ]
+    if len(matches) != 1:
+        raise CommandError(f"adapter health did not identify exactly one {adapter_id}")
+    return matches[0]
+
+
+def _matching_token(value: object, expected_env: str) -> Mapping[str, Any] | None:
+    tokens: object = value
+    if isinstance(value, Mapping):
+        tokens = value.get("tokens")
+    if not isinstance(tokens, list):
+        raise CommandError("token inventory response must be an array")
+    matches = [
+        item
+        for item in tokens
+        if isinstance(item, Mapping) and item.get("name") == expected_env
+    ]
+    if len(matches) > 1:
+        raise CommandError(f"token inventory contains duplicate {expected_env} entries")
+    return matches[0] if matches else None
+
+
+def _credential_contract_error(
+    snapshot: _CredentialSnapshot, adapter_id: str, expected_env: str
+) -> str | None:
+    if snapshot.declared_env is None:
+        return (
+            f"Play authentication contract mismatch: adapter {adapter_id} does not "
+            f"declare a credential key, but the Play run requested {expected_env}."
+        )
+    if snapshot.declared_env != expected_env:
+        return (
+            f"Play authentication contract mismatch: adapter {adapter_id} declares "
+            f"{snapshot.declared_env}, but the Play run requested {expected_env}."
+        )
+    return None
+
+
+def _credential_completed(
+    before: _CredentialSnapshot, after: _CredentialSnapshot
+) -> bool:
+    return after.usable and (
+        not before.usable or before.signature != after.signature
+    )
+
+
+def _invoke_authenticated(
+    arguments: Sequence[str],
+    environment: Mapping[str, str],
+    directory: Path,
+    authentication: Mapping[str, str],
+    before: _CredentialSnapshot,
+) -> tuple[subprocess.CompletedProcess[Any], Path, Path]:
+    """Run browser authentication while observing its exact credential key.
+
+    Rote remains the sole owner of adapter.auth.ensure and the browser flow.
+    Play only observes non-secret adapter/token metadata. Once the declared key
+    becomes healthy, Play closes the interactive authorization process and
+    retries the exact approved command once with the verified credential. This
+    avoids depending on provider-specific post-browser terminal prompts.
+    """
+
+    import pty
+
+    stdout_path = directory / "stdout-authenticated"
+    stderr_path = directory / "stderr-authenticated"
+    master_fd, slave_fd = pty.openpty()
+    process: subprocess.Popen[Any] | None = None
+    timeout_seconds = _positive_duration(environment, "PLAY_AUTH_TIMEOUT_SECONDS", 900.0)
+    poll_seconds = _positive_duration(environment, "PLAY_AUTH_POLL_SECONDS", 0.5)
+    deadline = time.monotonic() + timeout_seconds
+    next_probe = 0.0
+    try:
+        with stdout_path.open("wb") as stdout_handle, stderr_path.open("wb") as stderr_handle:
+            process = subprocess.Popen(
+                list(arguments),
+                stdin=slave_fd,
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                env=dict(environment),
+                start_new_session=True,
+            )
+            os.close(slave_fd)
+            slave_fd = -1
+            while process.poll() is None:
+                now = time.monotonic()
+                if now >= deadline:
+                    _stop_process_group(process)
+                    raise subprocess.TimeoutExpired(list(arguments), timeout_seconds)
+                if now >= next_probe:
+                    after = _credential_snapshot(
+                        arguments[0],
+                        authentication["adapter_id"],
+                        authentication["env_var"],
+                        environment,
+                    )
+                    contract_error = _credential_contract_error(
+                        after,
+                        authentication["adapter_id"],
+                        authentication["env_var"],
+                    )
+                    if contract_error is not None:
+                        _stop_process_group(process)
+                        raise CommandError(contract_error)
+                    if _credential_completed(before, after):
+                        _stop_process_group(process)
+                        return _invoke(
+                            arguments,
+                            environment,
+                            directory,
+                            suffix="authenticated-resume",
+                            terminal_stdin=False,
+                        )
+                    next_probe = now + poll_seconds
+                time.sleep(min(poll_seconds, 0.1))
+            returncode = process.wait()
+            after = _credential_snapshot(
+                arguments[0],
+                authentication["adapter_id"],
+                authentication["env_var"],
+                environment,
+            )
+            contract_error = _credential_contract_error(
+                after,
+                authentication["adapter_id"],
+                authentication["env_var"],
+            )
+            if contract_error is not None:
+                raise CommandError(contract_error)
+            if _credential_completed(before, after) and returncode != 0:
+                return _invoke(
+                    arguments,
+                    environment,
+                    directory,
+                    suffix="authenticated-resume",
+                    terminal_stdin=False,
+                )
+            if returncode == 0 and not _credential_completed(before, after):
+                raise CommandError(
+                    "Play run exited after browser authentication, but the exact "
+                    f"credential {authentication['env_var']} was not confirmed healthy."
+                )
+            return subprocess.CompletedProcess(list(arguments), returncode), stdout_path, stderr_path
+    finally:
+        if process is not None and process.poll() is None:
+            _stop_process_group(process)
+        if slave_fd >= 0:
+            os.close(slave_fd)
+        os.close(master_fd)
+
+
+def _positive_duration(
+    environment: Mapping[str, str], name: str, default: float
+) -> float:
+    raw = environment.get(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise CommandError(f"{name} must be a number") from error
+    if value <= 0:
+        raise CommandError(f"{name} must be greater than zero")
+    return value
+
+
+def _stop_process_group(process: subprocess.Popen[Any]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        process.terminate()
+    try:
+        process.wait(timeout=2)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        process.kill()
+    process.wait(timeout=2)
 
 
 def _completed_bytes(value: object, path: Path) -> bytes | None:
