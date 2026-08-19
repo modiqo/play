@@ -310,6 +310,7 @@ def start_capture(
     reason: str,
     path: Path | None = None,
     workspace_initializer: Any | None = None,
+    journey_launcher: Any | None = None,
 ) -> dict[str, Any]:
     """Create an owner-private capture and its Rote workspace before work starts."""
 
@@ -341,6 +342,15 @@ def start_capture(
     captures = _load_captures(target)
     captures.append(capture)
     _write_sidekick_store(target, hooks=_load_hooks(target), captures=captures)
+    if workspace_initializer is None or journey_launcher is not None:
+        try:
+            from .journey import record_capture_started, schedule_worker
+
+            record_capture_started(capture)
+            launcher = journey_launcher or schedule_worker
+            launcher(capture, standby_path=target)
+        except Exception:  # noqa: BLE001 - Journey may never block capture creation
+            pass
     return capture
 
 

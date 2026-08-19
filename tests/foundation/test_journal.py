@@ -139,10 +139,11 @@ class ExplorationJournalTest(unittest.TestCase):
         "scripts.lib.play.journal.read_workspace_stats",
         return_value={"commands": 4},
     )
-    def test_expensive_trace_is_skipped_until_the_interval_is_due(
-        self, _stats, trace
+    def test_default_foreground_path_never_invokes_rote_analytics(
+        self, stats, trace
     ) -> None:
         self.assertIsNone(claim_exploration_pulse(path=self.store))
+        stats.assert_not_called()
         trace.assert_not_called()
 
     def test_second_pulse_is_time_throttled_even_when_more_steps_arrive(self) -> None:

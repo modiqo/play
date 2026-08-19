@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from .journal_settings import journal_enabled, positive_setting
+from .journey import SCHEMA as JOURNEY_SCHEMA
+from .journey import claim_snapshot, render_snapshot
 from .private_store import atomic_write_json, load_json
 from .private_store import locked_store
 from .render import json_text
@@ -347,6 +349,9 @@ def _project(
 def render_pulse(pulse: Mapping[str, Any]) -> str:
     """Render a compact human journal without exposing capture handles or paths."""
 
+    if pulse.get("schema") == JOURNEY_SCHEMA:
+        return render_snapshot(pulse)
+
     successes = int(pulse.get("new_successes") or 0)
     responses = int(pulse.get("new_responses") or 0)
     errors = int(pulse.get("new_errors") or 0)
@@ -428,25 +433,15 @@ def claim_exploration_pulse(
         return None
     if not journal_enabled("exploration"):
         return None
+    if reader is None:
+        return claim_snapshot(
+            capture,
+            force=force,
+            min_interval_seconds=_min_interval_seconds(),
+        )
     if not force and _pulse_throttled(_state(capture)):
         return None
-    if reader is None:
-        stats = read_workspace_stats(capture)
-        if stats is None:
-            return None
-        commands = stats.get("commands")
-        state = _state(capture)
-        if (
-            not isinstance(commands, int)
-            or commands <= state["last_sequence"]
-            or (not force and commands - state["last_sequence"] < _interval())
-            or (not force and _pulse_throttled(state))
-        ):
-            return None
-        trace = read_workspace_trace(capture)
-        analytics = {"stats": stats, "trace": trace} if trace is not None else None
-    else:
-        analytics = reader(capture)
+    analytics = reader(capture)
     if analytics is None:
         return None
     pulse = _project(capture, analytics, interval=_interval(), force=force)

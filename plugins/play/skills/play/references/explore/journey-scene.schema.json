@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://play.modiqo.ai/schemas/journey-scene.schema.json",
+  "title": "Deterministic Play Journey isometric scene",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "graph_generation",
+    "material_generation",
+    "journey_key",
+    "state",
+    "intent",
+    "projection",
+    "bounds",
+    "districts",
+    "nodes",
+    "edges",
+    "current_node",
+    "telemetry",
+    "updated_at",
+    "scene_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "play.journey-scene/v1"},
+    "graph_generation": {"type": "integer", "minimum": 1},
+    "material_generation": {"type": "integer", "minimum": 0},
+    "journey_key": {"type": "string", "pattern": "^journey-[a-f0-9]{24}$"},
+    "state": {"type": "string", "minLength": 1, "maxLength": 32},
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "source"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1, "maxLength": 400},
+        "source": {"const": "play_capture"}
+      }
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "tile_width", "tile_height", "height_unit"],
+      "properties": {
+        "kind": {"const": "2:1-dimetric"},
+        "tile_width": {"const": 48},
+        "tile_height": {"const": 24},
+        "height_unit": {"const": 14}
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_gx", "min_gy", "max_gx", "max_gy"],
+      "properties": {
+        "min_gx": {"type": "number"},
+        "min_gy": {"type": "number"},
+        "max_gx": {"type": "number"},
+        "max_gy": {"type": "number"}
+      }
+    },
+    "districts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "lane", "node_ids"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 40},
+          "label": {"type": "string", "minLength": 1, "maxLength": 80},
+          "lane": {"type": "integer", "minimum": 0},
+          "node_ids": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1, "maxLength": 80}
+          }
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/node"}
+    },
+    "edges": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/edge"}
+    },
+    "current_node": {"type": "string", "minLength": 1, "maxLength": 80},
+    "telemetry": {"$ref": "#/$defs/graphTelemetry"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "scene_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+  },
+  "$defs": {
+    "graphTelemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commands", "window_commands", "responses", "duration_ms", "payload_tokens", "tokens_saved"],
+      "properties": {
+        "commands": {"type": "integer", "minimum": 0},
+        "window_commands": {"type": "integer", "minimum": 0},
+        "responses": {"type": "integer", "minimum": 0},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "payload_tokens": {"type": "integer", "minimum": 0},
+        "tokens_saved": {"type": "integer", "minimum": 0}
+      }
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gx", "gy", "z"],
+      "properties": {
+        "gx": {"type": "number"},
+        "gy": {"type": "number"},
+        "z": {"type": "number"}
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duration_ms", "payload_tokens", "tokens_saved"],
+      "properties": {
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "payload_tokens": {"type": "integer", "minimum": 0},
+        "tokens_saved": {"type": "integer", "minimum": 0}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["play_events", "rote_commands", "rote_responses", "receipt_refs", "artifact_refs"],
+      "properties": {
+        "play_events": {"type": "array", "items": {"type": "string"}},
+        "rote_commands": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+        "rote_responses": {"type": "array", "items": {"type": "string", "pattern": "^@[1-9][0-9]*$"}},
+        "receipt_refs": {"type": "array", "items": {"type": "string"}},
+        "artifact_refs": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "order", "code", "kind", "label", "status", "provider", "effect", "lane",
+        "position", "footprint", "height", "activity_count", "telemetry", "evidence"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 80},
+        "order": {"type": "integer", "minimum": 0},
+        "code": {"type": "string", "minLength": 2, "maxLength": 3},
+        "kind": {
+          "enum": [
+            "intent", "phase", "capability", "decision", "authority", "effect", "evidence",
+            "artifact", "blocker", "recovery", "milestone", "learning", "play_candidate", "play"
+          ]
+        },
+        "label": {"type": "string", "minLength": 1, "maxLength": 120},
+        "status": {
+          "enum": ["planned", "active", "waiting", "blocked", "satisfied", "failed", "skipped", "superseded", "verified"]
+        },
+        "provider": {"type": ["string", "null"]},
+        "effect": {"type": ["string", "null"]},
+        "lane": {"type": "string", "minLength": 1, "maxLength": 40},
+        "position": {"$ref": "#/$defs/point"},
+        "footprint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["w", "d"],
+          "properties": {
+            "w": {"type": "number", "exclusiveMinimum": 0},
+            "d": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "height": {"type": "integer", "minimum": 1, "maximum": 6},
+        "activity_count": {"type": "integer", "minimum": 0},
+        "telemetry": {"$ref": "#/$defs/telemetry"},
+        "evidence": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "target", "kind", "route", "active"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^scene_[a-f0-9]{20}$"},
+        "source": {"type": "string", "minLength": 1, "maxLength": 80},
+        "target": {"type": "string", "minLength": 1, "maxLength": 80},
+        "kind": {
+          "enum": [
+            "decomposes_into", "requires", "selects", "authorizes", "executes", "produces",
+            "verifies", "blocked_by", "recovers", "derived_from", "refines", "crystallizes_into"
+          ]
+        },
+        "route": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/point"}},
+        "active": {"type": "boolean"}
+      }
+    }
+  }
+}

@@ -15,6 +15,7 @@ are worth turning into shared know-how.
 | Run a specific Play | `$play https://play.modiqo.ai/<owner>/<name>` | Search is skipped; inspection and approval are not |
 | Browse what is available | `$play what's new` | A fast catalog digest and a random sample of up to 10 current public Plays |
 | Recall today's Play journeys | `$play journal` | A private daily command log of matches, selections, approved runs, completions, and blockers |
+| Watch an exploration form | `$play journey live` | Opens the complete active semantic graph as a read-only live isometric map |
 | Bypass Play and Rote once | `direct: <request>` | The whole turn uses harness-native tools or the vendor CLI/API directly |
 | Keep a provider direct here | `Route GitHub directly through gh in this project` | A narrow `.play/routing.yaml` rule is created or updated |
 | Create a reusable procedure | `$play create a reusable <outcome>` | Play searches first, then captures new work only when it may be reusable |
@@ -288,6 +289,19 @@ Use `direct: <task>` for a one-turn side-step without closing the capture, then 
 `continue exploration` to return. Direct work stays outside the saved trajectory until Play
 revalidates any state it changed.
 
+Open the live cartography at any point while the capture is active:
+
+```text
+You:   $play journey live
+Play:  opens a private localhost map and returns immediately
+Map:   follows intent → capability → authority → effect → evidence → reusable Play
+```
+
+The map loads the complete semantic graph, not the bounded chat pulse. Failures and abandoned
+routes stay visible, recovery paths remain connected, and selecting a site shows its exact latency,
+token accounting, status, and opaque evidence references. The viewer is read-only and cannot run,
+approve, authenticate, or publish anything.
+
 ```text
 $play create a reusable <outcome>
 $play settle <capture-handle> <what was verified>
@@ -326,6 +340,7 @@ $play run hello                            # Low-risk first run
 $play what's new                          # Fast cached catalog digest
 $play journal                             # Today's deterministic recall command log
 $play journal yesterday                   # A previous local day
+$play journey live                        # Live read-only isometric exploration map
 $play find a Play that <does something>   # Search by outcome
 $play https://play.modiqo.ai/<owner>/<name>
 $play create a reusable <outcome>          # Search first, then capture if warranted

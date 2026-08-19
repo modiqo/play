@@ -49,7 +49,12 @@ def source_files() -> Iterable[tuple[Path, Path]]:
             if (
                 source.is_file()
                 and relative not in EXCLUDED
-                and not {"__pycache__", "node_modules", "dist"}.intersection(relative.parts)
+                and not {
+                    "__pycache__",
+                    "node_modules",
+                    "dist",
+                    "journey_viewer_src",
+                }.intersection(relative.parts)
                 and source.suffix != ".pyc"
             ):
                 yield source, relative

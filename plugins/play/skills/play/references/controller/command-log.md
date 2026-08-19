@@ -50,11 +50,62 @@ unwritable journal cannot interrupt the Play transition that produced it.
 
 ## Exploration is a separate journal
 
-Captured exploration uses the active Rote workspace as its source of truth. The Stop hook first
-checks whether an active capture has crossed both the configured step interval and time throttle.
-When due, it reads `rote workspace stats --json` and `rote trace --deps`, claims one cursor, and
-shows a compact progress pulse. It does not write those workspace commands into the recall command
-log. Normal requests and recalled saved-Play runs never display workspace statistics.
+Captured exploration uses the active Rote workspace as its source of truth, with a disposable Play
+Journey projection for human meaning. Capture creation starts one detached, low-priority
+`play-journey` worker. The worker fingerprints the workspace in constant time, reads only Rote's
+supported JSON surfaces when evidence changes, and groups operational `@N` activity into semantic
+nodes such as capability, authority, effect, blocker, recovery, evidence, milestone, and Play
+candidate.
+
+The Stop hook never runs Rote, parses a trace, opens the workspace database, classifies activity,
+or waits for the worker. It reads one bounded `play.journey-viewport/v1` snapshot and claims a material
+generation exactly once. A missing, stale, malformed, slow, or oversized snapshot is silent. The
+Rote workspace remains authoritative and the projection can be deleted and rebuilt without losing
+evidence.
+
+Journey state is owner-private under `~/.rote-play/journeys/`. `journey.sqlite3` retains the complete
+semantic graph and its Rote evidence mappings without node, edge, activity, or evidence-reference
+pruning. `snapshot.json` is only a bounded foreground viewport and declares whether it is complete,
+the full node/edge counts, and how many evidence references are omitted from that viewport. It
+contains safe intent and phase labels, operation/provider identities, status, counts, timing, token
+totals, and opaque evidence references. It never contains raw request or response bodies, shell
+output, credentials, sensitive parameter values, continuation IDs, or workspace paths. It does not
+enter the recalled-Play command log. Normal requests and recalled saved-Play runs never display
+exploration progress.
+
+### Journey transition observations
+
+The worker joins Rote evidence with this closed set of successful controller events. Observation is
+best-effort and cannot mutate context, select a transition, authorize an effect, or block the run.
+
+| Controller event | Journey meaning |
+|---|---|
+| `exploration_started` | Captured exploration began. |
+| `exploration_prerequisite_ready` / `exploration_prerequisite_presented` | A connection or setup prerequisite became ready. |
+| `exploration_goal_supplied` / `exploration_refinement_requested` | The user selected or refined the useful outcome. |
+| `exploration_route_exhausted` | The selected route blocked. |
+| `exploration_retry_selected` | The user chose another exploration route. |
+| `outcome_verified` / `exploration_completion_presented` | The requested result was verified and presented. |
+| `worth_saving` / `candidate_ready` | The verified path became a reusable Play candidate. |
+| `not_worth_saving` / `exploration_stopped` | Exploration ended without creating a Play. |
+| `birth_captured` / `birth_bound` | A released or published Play was bound to its provenance. |
+
+### Journey diagnostic commands
+
+These commands inspect or rebuild only the disposable semantic projection. They do not execute the
+captured workflow:
+
+| Command | Deterministic action |
+|---|---|
+| `play-journey snapshot --capture <opaque-ref> [--json]` | Read the latest valid semantic snapshot. |
+| `play-journey graph --capture <opaque-ref> --json` | Read the complete persisted semantic graph and evidence mappings. |
+| `play-journey story --capture <opaque-ref> --json` | Derive the deterministic human landmark sequence used by the live viewer without dropping canonical evidence references. |
+| `play-journey scene --capture <opaque-ref> --json` | Derive the complete deterministic `play.journey-scene/v1` isometric geometry. |
+| `play-journey view --active` | Start a missed projector if necessary, then open the token-protected WebGL Journey world; distinguish active captures from the workspace being viewed. |
+| `play-journey doctor --capture <opaque-ref> --json` | Report bounded snapshot and worker health metadata. |
+| `play-journey refresh --capture <opaque-ref> [--json]` | Run one incremental background-style refresh. |
+| `play-journey rebuild --capture <opaque-ref> [--json]` | Rebuild the disposable projection from authoritative evidence. |
+| `play-journey worker --capture <opaque-ref> [--once]` | Run the capture-scoped projector; duplicate workers exit on the lease. |
 
 Install defaults live in `~/.rote-play/journal-settings.json`:
 

@@ -58,6 +58,7 @@ from play.continuations import (
 from play.private_store import PrivateStoreError
 from play.preflight import inspect as inspect_preflight
 from play.journal import observe_recall_transition
+from play.journey import observe_transition as observe_journey_transition
 from play.milestones import observe_transition as observe_milestone_transition
 
 
@@ -66,6 +67,7 @@ def observe_transition(**transition: Any) -> None:
 
     observe_milestone_transition(**transition)
     observe_recall_transition(**transition)
+    observe_journey_transition(**transition)
 
 
 def _read_object() -> dict[str, Any]:

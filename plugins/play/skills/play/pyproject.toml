@@ -20,3 +20,6 @@ include = ["scripts/lib/play", "scripts/bin/play-machine", "scripts/bin/play-boo
 extraPaths = ["scripts/lib"]
 venvPath = "."
 venv = ".venv"
+
+[tool.typos.default.extend-words]
+metalness = "metalness"

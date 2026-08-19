@@ -165,7 +165,7 @@ Play stays predictable by making each layer own one job:
 |---|---|
 | **`SKILL.md`** | Teaches an agent how to enter the runtime and handle its next boundary. |
 | **`play-machine`** | Owns search, inspection, approval, execution control, verification, saving, and fail-closed behavior. |
-| **Structural hooks and journals** | Activate strong cached matches, enforce direct routes, show sparse exploration pulses, and record typed recall events. |
+| **Structural hooks and journals** | Activate strong cached matches, enforce direct routes, read bounded semantic Journey snapshots, and record typed recall events. |
 | **Rote skills** | Own setup, tools, browsers, adapters, workspaces, authoring, and publication. |
 | **Rote CLI and registry** | Run exact Plays locally and distribute authorized Plays. |
 
@@ -307,11 +307,52 @@ $play journal yesterday
 $play journal 2026-08-17
 ```
 
-Exploration remains separate. Only an active captured exploration can show Rote workspace
-analytics. Its Stop hook first checks cheap workspace counters and stays silent until five new
-steps and the two-minute throttle are due; only then does it read the richer trace and show one
-compact trajectory, latency, token, error-recovery, and dependency-DAG pulse. Ordinary work and
-recalled saved-Play runs never show workspace statistics.
+Exploration remains separate. Capture creation starts a detached, low-priority Journey worker that
+projects the Rote command/dependency DAG into human nodes—capability, authority, effect, blocker,
+recovery, evidence, milestone, artifact, and Play candidate. The worker performs classification and
+Rote JSON reads in the background. The Stop hook only reads one bounded snapshot and presents a
+material semantic change after the configured throttle; it runs no Rote subprocess, parses no
+trace, and opens no workspace database. Worker or snapshot failure is silent and cannot affect the
+exploration. Ordinary work and recalled saved-Play runs never show workspace analytics.
+
+Rote remains the lossless evidence authority. Play retains the complete owner-private semantic
+graph in `~/.rote-play/journeys/<id>/journey.sqlite3` without pruning activities, nodes, edges, or
+evidence mappings. The bounded `play.journey-viewport/v1` JSON file is only a fast foreground viewport
+and reports whether it is showing the entire graph. Every completed semantic node points back to
+opaque Rote commands/responses or typed Play events, without copying response bodies, sensitive
+parameters, credentials, shell output, or workspace paths. The graph is disposable and rebuildable
+from Rote. See the [Journey design](docs/design/async-exploration-journey-graph.md) and
+[complete graph schema](references/explore/journey-graph.schema.json). The separate
+[viewport schema](references/explore/journey-viewport.schema.json) is the only contract with array
+limits.
+
+Open the active exploration as a live, read-only semantic world:
+
+```text
+$play journey live
+# deterministic CLI equivalent
+play-journey view --active
+```
+
+The command starts a missed background projector when necessary, then returns after starting or
+reusing an owner-private loopback viewer. Every capture appears in the Journey rail: **Active** means
+the capture can still grow, while **Viewing** identifies the map currently on screen. Selecting an
+older pre-projector capture starts its isolated read-only projection and switches after the first
+graph is ready.
+
+The Deck.gl viewer does not draw Rote commands as anonymous boxes. It consumes the deterministic
+[`play.journey-story/v1`](references/explore/journey-story.schema.json) projection and uses semantic
+zoom: **Journey** shows the outcome-bearing route, **Phase** enters the interactions inside one
+human stage, and **Evidence** opens one bounded, credential-redacted request/response display copy.
+The blue trajectory is the protagonist; monochrome structures remain secondary evidence density.
+The **Play** control performs the traversal for both live and historical captures, progressively
+revealing stages and their recorded interactions while the deterministic **Now / Why / Action /
+Next** guide explains the agent's route. Theme, fit, free navigation, selection, pause, replay, and
+the audit overlay are local presentation controls. The complete canonical graph and every audit
+edge remain preserved underneath; raw evidence is loaded only for the explicitly selected tower and
+is never copied into the Journey graph. The earlier
+[`play.journey-scene/v1`](references/explore/journey-scene.schema.json) remains a diagnostic geometry
+contract, not the primary viewer.
 
 Install converges both features in `~/.rote-play/journal-settings.json`. Reinstalling fills missing
 defaults without silently re-enabling a journal the user explicitly disabled.
@@ -1220,6 +1261,9 @@ just benchmark-runtime
 The tests exercise the declarative Play machine and the complete activation lifecycle in temporary
 harness roots, including installation, verification, idempotency, rollback, conflict handling,
 parallel three-harness convergence, progress rendering, and the sub-five-second warm-install budget.
+Journey tests additionally cover strict schema validation, privacy-bounded normalization,
+failure/recovery semantics, bounded compaction, incremental JSON ingestion, constant-time idle
+fingerprinting, worker isolation, and zero foreground subprocesses.
 
 The foundation is Python-only. Commands under `scripts/bin/` and harness entrypoints under
 `scripts/harness/` are thin executables; reusable command, private-store, birth-certificate,

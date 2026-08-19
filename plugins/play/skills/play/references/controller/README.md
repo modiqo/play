@@ -12,16 +12,21 @@ This directory is the executable documentation for Play's deterministic controll
 | [`machine.schema.json`](machine.schema.json) | Declarative-machine syntax. |
 | [`command-log.md`](command-log.md) | Transition-derived recall journal and pre-machine command routing. |
 | [`command-log.schema.json`](command-log.schema.json) | Durable `play.recall-journal/v1` storage contract. |
+| [`../explore/journey-graph.schema.json`](../explore/journey-graph.schema.json) | Complete, unbounded `play.journey-graph/v1` semantic projection. |
+| [`../explore/journey-viewport.schema.json`](../explore/journey-viewport.schema.json) | Bounded `play.journey-viewport/v1` projection over the complete semantic graph. |
+| [`../explore/journey-scene.schema.json`](../explore/journey-scene.schema.json) | Complete deterministic `play.journey-scene/v1` isometric geometry. |
+| [`../explore/journey-story.schema.json`](../explore/journey-story.schema.json) | Human-readable, evidence-linked `play.journey-story/v1` projection consumed by the live viewer. |
 
 `scripts/bin/validate-machine` validates the bundle before packaging. `play-machine describe
 --json` reports the compiled bundle SHA and state counts. `scripts/bin/package-plugin --check`
 ensures every controller contract shipped in the plugin is byte-for-byte current.
 
-The command log is an observer, not another state machine. It consumes only successful transitions
+The command log and Journey projector are observers, not additional state machines. They consume successful transitions
 after context validation and cannot select a target, mutate controller context, authorize an
 effect, or prevent a Play from completing. Presentation also stays outside the transition loop:
-captured exploration pulses are claimed by the Stop hook, while the daily recall journal is shown
-only when the user asks for it.
+captured exploration pulses are claimed from an asynchronously built snapshot by the Stop hook,
+while the daily recall journal is shown only when the user asks for it. The foreground pulse path
+never invokes Rote or reads its workspace.
 
 An approved empty-search exploration is not a terminal standby. `record_standby` creates the
 capture and workspace, then `capture_is_active` routes through the visible `exploration_begin`
@@ -66,3 +71,29 @@ Rote specialist, which must present alternatives, retain an “another tool” c
 selected route, and wait before execution. A `direct:` turn leaves the Play continuation and Rote
 workspace paused; it is not captured evidence and `continue exploration` resumes only after changed
 external state is revalidated.
+
+During an active capture, `play-journey` independently projects Rote's operational DAG into the
+closed semantic vocabulary defined by `play.journey-graph/v1`. The foreground reads only
+`play.journey-viewport/v1`. The worker reads
+`workspace stats`, `workspace inspect log`, and `workspace inspect deps` as JSON only after a
+constant-time workspace fingerprint changes. It stores no payload bodies or sensitive arguments.
+The complete semantic graph is retained without pruning in owner-private SQLite; only the
+foreground JSON viewport is bounded. Both are disposable and rebuildable, and neither is a
+verification or crystallization guard; Rote remains the evidence authority.
+
+`play-journey view --active` is the read-only live renderer. It resolves the active capture without
+printing its reference, serves compiled WebGL assets only on `127.0.0.1` behind a random
+owner-private token, and follows new generations without entering the Play machine or running
+effect-bearing Rote work. Its `play.journey-story/v1` input is a deterministic human projection:
+stable graph order fixes traversal, semantic kind fixes the teaching stage, and every landmark
+retains opaque canonical evidence references. Semantic zoom separates the human Journey, one
+phase's recorded interactions, and a lazily loaded redacted exchange. The playback control enacts
+the same deterministic traversal for static and live captures; it does not execute Rote or mutate
+the capture. The complete graph—not the visual story or exchange display—is the audit authority.
+
+Its owner-private workspace index lists every recorded capture using hashed Journey IDs, never raw
+capture handles or filesystem paths. **Active** describes capture lifecycle and **Viewing** describes
+selection; the UI never conflates either with a projector process. Selecting a graph-ready entry
+changes only the story and event-stream read target. Selecting a pre-projector entry schedules its
+isolated read-only projector and switches after the first derived graph is available; it never alters
+the underlying Rote workspace.

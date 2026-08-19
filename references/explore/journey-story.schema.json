@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://play.modiqo.ai/schemas/journey-story.schema.json",
+  "title": "Human-readable Play Journey story",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "journey_key", "graph_generation", "state", "outcome", "chapters",
+    "routes", "current_chapter", "telemetry", "audit", "updated_at", "story_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "play.journey-story/v1"},
+    "journey_key": {"type": "string", "pattern": "^journey-[a-f0-9]{24}$"},
+    "graph_generation": {"type": "integer", "minimum": 1},
+    "state": {"type": "string", "minLength": 1, "maxLength": 32},
+    "outcome": {"type": "string", "minLength": 1, "maxLength": 400},
+    "chapters": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/chapter"}},
+    "routes": {"type": "array", "items": {"$ref": "#/$defs/route"}},
+    "current_chapter": {"type": "string", "minLength": 1, "maxLength": 80},
+    "telemetry": {"$ref": "#/$defs/graphTelemetry"},
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonical_nodes", "canonical_edges", "preserved_chapter_ids"],
+      "properties": {
+        "canonical_nodes": {"type": "integer", "minimum": 1},
+        "canonical_edges": {"type": "integer", "minimum": 0},
+        "preserved_chapter_ids": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 80}}
+      }
+    },
+    "updated_at": {"type": "string", "format": "date-time"},
+    "story_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+  },
+  "$defs": {
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duration_ms", "payload_tokens", "tokens_saved"],
+      "properties": {
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "payload_tokens": {"type": "integer", "minimum": 0},
+        "tokens_saved": {"type": "integer", "minimum": 0}
+      }
+    },
+    "graphTelemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commands", "window_commands", "responses", "duration_ms", "payload_tokens", "tokens_saved"],
+      "properties": {
+        "commands": {"type": "integer", "minimum": 0},
+        "window_commands": {"type": "integer", "minimum": 0},
+        "responses": {"type": "integer", "minimum": 0},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "payload_tokens": {"type": "integer", "minimum": 0},
+        "tokens_saved": {"type": "integer", "minimum": 0}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["play_events", "rote_commands", "rote_responses", "receipt_refs", "artifact_refs"],
+      "properties": {
+        "play_events": {"type": "array", "items": {"type": "string"}},
+        "rote_commands": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+        "rote_responses": {"type": "array", "items": {"type": "string", "pattern": "^@[1-9][0-9]*$"}},
+        "receipt_refs": {"type": "array", "items": {"type": "string"}},
+        "artifact_refs": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "chapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "order", "kind", "title", "detail", "status", "provider", "effect", "position", "activity_count", "telemetry", "evidence"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 80},
+        "order": {"type": "integer", "minimum": 0},
+        "kind": {"enum": ["intent", "phase", "capability", "decision", "authority", "effect", "evidence", "artifact", "blocker", "recovery", "milestone", "learning", "play_candidate", "play"]},
+        "title": {"type": "string", "minLength": 1, "maxLength": 160},
+        "detail": {"type": "string", "maxLength": 400},
+        "status": {"type": "string", "minLength": 1, "maxLength": 32},
+        "provider": {"type": ["string", "null"]},
+        "effect": {"type": ["string", "null"]},
+        "position": {
+          "type": "object", "additionalProperties": false, "required": ["x", "y", "z"],
+          "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}}
+        },
+        "activity_count": {"type": "integer", "minimum": 0},
+        "telemetry": {"$ref": "#/$defs/telemetry"},
+        "evidence": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "target", "kind", "label"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^route_[0-9]{4}$"},
+        "source": {"type": "string", "minLength": 1, "maxLength": 80},
+        "target": {"type": "string", "minLength": 1, "maxLength": 80},
+        "kind": {"const": "traverses"},
+        "label": {"const": "then"}
+      }
+    }
+  }
+}

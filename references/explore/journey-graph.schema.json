@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://play.modiqo.ai/schemas/journey-graph.schema.json",
+  "title": "Complete Play Journey semantic graph",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generation",
+    "material_generation",
+    "projection_version",
+    "state",
+    "intent",
+    "nodes",
+    "edges",
+    "current_node",
+    "presentation",
+    "telemetry",
+    "source_cursor",
+    "updated_at",
+    "journey_key"
+  ],
+  "properties": {
+    "schema": {"const": "play.journey-graph/v1"},
+    "generation": {"type": "integer", "minimum": 1},
+    "material_generation": {"type": "integer", "minimum": 0},
+    "projection_version": {"type": "string", "minLength": 1, "maxLength": 40},
+    "state": {"type": "string", "minLength": 1, "maxLength": 32},
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "source"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1, "maxLength": 400},
+        "source": {"const": "play_capture"}
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/node"}
+    },
+    "edges": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/edge"}
+    },
+    "current_node": {"type": "string", "minLength": 1, "maxLength": 80},
+    "presentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["has_material_change", "changed_node_ids"],
+      "properties": {
+        "has_material_change": {"type": "boolean"},
+        "changed_node_ids": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1, "maxLength": 80}
+        }
+      }
+    },
+    "telemetry": {"$ref": "#/$defs/telemetry"},
+    "source_cursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["play_events", "rote_command_sequence", "rote_response_id"],
+      "properties": {
+        "play_events": {"type": "integer", "minimum": 0},
+        "rote_command_sequence": {"type": "integer", "minimum": 0},
+        "rote_response_id": {"type": "integer", "minimum": 0}
+      }
+    },
+    "updated_at": {"type": "string", "format": "date-time"},
+    "journey_key": {"type": "string", "pattern": "^journey-[a-f0-9]{24}$"}
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "play_events",
+        "rote_commands",
+        "rote_responses",
+        "receipt_refs",
+        "artifact_refs"
+      ],
+      "properties": {
+        "play_events": {
+          "type": "array",
+          "items": {"type": "string", "maxLength": 128}
+        },
+        "rote_commands": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "rote_responses": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^@[1-9][0-9]*$"}
+        },
+        "receipt_refs": {
+          "type": "array",
+          "items": {"type": "string", "maxLength": 128}
+        },
+        "artifact_refs": {
+          "type": "array",
+          "items": {"type": "string", "maxLength": 128}
+        }
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duration_ms", "payload_tokens", "tokens_saved"],
+      "properties": {
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "payload_tokens": {"type": "integer", "minimum": 0},
+        "tokens_saved": {"type": "integer", "minimum": 0},
+        "commands": {"type": "integer", "minimum": 0},
+        "window_commands": {"type": "integer", "minimum": 0},
+        "responses": {"type": "integer", "minimum": 0}
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "status",
+        "confidence",
+        "effect",
+        "provider",
+        "activity_count",
+        "evidence",
+        "telemetry",
+        "first_sequence",
+        "last_sequence"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 80},
+        "kind": {
+          "enum": [
+            "intent",
+            "phase",
+            "capability",
+            "decision",
+            "authority",
+            "effect",
+            "evidence",
+            "artifact",
+            "blocker",
+            "recovery",
+            "milestone",
+            "learning",
+            "play_candidate",
+            "play"
+          ]
+        },
+        "label": {"type": "string", "minLength": 1, "maxLength": 120},
+        "status": {
+          "enum": [
+            "planned",
+            "active",
+            "waiting",
+            "blocked",
+            "satisfied",
+            "failed",
+            "skipped",
+            "superseded",
+            "verified"
+          ]
+        },
+        "confidence": {"enum": ["deterministic", "typed_event", "play_capture"]},
+        "effect": {"type": ["string", "null"], "maxLength": 40},
+        "provider": {"type": ["string", "null"], "maxLength": 120},
+        "activity_count": {"type": "integer", "minimum": 0},
+        "evidence": {"$ref": "#/$defs/evidence"},
+        "telemetry": {"$ref": "#/$defs/telemetry"},
+        "first_sequence": {"type": ["integer", "null"], "minimum": 1},
+        "last_sequence": {"type": ["integer", "null"], "minimum": 1},
+        "recovered_node": {"type": "string", "minLength": 1, "maxLength": 80}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "target", "kind"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1, "maxLength": 80},
+        "target": {"type": "string", "minLength": 1, "maxLength": 80},
+        "kind": {
+          "enum": [
+            "decomposes_into",
+            "requires",
+            "selects",
+            "authorizes",
+            "executes",
+            "produces",
+            "verifies",
+            "blocked_by",
+            "recovers",
+            "derived_from",
+            "refines",
+            "crystallizes_into"
+          ]
+        }
+      }
+    }
+  }
+}
