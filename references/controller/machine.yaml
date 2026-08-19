@@ -553,6 +553,7 @@ states:
     requires: [request.original, request.intent, request.requested_outcome, search.complete, capture.reference, capture.workspace, capture.status, execution.workspace, consent.explore]
     entry: {action: execute_captured_exploration}
     "on":
+      exploration_prerequisite_ready: [{target: exploration_execute, mutate: record_exploration_prerequisite}]
       exploration_outcome_ready: [{target: exploration_verify, mutate: record_captured_exploration}]
       exploration_route_exhausted: [{target: blocked, mutate: record_blocker}]
       action_blocked: [{target: blocked, mutate: record_blocker}]

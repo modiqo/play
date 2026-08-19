@@ -151,6 +151,92 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("d" * 64, template["payload"]["inspection"]["disclosure_sha256"])
         self.assertEqual({"region": "us"}, template["payload"]["request"]["parameters"])
 
+    def test_event_projection_exposes_exact_payload_schema(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-event-schema",
+            task_key="task-event-schema",
+            request_original="Explore PostHog daily active users",
+        )
+        exploration = self.runtime.project(
+            replace(session.cursor, state=StateId("exploration_execute")),
+            session.context,
+        ).as_dict()
+        output = exploration["accepted_events"]["exploration_outcome_ready"][
+            "payload_schema"
+        ]["properties"]["output"]["properties"]
+
+        self.assertEqual(["detailed", None], output["mode"]["enum"])
+        self.assertEqual(["full", "summary", None], output["detail"]["enum"])
+        self.assertIn("rote_human_presentation", output["source"]["enum"])
+        self.assertIn("structured_responses", output["source"]["enum"])
+
+        crystallize = self.runtime.project(
+            replace(session.cursor, state=StateId("crystallize")), session.context
+        ).as_dict()
+        candidate = crystallize["accepted_events"]["candidate_ready"][
+            "payload_schema"
+        ]["properties"]["candidate"]["properties"]
+        self.assertEqual(["string", "null"], candidate["contract"]["type"])
+
+    def test_event_schema_rejects_guessed_handoff_metadata_before_transition(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-invalid-event-schema",
+            task_key="task-invalid-event-schema",
+            request_original="Explore PostHog daily active users",
+        )
+        cursor = replace(session.cursor, state=StateId("exploration_execute"))
+        with self.assertRaisesRegex(
+            ControllerRuntimeError,
+            "output.mode.*captured_exploration",
+        ):
+            self.runtime.step(
+                cursor,
+                ControllerEvent(
+                    id=EventId("exploration_outcome_ready"),
+                    payload={
+                        "capture": {
+                            "status": "verified",
+                            "trajectory_ref": "sha256:" + "a" * 64,
+                        },
+                        "evidence": {"verification": "sha256:" + "a" * 64},
+                        "output": {
+                            "mode": "captured_exploration",
+                            "detail": "full",
+                            "source": "rote",
+                            "format": "text",
+                            "primary": "connected",
+                            "manifest": {
+                                "response_refs": [],
+                                "artifact_refs": [],
+                                "effects": [],
+                            },
+                            "truncated": False,
+                            "full_output_ref": None,
+                        },
+                    },
+                    guards={},
+                ),
+            )
+
+        with self.assertRaisesRegex(
+            ControllerRuntimeError,
+            "candidate.contract.*not of type",
+        ):
+            self.runtime.step(
+                replace(session.cursor, state=StateId("crystallize")),
+                ControllerEvent(
+                    id=EventId("candidate_ready"),
+                    payload={
+                        "candidate": {
+                            "reference": "posthog-dau",
+                            "reusable": True,
+                            "contract": {"query": "string"},
+                        }
+                    },
+                    guards={},
+                ),
+            )
+
     def test_session_initializes_complete_valid_context(self) -> None:
         session = self.runtime.initial_session(
             run_id="session-1",

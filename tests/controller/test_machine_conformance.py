@@ -701,6 +701,15 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertIn("rote adapter catalog search", policy)
         self.assertIn("rote deps check", policy)
         self.assertIn("rote proc", policy)
+        self.assertEqual(
+            "exploration_execute",
+            MACHINE["states"]["exploration_execute"]["on"]
+            ["exploration_prerequisite_ready"][0]["target"],
+        )
+        self.assertIn(
+            "exploration_prerequisite_ready", exploration["events"]
+        )
+        self.assertIn("prerequisites, not the requested outcome", policy)
 
     def test_settled_reentry_judges_the_trace_before_any_save_offer(self) -> None:
         self.assertEqual(
@@ -714,6 +723,7 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertIn("verified capture handle", policy)
         self.assertIn("retrospective summary", policy)
         self.assertIn("failed or abandoned task", policy)
+        self.assertIn("contribute zero reusable steps", policy)
         self.assertEqual(
             "crystallize",
             MACHINE["states"]["save_judge"]["on"]["worth_saving"][0]["target"],

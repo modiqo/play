@@ -30,3 +30,13 @@ Rote owns all nested routing: `rote-task-routing` runs explore/inventory/catalog
 `rote-adapter-create` adapts an accepted API, `rote-shell` validates and records an accepted CLI,
 and `rote-workspace` executes adapter work. Play accepts only a complete result plus a verified,
 capture-bound workspace trajectory before entering verification and save judgment.
+
+Every accepted event projection includes both a prebound `event_template` and a self-contained
+`payload_schema` with exact types, enums, and object shapes. Harnesses and specialists must fill
+the template according to that schema instead of guessing metadata values.
+
+Captured exploration distinguishes prerequisites from outcomes. Adapter setup, authentication,
+token verification, capability probes, and smoke tests return `exploration_prerequisite_ready`
+when they must cross a boundary; the machine then resumes the original exploration without
+entering verification or save judgment. Only useful outcome-bearing work may return
+`exploration_outcome_ready`.

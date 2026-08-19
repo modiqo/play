@@ -16,7 +16,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "695938497b139447fd58b4e12ab7d145667ff0493e52cc4673db9f7c826c2c8e"
+SUPPORTED_MUTATION_SET_SHA256 = "eb0ad0cc801cd1c1640c8410eaf1e2aef4e775ab9388768c0470d3f9da3f0dae"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:

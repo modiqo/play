@@ -235,6 +235,7 @@ stateDiagram-v2
     %% ── Pre-work capture gate ──
     standby_exit --> exploration_execute : active capture => typed Rote specialist handoff
     standby_exit --> exited : normal => no trajectory, no settle
+    exploration_execute --> exploration_execute : setup/auth prerequisite ready
     exploration_execute --> exploration_verify : Rote returns result + verified workspace trajectory
     exploration_verify --> save_judge : outcome verified
     save_judge --> crystallize : worth saving (bound capture evidence)
@@ -498,8 +499,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.33/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.33 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.34/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.34 sh
 ```
 
 To inspect the small bootstrap before running it:

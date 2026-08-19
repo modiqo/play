@@ -132,7 +132,9 @@ again**; the replay turn contains the unchanged result without activation guidan
 Never infer confirmation, choose **Yes, continue** for the user, or summarize a missing result.
 
 - `model`: reason over only `instruction.input` and the projected policy; return one declared
-  event with every required payload field. For `route_inspected_play`, resolve every parameter the
+  event by filling `event_template` according to its complete `payload_schema`; never guess field
+  types, enum values, or nested object shapes from the field names alone. For
+  `route_inspected_play`, resolve every parameter the
   user already supplied against the inspected frontmatter in one pass, normalize it to the declared
   type/description/example/valid values/input choices, and return the complete canonical
   `request.parameters`. Ask for only the first value that is genuinely missing, ambiguous, or
@@ -191,6 +193,11 @@ declines, stop without creating a workspace. Never invent a second search picker
 outcome again. Before novel outcome work starts, the runtime classifies it as `capture` or `normal`;
 the explicit empty-search approval always selects `capture`. Capture creates a Rote workspace and
 handle; normal creates neither.
+Adapter installation, authentication, token verification, capability probes, and connection smoke
+tests are prerequisites rather than completed exploration outcomes. Continue from them to the
+original requested outcome inside the same capture. If a prerequisite must cross a specialist
+boundary, return `exploration_prerequisite_ready`; only useful outcome-bearing work may return
+`exploration_outcome_ready` or enter save judgment.
 Only an active captured exploration may display workspace analytics. Its Stop hook stays silent
 until both the configured step interval and time throttle are due, then shows one compact pulse;
 ordinary requests and recalled Play runs never show Rote workspace statistics.

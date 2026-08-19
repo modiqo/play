@@ -6,11 +6,13 @@ import hashlib
 import json
 import time
 import base64
+import copy
 import zlib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping, NewType
 
+from jsonschema import Draft202012Validator
 from statemachine.io import create_machine_class_from_definition
 
 from .machine import MachineValidationError, validate_bundle
@@ -313,6 +315,7 @@ class ControllerRuntime:
         _validate_event_payload(
             event.payload,
             self.bundle.event_requirements.get((cursor.state, event.id), ()),
+            self.bundle.context_schema,
         )
         guard_values = _resolve_guard_values(event)
         selected = _select_transition(branches, guard_values)
@@ -438,6 +441,9 @@ class ControllerRuntime:
             required_payload = self.bundle.event_requirements.get((state.id, event), ())
             accepted_events[str(event)] = {
                 "required_payload": list(required_payload),
+                "payload_schema": _event_payload_schema(
+                    required_payload, self.bundle.context_schema
+                ),
                 "guards": [str(branch.guard) for branch in branches if branch.guard],
                 "event_template": {
                     "id": str(event),
@@ -784,6 +790,142 @@ def _event_payload_template(
     return payload
 
 
+def _event_payload_schema(
+    required: tuple[str, ...], context_schema: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Project the exact, self-contained JSON Schema for one event payload."""
+
+    tree: dict[str, Any] = {}
+    for path in required:
+        current = tree
+        for part in path.split("."):
+            current = current.setdefault(part, {})
+        current["__declared__"] = True
+
+    def render(node: Mapping[str, Any], prefix: tuple[str, ...]) -> dict[str, Any]:
+        if node.get("__declared__") is True:
+            schema = _materialize_schema_refs(
+                _context_schema_at_path(context_schema, prefix), context_schema
+            )
+            if schema.get("type") == "object":
+                children = sorted(key for key in node if key != "__declared__")
+                if children:
+                    schema["required"] = children
+                else:
+                    schema.pop("required", None)
+            return schema
+        children = sorted(key for key in node if key != "__declared__")
+        return {
+            "type": "object",
+            "required": children,
+            "additionalProperties": False,
+            "properties": {
+                child: render(node[child], (*prefix, child)) for child in children
+            },
+        }
+
+    return render(tree, ())
+
+
+_STRING = {"type": "string", "minLength": 1}
+_NULLABLE_STRING = {"type": ["string", "null"]}
+_STRING_ARRAY = {
+    "type": "array",
+    "items": {"type": "string", "minLength": 1},
+}
+_EVENT_ALIAS_SCHEMAS: dict[str, Mapping[str, Any]] = {
+    "artifact_refs": _STRING_ARRAY,
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "credential_names": _STRING_ARRAY,
+    "effects": _STRING_ARRAY,
+    "evidence_refs": _STRING_ARRAY,
+    "failed_postconditions": _STRING_ARRAY,
+    "failure_class": _STRING,
+    "index_ref": _NULLABLE_STRING,
+    "members": {"type": "array"},
+    "organization_receipt": {"type": "object"},
+    "owner": _NULLABLE_STRING,
+    "postconditions": _STRING_ARRAY,
+    "presentation": {
+        "type": "object",
+        "required": ["markdown"],
+        "additionalProperties": False,
+        "properties": {"markdown": _NULLABLE_STRING},
+    },
+    "prompt_version": _NULLABLE_STRING,
+    "reason": _STRING,
+    "recoverable": {"type": "boolean"},
+    "response_refs": _STRING_ARRAY,
+    "result_ref": _NULLABLE_STRING,
+    "selected_at": _STRING,
+    "verification_refs": _STRING_ARRAY,
+    "visibility": {"enum": ["private", "public"]},
+}
+
+
+def _context_schema_at_path(
+    context_schema: Mapping[str, Any], path: tuple[str, ...]
+) -> Mapping[str, Any]:
+    if path and path[0] in _EVENT_ALIAS_SCHEMAS:
+        node = _EVENT_ALIAS_SCHEMAS[path[0]]
+        remaining = path[1:]
+    else:
+        node = context_schema
+        remaining = path
+    for part in remaining:
+        node = _resolve_schema_ref(node, context_schema)
+        properties = node.get("properties")
+        if not isinstance(properties, Mapping) or not isinstance(
+            properties.get(part), Mapping
+        ):
+            raise ControllerRuntimeError(
+                f"event contract references unknown context schema path {'.'.join(path)}"
+            )
+        node = properties[part]
+    return node
+
+
+def _resolve_schema_ref(
+    schema: Mapping[str, Any], context_schema: Mapping[str, Any]
+) -> Mapping[str, Any]:
+    reference = schema.get("$ref")
+    if not isinstance(reference, str):
+        return schema
+    if not reference.startswith("#/"):
+        raise ControllerRuntimeError(f"unsupported event schema reference {reference}")
+    target: Any = context_schema
+    for part in reference[2:].split("/"):
+        part = part.replace("~1", "/").replace("~0", "~")
+        if not isinstance(target, Mapping) or part not in target:
+            raise ControllerRuntimeError(f"unresolved event schema reference {reference}")
+        target = target[part]
+    if not isinstance(target, Mapping):
+        raise ControllerRuntimeError(f"event schema reference is not an object: {reference}")
+    return target
+
+
+def _materialize_schema_refs(
+    schema: Mapping[str, Any], context_schema: Mapping[str, Any]
+) -> dict[str, Any]:
+    resolved = _resolve_schema_ref(schema, context_schema)
+    materialized: dict[str, Any] = {}
+    for key, value in resolved.items():
+        if key == "$ref":
+            continue
+        if isinstance(value, Mapping):
+            materialized[key] = _materialize_schema_refs(value, context_schema)
+        elif isinstance(value, list):
+            materialized[key] = [
+                _materialize_schema_refs(item, context_schema)
+                if isinstance(item, Mapping)
+                else copy.deepcopy(item)
+                for item in value
+            ]
+        else:
+            materialized[key] = copy.deepcopy(value)
+    return materialized
+
+
 def _event_requirements(
     state: StateId,
     raw_state: Mapping[str, Any],
@@ -1031,7 +1173,11 @@ def _derive_session_guards(
     )
 
 
-def _validate_event_payload(payload: Mapping[str, Any], required: tuple[str, ...]) -> None:
+def _validate_event_payload(
+    payload: Mapping[str, Any],
+    required: tuple[str, ...],
+    context_schema: Mapping[str, Any],
+) -> None:
     missing = [path for path in required if not _has_path(payload, path)]
     if missing:
         raise ControllerRuntimeError(
@@ -1045,6 +1191,18 @@ def _validate_event_payload(payload: Mapping[str, Any], required: tuple[str, ...
     if undeclared:
         raise ControllerRuntimeError(
             "event payload contains undeclared fields: " + ", ".join(undeclared)
+        )
+    errors = sorted(
+        Draft202012Validator(
+            _event_payload_schema(required, context_schema)
+        ).iter_errors(payload),
+        key=lambda item: list(item.path),
+    )
+    if errors:
+        first = errors[0]
+        location = ".".join(map(str, first.path)) or "payload"
+        raise ControllerRuntimeError(
+            f"event payload violates schema at {location}: {first.message}"
         )
 
 

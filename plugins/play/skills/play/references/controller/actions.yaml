@@ -105,6 +105,7 @@ mutations:
   - record_search_presentation
   - start_empty_search_exploration
   - enter_captured_exploration
+  - record_exploration_prerequisite
   - record_captured_exploration
   - enter_search_use
   - record_search_dismissal
@@ -412,6 +413,7 @@ actions:
     input_required: [request.original, capture.reference, capture.workspace, capture.status, capture.trajectory_ref, standby.settle_summary, preferences.policies]
     command_policy:
       - Judge the settled task's trace evidence, not conversation prose. Require at least two effect-bearing steps, at least one input that would vary on reuse, and a stable output shape.
+      - Count only steps that produce the requested user outcome. Adapter installation, authentication, token checks, capability probes, and connection smoke tests are prerequisites and contribute zero reusable steps; they can never independently emit worth_saving.
       - Require the verified capture handle and Rote trajectory created before execution. Similar prose or a retrospective summary can never substitute for that evidence.
       - Never emit worth_saving for a failed or abandoned task, or when the session or ledger classes this work silent.
       - Use the capture-bound Rote workspace; the judgment event may not replace it.
@@ -529,10 +531,13 @@ actions:
       - When catalog candidates exist, present their protocol, authentication, capability fit, and install impact, then offer **Adapt API** through rote-adapter-create or **Use existing CLI** through rote-shell. Never silently install a catalog result or choose a protocol for the user.
       - If the user names an existing CLI, invoke rote-shell. Validate the exact executable inside the capture workspace with a minimal `deps.toml` plus `rote deps check`, then capture capability discovery and use through `rote proc`; never infer existence from prose or use raw `which` as proof.
       - rote-adapter-create owns catalog selection, spec validation, dry-run, auth and toolset decisions, real creation, adapter info, and the first green probe/call. After an adapter is ready, rote-workspace owns calls, cached responses, transformations, and outcome verification.
+      - Adapter creation, authentication, token verification, capability probes, and smoke tests are prerequisites, not the requested outcome. After they succeed, continue the original request in the same capture; never reinterpret “connected” as completion and never ask for an outcome already present in request.requested_outcome.
       - Keep adapter, CLI, and mixed evidence in this one capture workspace. Do not call provider APIs, native CLIs, MCP tools, curl, browser tools, or custom scripts outside the selected Rote skill.
-      - Return exploration_outcome_ready only with the complete user-visible result and a verified `rote trace --deps` trajectory bound to this capture. Play owns the subsequent save-worthiness and crystallization states; do not publish from this specialist action.
+      - If an external authentication or setup boundary forces a return before useful work resumes, return exploration_prerequisite_ready with its evidence. Play will re-enter this same specialist action for the original outcome; do not manufacture output metadata or enter save judgment.
+      - Return exploration_outcome_ready only after at least one outcome-bearing operation beyond setup, with the complete user-visible result and a verified `rote trace --deps` trajectory bound to this capture. Play owns the subsequent save-worthiness and crystallization states; do not publish from this specialist action.
       - Interactive questions belong to the invoked Rote specialist flow. Continue through them in place and return to Play only with one declared event.
     events:
+      exploration_prerequisite_ready: [reason, evidence_refs]
       exploration_outcome_ready: [capture.status, capture.trajectory_ref, evidence.verification, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
       exploration_route_exhausted: [reason, recoverable, owner, evidence_refs]
 
