@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.sidekick import append_ledger_entry, capture_for_settle, record_standby
+from play.sidekick import (
+    _validate_rote_trajectory,
+    append_ledger_entry,
+    capture_for_settle,
+    record_standby,
+)
 
 
 class StandbyBatonPassTest(unittest.TestCase):
@@ -133,6 +140,36 @@ class StandbyBatonPassTest(unittest.TestCase):
             capture_for_settle(
                 reference, trajectory_validator=lambda _path: "sha256:trajectory"
             )
+
+    @patch("play.sidekick.subprocess.run")
+    @patch("play.sidekick.shutil.which", return_value="/bin/rote")
+    def test_trajectory_validator_hashes_workspace_and_dependency_trace(
+        self, _which: MagicMock, run: MagicMock
+    ) -> None:
+        workspace = self.base / "verified-workspace"
+        workspace.mkdir()
+        run.side_effect = [
+            subprocess.CompletedProcess(
+                ["/bin/rote", "ls"], 0, "2 responses (2 successful)\n", ""
+            ),
+            subprocess.CompletedProcess(
+                ["/bin/rote", "trace", "--deps"],
+                0,
+                "@1 -> @2\n",
+                "",
+            ),
+        ]
+
+        trajectory_ref = _validate_rote_trajectory(workspace)
+
+        self.assertRegex(trajectory_ref, r"^sha256:[0-9a-f]{64}$")
+        self.assertEqual(
+            [
+                ["/bin/rote", "ls"],
+                ["/bin/rote", "trace", "--deps"],
+            ],
+            [call.args[0] for call in run.call_args_list],
+        )
 
 
 if __name__ == "__main__":

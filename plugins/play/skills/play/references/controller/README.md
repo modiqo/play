@@ -31,6 +31,12 @@ Rote owns all nested routing: `rote-task-routing` runs explore/inventory/catalog
 `rote-adapter-create` adapts an accepted API, `rote-shell` validates and records an accepted CLI,
 and `rote-workspace` executes adapter work. Play accepts only a complete result plus a verified,
 capture-bound workspace trajectory before entering verification and save judgment.
+The exploration specialist never authors the trajectory receipt. On
+`exploration_outcome_ready`, the runtime resolves the continuation's owner-private capture, runs the
+Rote trajectory validator, and atomically binds `capture.status=verified`, the validator's
+`sha256:…` trajectory reference, and the identical `evidence.verification`. Validation failure is
+reported before transition, leaving the continuation active rather than falling through to a
+generic terminal blocker.
 
 Every accepted event projection includes both a prebound `event_template` and a self-contained
 `payload_schema` with exact types, enums, and object shapes. Harnesses and specialists must fill

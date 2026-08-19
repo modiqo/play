@@ -10,7 +10,7 @@ import copy
 import zlib
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Mapping, NewType
+from typing import Any, Callable, Mapping, NewType
 
 from jsonschema import Draft202012Validator
 from statemachine.io import create_machine_class_from_definition
@@ -26,6 +26,7 @@ from .runtime_context import (
     validate_mutation_contract,
     validate_required,
 )
+from .sidekick import capture_for_settle
 
 
 StateId = NewType("StateId", str)
@@ -260,10 +261,17 @@ class ControllerBundle:
 class ControllerRuntime:
     """Compile Play's YAML once and execute typed, fail-closed transitions."""
 
-    def __init__(self, root: Path):
+    def __init__(
+        self,
+        root: Path,
+        *,
+        trajectory_verifier: Callable[[RuntimeSession, ControllerEvent], Mapping[str, Any]]
+        | None = None,
+    ):
         started = time.perf_counter_ns()
         self.bundle = ControllerBundle.load(root)
         self._chart_class = _compile_chart(self.bundle)
+        self._trajectory_verifier = trajectory_verifier or _verify_captured_trajectory
         self.compile_ns = time.perf_counter_ns() - started
 
     def initial_cursor(self, *, run_id: str, task_key: str) -> ControllerCursor:
@@ -484,7 +492,9 @@ class ControllerRuntime:
         self, session: RuntimeSession, event: ControllerEvent
     ) -> SessionAdvanceResult:
         self._validate_session(session)
-        event = _canonicalize_specialist_event(session, event)
+        event = _canonicalize_specialist_event(
+            session, event, trajectory_verifier=self._trajectory_verifier
+        )
         _validate_inspected_parameter_event(session, event)
         event = _derive_session_guards(session, event)
         step = self.step(session.cursor, event)
@@ -554,9 +564,47 @@ class ControllerRuntime:
 
 
 def _canonicalize_specialist_event(
-    session: RuntimeSession, event: ControllerEvent
+    session: RuntimeSession,
+    event: ControllerEvent,
+    *,
+    trajectory_verifier: Callable[
+        [RuntimeSession, ControllerEvent], Mapping[str, Any]
+    ],
 ) -> ControllerEvent:
-    """Reduce legacy-Play authentication success to specialist-owned facts."""
+    """Replace specialist-authored authority fields with Play-owned facts."""
+
+    if (
+        session.cursor.state == StateId("exploration_execute")
+        and event.id == EventId("exploration_outcome_ready")
+    ):
+        try:
+            verified = trajectory_verifier(session, event)
+        except (OSError, ValueError) as error:
+            raise ControllerRuntimeError(
+                "Play could not verify the captured Rote trajectory; the exploration "
+                f"continuation remains active: {error}"
+            ) from error
+        trajectory_ref = verified.get("trajectory_ref")
+        if (
+            verified.get("status") != "verified"
+            or verified.get("reference")
+            != _path_value(session.context, "capture.reference")
+            or verified.get("workspace")
+            != _path_value(session.context, "execution.workspace")
+            or not isinstance(trajectory_ref, str)
+            or not trajectory_ref.startswith("sha256:")
+        ):
+            raise ControllerRuntimeError(
+                "Play trajectory validator returned an invalid capture receipt; "
+                "the exploration continuation remains active"
+            )
+        payload = copy.deepcopy(dict(event.payload))
+        payload["capture"] = {
+            "status": "verified",
+            "trajectory_ref": trajectory_ref,
+        }
+        payload["evidence"] = {"verification": trajectory_ref}
+        return ControllerEvent(id=event.id, payload=payload, guards=event.guards)
 
     if (
         session.cursor.state != StateId("use_authentication_execute")
@@ -576,6 +624,19 @@ def _canonicalize_specialist_event(
         },
         guards=event.guards,
     )
+
+
+def _verify_captured_trajectory(
+    session: RuntimeSession, _event: ControllerEvent
+) -> Mapping[str, Any]:
+    reference = _path_value(session.context, "capture.reference")
+    if not isinstance(reference, str) or not reference:
+        raise ValueError("continuation has no captured exploration handle")
+    capture = capture_for_settle(reference)
+    expected_workspace = _path_value(session.context, "execution.workspace")
+    if capture.get("workspace") != expected_workspace:
+        raise ValueError("verified capture workspace does not match the continuation")
+    return capture
 
 
 def _validate_inspected_parameter_event(

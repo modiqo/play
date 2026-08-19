@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import sys
 import unittest
@@ -7,6 +8,7 @@ from unittest.mock import patch
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,7 +32,21 @@ from play.handoff import prepare_play_run_handoff
 class ControllerRuntimeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.runtime = ControllerRuntime(ROOT)
+        def verify_trajectory(session, event):
+            supplied = event.payload.get("capture", {})
+            trajectory_ref = supplied.get("trajectory_ref")
+            if not isinstance(trajectory_ref, str) or not trajectory_ref.startswith(
+                "sha256:"
+            ):
+                trajectory_ref = "sha256:" + "f" * 64
+            return {
+                "status": "verified",
+                "reference": session.context["capture"]["reference"],
+                "workspace": session.context["execution"]["workspace"],
+                "trajectory_ref": trajectory_ref,
+            }
+
+        cls.runtime = ControllerRuntime(ROOT, trajectory_verifier=verify_trajectory)
 
     def cursor(self):
         cursor = self.runtime.initial_cursor(run_id="run-1", task_key="task-1")
@@ -232,6 +248,142 @@ class ControllerRuntimeTest(unittest.TestCase):
                             "reusable": True,
                             "contract": {"query": "string"},
                         }
+                    },
+                    guards={},
+                ),
+            )
+
+    def test_exploration_runtime_replaces_guessed_receipt_with_verified_trajectory(self) -> None:
+        verified_ref = "sha256:" + "b" * 64
+
+        def verify(session, _event):
+            return {
+                "status": "verified",
+                "reference": session.context["capture"]["reference"],
+                "workspace": session.context["execution"]["workspace"],
+                "trajectory_ref": verified_ref,
+            }
+
+        runtime = ControllerRuntime(ROOT, trajectory_verifier=verify)
+        session = runtime.initial_session(
+            run_id="verified-exploration",
+            task_key="verified-exploration",
+            request_original="retrieve PostHog DAU",
+        )
+        context: dict[str, Any] = copy.deepcopy(dict(session.context))
+        context["state"] = "exploration_execute"
+        context["request"]["requested_outcome"] = "retrieve PostHog DAU"
+        context["capture"].update(
+            {
+                "decision": "capture",
+                "reference": "cap_abcdefghijklmnop",
+                "workspace": "play-capture-abcdefghijklmnop",
+                "status": "active",
+            }
+        )
+        context["execution"] = {
+            **context["execution"],
+            "workspace": "play-capture-abcdefghijklmnop",
+        }
+        bound = replace(
+            session,
+            cursor=replace(session.cursor, state=StateId("exploration_execute")),
+            context=context,
+        )
+
+        advanced = runtime.advance_session(
+            bound,
+            ControllerEvent(
+                id=EventId("exploration_outcome_ready"),
+                payload={
+                    "capture": {
+                        "status": "active",
+                        "trajectory_ref": "cap_abcdefghijklmnop",
+                    },
+                    "evidence": {"verification": "the DAU query worked"},
+                    "output": {
+                        "mode": "detailed",
+                        "detail": "full",
+                        "source": "rote_human_presentation",
+                        "format": "text",
+                        "primary": "42 daily active users",
+                        "manifest": {
+                            "response_refs": ["@16"],
+                            "artifact_refs": [],
+                            "effects": [],
+                        },
+                        "truncated": False,
+                        "full_output_ref": None,
+                    },
+                },
+                guards={},
+            ),
+        )
+
+        self.assertEqual("exploration_verify", advanced.session.cursor.state)
+        self.assertEqual("verified", advanced.session.context["capture"]["status"])
+        self.assertEqual(
+            verified_ref, advanced.session.context["capture"]["trajectory_ref"]
+        )
+        self.assertEqual(
+            verified_ref, advanced.session.context["evidence"]["verification"]
+        )
+
+    def test_exploration_trajectory_failure_preserves_continuation_boundary(self) -> None:
+        def reject(_session, _event):
+            raise ValueError("capture has no verified Rote trajectory")
+
+        runtime = ControllerRuntime(ROOT, trajectory_verifier=reject)
+        session = runtime.initial_session(
+            run_id="failed-exploration-verification",
+            task_key="failed-exploration-verification",
+            request_original="retrieve PostHog DAU",
+        )
+        context = copy.deepcopy(dict(session.context))
+        context["state"] = "exploration_execute"
+        context["capture"].update(
+            {
+                "decision": "capture",
+                "reference": "cap_abcdefghijklmnop",
+                "workspace": "play-capture-abcdefghijklmnop",
+                "status": "active",
+            }
+        )
+        context["execution"] = {
+            **context["execution"],
+            "workspace": "play-capture-abcdefghijklmnop",
+        }
+        bound = replace(
+            session,
+            cursor=replace(session.cursor, state=StateId("exploration_execute")),
+            context=context,
+        )
+
+        with self.assertRaisesRegex(
+            ControllerRuntimeError,
+            "continuation remains active: capture has no verified Rote trajectory",
+        ):
+            runtime.advance_session(
+                bound,
+                ControllerEvent(
+                    id=EventId("exploration_outcome_ready"),
+                    payload={
+                        "capture": {"status": "active", "trajectory_ref": None},
+                        "evidence": {"verification": None},
+                        "output": {
+                            "mode": "detailed",
+                            "detail": "full",
+                            "source": "structured_responses",
+                            "format": "text",
+                            "primary": "42 daily active users",
+                            "manifest": {
+                                "response_refs": ["@16"],
+                                "artifact_refs": [],
+                                "effects": [],
+                            },
+                            "truncated": False,
+                            "full_output_ref": None,
+                        },
                     },
                     guards={},
                 ),

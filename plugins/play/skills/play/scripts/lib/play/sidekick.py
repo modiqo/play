@@ -411,19 +411,32 @@ def _validate_rote_trajectory(workspace_path: Path) -> str:
     executable = shutil.which("rote")
     if executable is None or not workspace_path.is_dir():
         raise ValueError("capture Rote workspace is unavailable")
-    completed = subprocess.run(
-        [executable, "ls"],
-        cwd=workspace_path,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=30,
-    )
-    evidence = "\n".join(
-        part.rstrip() for part in (completed.stdout, completed.stderr) if part.strip()
-    )
-    if completed.returncode != 0 or "No responses yet" in evidence:
-        raise ValueError("capture has no verified Rote trajectory")
+    evidence_parts: list[str] = []
+    for label, command in (
+        ("workspace", [executable, "ls"]),
+        ("dependencies", [executable, "trace", "--deps"]),
+    ):
+        completed = subprocess.run(
+            command,
+            cwd=workspace_path,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        evidence = "\n".join(
+            part.rstrip()
+            for part in (completed.stdout, completed.stderr)
+            if part.strip()
+        )
+        if (
+            completed.returncode != 0
+            or not evidence.strip()
+            or "No responses yet" in evidence
+        ):
+            raise ValueError(f"capture has no verified Rote {label} trajectory")
+        evidence_parts.append(f"[{label}]\n{evidence}")
+    evidence = "\n".join(evidence_parts)
     digest = hashlib.sha256(evidence.encode()).hexdigest()
     return "sha256:" + digest
 
