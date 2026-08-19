@@ -11,6 +11,9 @@ check: package-check
     scripts/bin/play-question choose_search_result --harness codex --check
     scripts/bin/play-question choose_search_result --harness claude --check
     scripts/bin/play-question choose_search_result --harness kimi --check
+    scripts/bin/play-question choose_empty_search_path --harness codex --check
+    scripts/bin/play-question choose_empty_search_path --harness claude --check
+    scripts/bin/play-question choose_empty_search_path --harness kimi --check
     scripts/bin/play-question private_public_or_skip --harness codex --context-json '{"publication":{"owner_summary":"Your claimed handle is ready."}}' --check
     scripts/bin/play-question private_public_or_skip --harness claude --context-json '{"publication":{"owner_summary":"Your claimed handle is ready."}}' --check
     scripts/bin/play-question private_public_or_skip --harness kimi --context-json '{"publication":{"owner_summary":"Your claimed handle is ready."}}' --check

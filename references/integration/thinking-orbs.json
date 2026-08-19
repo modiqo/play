@@ -196,6 +196,18 @@
       "orb": "listening",
       "label": "Waiting for a Play selection…"
     },
+    "search_empty_offer": {
+      "orb": "listening",
+      "label": "Waiting to explore and create…"
+    },
+    "exploration_execute": {
+      "orb": "weaving",
+      "label": "Routing the captured journey through Rote…"
+    },
+    "exploration_verify": {
+      "orb": "solving",
+      "label": "Verifying the result and recorded trajectory…"
+    },
     "classify": {
       "orb": "solving",
       "label": "Checking whether a Play fully fits…"

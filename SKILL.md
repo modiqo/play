@@ -180,9 +180,17 @@ Never collect credentials in bootstrap context, backups, or reports.
 ## Stay out of the way
 
 Play interrupts only for an adequate saved Play or a projected approval. When qualification
-returns conversation or exclusion, or no adequate Play exists, Play exits quietly — no search
-narration, no explore offers. Before novel outcome work starts, the runtime classifies it as
-`capture` or `normal`. Capture creates a Rote workspace and handle; normal creates neither.
+returns conversation or exclusion, Play exits quietly. When the completed local and authorized
+registry search has no matching Play, present the runtime's single **Explore and create** choice.
+If the user accepts, the next deterministic transition creates the capture and Rote workspace
+before any work begins, then yields directly to the `rote` specialist. That specialist must invoke
+`rote-task-routing`; API adaptation belongs to `rote-adapter-create`, existing CLI discovery and
+validation belong to `rote-shell` using `rote deps` and `rote proc`, and adapter execution belongs
+to `rote-workspace`. Continue the original outcome through that returned workspace. If the user
+declines, stop without creating a workspace. Never invent a second search picker or ask for the
+outcome again. Before novel outcome work starts, the runtime classifies it as `capture` or `normal`;
+the explicit empty-search approval always selects `capture`. Capture creates a Rote workspace and
+handle; normal creates neither.
 Only an active captured exploration may display workspace analytics. Its Stop hook stays silent
 until both the configured step interval and time throttle are due, then shows one compact pulse;
 ordinary requests and recalled Play runs never show Rote workspace statistics.

@@ -48,7 +48,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(73, len(self.runtime.bundle.states))
+        self.assertEqual(76, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -1303,6 +1303,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         context = dict(session.context)
         context["state"] = "search_present"
+        context["request"]["intent"] = "release notes"
         context["search"] = {
             "complete": True,
             "query": "release notes",
@@ -1320,12 +1321,136 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         yielded = advance_until_yield(self.runtime, projected, root=ROOT)
 
-        self.assertEqual("search_offer", yielded.projection["state"]["id"])
+        self.assertEqual("search_empty_offer", yielded.projection["state"]["id"])
         self.assertEqual("human", yielded.projection["state"]["boundary"])
         self.assertEqual("present_search_results", yielded.trace[0].action)
-        self.assertEqual("search_presented", yielded.trace[0].event)
+        self.assertEqual("search_empty", yielded.trace[0].event)
         self.assertEqual(1, len(yielded.presentations))
         self.assertIn("Search: `release notes`", yielded.presentations[0])
+        self.assertEqual("choose_empty_search_path", yielded.projection["instruction"]["id"])
+        self.assertEqual("Explore and create", yielded.projection["instruction"]["choices"][0]["label"])
+        self.assertTrue(yielded.projection["instruction"]["choices"][0]["recommended"])
+
+    def test_empty_search_approval_converts_original_outcome_to_capture(self) -> None:
+        from play.runtime_context import apply_event, initial_context
+
+        context = initial_context(
+            run_id="run-empty",
+            task_key="task-empty",
+            machine_version="test",
+            request_original="$play explore PostHog daily active users",
+        )
+        context["request"]["intent"] = "retrieve PostHog daily active users"
+        updated = apply_event(
+            context,
+            event_id="search_explore_selected",
+            payload={"prompt_version": "v1", "selected_at": "2026-08-18T00:00:00Z"},
+            state="standby_exit",
+            transition_seq=1,
+            mutation="start_empty_search_exploration",
+        )
+
+        self.assertEqual("create", updated["mode"])
+        self.assertEqual("capture", updated["capture"]["decision"])
+        self.assertEqual("unclassified", updated["capture"]["status"])
+        self.assertEqual("retrieve PostHog daily active users", updated["request"]["requested_outcome"])
+        self.assertEqual("none", updated["match"]["classification"])
+
+    def test_active_capture_yields_to_rote_orchestrator_with_original_outcome(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="run-route",
+            task_key="task-route",
+            request_original="$play explore PostHog daily active users",
+        )
+        context = dict(session.context)
+        context["state"] = "standby_exit"
+        context["request"]["intent"] = "retrieve PostHog daily active users"
+        context["request"]["requested_outcome"] = "retrieve PostHog daily active users"
+        context["search"]["complete"] = True
+        context["search"]["sources"] = ["local", "authorized_registry"]
+        context["capture"]["decision"] = "capture"
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("standby_exit")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        advanced = self.runtime.advance_session(
+            projected,
+            ControllerEvent(
+                id=EventId("standby_recorded"),
+                payload={
+                    "standby": {
+                        "armed": True,
+                        "task_class": "analytics",
+                        "hook_ref": "cap_1234567890abcdef",
+                    },
+                    "capture": {
+                        "decision": "capture",
+                        "reason": "no match",
+                        "task_class": "analytics",
+                        "reference": "cap_1234567890abcdef",
+                        "workspace": "play-capture-posthog-dau",
+                        "status": "active",
+                        "trajectory_ref": None,
+                    },
+                    "preferences": {"ledger_ref": None},
+                },
+                guards={},
+            ),
+        )
+        projection = self.runtime.project_session(advanced.session).as_dict()
+
+        self.assertEqual("exploration_execute", projection["state"]["id"])
+        self.assertEqual("specialist", projection["state"]["boundary"])
+        self.assertEqual("rote", projection["instruction"]["specialist"])
+        self.assertEqual("play-capture-posthog-dau", projection["instruction"]["input"]["execution"]["workspace"])
+        policy = " ".join(projection["instruction"]["command_policy"])
+        self.assertIn("rote-task-routing", policy)
+        self.assertIn("rote-adapter-create", policy)
+        self.assertIn("rote-shell", policy)
+        self.assertIn("rote-workspace", policy)
+        self.assertIn("rote deps check", policy)
+        self.assertIn("rote proc", policy)
+
+        trajectory_ref = "sha256:" + "a" * 64
+        completed = self.runtime.advance_session(
+            advanced.session,
+            ControllerEvent(
+                id=EventId("exploration_outcome_ready"),
+                payload={
+                    "capture": {
+                        "status": "verified",
+                        "trajectory_ref": trajectory_ref,
+                    },
+                    "evidence": {"verification": trajectory_ref},
+                    "output": {
+                        "mode": "detailed",
+                        "detail": "full",
+                        "source": "structured_responses",
+                        "format": "text",
+                        "primary": "42 daily active users",
+                        "manifest": {
+                            "response_refs": ["@1"],
+                            "artifact_refs": [],
+                            "effects": [],
+                        },
+                        "truncated": False,
+                        "full_output_ref": None,
+                    },
+                },
+                guards={},
+            ),
+        )
+        yielded = advance_until_yield(self.runtime, completed.session, root=ROOT)
+
+        self.assertEqual("save_judge", yielded.projection["state"]["id"])
+        self.assertEqual("model", yielded.projection["state"]["boundary"])
+        self.assertEqual("outcome_verified", yielded.trace[0].event)
+        self.assertEqual(trajectory_ref, yielded.session.context["capture"]["trajectory_ref"])
+        self.assertEqual(trajectory_ref, yielded.session.context["evidence"]["verification"])
+        self.assertTrue(yielded.session.context["evidence"]["responses"])
 
     def test_digest_and_search_selections_bind_the_direct_run_contract(self) -> None:
         from play.runtime_context import apply_event, initial_context

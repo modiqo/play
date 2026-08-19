@@ -326,6 +326,7 @@ def validate_bundle(
                 "rote-flow-authoring",
                 "rote-flow-run",
                 "rote-org",
+                "rote",
             }
             if isinstance(specialist, str):
                 check(
@@ -484,6 +485,9 @@ def validate_bundle(
     check(_target(states, "qualify", "play_search_request") == "search", "an explicit Play search must use the unified search action")
     check(_target(states, "search", "search_ready") == "search_present", "a search-only request must present results before selection")
     check(_target(states, "search_present", "search_presented") == "search_offer", "presented search results must offer read-only inspection")
+    check(_target(states, "search_present", "search_empty") == "search_empty_offer", "empty local and registry search results must offer captured exploration")
+    check(states.get("search_empty_offer", {}).get("prompt") == "choose_empty_search_path", "empty search must ask before creating a workflow")
+    check(_target(states, "search_empty_offer", "search_explore_selected") == "standby_exit", "approved empty-search exploration must create its captured handoff")
     check(_target(states, "classify", "full_match") == "use_inspect", "an adequate discovered Play must enter read-only inspection")
     check(states.get("use_inspect", {}).get("entry", {}).get("action") == "inspect_registry_play", "Use must start with reusable Play inspection")
     check(_target(states, "use_inspect", "play_inspected") == "use_decide", "inspection must route by local readiness")
@@ -675,18 +679,18 @@ def validate_bundle(
     )
     check(_target(states, "qualify", "play_creation_request") == "creator_search", "explicit creator intent must search before exploration")
     check(
-        _target(states, "creator_classify", "creator_no_match") == "standby_exit",
-        "creator intent without a match must apply the pre-work capture decision and step aside",
+        _target(states, "creator_classify", "creator_no_match") == "search_empty_offer",
+        "creator intent without a match must ask before starting captured exploration",
     )
     check(
         _target(states, "invoke", "settled_task_invocation") == "save_judge",
         "a settled-task re-entry must reach the save-worthiness judge directly",
     )
     check(
-        _target(states, "classify", "no_match") == "standby_exit"
+        _target(states, "classify", "no_match") == "search_empty_offer"
         and _target(states, "classify", "partial_match") == "standby_exit"
         and _target(states, "classify", "uncertain_match") == "standby_exit",
-        "inadequate discovery must exit to standby instead of orchestrating exploration",
+        "empty discovery must ask before exploration while inadequate matches step aside",
     )
     check(
         _target(states, "qualify", "play_excluded") == "standby_exit",
@@ -694,8 +698,19 @@ def validate_bundle(
     )
     check(
         states.get("standby_exit", {}).get("entry", {}).get("action") == "record_standby"
-        and _target(states, "standby_exit", "standby_recorded") == "exited",
-        "standby must record the capture/normal decision and scoped preferences, then exit",
+        and _target(states, "standby_exit", "standby_recorded") == "exploration_execute"
+        and states.get("standby_exit", {}).get("on", {}).get("standby_recorded", [{}])[0].get("guard") == "capture_is_active"
+        and _target(states, "standby_exit", "standby_recorded", 1) == "exited",
+        "standby must route active captures to Rote exploration and let normal work exit",
+    )
+    check(
+        states.get("exploration_execute", {}).get("entry", {}).get("action")
+        == "execute_captured_exploration"
+        and actions.get("execute_captured_exploration", {}).get("specialist") == "rote"
+        and _target(states, "exploration_execute", "exploration_outcome_ready")
+        == "exploration_verify"
+        and _target(states, "exploration_verify", "outcome_verified") == "save_judge",
+        "captured exploration must enter Rote routing, verify the outcome, then judge its recorded trajectory",
     )
     check(
         actions.get("record_standby", {}).get("command")

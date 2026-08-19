@@ -16,7 +16,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "e6e533c325251220e4377fa0098bae6b6abdf49e40bdeb0636a5fdbbe5e7fd15"
+SUPPORTED_MUTATION_SET_SHA256 = "695938497b139447fd58b4e12ab7d145667ff0493e52cc4673db9f7c826c2c8e"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -428,6 +428,11 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
         "capture.status": "normal",
     },
     "set_creator_request": {"mode": "create"},
+    "start_empty_search_exploration": {"mode": "create"},
+    "enter_captured_exploration": {
+        "mode": "create",
+        "consent.explore": "approved",
+    },
     "enter_awareness_use": {"mode": "use"},
     "set_awareness_search": {"mode": "awareness"},
     "record_creator_standby": {"mode": "exited"},
@@ -506,6 +511,33 @@ def _apply_mutation_semantics(
             canonical = resolve_cached_reference(selected)
             if canonical is not None:
                 context["match"]["reference"] = canonical
+
+    if mutation == "start_empty_search_exploration":
+        outcome = context["request"].get("requested_outcome")
+        if not isinstance(outcome, str) or not outcome.strip():
+            intent = context["request"].get("intent")
+            original = context["request"].get("original")
+            outcome = intent if isinstance(intent, str) and intent.strip() else original
+            context["request"]["requested_outcome"] = outcome
+        context["capture"]["decision"] = "capture"
+        context["capture"]["reason"] = (
+            "The user approved exploration after no saved Play matched locally "
+            "or in the authorized registry."
+        )
+        context["capture"]["task_class"] = None
+        context["capture"]["status"] = "unclassified"
+        context["match"]["classification"] = "none"
+
+    if mutation == "enter_captured_exploration":
+        workspace = _path_value(payload, "capture.workspace")
+        if not isinstance(workspace, str) or not workspace:
+            raise RuntimeContextError("captured exploration requires a workspace")
+        context["execution"]["workspace"] = workspace
+
+    if mutation == "record_captured_exploration":
+        outcome = context["request"].get("requested_outcome")
+        if isinstance(outcome, str) and outcome:
+            context["standby"]["settle_summary"] = outcome
 
     if mutation == "enter_use":
         # Search result descriptions and choices are presentation data. Once a match is
@@ -648,7 +680,18 @@ def _apply_mutation_semantics(
     elif mutation == "record_verification":
         refs = payload.get("evidence_refs")
         if isinstance(refs, list) and refs:
-            context["evidence"]["verification"] = refs[0]
+            trajectory_ref = context["capture"].get("trajectory_ref")
+            if (
+                context["capture"].get("status") == "verified"
+                and isinstance(trajectory_ref, str)
+                and trajectory_ref
+            ):
+                context["evidence"]["verification"] = trajectory_ref
+                context["evidence"]["responses"].extend(
+                    ref for ref in refs if isinstance(ref, str) and ref
+                )
+            else:
+                context["evidence"]["verification"] = refs[0]
     elif mutation == "record_failed_receipt":
         refs = payload.get("evidence_refs")
         if isinstance(refs, list) and refs:

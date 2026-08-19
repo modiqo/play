@@ -293,7 +293,7 @@ states:
     entry: {action: classify_creator_options}
     "on":
       creator_match_ready: [{target: creator_offer, mutate: record_creator_match}]
-      creator_no_match: [{target: standby_exit, mutate: record_creator_standby}]
+      creator_no_match: [{target: search_empty_offer, mutate: record_no_match}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   creator_offer:
@@ -358,6 +358,7 @@ states:
     entry: {action: present_search_results}
     "on":
       search_presented: [{target: search_offer, mutate: record_search_presentation}]
+      search_empty: [{target: search_empty_offer, mutate: record_search_presentation}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   search_offer:
@@ -366,6 +367,15 @@ states:
     prompt: choose_search_result
     "on":
       search_play_selected: [{target: use_inspect, mutate: enter_search_use}]
+      search_dismissed: [{target: completed, mutate: record_search_dismissal}]
+
+  search_empty_offer:
+    owner: play
+    checkpoint: after
+    requires: [request.original, request.intent, search.complete]
+    prompt: choose_empty_search_path
+    "on":
+      search_explore_selected: [{target: standby_exit, mutate: start_empty_search_exploration}]
       search_dismissed: [{target: completed, mutate: record_search_dismissal}]
 
   classify:
@@ -379,7 +389,7 @@ states:
         - {target: standby_exit, mutate: downgrade_inadequate_match}
       partial_match: [{target: standby_exit, mutate: record_partial_match}]
       uncertain_match: [{target: standby_exit, mutate: record_uncertain_match}]
-      no_match: [{target: standby_exit, mutate: record_no_match}]
+      no_match: [{target: search_empty_offer, mutate: record_no_match}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_inspect:
@@ -532,7 +542,30 @@ states:
     requires: [request.original]
     entry: {action: record_standby}
     "on":
-      standby_recorded: [{target: exited, mutate: record_save_hook}]
+      standby_recorded:
+        - {guard: capture_is_active, target: exploration_execute, mutate: enter_captured_exploration}
+        - {target: exited, mutate: record_save_hook}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  exploration_execute:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [request.original, request.intent, request.requested_outcome, search.complete, capture.reference, capture.workspace, capture.status, execution.workspace, consent.explore]
+    entry: {action: execute_captured_exploration}
+    "on":
+      exploration_outcome_ready: [{target: exploration_verify, mutate: record_captured_exploration}]
+      exploration_route_exhausted: [{target: blocked, mutate: record_blocker}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  exploration_verify:
+    owner: play
+    checkpoint: after
+    requires: [request.requested_outcome, capture.reference, capture.workspace, capture.status, capture.trajectory_ref, evidence.verification]
+    entry: {action: verify_play_output}
+    "on":
+      outcome_verified: [{target: save_judge, mutate: record_verification}]
+      outcome_not_verified: [{target: blocked, mutate: record_failed_receipt}]
+      play_drifted: [{target: blocked, mutate: record_failed_receipt}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   save_judge:

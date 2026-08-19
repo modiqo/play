@@ -960,6 +960,13 @@ def _derive_session_guards(
     values[GuardId("search_only_requested")] = (
         _path_value(context, "last_event.id") == "play_search_request"
     )
+    values[GuardId("capture_is_active")] = (
+        _path_value(event.payload, "capture.status") == "active"
+        and isinstance(_path_value(event.payload, "capture.reference"), str)
+        and bool(_path_value(event.payload, "capture.reference"))
+        and isinstance(_path_value(event.payload, "capture.workspace"), str)
+        and bool(_path_value(event.payload, "capture.workspace"))
+    )
     values[GuardId("match_satisfies_constraints")] = (
         event.id == EventId("full_match")
         and isinstance(_path_value(event.payload, "match.reference"), str)

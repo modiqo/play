@@ -17,6 +17,7 @@ guards:
   - awareness_snapshot_ready
   - search_is_complete
   - search_only_requested
+  - capture_is_active
   - match_satisfies_constraints
   - search_has_remaining_choices
   - captured_trajectory_is_verified
@@ -102,6 +103,9 @@ mutations:
   - record_blocker
   - record_search_results
   - record_search_presentation
+  - start_empty_search_exploration
+  - enter_captured_exploration
+  - record_captured_exploration
   - enter_search_use
   - record_search_dismissal
   - record_incomplete_search
@@ -371,6 +375,7 @@ actions:
     command_policy:
       - Classify explicit or inferred requests for what is new, popular public Plays, or trending Plays as play_awareness_request; the digest owns truthful metric labels and must not call cumulative totals a time-window trend.
       - For exact_play_request, preserve the complete canonical owner/name reference supplied by the activation hook or cached catalog; never emit a bare Play name.
+      - Treat explicit `$play explore ...` and `/play explore ...` requests as play_creation_request, never play_search_request; the creator path still searches local and authorized registry Plays before offering a captured exploration.
       - Honor the scoped preference ledger; a request whose task class is ledgered silent must emit play_excluded without search, narration, or any mention of Play.
       - When the user states a scoped intervention preference (for example no Plays during prototyping, or always offer Plays for deploy chores), return the statement with its task class and policy on play_excluded so the ledger can record it; otherwise return null preference fields.
       - Classify every novel outcome before execution as capture or normal. Capture only when the likely multi-step, parameterizable work may become reusable and therefore must begin through Rote; normal means no trajectory is created and the task can never be settled post hoc.
@@ -505,8 +510,31 @@ actions:
       - State whether each registry Play was found locally or is expected to need a pull/install.
       - Use search.play_choices from the reusable search output; local-only Flow gaps remain informational.
       - A selection identifies a Play for read-only inspection and never authorizes execution.
+      - When both local and authorized registry results are empty, emit search_empty so Play can offer a captured exploration instead of presenting an empty result picker.
     events:
       search_presented: [search.query, search.sources, search.result_refs, search.results, search.play_choices]
+      search_empty: [search.query, search.sources, search.result_refs, search.results, search.play_choices]
+
+  execute_captured_exploration:
+    kind: delegated
+    owner: rote-specialist
+    specialist: rote
+    effect: mixed
+    input_required: [request.original, request.intent, request.requested_outcome, search.complete, search.sources, search.result_refs, capture.reference, capture.workspace, capture.status, execution.workspace, consent.explore]
+    command_policy:
+      - Consume Play's completed local and authorized-registry no-match result as the search-first gate; do not repeat Play or Rote play search and do not ask for the outcome again.
+      - Enter the already-created capture workspace and invoke rote-task-routing with the original user intent, empty-search evidence, workspace path, and the requirement to create a reusable workflow.
+      - Begin routing with `rote explore <request.requested_outcome>`. If it suggests a newly available full Play, return to rote-flow-run; otherwise preserve the same workspace and continue substrate discovery.
+      - For provider or API intent, inventory installed adapters first. If none covers the required operation, run `rote adapter catalog search` with both provider and operation terms through rote-task-routing.
+      - When catalog candidates exist, present their protocol, authentication, capability fit, and install impact, then offer **Adapt API** through rote-adapter-create or **Use existing CLI** through rote-shell. Never silently install a catalog result or choose a protocol for the user.
+      - If the user names an existing CLI, invoke rote-shell. Validate the exact executable inside the capture workspace with a minimal `deps.toml` plus `rote deps check`, then capture capability discovery and use through `rote proc`; never infer existence from prose or use raw `which` as proof.
+      - rote-adapter-create owns catalog selection, spec validation, dry-run, auth and toolset decisions, real creation, adapter info, and the first green probe/call. After an adapter is ready, rote-workspace owns calls, cached responses, transformations, and outcome verification.
+      - Keep adapter, CLI, and mixed evidence in this one capture workspace. Do not call provider APIs, native CLIs, MCP tools, curl, browser tools, or custom scripts outside the selected Rote skill.
+      - Return exploration_outcome_ready only with the complete user-visible result and a verified `rote trace --deps` trajectory bound to this capture. Play owns the subsequent save-worthiness and crystallization states; do not publish from this specialist action.
+      - Interactive questions belong to the invoked Rote specialist flow. Continue through them in place and return to Play only with one declared event.
+    events:
+      exploration_outcome_ready: [capture.status, capture.trajectory_ref, evidence.verification, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
+      exploration_route_exhausted: [reason, recoverable, owner, evidence_refs]
 
   classify_adequacy:
     kind: deterministic

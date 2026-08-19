@@ -39,6 +39,7 @@ _SELECTOR_ACTIONS = {
     "resolve_public_owner",
     "inspect_publication_credentials",
     "classify_adequacy",
+    "present_search_results",
     "run_registry_play",
     "verify_play_output",
 }
@@ -261,6 +262,7 @@ def _commandless_result(
         if not isinstance(original, str) or not isinstance(normalized, str) or not isinstance(results, list):
             raise ControllerRuntimeError("search presentation context is incomplete")
         return {
+            "event": "search_empty" if not results else "search_presented",
             "presentation_markdown": render_search_markdown(
                 original, normalized, results
             )

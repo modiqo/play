@@ -22,3 +22,11 @@ after context validation and cannot select a target, mutate controller context, 
 effect, or prevent a Play from completing. Presentation also stays outside the transition loop:
 captured exploration pulses are claimed by the Stop hook, while the daily recall journal is shown
 only when the user asks for it.
+
+An approved empty-search exploration is not a terminal standby. `record_standby` creates the
+capture and workspace, then `capture_is_active` routes to `exploration_execute`. That delegated
+state invokes the `rote` entrypoint with the unchanged outcome and completed no-match evidence.
+Rote owns all nested routing: `rote-task-routing` runs explore/inventory/catalog gates,
+`rote-adapter-create` adapts an accepted API, `rote-shell` validates and records an accepted CLI,
+and `rote-workspace` executes adapter work. Play accepts only a complete result plus a verified,
+capture-bound workspace trajectory before entering verification and save judgment.

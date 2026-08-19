@@ -82,9 +82,10 @@ separate confirmation.
 
 ### 5. Capture useful work—or keep it normal
 
-When no saved Play covers a likely reusable outcome, Play classifies it **before work starts**.
-`capture` creates a Rote workspace and returns a capture handle; `normal` creates no trajectory and
-can never be converted into a Play afterward. After captured work is verified, the agent may run:
+When no saved Play matches locally or in the authorized registry, Play asks whether to **Explore
+and create**. Approval classifies the outcome as `capture` **before work starts**, creates a Rote
+workspace, and returns a capture handle; declining creates no trajectory and runs nothing. After
+captured work is verified, the agent may run:
 
 ```text
 $play settle cap_xxxxxxxxxxxxxxxx deployed staging and posted the summary
@@ -111,7 +112,7 @@ checks, or tool approvals. A later explicit `$play` invocation works normally.
 | A hook detects a relevant Play or repeatable outcome | Searches your local and authorized Play collections | Whether to inspect or ignore a match |
 | Prefix a request with `direct:` | Bypasses Play and Rote for the whole turn: no machine, search, adapter, workspace, capture, or preference write | The direct task and its normal harness permissions |
 | Inspect a matching Play | Shows inputs, setup, credentials by name, and declared effects | Whether the exact version may run |
-| No adequate Play exists | Classifies the fallback as capture or normal before execution | Whether captured work should later settle |
+| No matching Play exists | Offers **Explore and create**, then creates a captured Rote workspace before execution | Whether to begin the new workflow or stop |
 | Finish repeatable work | Checks whether the recorded steps are worth saving | Team, Community, or Skip |
 | Ask “what’s new” | Shows new and revised Plays grouped by organization | Whether to inspect one |
 
@@ -204,10 +205,14 @@ stateDiagram-v2
 
     %% ── Search and adequacy ──
     search --> classify : results complete
-    search --> search_offer : search-only request
+    search --> search_offer : search-only request with results
+    search --> search_empty_offer : no local or authorized match
     search_offer --> use_inspect : result selected
+    search_empty_offer --> standby_exit : Explore and create approved
+    search_empty_offer --> completed : Not now
     classify --> use_inspect : full match (arguments do not dilute)
-    classify --> standby_exit : partial / uncertain / no match
+    classify --> standby_exit : partial / uncertain
+    classify --> search_empty_offer : no match
 
     %% ── Use (run a saved Play) ──
     use_inspect --> use_decide : read-only inspection
@@ -228,8 +233,10 @@ stateDiagram-v2
     use_receipt --> receipt
 
     %% ── Pre-work capture gate ──
-    standby_exit --> exited : capture => Rote workspace + handle
+    standby_exit --> exploration_execute : active capture => typed Rote specialist handoff
     standby_exit --> exited : normal => no trajectory, no settle
+    exploration_execute --> exploration_verify : Rote returns result + verified workspace trajectory
+    exploration_verify --> save_judge : outcome verified
     save_judge --> crystallize : worth saving (bound capture evidence)
     save_judge --> exited : one-off
 
@@ -254,7 +261,7 @@ stateDiagram-v2
     awareness_present --> awareness_offer : catalog summary + random 10
     awareness_offer --> use_inspect : sampled Play selected
     creator_search --> creator_offer : related Play exists
-    creator_search --> standby_exit : no match — apply capture decision
+    creator_search --> search_empty_offer : no match — ask to explore and create
     creator_offer --> use_inspect : use existing
     creator_offer --> standby_exit : adapt / create outside the machine
     management --> completed
@@ -298,11 +305,14 @@ recalled saved-Play runs never show workspace statistics.
 Install converges both features in `~/.rote-play/journal-settings.json`. Reinstalling fills missing
 defaults without silently re-enabling a journal the user explicitly disabled.
 
-There is deliberately **no Explore lane**. Earlier versions of this machine orchestrated
-exploration — modality routing, adapter discovery, effect approvals — re-implementing what the
-rote skills already own. Today, when no adequate Play exists, Play classifies the fallback before
-execution. Captured work starts in a dedicated Rote workspace and may later settle by its explicit
-handle; normal work has no capture and no retrospective save path.
+There is deliberately **no Play-owned Explore execution lane**. Earlier versions orchestrated
+modality routing, adapter discovery, and effect approvals inside Play, re-implementing what the
+Rote skills already own. Today, an empty local and authorized search reaches one consent boundary:
+**Explore and create** starts a dedicated captured Rote workspace and yields a typed specialist
+instruction to the `rote` orchestrator; **Not now** stops. Rote invokes `rote-task-routing`, then
+`rote-adapter-create` for API adaptation, `rote-shell` for validated CLI/`rote proc` work, and
+`rote-workspace` for adapter execution and cached evidence. Play resumes only with a verified
+result and capture-bound trajectory, then owns the save-worthiness and crystallization path.
 
 The runtime enforces this boundary rather than relying on caller prose: continuation state is
 resumed only by owner-private opaque IDs; boundary events reject undeclared fields; settle guards
@@ -488,8 +498,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.32/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.32 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.33/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.33 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -774,8 +784,12 @@ direct: deploy this worker with wrangler
 ```
 
 Play always searches before creating. If an adequate Play exists it offers **Inspect existing**.
-If none exists, the request is classified before execution. A capture starts and binds a Rote
-workspace; normal work remains uncaptured. Only `$play settle <capture-handle> <summary>` can
+If none exists locally or in the authorized registry, it offers **Explore and create**. Approval
+starts a capture, binds a Rote workspace, and hands the unchanged outcome to Rote. For an API,
+Rote searches installed adapters and the adapter catalog, then lets the user adapt a candidate;
+for a user-supplied CLI, `rote-shell` verifies the executable with `rote deps check` and records
+discovery/use with `rote proc`. **Not now** stops without creating anything. A later explicit
+`$play settle <capture-handle> <summary>` can
 re-enter the save path, and the save-worthiness judge examines the **bound trace, not the
 conversation**: at least two effect-bearing steps, at least one input that would vary on reuse,
 and a stable output shape.

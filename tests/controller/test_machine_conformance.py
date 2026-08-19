@@ -632,7 +632,7 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertNotIn("awareness_domain_offer", MACHINE["states"])
         self.assertEqual("select_awareness_play", MACHINE["states"]["awareness_offer"]["prompt"])
 
-    def test_creator_intent_searches_before_standby_and_skips_generic_offer(self) -> None:
+    def test_creator_intent_searches_before_offering_captured_exploration(self) -> None:
         self.assertEqual(
             "creator_search",
             MACHINE["states"]["qualify"]["on"]["play_creation_request"][0]["target"],
@@ -642,17 +642,22 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["creator_search"]["on"]["creator_search_ready"][0]["target"],
         )
         self.assertEqual(
-            "standby_exit",
+            "search_empty_offer",
             MACHINE["states"]["creator_classify"]["on"]["creator_no_match"][0]["target"],
         )
+        self.assertEqual(
+            "choose_empty_search_path", MACHINE["states"]["search_empty_offer"]["prompt"]
+        )
+        self.assertEqual(
+            "standby_exit",
+            MACHINE["states"]["search_empty_offer"]["on"]["search_explore_selected"][0]["target"],
+        )
 
-    def test_every_unserved_outcome_arms_the_save_hook_and_steps_aside(self) -> None:
+    def test_unserved_outcomes_capture_or_step_aside_by_recorded_decision(self) -> None:
         for state, event, branch in (
-            ("classify", "no_match", 0),
             ("classify", "partial_match", 0),
             ("classify", "uncertain_match", 0),
             ("classify", "full_match", 1),
-            ("creator_classify", "creator_no_match", 0),
             ("creator_offer", "creator_adapt_selected", 0),
             ("creator_offer", "creator_create_selected", 0),
             ("use_run", "play_drifted", 0),
@@ -672,9 +677,30 @@ class MachineConformanceTest(unittest.TestCase):
             ACTIONS["record_standby"]["command"],
         )
         self.assertEqual(
-            "exited",
+            "exploration_execute",
             MACHINE["states"]["standby_exit"]["on"]["standby_recorded"][0]["target"],
         )
+        self.assertEqual(
+            "capture_is_active",
+            MACHINE["states"]["standby_exit"]["on"]["standby_recorded"][0]["guard"],
+        )
+        self.assertEqual(
+            "exited",
+            MACHINE["states"]["standby_exit"]["on"]["standby_recorded"][1]["target"],
+        )
+        exploration = ACTIONS["execute_captured_exploration"]
+        self.assertEqual("rote", exploration["specialist"])
+        policy = " ".join(exploration["command_policy"])
+        for owner in (
+            "rote-task-routing",
+            "rote-adapter-create",
+            "rote-shell",
+            "rote-workspace",
+        ):
+            self.assertIn(owner, policy)
+        self.assertIn("rote adapter catalog search", policy)
+        self.assertIn("rote deps check", policy)
+        self.assertIn("rote proc", policy)
 
     def test_settled_reentry_judges_the_trace_before_any_save_offer(self) -> None:
         self.assertEqual(
@@ -921,6 +947,10 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertEqual(
             "use_inspect",
             MACHINE["states"]["search_offer"]["on"]["search_play_selected"][0]["target"],
+        )
+        self.assertEqual(
+            "search_empty_offer",
+            MACHINE["states"]["search_present"]["on"]["search_empty"][0]["target"],
         )
 
 

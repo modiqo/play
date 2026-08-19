@@ -158,6 +158,16 @@ prompts:
       search_play_selected: [prompt_version, selected_at, match.reference, request.parameters]
       search_dismissed: [prompt_version, selected_at]
 
+  choose_empty_search_path:
+    question: No saved Play matched locally or in your authorized registry. Would you like to explore this outcome and create a new workflow?
+    selection: single
+    choices:
+      - {id: explore, label: Explore and create, description: Start a captured Rote workspace now, complete the original outcome there, and preserve the verified trajectory so it can become a Play., event: search_explore_selected, recommended: true}
+      - {id: done, label: Not now, description: Stop without creating a workspace or running the request., event: search_dismissed}
+    events:
+      search_explore_selected: [prompt_version, selected_at]
+      search_dismissed: [prompt_version, selected_at]
+
   approve_play_run:
     question: Pull or replace this remote Play as disclosed, then run it with the displayed parameters and effects?
     selection: single
