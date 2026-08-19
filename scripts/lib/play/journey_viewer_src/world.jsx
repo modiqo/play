@@ -1,244 +1,8 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react'
 import * as THREE from 'three'
-import {CSS2DObject, CSS2DRenderer} from 'three/addons/renderers/CSS2DRenderer.js'
-
-export const KIND_LABEL = {
-  intent: 'Intent', decision: 'Decision', capability: 'Capability', authority: 'Authority',
-  phase: 'Phase', effect: 'Effect', evidence: 'Evidence', artifact: 'Artifact',
-  blocker: 'Blocker', recovery: 'Recovery', milestone: 'Milestone', learning: 'Learning',
-  play_candidate: 'Play candidate', play: 'Play',
-}
-
-export const MAP_MEANING = {
-  intent: 'Defines the outcome the agent is trying to reach.',
-  decision: 'Records a choice between possible routes.',
-  capability: 'Identifies the tool or service that can advance the work.',
-  authority: 'Confirms permission before an external effect occurs.',
-  phase: 'Groups several interactions serving one understandable purpose.',
-  effect: 'Performs outcome-bearing work in an external system.',
-  evidence: 'Checks what actually happened before accepting the result.',
-  artifact: 'Packages the verified result into something usable.',
-  blocker: 'Makes the condition that stopped progress visible.',
-  recovery: 'Shows how the agent returned to a valid route.',
-  milestone: 'Marks a meaningful achievement in the journey.',
-  learning: 'Preserves knowledge discovered during the work.',
-  play_candidate: 'Shapes verified work into a reusable procedure.',
-  play: 'Makes the verified procedure available for future journeys.',
-}
-
-export const WORLD_ROLE = {
-  intent: 'Starting gate',
-  decision: 'Fork in the road',
-  capability: 'Station',
-  authority: 'Checkpoint',
-  phase: 'Journey chamber',
-  effect: 'Worksite',
-  evidence: 'Observatory',
-  artifact: 'Destination',
-  blocker: 'Barricade',
-  recovery: 'Bridge',
-  milestone: 'Monument',
-  learning: 'Knowledge marker',
-  play_candidate: 'Reusable blueprint',
-  play: 'Published gateway',
-}
-
-export const WORLD_STORY = {
-  intent: 'The journey begins by fixing the destination before choosing a route.',
-  decision: 'The agent pauses here because more than one valid route is available.',
-  capability: 'The agent equips a tool or service here before it can act.',
-  authority: 'The route cannot continue until the required permission is present.',
-  phase: 'Several low-level interactions become one understandable stretch of the journey.',
-  effect: 'This is where the agent touches the outside world to advance the outcome.',
-  evidence: 'The agent looks back from here and checks whether the work really succeeded.',
-  artifact: 'Verified work arrives here as something the user can keep or use.',
-  blocker: 'Progress stopped here; the obstruction remains visible rather than being hidden.',
-  recovery: 'A corrected route reconnects the agent to the intended journey.',
-  milestone: 'The journey crosses a boundary worth remembering.',
-  learning: 'Knowledge discovered on the route is preserved here.',
-  play_candidate: 'A successful route is compressed here into a reusable blueprint.',
-  play: 'The blueprint becomes a route that another journey can follow.',
-}
-
-const INK_SOFT = 0x565c5f
-const INK_DARK = 0x24282b
-const GROUND = 0x080a0c
-const AMBER = 0xe88413
-
-function formatNumber(value) {
-  const number = Number(value || 0)
-  if (number >= 1000000) return `${(number / 1000000).toFixed(1)}M`
-  if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 1 : 2)}K`
-  return String(number)
-}
-
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (character) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[character]))
-}
-
-function journeyPositions(chapters) {
-  return chapters.map((chapter, index) => {
-    const x = Math.sin(index * .72) * 12 + Math.sin(index * .23) * 4
-    return new THREE.Vector3(x, 0, index * -21)
-  })
-}
-
-function material(color = INK_SOFT, options = {}) {
-  return new THREE.MeshStandardMaterial({
-    color, roughness: options.roughness ?? .82, metalness: options.metalness ?? .08,
-    transparent: options.opacity !== undefined, opacity: options.opacity ?? 1,
-  })
-}
-
-function box(group, size, position, color = INK_SOFT) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material(color))
-  mesh.position.set(...position)
-  mesh.castShadow = true
-  mesh.receiveShadow = true
-  group.add(mesh)
-  return mesh
-}
-
-function beamBetween(group, source, target, width = .22, color = INK_SOFT) {
-  const delta = target.clone().sub(source)
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, width, delta.length()), material(color))
-  mesh.position.copy(source).add(target).multiplyScalar(.5)
-  mesh.lookAt(target)
-  mesh.castShadow = true
-  group.add(mesh)
-  return mesh
-}
-
-function landmarkFor(chapter) {
-  const group = new THREE.Group()
-  const pale = 0x767c7e
-  const gray = INK_SOFT
-  const dark = INK_DARK
-
-  if (chapter.kind === 'intent') {
-    box(group, [.7, 5.4, .7], [-3.8, 2.7, 0], pale)
-    box(group, [.7, 5.4, .7], [3.8, 2.7, 0], pale)
-    box(group, [8.3, .7, .7], [0, 5.1, 0], pale)
-  } else if (chapter.kind === 'decision') {
-    beamBetween(group, new THREE.Vector3(0, .18, 3), new THREE.Vector3(-4.8, .18, -3.8), .32, pale)
-    beamBetween(group, new THREE.Vector3(0, .18, 3), new THREE.Vector3(4.8, .18, -3.8), .32, pale)
-    box(group, [.8, 3.8, .8], [0, 1.9, 1], gray)
-  } else if (chapter.kind === 'capability') {
-    box(group, [2.5, 5.8, 2.5], [-3.8, 2.9, 0], pale)
-    box(group, [2.5, 5.8, 2.5], [3.8, 2.9, 0], pale)
-    box(group, [4.6, .35, .9], [0, 1.15, -1.8], gray)
-  } else if (chapter.kind === 'authority') {
-    box(group, [.55, 6.2, .55], [-4.2, 3.1, 0], pale)
-    box(group, [.55, 6.2, .55], [4.2, 3.1, 0], pale)
-    box(group, [9, .55, .55], [0, 5.9, 0], pale)
-    for (let x = -3; x <= 3; x += 1.5) box(group, [.18, 4.5, .18], [x, 2.25, 0], gray)
-  } else if (chapter.kind === 'effect') {
-    box(group, [2.8, 7.6, 2.8], [-4, 3.8, .4], pale)
-    box(group, [2.2, 4.9, 2.2], [3.7, 2.45, -.8], gray)
-    box(group, [1.7, 3, 1.7], [5.4, 1.5, 1.4], dark)
-  } else if (chapter.kind === 'evidence') {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(3.5, .22, 12, 64), material(pale))
-    ring.rotation.x = Math.PI / 2
-    ring.position.y = 3.6
-    ring.castShadow = true
-    group.add(ring)
-    box(group, [.35, 4.8, .35], [0, 2.4, 0], gray)
-  } else if (chapter.kind === 'blocker') {
-    beamBetween(group, new THREE.Vector3(-4.6, .4, 0), new THREE.Vector3(4.6, 5.5, 0), .72, pale)
-    beamBetween(group, new THREE.Vector3(4.6, .4, 0), new THREE.Vector3(-4.6, 5.5, 0), .72, pale)
-  } else if (chapter.kind === 'recovery') {
-    box(group, [.7, 4.5, .7], [-4.2, 2.25, 0], pale)
-    box(group, [.7, 4.5, .7], [4.2, 2.25, 0], pale)
-    const arch = new THREE.Mesh(new THREE.TorusGeometry(4.2, .36, 12, 48, Math.PI), material(pale))
-    arch.position.y = 4.4
-    arch.rotation.z = Math.PI
-    group.add(arch)
-  } else if (chapter.kind === 'milestone') {
-    const obelisk = new THREE.Mesh(new THREE.CylinderGeometry(.45, 1.5, 8.2, 4), material(pale))
-    obelisk.position.y = 4.1
-    obelisk.rotation.y = Math.PI / 4
-    obelisk.castShadow = true
-    group.add(obelisk)
-  } else if (chapter.kind === 'artifact' || chapter.kind === 'play_candidate' || chapter.kind === 'play') {
-    box(group, [6.5, 4.5, 5], [0, 2.25, 0], pale)
-    box(group, [3.4, 3.2, .32], [0, 1.6, 2.64], dark)
-    box(group, [.35, 1.3, .35], [0, 1.6, 2.86], gray)
-  } else {
-    box(group, [5.8, .45, 5.8], [0, .22, 0], gray)
-    box(group, [.45, 3.8, .45], [-2.7, 1.9, -2.7], pale)
-    box(group, [.45, 3.8, .45], [2.7, 1.9, -2.7], pale)
-    box(group, [5.8, .45, .45], [0, 3.7, -2.7], pale)
-  }
-  return group
-}
-
-function makeCallout(chapter, count, total, onActivate) {
-  const root = document.createElement('button')
-  root.type = 'button'
-  root.className = 'world-callout'
-  root.dataset.site = chapter.id
-  root.innerHTML = `
-    <span class="callout-index">${String(chapter.order + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}</span>
-    <span class="callout-kind">${escapeHtml(KIND_LABEL[chapter.kind] || chapter.kind)}</span>
-    <strong>${escapeHtml(chapter.title)}</strong>
-    <span class="callout-body">
-      <i>WORLD ROLE</i><b>${escapeHtml(WORLD_ROLE[chapter.kind] || 'Journey stage')} · ${escapeHtml(MAP_MEANING[chapter.kind] || 'Advances the requested outcome.')}</b>
-      <i>WHAT HAPPENED</i><b>${escapeHtml(chapter.detail || chapter.title)}</b>
-      <i>STORY</i><b>${escapeHtml(WORLD_STORY[chapter.kind] || 'The agent advances the requested outcome here.')}</b>
-      <i>PROOF</i><b>${count} recorded interaction${count === 1 ? '' : 's'} · ${formatNumber(chapter.telemetry?.duration_ms)} ms · ${formatNumber(chapter.telemetry?.payload_tokens)} tokens</b>
-    </span>`
-  root.addEventListener('click', (event) => {
-    event.stopPropagation()
-    onActivate(chapter.id)
-  })
-  const label = new CSS2DObject(root)
-  label.position.set(0, 4.9, 0)
-  label.center.set(.5, 1)
-  return {label, root}
-}
-
-function makeInteractionCallout(record, chapter, index, onActivate) {
-  const root = document.createElement('button')
-  root.type = 'button'
-  root.className = 'world-interaction-callout'
-  root.style.setProperty('--arrival-delay', `${index * 110}ms`)
-  root.setAttribute('aria-label', `Inspect interaction ${record.sequence}: ${record.operation}`)
-  root.innerHTML = `<span>@${String(record.sequence).padStart(2, '0')}</span><strong>${escapeHtml(record.operation)}</strong><i>OPEN EVIDENCE</i>`
-  root.addEventListener('click', (event) => {
-    event.stopPropagation()
-    onActivate({siteId: chapter.id, sequence: record.sequence})
-  })
-  const anchor = document.createElement('div')
-  anchor.className = 'world-interaction-anchor'
-  anchor.appendChild(root)
-  const label = new CSS2DObject(anchor)
-  label.center.set(.5, 1)
-  return {label, root, sequence: record.sequence}
-}
-
-function clampVisibleCallouts(labelLayer, viewport) {
-  const bounds = viewport.getBoundingClientRect()
-  const horizontalInset = 18
-  const topInset = 18
-  const bottomInset = 82
-  const callouts = labelLayer.querySelectorAll(
-    '.world-callout.expanded, .world-callout.current, .world-callout.frozen, .world-interaction-callout.proximity, .world-interaction-callout.selected',
-  )
-  callouts.forEach((callout) => {
-    callout.style.marginLeft = '0px'
-    callout.style.marginTop = '0px'
-    const rect = callout.getBoundingClientRect()
-    if (!rect.width || !rect.height) return
-    let offsetX = 0
-    let offsetY = 0
-    if (rect.left < bounds.left + horizontalInset) offsetX = bounds.left + horizontalInset - rect.left
-    else if (rect.right > bounds.right - horizontalInset) offsetX = bounds.right - horizontalInset - rect.right
-    if (rect.top < bounds.top + topInset) offsetY = bounds.top + topInset - rect.top
-    else if (rect.bottom > bounds.bottom - bottomInset) offsetY = bounds.bottom - bottomInset - rect.bottom
-    callout.style.marginLeft = `${Math.round(offsetX)}px`
-    callout.style.marginTop = `${Math.round(offsetY)}px`
-  })
-}
+import {CSS2DRenderer} from 'three/addons/renderers/CSS2DRenderer.js'
+import {AMBER, GROUND, clampVisibleCallouts, journeyPositions, landmarkFor, makeCallout, makeInteractionCallout, material} from './world-elements.js'
+import {createWorldNavigation} from './world-navigation.js'
 
 export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect}) {
   const host = useRef(null)
@@ -390,97 +154,9 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       focusRing.rotation.x = -Math.PI / 2
       scene.add(focusRing)
 
-      const actionableMeshes = interactionMeshes.concat(semanticMeshes)
-      const raycaster = new THREE.Raycaster()
-      const pointer = new THREE.Vector2()
-      let lookYaw = 0
-      let lookPitch = 0
-      let pointerDown = false
-      let pointerMoved = false
-      let pointerX = 0
-      let pointerY = 0
-      const walkOffset = new THREE.Vector3()
-      const currentLookDirection = new THREE.Vector3(0, 0, -1)
-      const onPointerDown = (event) => {
-        if (!frozenRef.current || event.button !== 0) return
-        pointerDown = true
-        pointerMoved = false
-        pointerX = event.clientX
-        pointerY = event.clientY
-        renderer.domElement.classList.add('looking')
-        renderer.domElement.setPointerCapture?.(event.pointerId)
-      }
-      const onPointerMove = (event) => {
-        if (!pointerDown) {
-          const bounds = renderer.domElement.getBoundingClientRect()
-          pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1
-          pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1
-          raycaster.setFromCamera(pointer, camera)
-          const actionable = raycaster.intersectObjects(actionableMeshes, false)[0]
-          renderer.domElement.classList.toggle('vantage-hover', Boolean(actionable))
-          return
-        }
-        if (!frozenRef.current) return
-        const deltaX = event.clientX - pointerX
-        const deltaY = event.clientY - pointerY
-        if (Math.abs(deltaX) + Math.abs(deltaY) > 2) pointerMoved = true
-        lookYaw -= deltaX * .006
-        lookPitch = THREE.MathUtils.clamp(lookPitch - deltaY * .0045, -.82, .82)
-        pointerX = event.clientX
-        pointerY = event.clientY
-      }
-      const onPointerUp = (event) => {
-        pointerDown = false
-        renderer.domElement.classList.remove('looking')
-        renderer.domElement.releasePointerCapture?.(event.pointerId)
-      }
-      const onWheel = (event) => {
-        if (!frozenRef.current) return
-        event.preventDefault()
-        const stride = THREE.MathUtils.clamp(-event.deltaY * .008, -1.8, 1.8)
-        const groundDirection = currentLookDirection.clone().setY(0)
-        if (groundDirection.lengthSq() < .001) return
-        groundDirection.normalize()
-        walkOffset.addScaledVector(groundDirection, stride)
-        if (walkOffset.length() > 12) walkOffset.setLength(12)
-      }
-      const onPointer = (event) => {
-        if (pointerMoved) {
-          pointerMoved = false
-          return
-        }
-        const bounds = renderer.domElement.getBoundingClientRect()
-        pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1
-        pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1
-        raycaster.setFromCamera(pointer, camera)
-        const interactionHit = raycaster.intersectObjects(interactionMeshes, false)[0]
-        if (interactionHit) {
-          onSelect(interactionHit.object.userData)
-          return
-        }
-        const semanticHit = raycaster.intersectObjects(semanticMeshes, false)[0]
-        if (semanticHit) {
-          onSelect(semanticHit.object.userData)
-          return
-        }
-        if (frozenRef.current) onSelect(null)
-      }
-      const onKeyDown = (event) => {
-        if (!frozenRef.current || event.target instanceof HTMLInputElement || event.target instanceof HTMLButtonElement) return
-        const horizontal = event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a' ? .16 : event.key === 'ArrowRight' || event.key.toLowerCase() === 'd' ? -.16 : 0
-        const vertical = event.key === 'ArrowUp' || event.key.toLowerCase() === 'w' ? .1 : event.key === 'ArrowDown' || event.key.toLowerCase() === 's' ? -.1 : 0
-        if (!horizontal && !vertical) return
-        event.preventDefault()
-        lookYaw += horizontal
-        lookPitch = THREE.MathUtils.clamp(lookPitch + vertical, -.82, .82)
-      }
-      renderer.domElement.addEventListener('pointerdown', onPointerDown)
-      renderer.domElement.addEventListener('pointermove', onPointerMove)
-      renderer.domElement.addEventListener('pointerup', onPointerUp)
-      renderer.domElement.addEventListener('pointercancel', onPointerUp)
-      renderer.domElement.addEventListener('wheel', onWheel, {passive: false})
-      renderer.domElement.addEventListener('click', onPointer)
-      window.addEventListener('keydown', onKeyDown)
+      const navigation = createWorldNavigation({
+        canvas: renderer.domElement, camera, frozenRef, interactionMeshes, semanticMeshes, onSelect,
+      })
 
       const resize = () => {
         if (!host.current) return
@@ -519,18 +195,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           desiredCamera.copy(focusSite.worldPosition).add(new THREE.Vector3(focusSite.chapter.order % 2 === 0 ? -10 : 10, 5.2, 9.5))
           desiredLook.copy(focusSite.worldPosition).setY(2.3)
         } else if (frozenRef.current) {
-          const baseYaw = Math.atan2(direction.x, -direction.z)
-          const yaw = baseYaw + lookYaw
-          const lookDirection = new THREE.Vector3(
-            Math.sin(yaw) * Math.cos(lookPitch),
-            Math.sin(lookPitch),
-            -Math.cos(yaw) * Math.cos(lookPitch),
-          )
-          currentLookDirection.copy(lookDirection)
-          desiredCamera.copy(current).addScaledVector(direction, -1.4)
-          desiredCamera.add(walkOffset)
-          desiredCamera.y = 2.25
-          desiredLook.copy(desiredCamera).addScaledVector(lookDirection, 12)
+          navigation.applyFrozenView(current, direction, desiredCamera, desiredLook)
         } else {
           const side = index % 2 === 0 ? 1 : -1
           desiredCamera.copy(current).addScaledVector(direction, -8.2)
@@ -549,9 +214,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         const reached = Math.max(0, Math.floor(scaled + .001))
         if (reached !== previousReached) {
           dismissed.current.delete(sites[reached]?.chapter.id)
-          lookYaw = 0
-          lookPitch = 0
-          walkOffset.set(0, 0, 0)
+          navigation.reset()
           previousReached = reached
         }
         focusRing.position.copy(positions[reached]).setY(.16)
@@ -596,13 +259,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         disposed = true
         cancelAnimationFrame(frame)
         observer.disconnect()
-        window.removeEventListener('keydown', onKeyDown)
-        renderer.domElement.removeEventListener('pointerdown', onPointerDown)
-        renderer.domElement.removeEventListener('pointermove', onPointerMove)
-        renderer.domElement.removeEventListener('pointerup', onPointerUp)
-        renderer.domElement.removeEventListener('pointercancel', onPointerUp)
-        renderer.domElement.removeEventListener('wheel', onWheel)
-        renderer.domElement.removeEventListener('click', onPointer)
+        navigation.dispose()
         scene.traverse((object) => {
           object.geometry?.dispose?.()
           if (Array.isArray(object.material)) object.material.forEach((item) => item.dispose?.())
