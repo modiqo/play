@@ -327,6 +327,14 @@ def start_capture(
         "workspace_path": str(workspace_path),
         "status": "active",
         "trajectory_ref": None,
+        "journal": {
+            "last_sequence": 0,
+            "last_response_id": 0,
+            "last_tokens": 0,
+            "last_duration_ms": 0,
+            "last_tokens_saved": 0,
+            "pulse_count": 0,
+        },
         "created_at": _utc_now(),
         "created_at_epoch": time.time(),
     }

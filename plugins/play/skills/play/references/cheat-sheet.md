@@ -14,6 +14,7 @@ are worth turning into shared know-how.
 | Get something done | Ask in English | The hook checks the cached catalog and activates Play only for a strong match |
 | Run a specific Play | `$play https://play.modiqo.ai/<owner>/<name>` | Search is skipped; inspection and approval are not |
 | Browse what is available | `$play what's new` | A fast catalog digest and a random sample of up to 10 current public Plays |
+| Recall today's Play journeys | `$play journal` | A private daily command log of matches, selections, approved runs, completions, and blockers |
 | Bypass Play and Rote once | `direct: <request>` | The whole turn uses harness-native tools or the vendor CLI/API directly |
 | Keep a provider direct here | `Route GitHub directly through gh in this project` | A narrow `.play/routing.yaml` rule is created or updated |
 | Create a reusable procedure | `$play create a reusable <outcome>` | Play searches first, then captures new work only when it may be reusable |
@@ -107,6 +108,26 @@ $play list
 
 What’s New is a fast deterministic path: no full preflight and no narrated continuation machinery.
 The cache refreshes in bounded background/install flows rather than making every request pay for it.
+
+## Recall what you ran today
+
+```text
+You:   $play journal
+Play:  reads the owner-private command log
+Play:  shows today's matched, selected, approved, completed, and blocked Play journeys
+```
+
+```text
+$play journal
+$play journal yesterday
+$play journal 2026-08-17
+```
+
+The journal is built from successful state-machine transitions, not reconstructed from chat. It
+stores only the run ID, canonical Play reference, lifecycle event, timestamp, and local day—never
+your prompt, parameters, output, credentials, continuation ID, or workspace path. Repeated
+observation of the same run stage is deduplicated. Opening it is a fast local read with no registry
+search, preflight, or continuation.
 
 ## Step out for one whole turn
 
@@ -257,6 +278,12 @@ Play:  checks the captured evidence, then offers Team, Community, or Skip
 Your expertise matters while the Play is forming. A good captured path has distinct stages, inputs
 that can vary on reuse, a stable output, and a verified happy-path rerun.
 
+During active captured exploration, Play occasionally shows an **Exploration pulse** derived from
+the Rote workspace journal: new steps, successes and errors, operation latency, payload tokens,
+cached-query savings, recent trajectory nodes, and dependency edges. It waits for five new steps
+and at least two minutes after the previous pulse, so it teaches progress without narrating every
+tool call. These statistics never appear during ordinary work or while running an existing Play.
+
 ```text
 $play create a reusable <outcome>
 $play settle <capture-handle> <what was verified>
@@ -293,6 +320,8 @@ responses, credentials, and workspace paths.
 $play                                      # Guided start
 $play run hello                            # Low-risk first run
 $play what's new                          # Fast cached catalog digest
+$play journal                             # Today's deterministic recall command log
+$play journal yesterday                   # A previous local day
 $play find a Play that <does something>   # Search by outcome
 $play https://play.modiqo.ai/<owner>/<name>
 $play create a reusable <outcome>          # Search first, then capture if warranted

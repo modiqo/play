@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://play.modiqo.ai/schemas/play.recall-journal.v1.json",
+  "title": "Play deterministic recall command log",
+  "type": "object",
+  "required": ["schema", "events"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "play.recall-journal/v1"},
+    "events": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {"$ref": "#/$defs/event"}
+    }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "required": [
+        "schema",
+        "id",
+        "kind",
+        "run_id",
+        "reference",
+        "occurred_at",
+        "local_day"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"const": "play.recall-event/v1"},
+        "id": {"type": "string", "minLength": 3},
+        "kind": {
+          "enum": [
+            "matched",
+            "selected",
+            "approved",
+            "run_started",
+            "completed",
+            "blocked"
+          ]
+        },
+        "run_id": {"type": "string", "minLength": 1},
+        "reference": {"type": "string", "minLength": 3},
+        "occurred_at": {"type": "string", "format": "date-time"},
+        "local_day": {"type": "string", "format": "date"}
+      }
+    }
+  }
+}

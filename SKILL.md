@@ -37,6 +37,13 @@ machine or run preflight. Run the bundled `scripts/bin/play-cheat-sheet`, presen
 verbatim, and stop. This read-only help path must not search, capture, update preferences, or create
 a settle nudge.
 
+If the unchanged request is `play journal`, `$play journal`, `/play journal`, or asks to show the
+Play recall journal, do not enter the state machine or run preflight. Run the bundled
+`scripts/bin/play-journal show --day today` and present its Markdown verbatim. Accept `yesterday`
+or an explicit `YYYY-MM-DD` after `journal` and pass that value to `--day`. This owner-private,
+read-only view aggregates typed saved-Play match, selection, run, completion, and blocker events;
+it never searches the registry or stores prompt text or credentials.
+
 If the unchanged trimmed request is `play what's new`, `$play what's new`, or `/play what's new`
 (also accept `whats new`, `popular Plays`, or `trending Plays`), do not enter the state machine, run
 preflight, or create a continuation. Run the bundled
@@ -176,6 +183,9 @@ Play interrupts only for an adequate saved Play or a projected approval. When qu
 returns conversation or exclusion, or no adequate Play exists, Play exits quietly — no search
 narration, no explore offers. Before novel outcome work starts, the runtime classifies it as
 `capture` or `normal`. Capture creates a Rote workspace and handle; normal creates neither.
+Only an active captured exploration may display workspace analytics. Its Stop hook stays silent
+until both the configured step interval and time throttle are due, then shows one compact pulse;
+ordinary requests and recalled Play runs never show Rote workspace statistics.
 **A standby exit is a baton-pass, never a result**: complete a captured request only through the
 returned workspace, or complete a normal request without a future settle option. Saving, publication,
 adapter authentication, and team invites run only through the projected specialist handoffs. Never

@@ -18,7 +18,7 @@ references may call `scripts/bin/play-public-trends --play <owner/name[@version]
 Do not create a second stats-fetching path.
 
 Remembered mode stores only the authorized-scope contract, stable `awareness_sha`, and successful
-UTC checkpoint in `~/.rote/play/digest-state.json` with user-only file permissions. The scope key
+UTC checkpoint in `~/.rote-play/digest-state.json` with user-only file permissions. The scope key
 includes organization slugs, initial window length, and inspection limits. It stores no digest
 cards, credentials, or registry payloads. `--state <path>` overrides the location for an authorized
 host or isolated test.

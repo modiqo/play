@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.lib.play.preflight import REQUIRED_PLAY_EXECUTABLES
 from scripts.lib.play.bootstrap import backup_play_state
+from scripts.lib.play.journal_settings import ensure_journal_settings
 
 COPY_MARKER_SCHEMA = "play.portable-install/v1"
 OPENCODE_COMMAND_MARKER = "<!-- managed-by: modiqo/play -->"
@@ -516,6 +517,7 @@ def execute(
         verify_play_runtime(source)
         if command == "install":
             initialize_routing_policy(source)
+            initialize_journals()
     except Exception:
         if destination is not None:
             if profile_activated:
@@ -551,6 +553,26 @@ def initialize_routing_policy(source: Path) -> None:
     message = result.stdout.strip()
     if message:
         print(f"Play routing policy {message}")
+
+
+def initialize_journals() -> None:
+    """Enable sparse exploration pulses and private recall history by default."""
+
+    settings, changed = ensure_journal_settings()
+    exploration = settings["exploration"]
+    recall = settings["recall"]
+    state = "initialized" if changed else "current"
+    exploration_state = (
+        f"every {exploration['interval_steps']} steps "
+        f"(at most every {exploration['min_interval_seconds']}s)"
+        if settings["enabled"] and exploration["enabled"]
+        else "off"
+    )
+    recall_state = "on" if settings["enabled"] and recall["enabled"] else "off"
+    print(
+        "Play journals "
+        f"{state}: exploration {exploration_state}; recall history {recall_state}."
+    )
 
 
 def warm_inbox_cache(source: Path) -> None:

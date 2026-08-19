@@ -20,6 +20,12 @@ class PluginPackageTest(unittest.TestCase):
         self.assertTrue((TARGET / "scripts/bin/play-activate").stat().st_mode & 0o111)
         self.assertTrue((TARGET / "scripts/bin/play-cheat-sheet").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-cheat-sheet").stat().st_mode & 0o111)
+        self.assertTrue((TARGET / "scripts/bin/play-journal").is_file())
+        self.assertTrue((TARGET / "scripts/bin/play-journal").stat().st_mode & 0o111)
+        self.assertTrue((TARGET / "references/controller/command-log.md").is_file())
+        self.assertTrue(
+            (TARGET / "references/controller/command-log.schema.json").is_file()
+        )
         self.assertTrue((TARGET / "scripts/bin/play-preflight").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-onboarding").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-presentation").is_file())

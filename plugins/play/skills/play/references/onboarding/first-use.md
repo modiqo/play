@@ -82,7 +82,7 @@ Never suggest that uncaptured work can be converted into a Play retrospectively.
 
 ## Owner-private memory
 
-Use `~/.rote/play/onboarding-state.json` only for first-use orientation memory. Store:
+Use `~/.rote-play/onboarding-state.json` only for first-use orientation memory. Store:
 
 - a SHA-256 digest of the authenticated email;
 - the orientation version;

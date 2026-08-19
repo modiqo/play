@@ -1,5 +1,10 @@
 # Reduction plan: Play as the sidekick that makes Rote a daily habit
 
+> Historical design plan. For the current 73-state executable contract, see
+> [`../../references/controller/README.md`](../../references/controller/README.md). The implemented
+> transition-derived command log and exploration journal are specified in
+> [`../../references/controller/command-log.md`](../../references/controller/command-log.md).
+
 ## Product definition (the whole product, stated once)
 
 Play intervenes at exactly two moments and is invisible everywhere else:
@@ -85,7 +90,7 @@ must remember decisions at that granularity or it trains users to dismiss it.
 Design:
 
 - **Ledger, not config.** An owner-private, human-readable ledger under
-  `~/.rote/play/preferences` holding scoped entries:
+  `~/.rote-play/preferences.json` holding scoped entries:
   `(task_class, policy, evidence, timestamp)` where policy ∈
   {intervene, mention_only, silent} and evidence is the decision that created
   the entry (explicit statement or accumulated dismissals). No upfront
@@ -229,7 +234,7 @@ digest collector:
 - `play-inbox refresh [--if-older-than H]` — the background-job body. Fetches
   the digest (honoring the awareness lane's acknowledgment checkpoint without
   advancing it), precomputes a one-line summary, and atomically writes both
-  tiers to `~/.rote/play/inbox-cache.json`: `summary_line` + `counts` for the
+  tiers to `~/.rote-play/inbox-cache.json`: `summary_line` + `counts` for the
   banner, `digest` + rendered `markdown` for detail recall.
 - `play-inbox line` — instant, read-only, prints the one line or nothing.
   Quiet inbox = empty output, so a hook can inject it unconditionally.
@@ -257,10 +262,13 @@ descriptions. Both intervention moments therefore get structural triggers:
   classes, `$play`-bound prompts, and conversation → nothing. The injected
   line converts "remember to check for a play" into "the check already
   happened."
-- `play-intercept settle-nudge` (Stop hook): if a save hook armed by
-  `standby_exit` is still unsettled, show the user one reminder line — once
-  per hook per session — to `$play settle`. The deterministic gate is the
-  armed hook itself: play's own runtime said this outcome went unserved.
+- `play-intercept milestone-nudge` (Stop hook): for an active captured
+  exploration, claim a sparse workspace-statistics pulse only after its step
+  and time gates are due. Otherwise claim one event-backed Playrunner/Playmaker
+  nudge, or remain silent. Capture handles never leak through this hook.
+- `play-journal show --day <day>`: render the transition-derived recall command
+  log locally. It is an explicit pre-machine path with no preflight, search, or
+  continuation.
 
 These hooks are the backstop for (and arrive before) the rote Reuse Triage
 Gate edit; skills remain the executor, hooks own the remembering.

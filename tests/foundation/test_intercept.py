@@ -20,6 +20,7 @@ from play.intercept import (
     is_direct_request,
     load_index,
     milestone_nudge,
+    recall_journal_day,
     settle_nudge,
 )
 from play.milestones import record_event
@@ -160,6 +161,19 @@ class InterceptTest(unittest.TestCase):
                 line = intercept_prompt(prompt)
                 self.assertIsNotNone(line)
                 self.assertIn("play-cheat-sheet", line or "")
+                self.assertIn("do not enter the Play state machine", line or "")
+
+    def test_journal_command_uses_the_pre_machine_local_path(self) -> None:
+        for prompt, day in (
+            ("$play journal", "today"),
+            ("play recall journal yesterday", "yesterday"),
+            ("show me my Play journal 2026-08-17", "2026-08-17"),
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(day, recall_journal_day(prompt))
+                line = intercept_prompt(prompt)
+                self.assertIsNotNone(line)
+                self.assertIn(f"play-journal show --day {day}", line or "")
                 self.assertIn("do not enter the Play state machine", line or "")
 
     def test_routing_management_uses_pre_machine_skill_path(self) -> None:

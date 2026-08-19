@@ -10,9 +10,11 @@ context line naming the Play; on an outcome-shaped prompt with no local hit it
 injects, at most once per cooldown window, one line advising the agent to search
 preexisting Plays through the play skill.
 
-`play-intercept milestone-nudge` runs on Stop. It claims at most one internal
-achievement event and teaches the next useful Play behavior. Capture and settle
-handles remain internal to their typed workflow and never leak through Stop.
+`play-intercept milestone-nudge` runs on Stop. During captured exploration it
+claims at most one due Rote-backed progress pulse; otherwise it claims at most
+one internal achievement event and teaches the next useful Play behavior.
+Capture and settle handles remain internal to their typed workflow and never
+leak through Stop.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from .inbox_cache import read_cache as read_inbox_cache
+from .journal import claim_exploration_pulse, render_pulse
 from .milestones import claim_nudge
 from .normalize import token_is_covered
 from .private_store import atomic_write_json, load_json
@@ -55,6 +58,12 @@ _DIRECT_REQUEST = re.compile(
 )
 _CHEAT_SHEET_REQUEST = re.compile(
     r"^(?:\$play|/play|play)\s+cheat(?:[\s-]?sheet)[.!]?$",
+    re.IGNORECASE,
+)
+_JOURNAL_REQUEST = re.compile(
+    r"^(?:(?:\$play|/play|play)\s+(?:recall\s+)?journal|"
+    r"show(?:\s+me)?(?:\s+my)?\s+play(?:\s+recall)?\s+journal)"
+    r"(?:\s+(today|yesterday|\d{4}-\d{2}-\d{2}))?[.!]?$",
     re.IGNORECASE,
 )
 _ACTION_REQUEST = re.compile(
@@ -323,6 +332,15 @@ def is_cheat_sheet_request(prompt: str) -> bool:
     return _CHEAT_SHEET_REQUEST.match(prompt.strip()) is not None
 
 
+def recall_journal_day(prompt: str) -> str | None:
+    """Resolve an explicit fast-path recall-journal request to a safe day token."""
+
+    match = _JOURNAL_REQUEST.match(prompt.strip())
+    if match is None:
+        return None
+    return (match.group(1) or "today").casefold()
+
+
 def is_action_request(prompt: str) -> bool:
     """Keep catalog token overlap from activating Play for discussions."""
 
@@ -400,6 +418,13 @@ def intercept_prompt(
             "`scripts/bin/play-cheat-sheet`, present its Markdown verbatim, and do not "
             "enter the Play state machine."
         )
+    journal_day = recall_journal_day(stripped)
+    if journal_day is not None:
+        return (
+            "Play: explicit journal request — use the play skill's bundled "
+            f"`scripts/bin/play-journal show --day {journal_day}`, present its "
+            "Markdown verbatim, and do not enter the Play state machine or run preflight."
+        )
     if is_routing_management_request(stripped):
         return (
             "Play: explicit routing-policy management request — use the play skill's "
@@ -462,9 +487,10 @@ def intercept_prompt(
 
 
 def milestone_nudge(session_id: str | None) -> str | None:
-    """Return one event-backed achievement nudge, or stay completely silent."""
+    """Return one due exploration pulse or event-backed achievement nudge."""
 
-    return claim_nudge(session_id=session_id)
+    pulse = claim_exploration_pulse(session_id=session_id)
+    return render_pulse(pulse) if pulse is not None else claim_nudge(session_id=session_id)
 
 
 def settle_nudge(session_id: str | None) -> str | None:

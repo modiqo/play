@@ -137,6 +137,8 @@ $play                                      # Guided introduction
 $play find a Play that retrieves emails   # Find by outcome
 $play run the PostHog DAU report           # Find, inspect, then approve a run
 $play whats new                            # Open your Play inbox
+$play journal                             # Recall today's matched and run Plays
+$play journal yesterday                   # Recall another local day
 $play settle <capture-handle> <summary>    # Settle an existing Rote capture
 $play birth weekly customer report         # See how one of your Plays was made
 $play list my organizations and Plays      # Browse authorized collections
@@ -162,6 +164,7 @@ Play stays predictable by making each layer own one job:
 |---|---|
 | **`SKILL.md`** | Teaches an agent how to enter the runtime and handle its next boundary. |
 | **`play-machine`** | Owns search, inspection, approval, execution control, verification, saving, and fail-closed behavior. |
+| **Structural hooks and journals** | Activate strong cached matches, enforce direct routes, show sparse exploration pulses, and record typed recall events. |
 | **Rote skills** | Own setup, tools, browsers, adapters, workspaces, authoring, and publication. |
 | **Rote CLI and registry** | Run exact Plays locally and distribute authorized Plays. |
 
@@ -215,8 +218,10 @@ stateDiagram-v2
     use_offer --> use_prepare : approved
     use_prepare --> use_run : run handoff bound
     use_run --> use_verify : unchanged output
-    use_run --> use_authentication : recoverable adapter auth
-    use_authentication --> use_inspect : validated adapter authentication
+    use_run --> use_authentication_offer : recoverable adapter auth
+    use_authentication_offer --> use_prepare : static credential verified
+    use_authentication_offer --> use_authentication_execute : approved specialist recovery
+    use_authentication_execute --> use_inspect : validated adapter authentication
     use_run --> standby_exit : drifted / failed
     use_verify --> use_receipt : outcome verified
     use_verify --> standby_exit : not verified
@@ -263,6 +268,35 @@ stateDiagram-v2
 
 (The diagram groups the onboarding, team-invite, authentication, and publication sub-chains for
 readability; [`machine.yaml`](references/controller/machine.yaml) is the exact authority.)
+
+### Deterministic command log and journals
+
+Every successful typed transition may be observed, but only a closed set of recalled-Play
+transitions can append to the owner-private command log. The observer records match, selection,
+approval, run start, completion, and blocker events with deterministic `<run_id>:<kind>` IDs. It
+does not store prompts, parameter values, output, credentials, continuation IDs, or workspace
+paths, and a journal write failure can never change the controller transition.
+
+The canonical mapping and privacy contract live in
+[`references/controller/command-log.md`](references/controller/command-log.md); the durable JSON
+shape is [`command-log.schema.json`](references/controller/command-log.schema.json). The default
+store is `~/.rote-play/recall-journal.json`, retained for 30 local days and capped at 1,024 events.
+Recall it without search, preflight, or a continuation:
+
+```text
+$play journal
+$play journal yesterday
+$play journal 2026-08-17
+```
+
+Exploration remains separate. Only an active captured exploration can show Rote workspace
+analytics. Its Stop hook first checks cheap workspace counters and stays silent until five new
+steps and the two-minute throttle are due; only then does it read the richer trace and show one
+compact trajectory, latency, token, error-recovery, and dependency-DAG pulse. Ordinary work and
+recalled saved-Play runs never show workspace statistics.
+
+Install converges both features in `~/.rote-play/journal-settings.json`. Reinstalling fills missing
+defaults without silently re-enabling a journal the user explicitly disabled.
 
 There is deliberately **no Explore lane**. Earlier versions of this machine orchestrated
 exploration — modality routing, adapter discovery, effect approvals — re-implementing what the
@@ -318,7 +352,7 @@ printf '%s' '{"run_id":"demo","task_key":"demo","request":{"original":"Review th
 Measure controller-only latency with `just benchmark-controller` and `just benchmark-runtime`.
 The 2026-08-07 baseline (Apple Silicon, Python 3.14.5, then 87 states) recorded one-time compile
 at 76–82 ms, warm transitions at 0.58 ms median / 0.78 ms p95, and the full invoke-to-evaluator
-loop at 54 ms; the machine has since shrunk to 70 states and the ~4 KB activation skill replaced a
+loop at 54 ms; the machine now has 73 states and the ~4 KB activation skill replaced a
 34.9 KB model-owned controller manual. Treat these as development baselines, not cross-machine
 guarantees.
 
@@ -354,6 +388,10 @@ active progress line: `◐ ◓ ◑ ◒` animate while active, `✓` means comple
 value, real recurring needs, low review cost, and permission to redesign or retire experiments.
 Redirected output gets one start and one finish record per phase without rotating copy or repeated
 elapsed-time heartbeats.
+
+Install also creates owner-private journal settings with sparse exploration pulses and daily recall
+logging enabled. The defaults are five new workspace steps, at most one pulse every two minutes,
+and 30 days of recall history. Existing explicit journal choices survive reinstall.
 
 Identity is an early setup gate. If Rote is unsigned, the terminal wizard offers Google and GitHub
 before any Play-owned backup, plugin, skill, or hook is changed. OAuth login also creates a new
@@ -450,8 +488,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.31/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.31 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.32/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.32 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -889,8 +927,9 @@ digest owns the acknowledgment checkpoint, so viewing "what's new" quiets the ba
 The same hook surface carries the interception loop:
 
 ```bash
-play-intercept prompt        # UserPromptSubmit: local + hub-catalog match, one line or silence
-play-intercept settle-nudge  # Stop: one reminder per armed save hook per session
+play-intercept prompt            # UserPromptSubmit: fast paths, direct routes, or catalog match
+play-intercept milestone-nudge   # Stop: due exploration pulse, else one earned nudge, else silence
+play-journal show --day today    # Explicit local recall; no state machine or preflight
 ```
 
 The hook is the sole proactive activation gate. For `direct:` and `without play:` requests it
@@ -956,7 +995,8 @@ Only explicit user/global wording selects `~/.rote-play/routing.yaml`.
 idempotent without overwriting existing policy. The nearest `.play/routing.yaml` inside the current
 Git worktree augments the user policy.
 
-Hook state (index cache, cooldowns, nudge markers, preference ledger, standby hooks) lives in
+Hook state (index cache, cooldowns, nudge markers, preference ledger, standby hooks, journal
+settings, and the recall command log) lives in
 shared `~/.rote-play/` stores, so the safeguards compose across harnesses: a Play saved from one
 harness is an interception candidate in every other, and nudges never double-fire. Preference
 resolution is specificity ordered (`session` over `project` over `global`); a non-global entry must
@@ -1117,7 +1157,8 @@ The foundation is Python-only. Commands under `scripts/bin/` and harness entrypo
 `scripts/harness/` are thin executables; reusable command, private-store, birth-certificate,
 registry, search, inventory, digest, templated elicitation, typed greeting/URI onboarding, typed
 specialist handoff, typed controller runtime, public credential/smoke validation, and
-machine-validation logic lives in `scripts/lib/play/`. References and tests are
+machine-validation logic lives in `scripts/lib/play/`. Journal tests also validate the emitted
+command log against its published Draft 2020-12 schema. References and tests are
 grouped by controller, awareness, Explore, publication, integration, and harness use case.
 
 For isolated testing, override the discovered roots or reversible state location:

@@ -60,6 +60,7 @@ REQUIRED_PLAY_EXECUTABLES = (
     "play-inspect",
     "play-intercept",
     "play-inventory",
+    "play-journal",
     "play-onboarding",
     "play-preflight",
     "play-presentation",
