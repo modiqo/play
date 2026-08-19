@@ -92,6 +92,26 @@ All saved-Play search, inspection, approval, authentication recovery, execution,
 capture settlement, creation, sharing, and publication trajectories remain owned by
 [`machine.yaml`](machine.yaml).
 
+## Bootstrap recovery command log
+
+Install backup and restore are deterministic bootstrap transactions, not recalled-Play events, so
+they never append to `play.recall-journal/v1`. Their complete command surface is recorded here:
+
+| Command | Deterministic action |
+|---|---|
+| `play-bootstrap backup list [--json]` | List valid recovery manifests newest-first. |
+| `play-bootstrap backup show <run-id> [--json]` | Inspect one immutable recovery manifest. |
+| `play-bootstrap restore --dossier <install-report.json> --plan [--json]` | Validate the dossier and manifest hash, then show the exact restore plan without changing state. |
+| `play-bootstrap restore --dossier <install-report.json> [--yes] [--json]` | Back up current Play state, restore the dossier's snapshot, verify it, and write a restore dossier. |
+| `play-bootstrap restore --backup <run-id> --plan [--json]` | Build the same read-only plan directly from a retained backup ID. |
+| `play-bootstrap restore --backup <run-id> [--yes] [--json]` | Apply a retained backup directly, with the same safety snapshot and verification. |
+
+Every approved install creates its recovery manifest before plugin, portable-state, or hook
+convergence. If the manifest contains prior Play state, the install result prints its dossier-driven
+restore command. Only a completed, verified install or restore may prune recovery points; the newest
+10 valid snapshots are retained. Shared harness files are merged by Play ownership during restore,
+while Play-only files, directories, and launchers are restored exactly.
+
 ## Exploration and publication transition notes
 
 These lifecycle transitions are deliberately outside the recall command log, but remain fully

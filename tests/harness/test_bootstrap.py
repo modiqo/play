@@ -29,12 +29,16 @@ from scripts.lib.play.bootstrap import (
     _verify_prompt_intercept,
     apply,
     backup_play_state,
+    build_restore_plan,
     build_plan,
     codex_disabled_play_entries,
     codex_play_enablement_step,
     converge_play_marketplace,
     install_hooks,
+    list_play_backups,
+    prune_play_backups,
     remove_portable_play_hooks,
+    restore_play_state,
     main,
     run,
 )
@@ -677,6 +681,123 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn(str(play), backed_up)
         self.assertEqual(0o700, manifest_path.parent.stat().st_mode & 0o777)
         self.assertEqual(0o600, manifest_path.stat().st_mode & 0o777)
+
+    def test_install_backup_records_absent_paths_for_exact_restore(self) -> None:
+        manifest_path = backup_play_state([], {}, run_id="absent-paths")
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        self.assertEqual("install", manifest["purpose"])
+        self.assertTrue(any(entry["kind"] == "absent" for entry in manifest["entries"]))
+
+    def test_verified_backup_retention_keeps_newest_ten(self) -> None:
+        for index in range(12):
+            backup_play_state([], {}, run_id=f"retention-{index:02d}")
+
+        removed = prune_play_backups(protect=["retention-11"])
+        catalog = list_play_backups()
+
+        self.assertEqual(2, len(removed))
+        self.assertEqual(10, len(catalog["backups"]))
+        self.assertIn(
+            "retention-11", {item["run_id"] for item in catalog["backups"]}
+        )
+
+    def test_dossier_restore_is_transactional_and_creates_safety_backup(self) -> None:
+        portable = self.home / ".local" / "share" / "modiqo" / "play" / "skill"
+        portable.mkdir(parents=True)
+        state = portable / "state.txt"
+        state.write_text("before\n", encoding="utf-8")
+        manifest_path = backup_play_state([], {}, run_id="install-before-update")
+        dossier = self.home / "state" / "runs" / "install-before-update.json"
+        dossier.parent.mkdir(parents=True)
+        dossier.write_text(
+            json.dumps(
+                {
+                    "schema": "play.bootstrap-report/v1",
+                    "steps": [
+                        {
+                            "id": "backup_play_state",
+                            "status": "completed",
+                            "evidence": str(manifest_path),
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        state.write_text("after\n", encoding="utf-8")
+
+        plan = build_restore_plan(dossier=dossier)
+        report = restore_play_state(plan)
+
+        self.assertEqual("before\n", state.read_text(encoding="utf-8"))
+        self.assertEqual("completed", report["status"])
+        self.assertTrue(Path(report["safety_backup_manifest"]).is_file())
+        self.assertTrue(Path(report["report_paths"]["json"]).is_file())
+
+    def test_restore_replaces_only_play_owned_hooks_in_shared_config(self) -> None:
+        hooks = self.home / ".codex" / "hooks.json"
+        hooks.parent.mkdir(parents=True)
+        hooks.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {"command": "user-hook-before"},
+                            {"command": "/old/play-intercept prompt"},
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        backup_play_state(["codex"], {}, run_id="shared-hook-state")
+        hooks.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {"command": "user-hook-after"},
+                            {"command": "/new/play-intercept prompt"},
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        restore_play_state(build_restore_plan(backup_run_id="shared-hook-state"))
+        entries = json.loads(hooks.read_text(encoding="utf-8"))["hooks"][
+            "UserPromptSubmit"
+        ]
+
+        self.assertEqual(
+            [
+                {"command": "user-hook-after"},
+                {"command": "/old/play-intercept prompt"},
+            ],
+            entries,
+        )
+
+    def test_status_card_shows_dossier_restore_command_when_state_was_replaced(self) -> None:
+        rendered = _render_status_card(
+            {
+                "status": "completed",
+                "run_id": "recovery-card",
+                "selected_harnesses": [],
+                "steps": [],
+                "backup": {
+                    "has_previous_state": True,
+                    "restore_command": "play-bootstrap restore --dossier /tmp/run.json",
+                },
+            }
+        )
+
+        self.assertIn("Recovery point", rendered)
+        self.assertIn(
+            "play-bootstrap restore --dossier /tmp/run.json", rendered
+        )
 
     def test_codex_play_override_removal_preserves_unrelated_toml(self) -> None:
         config = self.home / ".codex" / "config.toml"

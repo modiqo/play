@@ -20,6 +20,7 @@ are worth turning into shared know-how.
 | Create a reusable procedure | `$play create a reusable <outcome>` | Play searches first, then captures new work only when it may be reusable |
 | See how a Play was made | `$play birth <name-or-reference>` | A redacted, provenance-preserving birth certificate |
 | Open this page | `play cheat-sheet` | The deterministic cheat sheet—no search or state machine |
+| Recover an earlier install | `play-bootstrap backup list` | Inspect the newest 10 recovery points, then restore from an install dossier |
 
 ## Use the prefix your app understands
 
@@ -339,6 +340,11 @@ play-routing --project . list              # Show persistent direct routes here
 
 rote token list                            # Show credential names and health, not values
 rote token set <ENV_VAR> --stdin           # Store a static token outside chat
+
+play-bootstrap backup list                # List the newest 10 recovery points
+play-bootstrap backup show <run-id>        # Inspect one recovery point
+play-bootstrap restore --dossier <report.json> --plan
+play-bootstrap restore --dossier <report.json> # Review, confirm, restore
 ```
 
 ## The three rules worth remembering

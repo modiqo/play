@@ -25,6 +25,10 @@ SCHEMA = "play.bootstrap/v1"
 PLAN_SCHEMA = "play.bootstrap-plan/v1"
 REPORT_SCHEMA = "play.bootstrap-report/v1"
 BACKUP_SCHEMA = "play.install-backup/v1"
+BACKUP_CATALOG_SCHEMA = "play.install-backup-catalog/v1"
+RESTORE_PLAN_SCHEMA = "play.install-restore-plan/v1"
+RESTORE_REPORT_SCHEMA = "play.install-restore-report/v1"
+BACKUP_RETENTION = 10
 LOGIN_PROVIDERS = ("google", "github")
 SUPPORTED_HARNESSES = (
     "codex",
@@ -713,6 +717,7 @@ def build_plan(
     *, top_k: int = 3, requested: Sequence[str] | None = None, runner: Runner = run
 ) -> dict[str, Any]:
     targets = discover_targets(top_k=top_k, requested=requested)
+    recovery_catalog = list_play_backups()
     selected = [target.id for target in targets if target.selected]
     if not selected:
         raise BootstrapError("no supported harnesses were detected or selected")
@@ -816,6 +821,12 @@ def build_plan(
             "recommended": True,
         },
         {
+            "id": "retain_play_backups",
+            "effect": f"retains the newest {BACKUP_RETENTION} verified recovery points and prints a dossier restore command when prior Play state exists",
+            "existing_recovery_points": len(recovery_catalog["backups"]),
+            "recommended": True,
+        },
+        {
             "id": "install_play",
             "effect": "fully overwrites Play-owned state with the selected version while preserving unrelated harness settings",
             "targets": selected,
@@ -835,6 +846,15 @@ def build_plan(
         "top_k": top_k,
         "max_selected_harnesses": MAX_SELECTED_HARNESSES,
         "selected_harnesses": selected,
+        "recovery": {
+            "retention": BACKUP_RETENTION,
+            "existing_recovery_points": len(recovery_catalog["backups"]),
+            "latest_backup_run_id": (
+                recovery_catalog["backups"][0]["run_id"]
+                if recovery_catalog["backups"]
+                else None
+            ),
+        },
         "targets": [asdict(target) for target in targets],
         "rote": rote_state,
         "rote_skills": rote_skills,
@@ -945,15 +965,17 @@ def _play_state_candidates(
     return unique
 
 
-def backup_play_state(
+def _backup_state_paths(
+    paths: Sequence[Path],
     selected: Sequence[str],
-    plan_targets: dict[str, dict[str, Any]],
     *,
     run_id: str,
+    purpose: str,
+    source_backup_run_id: str | None = None,
 ) -> Path:
-    """Create an owner-private, restorable snapshot before Play convergence."""
+    """Snapshot exact path presence so a later restore can also remove additions."""
 
-    root = _report_root() / "backups" / run_id
+    root = _backup_root() / run_id
     if root.exists() or root.is_symlink():
         raise BootstrapError(f"refusing to replace existing Play backup: {root}")
     entries_root = root / "entries"
@@ -961,8 +983,16 @@ def backup_play_state(
     root.chmod(0o700)
     entries: list[dict[str, Any]] = []
     try:
-        for index, source in enumerate(_play_state_candidates(selected, plan_targets)):
+        for index, source in enumerate(paths):
+            source = source.absolute()
             if not source.exists() and not source.is_symlink():
+                entries.append(
+                    {
+                        "path": str(source),
+                        "kind": "absent",
+                        "backup": None,
+                    }
+                )
                 continue
             relative = Path("entries") / f"{index:03d}-{source.name}"
             destination = root / relative
@@ -992,20 +1022,37 @@ def backup_play_state(
                 }
             )
         manifest = root / "manifest.json"
-        _atomic_json(
-            manifest,
-            {
-                "schema": BACKUP_SCHEMA,
-                "run_id": run_id,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "selected_harnesses": list(selected),
-                "entries": entries,
-            },
-        )
+        payload: dict[str, Any] = {
+            "schema": BACKUP_SCHEMA,
+            "run_id": run_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "purpose": purpose,
+            "selected_harnesses": list(selected),
+            "entries": entries,
+        }
+        if source_backup_run_id is not None:
+            payload["source_backup_run_id"] = source_backup_run_id
+        _atomic_json(manifest, payload)
         return manifest
     except Exception:
         shutil.rmtree(root, ignore_errors=True)
         raise
+
+
+def backup_play_state(
+    selected: Sequence[str],
+    plan_targets: dict[str, dict[str, Any]],
+    *,
+    run_id: str,
+) -> Path:
+    """Create an owner-private, restorable snapshot before Play convergence."""
+
+    return _backup_state_paths(
+        _play_state_candidates(selected, plan_targets),
+        selected,
+        run_id=run_id,
+        purpose="install",
+    )
 
 
 def _hook_paths() -> dict[str, Path]:
@@ -1983,6 +2030,612 @@ def _report_root() -> Path:
     return state / "play-bootstrap"
 
 
+def _backup_root() -> Path:
+    return _report_root() / "backups"
+
+
+def _backup_manifest_path(run_id: str) -> Path:
+    if not run_id or Path(run_id).name != run_id or run_id in {".", ".."}:
+        raise BootstrapError(f"invalid Play backup id: {run_id!r}")
+    return _backup_root() / run_id / "manifest.json"
+
+
+def _manifest_sha256(path: Path) -> str:
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _load_backup_manifest(path: Path) -> dict[str, Any]:
+    try:
+        resolved = path.expanduser().resolve(strict=True)
+        root = _backup_root().resolve()
+        resolved.relative_to(root)
+    except (OSError, ValueError) as error:
+        raise BootstrapError(
+            f"Play backup manifest must be inside {_backup_root()}: {path}"
+        ) from error
+    try:
+        value = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise BootstrapError(f"cannot read Play backup manifest {resolved}: {error}") from error
+    if not isinstance(value, dict) or value.get("schema") != BACKUP_SCHEMA:
+        raise BootstrapError(f"unsupported Play backup manifest: {resolved}")
+    if not isinstance(value.get("run_id"), str) or not isinstance(
+        value.get("selected_harnesses"), list
+    ) or not isinstance(value.get("entries"), list):
+        raise BootstrapError(f"malformed Play backup manifest: {resolved}")
+    for entry in value["entries"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+            raise BootstrapError(f"malformed Play backup entry in {resolved}")
+        if entry.get("kind") not in {"absent", "file", "directory", "symlink"}:
+            raise BootstrapError(f"unsupported Play backup entry in {resolved}")
+    return {**value, "manifest_path": str(resolved)}
+
+
+def list_play_backups() -> dict[str, Any]:
+    """Return valid install snapshots newest-first without changing state."""
+
+    backups: list[dict[str, Any]] = []
+    root = _backup_root()
+    if root.is_dir():
+        for manifest_path in root.glob("*/manifest.json"):
+            try:
+                manifest = _load_backup_manifest(manifest_path)
+            except BootstrapError:
+                continue
+            existing = sum(
+                1 for entry in manifest["entries"] if entry.get("kind") != "absent"
+            )
+            backups.append(
+                {
+                    "run_id": manifest["run_id"],
+                    "created_at": manifest.get("created_at"),
+                    "purpose": manifest.get("purpose", "install"),
+                    "selected_harnesses": manifest["selected_harnesses"],
+                    "entry_count": len(manifest["entries"]),
+                    "existing_entry_count": existing,
+                    "manifest_path": manifest["manifest_path"],
+                    "manifest_sha256": _manifest_sha256(manifest_path),
+                }
+            )
+    backups.sort(
+        key=lambda item: (str(item.get("created_at") or ""), str(item["run_id"])),
+        reverse=True,
+    )
+    return {
+        "schema": BACKUP_CATALOG_SCHEMA,
+        "retention": BACKUP_RETENTION,
+        "backups": backups,
+    }
+
+
+def prune_play_backups(
+    *, retain: int = BACKUP_RETENTION, protect: Sequence[str] = ()
+) -> list[str]:
+    """Prune oldest valid snapshots only after a verified transaction."""
+
+    if retain < 1:
+        raise BootstrapError("Play backup retention must be at least 1")
+    catalog = list_play_backups()
+    protected = set(protect)
+    candidates = [
+        item for item in reversed(catalog["backups"]) if item["run_id"] not in protected
+    ]
+    excess = max(0, len(catalog["backups"]) - retain)
+    removed: list[str] = []
+    for item in candidates[:excess]:
+        manifest = Path(str(item["manifest_path"]))
+        directory = manifest.parent
+        try:
+            directory.resolve().relative_to(_backup_root().resolve())
+        except ValueError as error:
+            raise BootstrapError(f"refusing to prune unsafe backup path: {directory}") from error
+        shutil.rmtree(directory)
+        removed.append(str(item["run_id"]))
+    return removed
+
+
+def _backup_from_dossier(path: Path) -> tuple[Path, str | None]:
+    try:
+        dossier_path = path.expanduser().resolve(strict=True)
+        dossier = json.loads(dossier_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise BootstrapError(f"cannot read Play install dossier {path}: {error}") from error
+    if not isinstance(dossier, dict) or dossier.get("schema") != REPORT_SCHEMA:
+        raise BootstrapError(f"not a Play install dossier: {dossier_path}")
+    backup = dossier.get("backup")
+    manifest_value = backup.get("manifest_path") if isinstance(backup, dict) else None
+    expected_sha = backup.get("manifest_sha256") if isinstance(backup, dict) else None
+    if not isinstance(manifest_value, str):
+        manifest_value = next(
+            (
+                step.get("evidence")
+                for step in dossier.get("steps", [])
+                if isinstance(step, dict)
+                and step.get("id") == "backup_play_state"
+                and step.get("status") == "completed"
+                and isinstance(step.get("evidence"), str)
+            ),
+            None,
+        )
+    if not isinstance(manifest_value, str):
+        raise BootstrapError(f"install dossier has no restorable Play backup: {dossier_path}")
+    manifest_path = Path(manifest_value).expanduser().resolve()
+    _load_backup_manifest(manifest_path)
+    if isinstance(expected_sha, str) and _manifest_sha256(manifest_path) != expected_sha:
+        raise BootstrapError(
+            f"Play backup manifest changed after the dossier was written: {manifest_path}"
+        )
+    return manifest_path, str(dossier_path)
+
+
+def build_restore_plan(
+    *, dossier: Path | None = None, backup_run_id: str | None = None
+) -> dict[str, Any]:
+    if (dossier is None) == (backup_run_id is None):
+        raise BootstrapError("restore requires exactly one of --dossier or --backup")
+    if dossier is not None:
+        manifest_path, dossier_path = _backup_from_dossier(dossier)
+    else:
+        assert backup_run_id is not None
+        manifest_path = _backup_manifest_path(backup_run_id)
+        dossier_path = None
+    manifest = _load_backup_manifest(manifest_path)
+    entries = [
+        {
+            "path": entry["path"],
+            "action": "remove" if entry["kind"] == "absent" else "restore",
+            "kind": entry["kind"],
+        }
+        for entry in manifest["entries"]
+    ]
+    body: dict[str, Any] = {
+        "schema": RESTORE_PLAN_SCHEMA,
+        "backup_run_id": manifest["run_id"],
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": _manifest_sha256(manifest_path),
+        "dossier_path": dossier_path,
+        "selected_harnesses": manifest["selected_harnesses"],
+        "entries": entries,
+        "safety": "The current Play-owned state is backed up before any restore mutation.",
+    }
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
+    return {
+        **body,
+        "plan_id": "sha256:" + hashlib.sha256(canonical.encode()).hexdigest(),
+    }
+
+
+def _remove_restore_target(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def _backup_entry_source(root: Path, entry: dict[str, Any]) -> Path | None:
+    backup_value = entry.get("backup")
+    if not isinstance(backup_value, str):
+        return None
+    source = (root / backup_value).resolve(strict=True)
+    try:
+        source.relative_to(root.resolve())
+    except ValueError as error:
+        raise BootstrapError(f"unsafe backup payload path for {entry['path']}") from error
+    return source
+
+
+def _play_toml_blocks(text: str) -> list[str]:
+    header = re.compile(r"(?m)^\[\[skills\.config\]\]\s*(?:\r?\n|$)")
+    matches = list(header.finditer(text))
+    table_headers = list(re.finditer(r"(?m)^\[", text))
+    blocks: list[str] = []
+    for match in matches:
+        start = match.start()
+        end = next(
+            (candidate.start() for candidate in table_headers if candidate.start() > start),
+            len(text),
+        )
+        block = text[start:end]
+        entries = _fallback_skill_config_entries(block)
+        if len(entries) == 1 and _is_play_skill_config(entries[0]):
+            blocks.append(block.strip("\n") + "\n")
+    return blocks
+
+
+def _restore_codex_config(root: Path, entry: dict[str, Any], target: Path) -> None:
+    current = target.read_text(encoding="utf-8") if target.is_file() else ""
+    source = _backup_entry_source(root, entry)
+    previous = source.read_text(encoding="utf-8") if source is not None else ""
+    # Parse both sides before touching a shared host configuration.
+    _codex_skill_config_entries(current, target)
+    if previous:
+        _codex_skill_config_entries(previous, source or target)
+    merged, _ = _strip_codex_play_skill_blocks(current)
+    blocks = _play_toml_blocks(previous)
+    if blocks:
+        if merged and not merged.endswith("\n"):
+            merged += "\n"
+        merged += ("\n" if merged.strip() else "") + "\n".join(blocks)
+    if merged:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(f".{target.name}.{os.getpid()}.restore.tmp")
+        temporary.write_text(merged, encoding="utf-8")
+        temporary.chmod(target.stat().st_mode & 0o777 if target.exists() else 0o600)
+        os.replace(temporary, target)
+    elif target.exists():
+        target.unlink()
+
+
+def _restore_hook_config(root: Path, entry: dict[str, Any], target: Path) -> None:
+    current = _load_json(target)
+    source = _backup_entry_source(root, entry)
+    previous = _load_json(source) if source is not None else {}
+    current_hooks = current.get("hooks", {})
+    previous_hooks = previous.get("hooks", {})
+    if not isinstance(current_hooks, dict) or not isinstance(previous_hooks, dict):
+        raise BootstrapError(f"hooks must be objects while restoring {target}")
+    merged_hooks: dict[str, Any] = {}
+    for event in sorted(set(current_hooks) | set(previous_hooks)):
+        current_entries = current_hooks.get(event, [])
+        previous_entries = previous_hooks.get(event, [])
+        if not isinstance(current_entries, list) or not isinstance(previous_entries, list):
+            raise BootstrapError(f"hook event {event} must be a list in {target}")
+        merged = [item for item in current_entries if not _is_play_hook(item)]
+        merged.extend(item for item in previous_entries if _is_play_hook(item))
+        if merged:
+            merged_hooks[event] = merged
+    current["hooks"] = merged_hooks
+    if current or target.exists():
+        _atomic_json(target, current)
+
+
+def _contains_play_plugin(value: Any) -> bool:
+    try:
+        serialized = json.dumps(value, sort_keys=True).lower()
+    except (TypeError, ValueError):
+        return False
+    return any(
+        marker in serialized
+        for marker in ("play@play-skills", '"play-skills"', "github.com/modiqo/play")
+    )
+
+
+def _merge_play_plugin_json(current: Any, previous: Any) -> Any:
+    if isinstance(current, dict) and isinstance(previous, dict):
+        merged = dict(current)
+        for key in set(current) | set(previous):
+            old_present = key in previous
+            new_present = key in current
+            if _contains_play_plugin(key):
+                if old_present:
+                    merged[key] = previous[key]
+                else:
+                    merged.pop(key, None)
+            elif old_present and new_present and isinstance(current[key], (dict, list)):
+                merged[key] = _merge_play_plugin_json(current[key], previous[key])
+            elif old_present and not new_present and _contains_play_plugin(previous[key]):
+                merged[key] = previous[key]
+        return merged
+    if isinstance(current, list) and isinstance(previous, list):
+        return [item for item in current if not _contains_play_plugin(item)] + [
+            item for item in previous if _contains_play_plugin(item)
+        ]
+    return previous if _contains_play_plugin(previous) else current
+
+
+def _restore_plugin_registry(root: Path, entry: dict[str, Any], target: Path) -> None:
+    current = _load_json(target)
+    source = _backup_entry_source(root, entry)
+    previous = _load_json(source) if source is not None else {}
+    _atomic_json(target, _merge_play_plugin_json(current, previous))
+
+
+def _shared_restore_handler(target: Path) -> str | None:
+    hooks = {path.absolute() for path in _hook_paths().values()}
+    if target.absolute() in hooks:
+        return "hooks"
+    codex = Path(os.environ.get("CODEX_HOME", _home() / ".codex")).expanduser()
+    if target.absolute() == (codex / "config.toml").absolute():
+        return "codex_config"
+    claude = Path(
+        os.environ.get("CLAUDE_CONFIG_DIR", _home() / ".claude")
+    ).expanduser()
+    if target.absolute() in {
+        (claude / "plugins" / "installed_plugins.json").absolute(),
+        (claude / "plugins" / "known_marketplaces.json").absolute(),
+    }:
+        return "plugin_registry"
+    return None
+
+
+def _restore_manifest_entries(manifest: dict[str, Any]) -> None:
+    root = Path(str(manifest["manifest_path"])).parent
+    for index, entry in enumerate(manifest["entries"]):
+        target = Path(str(entry["path"])).expanduser()
+        kind = str(entry["kind"])
+        shared_handler = _shared_restore_handler(target)
+        if shared_handler == "hooks":
+            _restore_hook_config(root, entry, target)
+            continue
+        if shared_handler == "codex_config":
+            _restore_codex_config(root, entry, target)
+            continue
+        if shared_handler == "plugin_registry":
+            _restore_plugin_registry(root, entry, target)
+            continue
+        if kind == "absent":
+            _remove_restore_target(target)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        staged = target.with_name(f".{target.name}.play-restore-{os.getpid()}-{index}")
+        if staged.exists() or staged.is_symlink():
+            raise BootstrapError(f"refusing occupied restore staging path: {staged}")
+        try:
+            if kind == "symlink":
+                link_target = entry.get("target")
+                if not isinstance(link_target, str):
+                    raise BootstrapError(f"backup symlink target is missing for {target}")
+                staged.symlink_to(link_target)
+            else:
+                source = _backup_entry_source(root, entry)
+                if source is None:
+                    raise BootstrapError(f"backup payload is missing for {target}")
+                if kind == "directory":
+                    shutil.copytree(source, staged, symlinks=True)
+                elif kind == "file":
+                    shutil.copy2(source, staged, follow_symlinks=False)
+                else:
+                    raise BootstrapError(f"unsupported restore kind {kind!r} for {target}")
+            _remove_restore_target(target)
+            staged.rename(target)
+        finally:
+            if staged.exists() or staged.is_symlink():
+                _remove_restore_target(staged)
+
+
+def _path_fingerprint(path: Path) -> str:
+    digest = hashlib.sha256()
+    if path.is_symlink():
+        digest.update(b"symlink\0" + os.readlink(path).encode())
+        return digest.hexdigest()
+    if path.is_file():
+        digest.update(b"file\0" + path.read_bytes())
+        return digest.hexdigest()
+    if path.is_dir():
+        digest.update(b"directory\0")
+        for child in sorted(path.rglob("*"), key=lambda item: str(item.relative_to(path))):
+            relative = str(child.relative_to(path)).encode()
+            digest.update(relative + b"\0")
+            if child.is_symlink():
+                digest.update(b"symlink\0" + os.readlink(child).encode())
+            elif child.is_file():
+                digest.update(b"file\0" + child.read_bytes())
+            elif child.is_dir():
+                digest.update(b"directory\0")
+        return digest.hexdigest()
+    return "absent"
+
+
+def _verify_restored_manifest(manifest: dict[str, Any]) -> None:
+    root = Path(str(manifest["manifest_path"])).parent
+    for entry in manifest["entries"]:
+        target = Path(str(entry["path"])).expanduser()
+        kind = str(entry["kind"])
+        shared_handler = _shared_restore_handler(target)
+        source = _backup_entry_source(root, entry)
+        if shared_handler == "hooks":
+            current = _load_json(target).get("hooks", {})
+            previous = (_load_json(source).get("hooks", {}) if source else {})
+            current_play = {
+                event: [item for item in entries if _is_play_hook(item)]
+                for event, entries in current.items()
+                if isinstance(entries, list)
+                and any(_is_play_hook(item) for item in entries)
+            }
+            previous_play = {
+                event: [item for item in entries if _is_play_hook(item)]
+                for event, entries in previous.items()
+                if isinstance(entries, list)
+                and any(_is_play_hook(item) for item in entries)
+            }
+            if current_play != previous_play:
+                raise BootstrapError(f"restore verification failed for hooks: {target}")
+            continue
+        if shared_handler == "codex_config":
+            current_text = target.read_text(encoding="utf-8") if target.is_file() else ""
+            previous_text = source.read_text(encoding="utf-8") if source else ""
+            if _play_toml_blocks(current_text) != _play_toml_blocks(previous_text):
+                raise BootstrapError(f"restore verification failed for Codex config: {target}")
+            continue
+        if shared_handler == "plugin_registry":
+            current_json = _load_json(target)
+            previous_json = _load_json(source) if source else {}
+            if _merge_play_plugin_json({}, current_json) != _merge_play_plugin_json(
+                {}, previous_json
+            ):
+                raise BootstrapError(
+                    f"restore verification failed for plugin registry: {target}"
+                )
+            continue
+        if kind == "absent":
+            if target.exists() or target.is_symlink():
+                raise BootstrapError(f"restore verification found unexpected path: {target}")
+            continue
+        if kind == "symlink":
+            if not target.is_symlink() or os.readlink(target) != entry.get("target"):
+                raise BootstrapError(f"restore verification failed for symlink: {target}")
+            continue
+        backup = root / str(entry["backup"])
+        if _path_fingerprint(target) != _path_fingerprint(backup):
+            raise BootstrapError(f"restore verification failed for: {target}")
+
+
+def _write_restore_report(report: dict[str, Any]) -> tuple[Path, Path]:
+    root = _report_root() / "runs"
+    json_path = root / f"{report['restore_id']}.json"
+    markdown_path = root / f"{report['restore_id']}.md"
+    if json_path.exists() or markdown_path.exists():
+        raise BootstrapError(f"restore report already exists: {report['restore_id']}")
+    _atomic_json(json_path, report)
+    lines = [
+        "# Play restore report",
+        "",
+        f"- Restore: `{report['restore_id']}`",
+        f"- Status: **{report['status']}**",
+        f"- Restored backup: `{report['backup_run_id']}`",
+        f"- Safety backup: `{report['safety_backup_run_id']}`",
+        f"- Started: {report['started_at']}",
+        f"- Finished: {report['finished_at']}",
+        "",
+        "## Restored harnesses",
+        "",
+        *[f"- {item}" for item in report["selected_harnesses"]],
+    ]
+    markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    markdown_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    markdown_path.chmod(0o600)
+    return json_path, markdown_path
+
+
+def restore_play_state(plan: dict[str, Any]) -> dict[str, Any]:
+    """Transactionally restore an immutable install snapshot and verify it."""
+
+    if plan.get("schema") != RESTORE_PLAN_SCHEMA:
+        raise BootstrapError("invalid Play restore plan")
+    manifest_path = Path(str(plan["manifest_path"]))
+    manifest = _load_backup_manifest(manifest_path)
+    if _manifest_sha256(manifest_path) != plan.get("manifest_sha256"):
+        raise BootstrapError("Play restore plan is stale; rebuild it before restoring")
+    started = datetime.now(timezone.utc).isoformat()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    restore_id = f"restore-{stamp}"
+    safety_run_id = f"pre-{restore_id}"
+    paths = [Path(str(entry["path"])) for entry in manifest["entries"]]
+    safety_manifest_path = _backup_state_paths(
+        paths,
+        manifest["selected_harnesses"],
+        run_id=safety_run_id,
+        purpose="pre_restore",
+        source_backup_run_id=str(manifest["run_id"]),
+    )
+    safety_manifest = _load_backup_manifest(safety_manifest_path)
+    try:
+        _restore_manifest_entries(manifest)
+        _verify_restored_manifest(manifest)
+    except Exception as error:
+        try:
+            _restore_manifest_entries(safety_manifest)
+            _verify_restored_manifest(safety_manifest)
+        except Exception as rollback_error:
+            raise BootstrapError(
+                f"restore failed ({error}); safety rollback also failed ({rollback_error})"
+            ) from rollback_error
+        raise BootstrapError(
+            f"restore failed and current state was recovered from {safety_manifest_path}: {error}"
+        ) from error
+    removed = prune_play_backups(
+        protect=[str(manifest["run_id"]), safety_run_id]
+    )
+    report = {
+        "schema": RESTORE_REPORT_SCHEMA,
+        "restore_id": restore_id,
+        "plan_id": plan["plan_id"],
+        "status": "completed",
+        "started_at": started,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "backup_run_id": manifest["run_id"],
+        "backup_manifest": str(manifest_path),
+        "safety_backup_run_id": safety_run_id,
+        "safety_backup_manifest": str(safety_manifest_path),
+        "selected_harnesses": manifest["selected_harnesses"],
+        "restored_entries": len(manifest["entries"]),
+        "pruned_backup_run_ids": removed,
+        "restart": "Restart every restored running harness so it reloads skills and hooks.",
+    }
+    json_path, markdown_path = _write_restore_report(report)
+    return {
+        **report,
+        "report_paths": {"json": str(json_path), "markdown": str(markdown_path)},
+    }
+
+
+def _render_backup_catalog(catalog: dict[str, Any]) -> str:
+    backups = catalog.get("backups", [])
+    if not backups:
+        return "No Play recovery points found."
+    lines = [
+        f"Play recovery points — newest {catalog['retention']} retained",
+        "",
+    ]
+    for item in backups:
+        harnesses = ", ".join(item["selected_harnesses"]) or "none"
+        lines.append(
+            f"{item['run_id']}  {item.get('created_at') or 'unknown time'}  "
+            f"{item.get('purpose', 'install')}  [{harnesses}]"
+        )
+    lines.extend(
+        [
+            "",
+            "Inspect one:",
+            "  play-bootstrap backup show <run-id>",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _render_backup_manifest(manifest: dict[str, Any]) -> str:
+    existing = sum(
+        1 for entry in manifest["entries"] if entry.get("kind") != "absent"
+    )
+    lines = [
+        f"Play recovery point {manifest['run_id']}",
+        f"Created: {manifest.get('created_at') or 'unknown'}",
+        f"Purpose: {manifest.get('purpose', 'install')}",
+        f"Harnesses: {', '.join(manifest['selected_harnesses']) or 'none'}",
+        f"State: {existing} existing paths, {len(manifest['entries']) - existing} absent paths",
+        f"Manifest: {manifest['manifest_path']}",
+        "",
+        "Build a restore plan:",
+        f"  play-bootstrap restore --backup {manifest['run_id']} --plan",
+    ]
+    return "\n".join(lines)
+
+
+def _render_restore_plan(plan: dict[str, Any]) -> str:
+    restores = sum(1 for entry in plan["entries"] if entry["action"] == "restore")
+    removals = len(plan["entries"]) - restores
+    source = (
+        f"Dossier: {plan['dossier_path']}"
+        if plan.get("dossier_path")
+        else f"Backup: {plan['backup_run_id']}"
+    )
+    return "\n".join(
+        [
+            "Play restore plan",
+            f"Plan: {plan['plan_id']}",
+            source,
+            f"Harnesses: {', '.join(plan['selected_harnesses']) or 'none'}",
+            f"Changes: restore {restores} paths; remove {removals} paths absent in the snapshot",
+            f"Safety: {plan['safety']}",
+            "",
+            "Apply this plan by rerunning the command without --plan; you will be asked to confirm.",
+        ]
+    )
+
+
+def _render_restore_report(report: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            "Play restore completed",
+            f"Restored: {report['backup_run_id']}",
+            f"Safety backup: {report['safety_backup_run_id']}",
+            f"Paths restored: {report['restored_entries']}",
+            f"Report: {report['report_paths']['markdown']}",
+            report["restart"],
+        ]
+    )
+
+
 def _markdown(report: dict[str, Any]) -> str:
     lines = [
         "# Play bootstrap report",
@@ -2002,6 +2655,18 @@ def _markdown(report: dict[str, Any]) -> str:
         target = f" ({step['target']})" if step.get("target") else ""
         lines.append(f"- **{step['status']}** `{step['id']}`{target}: {step['detail']}")
     lines.extend(["", "## Restart", "", report["restart"]])
+    backup = report.get("backup")
+    if isinstance(backup, dict) and backup.get("restore_command"):
+        lines.extend(
+            [
+                "",
+                "## Recovery",
+                "",
+                f"- Backup: `{backup.get('manifest_path')}`",
+                f"- Restore: `{backup.get('restore_command')}`",
+                f"- Retention: newest {BACKUP_RETENTION} verified snapshots",
+            ]
+        )
     report_paths = report.get("report_paths")
     if isinstance(report_paths, dict):
         lines.extend(
@@ -2129,6 +2794,22 @@ def _render_status_card(report: dict[str, Any]) -> str:
                 f"    {report_paths.get('json')}",
             ]
         )
+    backup = report.get("backup")
+    if (
+        isinstance(backup, dict)
+        and backup.get("has_previous_state") is True
+        and isinstance(backup.get("restore_command"), str)
+    ):
+        lines.extend(
+            [
+                "",
+                "  Recovery point",
+                "    The Play state replaced by this install was backed up.",
+                "    To review and restore it:",
+                f"    {backup['restore_command']}",
+                f"    Play retains the newest {BACKUP_RETENTION} verified recovery points.",
+            ]
+        )
     lines.extend(["+------------------------------------------------------------+", ""])
     return "\n".join(lines)
 
@@ -2239,8 +2920,7 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
     )
     app_count = len(plan["selected_harnesses"])
     app_word = "app" if app_count == 1 else "apps"
-    return "\n".join(
-        [
+    lines = [
             "",
             "  Your setup",
             "",
@@ -2254,11 +2934,28 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
             f"    3. Prepare Rote and its skills for {app_count} {app_word}",
             "    4. Back up and replace Play-owned harness state while preserving unrelated settings",
             "    5. Verify every app and save a detailed receipt",
+    ]
+    recovery = plan.get("recovery", {})
+    existing = (
+        recovery.get("existing_recovery_points", 0)
+        if isinstance(recovery, dict)
+        else 0
+    )
+    if isinstance(existing, int) and existing > 0:
+        lines.extend(
+            [
+                "",
+                f"  Recovery   {existing} existing point{'s' if existing != 1 else ''}; newest {BACKUP_RETENTION} retained",
+            ]
+        )
+    lines.extend(
+        [
             "",
             "  Credentials stay on this machine. Plays disclose writes before they run.",
             "",
         ]
     )
+    return "\n".join(lines)
 
 
 def _confirm(question: str, *, default: bool) -> bool:
@@ -2684,6 +3381,34 @@ def apply(
         status = "onboarding_required"
     else:
         status = "completed"
+    if status == "completed":
+        try:
+            removed = prune_play_backups(protect=[run_id])
+            steps.append(
+                Step(
+                    "retain_play_backups",
+                    "completed" if removed else "unchanged",
+                    (
+                        "Retained the newest "
+                        f"{BACKUP_RETENTION} verified Play recovery points; pruned "
+                        + ", ".join(removed)
+                        if removed
+                        else f"Play recovery points are within the newest-{BACKUP_RETENTION} retention limit."
+                    ),
+                    changed=bool(removed),
+                    evidence=str(_backup_root()),
+                )
+            )
+        except (BootstrapError, OSError) as error:
+            steps.append(
+                Step(
+                    "retain_play_backups",
+                    "review_required",
+                    f"Play installed successfully, but old recovery points could not be pruned: {error}",
+                    evidence=str(_backup_root()),
+                )
+            )
+            status = "action_required"
     return _finish_report(plan, run_id, started, steps, status=status, runner=runner)
 
 
@@ -2722,6 +3447,40 @@ def _finish_report(
         "steps": [asdict(step) for step in steps],
         "restart": "Restart every selected running harness so it reloads skills and hooks.",
     }
+    backup_step = next(
+        (
+            step
+            for step in steps
+            if step.id == "backup_play_state"
+            and step.status == "completed"
+            and isinstance(step.evidence, str)
+        ),
+        None,
+    )
+    if backup_step is not None:
+        manifest_path = Path(str(backup_step.evidence)).expanduser()
+        try:
+            manifest = _load_backup_manifest(manifest_path)
+            dossier_path = _report_root() / "runs" / f"{run_id}.json"
+            restore_executable = _portable_play_path() / "scripts" / "bin" / "play-bootstrap"
+            restore_command = (
+                f"{shlex.quote(str(restore_executable))} restore --dossier "
+                f"{shlex.quote(str(dossier_path))}"
+            )
+            report["backup"] = {
+                "run_id": manifest["run_id"],
+                "manifest_path": str(manifest_path),
+                "manifest_sha256": _manifest_sha256(manifest_path),
+                "has_previous_state": any(
+                    entry.get("kind") != "absent" for entry in manifest["entries"]
+                ),
+                "retention": BACKUP_RETENTION,
+                "restore_command": restore_command,
+            }
+        except (BootstrapError, OSError):
+            # The completed backup step remains the durable evidence. Report
+            # enrichment must never conceal the install result.
+            pass
     json_path, markdown_path = write_report(report)
     return {**report, "report_paths": {"json": str(json_path), "markdown": str(markdown_path)}}
 
@@ -2762,10 +3521,54 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="show a concise guided setup or the complete change plan",
     )
     install_parser.add_argument("--run-id")
+    backup_parser = subparsers.add_parser(
+        "backup", help="list or inspect retained Play recovery points"
+    )
+    backup_subparsers = backup_parser.add_subparsers(
+        dest="backup_command", required=True
+    )
+    backup_list_parser = backup_subparsers.add_parser("list")
+    backup_list_parser.add_argument("--json", action="store_true")
+    backup_show_parser = backup_subparsers.add_parser("show")
+    backup_show_parser.add_argument("run_id")
+    backup_show_parser.add_argument("--json", action="store_true")
+    restore_parser = subparsers.add_parser(
+        "restore", help="restore Play-owned harness state from a recovery point"
+    )
+    restore_source = restore_parser.add_mutually_exclusive_group(required=True)
+    restore_source.add_argument("--dossier", type=Path)
+    restore_source.add_argument("--backup", dest="backup_run_id")
+    restore_parser.add_argument(
+        "--plan", action="store_true", help="show the immutable restore plan only"
+    )
+    restore_parser.add_argument(
+        "--yes", action="store_true", help="apply the restore without prompting"
+    )
+    restore_parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     progress = Progress(enabled=os.environ.get("PLAY_INSTALL_QUIET") != "1")
     try:
-        if args.command == "plan":
+        if args.command == "backup":
+            if args.backup_command == "list":
+                payload = list_play_backups()
+            else:
+                payload = _load_backup_manifest(_backup_manifest_path(args.run_id))
+        elif args.command == "restore":
+            restore_plan = build_restore_plan(
+                dossier=args.dossier, backup_run_id=args.backup_run_id
+            )
+            if args.plan:
+                payload = restore_plan
+            else:
+                if not args.yes:
+                    print(_render_restore_plan(restore_plan))
+                    if not _confirm(
+                        "Restore this Play recovery point?", default=False
+                    ):
+                        print("Play restore cancelled before any changes were made.")
+                        return 0
+                payload = restore_play_state(restore_plan)
+        elif args.command == "plan":
             payload = progress.call(
                 "Checking the Play setup plan",
                 lambda: build_plan(top_k=args.top_k, requested=args.harness),
@@ -2826,11 +3629,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except (BootstrapError, OSError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f"play-bootstrap: {error}\n")
-    rendered = (
-        _render_plan(payload)
-        if args.command == "plan"
-        else (_render_status_card(payload) if args.command == "install" else _markdown(payload))
-    )
+    if args.command == "plan":
+        rendered = _render_plan(payload)
+    elif args.command == "install":
+        rendered = _render_status_card(payload)
+    elif args.command == "apply":
+        rendered = _markdown(payload)
+    elif args.command == "backup" and args.backup_command == "list":
+        rendered = _render_backup_catalog(payload)
+    elif args.command == "backup":
+        rendered = _render_backup_manifest(payload)
+    elif payload.get("schema") == RESTORE_PLAN_SCHEMA:
+        rendered = _render_restore_plan(payload)
+    else:
+        rendered = _render_restore_report(payload)
     print(json.dumps(payload, indent=2, sort_keys=True) if args.json else rendered)
     return (
         0

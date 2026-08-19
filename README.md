@@ -410,6 +410,13 @@ value, real recurring needs, low review cost, and permission to redesign or reti
 Redirected output gets one start and one finish record per phase without rotating copy or repeated
 elapsed-time heartbeats.
 
+Before overwriting Play-owned state, every approved install writes an owner-private recovery point
+under `~/.local/state/play-bootstrap/backups/<run-id>/`. When prior Play state was present, the final
+status card prints the exact dossier-driven restore command. A completed, verified install retains
+the newest 10 recovery points and prunes older valid snapshots; failed installs never prune the last
+known recovery set. Shared harness configuration is restored by Play ownership, so unrelated hooks
+and plugin entries added after the snapshot remain intact.
+
 Install also creates owner-private journal settings with sparse exploration pulses and daily recall
 logging enabled. The defaults are five new workspace steps, at most one pulse every two minutes,
 and 30 days of recall history. Existing explicit journal choices survive reinstall.
@@ -496,11 +503,39 @@ Then apply its exact ID:
 scripts/bin/play-bootstrap apply --top-k 3 --plan-id sha256:<plan-id>
 ```
 
+List and inspect retained recovery points without changing the machine:
+
+```bash
+scripts/bin/play-bootstrap backup list
+scripts/bin/play-bootstrap backup list --json
+scripts/bin/play-bootstrap backup show <run-id>
+scripts/bin/play-bootstrap backup show <run-id> --json
+```
+
+Build an immutable restore plan from the install dossier printed by setup, then apply it
+interactively or non-interactively:
+
+```bash
+scripts/bin/play-bootstrap restore --dossier ~/.local/state/play-bootstrap/runs/<run-id>.json --plan
+scripts/bin/play-bootstrap restore --dossier ~/.local/state/play-bootstrap/runs/<run-id>.json
+scripts/bin/play-bootstrap restore --dossier ~/.local/state/play-bootstrap/runs/<run-id>.json --yes
+scripts/bin/play-bootstrap restore --backup <run-id> --plan
+scripts/bin/play-bootstrap restore --backup <run-id> --yes
+```
+
+Restore first snapshots the current Play-owned state, applies the selected recovery point, verifies
+the restored files and Play-owned shared-config entries, and writes a restore dossier. If applying
+the snapshot fails, it rolls back from that safety snapshot before returning an error. Restart each
+restored running harness afterward.
+
 Add `--approve-remote-installer` only after approving the official Rote download. The bootstrap is
-safe to retry: it updates Rote only when an update is available, installs missing Rote skill
-providers, and skips already-current Play marketplace plugins. Outdated Codex and Claude plugins
-are refreshed and reinstalled in parallel; managed hooks and per-app preflight verification are
-also parallelized. It preserves unrelated hooks and backs up every hook file it changes. An
+safe to retry: it updates Rote only when an update is available and installs or refreshes the
+selected Rote skill providers. Every approved install is a full Play convergence boundary: Codex
+and Claude marketplaces are refreshed, their Play plugins are removed and reinstalled even when
+already current, portable Play state is overwritten, and the canonical hooks are replaced in every
+selected managed-hook harness. Plugin convergence, hook convergence, and per-app preflight
+verification are parallelized. It preserves unrelated hooks and backs up every hook file it
+changes. An
 explicitly disabled Codex Play skill remains a user choice: the report asks you to enable it in
 `/skills` before restarting. Reports never contain credentials.
 
