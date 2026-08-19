@@ -226,6 +226,44 @@ cases:
     terminal: completed
     excludes: [standby_exit, use_inspect, use_run]
 
+  - name: setup-led exploration asks for a useful goal after connection
+    steps:
+      - {state: exploration_execute, event: exploration_prerequisite_ready, target: exploration_prerequisite_present}
+      - state: exploration_prerequisite_present
+        event: exploration_prerequisite_presented
+        guards: {exploration_goal_is_ready: false, exploration_goal_is_required: true}
+        target: exploration_goal_offer
+      - {state: exploration_goal_offer, event: exploration_goal_supplied, target: exploration_execute}
+      - {state: exploration_execute, event: exploration_outcome_ready, target: exploration_verify}
+      - {state: exploration_verify, event: outcome_verified, target: exploration_complete_present}
+      - {state: exploration_complete_present, event: exploration_completion_presented, target: save_judge}
+      - {state: save_judge, event: not_worth_saving, target: exploration_one_off_present}
+      - {state: exploration_one_off_present, event: exploration_one_off_presented, target: exited}
+    terminal: exited
+    excludes: [search, creator_search, standby_exit]
+
+  - name: goal-bound exploration resumes automatically after connection
+    steps:
+      - {state: exploration_execute, event: exploration_prerequisite_ready, target: exploration_prerequisite_present}
+      - state: exploration_prerequisite_present
+        event: exploration_prerequisite_presented
+        guards: {exploration_goal_is_ready: true, exploration_goal_is_required: false}
+        target: exploration_execute
+      - {state: exploration_execute, event: exploration_outcome_ready, target: exploration_verify}
+      - {state: exploration_verify, event: outcome_verified, target: exploration_complete_present}
+      - {state: exploration_complete_present, event: exploration_completion_presented, target: save_judge}
+      - {state: save_judge, event: not_worth_saving, target: exploration_one_off_present}
+      - {state: exploration_one_off_present, event: exploration_one_off_presented, target: exited}
+    terminal: exited
+    excludes: [exploration_goal_offer, search, creator_search]
+
+  - name: existing local publication fails closed without provenance and never searches
+    steps:
+      - {state: qualify, event: play_publication_request, target: local_release_inspect}
+      - {state: local_release_inspect, event: local_release_unavailable, target: blocked}
+    terminal: blocked
+    excludes: [search, creator_search, exploration_execute, author_release, public_publish]
+
   - name: exact Play reference is inspected and approved before first-class execution
     steps:
       - {state: qualify, event: exact_play_request, target: use_inspect}

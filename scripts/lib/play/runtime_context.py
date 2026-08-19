@@ -16,7 +16,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "5ecacd349cf44e9248087d7489432f939fe9360c7fe4abe5d9a213792295fde3"
+SUPPORTED_MUTATION_SET_SHA256 = "becac6f35da8acd6f904a517e0a7ebe941703dd04d1edaf7742484d741e342f0"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -134,6 +134,10 @@ def initial_context(
             "welcome_markdown": None,
             "welcome_ref": None,
             "resolve_ns": None,
+            "intent_kind": "unknown",
+            "provider": None,
+            "goal_status": "unknown",
+            "goal": None,
             "route_failure": None,
             "recovery_count": 0,
         },
@@ -481,6 +485,7 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "record_save_hook": {"mode": "exited"},
     "enter_settled_judgment": {"mode": "settle"},
     "record_not_worth_saving": {"mode": "exited"},
+    "record_publication_request": {"mode": "create"},
     "request_authentication_verification": {"authentication.status": "authenticating"},
     "approve_authentication": {"authentication.status": "approved"},
     "decline_authentication": {"authentication.status": "declined"},
@@ -529,6 +534,10 @@ def _apply_mutation_semantics(
         context["capture"]["task_class"] = None
         context["capture"]["status"] = "unclassified"
         context["match"]["classification"] = "none"
+        if context["exploration"].get("goal_status") == "unknown":
+            context["exploration"]["intent_kind"] = "goal_bound"
+            context["exploration"]["goal_status"] = "ready"
+            context["exploration"]["goal"] = outcome
 
     if mutation == "enter_captured_exploration":
         workspace = _path_value(payload, "capture.workspace")
@@ -542,6 +551,70 @@ def _apply_mutation_semantics(
             raise RuntimeContextError("exploration route failure requires a reason")
         context["exploration"]["route_failure"] = reason.strip()
         context["exploration"]["recovery_count"] += 1
+
+    if mutation == "record_exploration_goal":
+        goal = _path_value(payload, "request.requested_outcome")
+        if not isinstance(goal, str) or not goal.strip():
+            raise RuntimeContextError("exploration goal requires a useful outcome")
+        goal = goal.strip()
+        context["request"]["original"] = goal
+        context["request"]["intent"] = goal
+        context["request"]["requested_outcome"] = goal
+        context["exploration"]["intent_kind"] = "goal_bound"
+        context["exploration"]["goal_status"] = "ready"
+        context["exploration"]["goal"] = goal
+
+    if mutation == "record_exploration_refinement":
+        goal = _path_value(payload, "request.requested_outcome")
+        if not isinstance(goal, str) or not goal.strip():
+            raise RuntimeContextError("exploration refinement requires a useful outcome")
+        context["request"]["intent"] = goal.strip()
+        context["capture"]["status"] = "active"
+        context["capture"]["trajectory_ref"] = None
+        context["evidence"]["verification"] = None
+        context["standby"]["settle_summary"] = goal.strip()
+        context["exploration"]["intent_kind"] = "goal_bound"
+        context["exploration"]["goal_status"] = "ready"
+        context["exploration"]["goal"] = goal.strip()
+        context["output"] = {
+            "mode": None,
+            "detail": None,
+            "source": None,
+            "format": None,
+            "primary": None,
+            "manifest": {"response_refs": [], "artifact_refs": [], "effects": []},
+            "truncated": False,
+            "full_output_ref": None,
+            "presentation_markdown": None,
+            "presentation_sha256": None,
+            "inline_bytes": None,
+            "primary_bytes": None,
+            "format_ns": None,
+        }
+
+    if mutation == "record_publication_request":
+        visibility = _path_value(payload, "publication.visibility")
+        if visibility not in {"private", "public"}:
+            raise RuntimeContextError("local Play publication requires explicit visibility")
+        context["consent"]["save"] = visibility
+        context["capture"]["decision"] = "normal"
+        context["capture"]["status"] = "normal"
+
+    if mutation == "record_existing_release":
+        workspace = _path_value(payload, "execution.workspace")
+        capture_workspace = _path_value(payload, "capture.workspace")
+        trajectory = _path_value(payload, "capture.trajectory_ref")
+        verification = _path_value(payload, "evidence.verification")
+        if (
+            not isinstance(workspace, str)
+            or not workspace
+            or workspace != capture_workspace
+            or not isinstance(trajectory, str)
+            or trajectory != verification
+        ):
+            raise RuntimeContextError(
+                "existing local release must retain its originating verified workspace"
+            )
 
     if mutation == "record_captured_exploration":
         outcome = context["request"].get("requested_outcome")

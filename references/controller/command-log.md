@@ -91,3 +91,16 @@ The following surfaces deliberately execute before the main machine:
 All saved-Play search, inspection, approval, authentication recovery, execution, verification,
 capture settlement, creation, sharing, and publication trajectories remain owned by
 [`machine.yaml`](machine.yaml).
+
+## Exploration and publication transition notes
+
+These lifecycle transitions are deliberately outside the recall command log, but remain fully
+typed in the machine:
+
+| Transition | Meaning |
+|---|---|
+| `exploration_prerequisite_present --exploration_prerequisite_presented--> exploration_goal_offer` | A connection-only request is ready for its first useful outcome. |
+| `exploration_prerequisite_present --exploration_prerequisite_presented--> exploration_execute` | Setup completed and the original request already contains a useful goal. |
+| `save_judge --exploration_refinement_requested--> exploration_execute` | A same-task refinement continues in the same capture workspace. |
+| `qualify --play_publication_request--> local_release_inspect` | An explicit existing-local-Play publication request bypasses search and creation. |
+| `local_release_inspect --local_release_ready--> birth_capture` | The exact unpublished release and originating verified workspace were recovered. |

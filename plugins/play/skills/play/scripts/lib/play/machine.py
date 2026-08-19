@@ -466,10 +466,9 @@ def validate_bundle(
             break
     rules = {
         "save_judge": ("crystallize",),
-        "crystallize": ("save_prepare", "save_offer", "public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
-        "save_prepare": ("save_offer", "public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
-        "save_offer": ("public_owner_offer", "author_release", "birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
-        "author_release": ("birth_capture", "private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
+        "crystallize": ("save_prepare", "save_offer", "public_owner_offer", "author_release"),
+        "save_prepare": ("save_offer", "public_owner_offer", "author_release"),
+        "save_offer": ("public_owner_offer", "author_release"),
         "birth_capture": ("private_publish", "public_publish", "birth_bind", "index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
         "birth_bind": ("index", "saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
         "index": ("saved_inspect", "publication_credentials", "publication_smoke", "birth_present"),
@@ -679,6 +678,11 @@ def validate_bundle(
     )
     check(_target(states, "qualify", "play_creation_request") == "creator_search", "explicit creator intent must search before exploration")
     check(
+        _target(states, "qualify", "play_publication_request")
+        == "local_release_inspect",
+        "an existing local Play publication request must inspect that release without search",
+    )
+    check(
         _target(states, "creator_classify", "creator_no_match") == "search_empty_offer",
         "creator intent without a match must ask before starting captured exploration",
     )
@@ -719,6 +723,27 @@ def validate_bundle(
             "exploration_prerequisite_presented",
         )
         == "exploration_execute"
+        and states.get("exploration_prerequisite_present", {})
+        .get("on", {})
+        .get("exploration_prerequisite_presented", [{}, {}])[0]
+        .get("guard")
+        == "exploration_goal_is_ready"
+        and _target(
+            states,
+            "exploration_prerequisite_present",
+            "exploration_prerequisite_presented",
+            1,
+        )
+        == "exploration_goal_offer"
+        and states.get("exploration_prerequisite_present", {})
+        .get("on", {})
+        .get("exploration_prerequisite_presented", [{}, {}])[1]
+        .get("guard")
+        == "exploration_goal_is_required"
+        and states.get("exploration_goal_offer", {}).get("prompt")
+        == "describe_exploration_goal"
+        and _target(states, "exploration_goal_offer", "exploration_goal_supplied")
+        == "exploration_execute"
         and _target(states, "exploration_execute", "exploration_route_exhausted")
         == "exploration_recovery_offer"
         and _target(states, "exploration_verify", "outcome_verified")
@@ -741,11 +766,13 @@ def validate_bundle(
         and _target(states, "save_judge", "worth_saving") == "crystallize"
         and _target(states, "save_judge", "not_worth_saving")
         == "exploration_one_off_present"
+        and _target(states, "save_judge", "exploration_refinement_requested")
+        == "exploration_execute"
         and _target(
             states, "exploration_one_off_present", "exploration_one_off_presented"
         )
         == "exited",
-        "save worthiness must be judged from trace evidence and route only to crystallization or a quiet exit",
+        "save worthiness must be judged from trace evidence, keep same-task refinements in the capture, and otherwise route only to crystallization or a quiet exit",
     )
     check(
         predecessors["crystallize"] == {"save_judge"},
@@ -770,6 +797,17 @@ def validate_bundle(
         "Use receipts must preserve the Play output for harness-owned presentation",
     )
     check(predecessors["birth_bind"] == {"private_publish", "public_publish"}, "birth binding may follow only successful private or public publication")
+    check(
+        predecessors["birth_capture"] == {"author_release", "local_release_inspect"},
+        "birth capture may follow only a new unpublished release or verified recovery of an existing local release",
+    )
+    check(
+        actions.get("inspect_local_release_for_publication", {}).get("specialist")
+        == "rote-flow-authoring"
+        and actions.get("inspect_local_release_for_publication", {}).get("effect")
+        == "read",
+        "existing local publication recovery must be a read-only flow-authoring handoff",
+    )
     check(predecessors["index"] == {"birth_bind"}, "index may follow only successful birth binding")
     check(predecessors["saved_inspect"] == {"index"}, "saved inspection may follow only successful indexing")
     check(predecessors["publication_credentials"] == {"saved_inspect"}, "public credential validation may follow only successful canonical inspection")

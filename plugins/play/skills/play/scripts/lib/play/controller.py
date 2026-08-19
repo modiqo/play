@@ -1109,6 +1109,14 @@ def _derive_session_guards(
         and isinstance(_path_value(event.payload, "capture.workspace"), str)
         and bool(_path_value(event.payload, "capture.workspace"))
     )
+    values[GuardId("exploration_goal_is_required")] = (
+        _path_value(context, "exploration.goal_status") == "required"
+    )
+    values[GuardId("exploration_goal_is_ready")] = (
+        _path_value(context, "exploration.goal_status") == "ready"
+        and isinstance(_path_value(context, "exploration.goal"), str)
+        and bool(_path_value(context, "exploration.goal"))
+    )
     values[GuardId("match_satisfies_constraints")] = (
         event.id == EventId("full_match")
         and isinstance(_path_value(event.payload, "match.reference"), str)

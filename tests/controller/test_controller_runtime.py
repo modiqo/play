@@ -48,7 +48,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(81, len(self.runtime.bundle.states))
+        self.assertEqual(83, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -1441,6 +1441,40 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("unclassified", updated["capture"]["status"])
         self.assertEqual("retrieve PostHog daily active users", updated["request"]["requested_outcome"])
         self.assertEqual("none", updated["match"]["classification"])
+        self.assertEqual("goal_bound", updated["exploration"]["intent_kind"])
+        self.assertEqual("ready", updated["exploration"]["goal_status"])
+
+    def test_empty_search_approval_preserves_setup_led_exploration(self) -> None:
+        from play.runtime_context import apply_event, initial_context
+
+        context = initial_context(
+            run_id="run-connect",
+            task_key="task-connect",
+            machine_version="test",
+            request_original="$play explore connect to PostHog",
+        )
+        context["request"]["intent"] = "connect to PostHog"
+        context["request"]["requested_outcome"] = "connect to PostHog"
+        context["exploration"].update(
+            {
+                "intent_kind": "setup_led",
+                "provider": "PostHog",
+                "goal_status": "required",
+                "goal": None,
+            }
+        )
+        updated = apply_event(
+            context,
+            event_id="search_explore_selected",
+            payload={"prompt_version": "v1", "selected_at": "2026-08-18T00:00:00Z"},
+            state="standby_exit",
+            transition_seq=1,
+            mutation="start_empty_search_exploration",
+        )
+
+        self.assertEqual("setup_led", updated["exploration"]["intent_kind"])
+        self.assertEqual("required", updated["exploration"]["goal_status"])
+        self.assertIsNone(updated["exploration"]["goal"])
 
     def test_active_capture_yields_to_rote_orchestrator_with_original_outcome(self) -> None:
         session = self.runtime.initial_session(
@@ -1452,6 +1486,14 @@ class ControllerRuntimeTest(unittest.TestCase):
         context["state"] = "standby_exit"
         context["request"]["intent"] = "retrieve PostHog daily active users"
         context["request"]["requested_outcome"] = "retrieve PostHog daily active users"
+        context["exploration"].update(
+            {
+                "intent_kind": "goal_bound",
+                "provider": "PostHog",
+                "goal_status": "ready",
+                "goal": "retrieve PostHog daily active users",
+            }
+        )
         context["search"]["complete"] = True
         context["search"]["sources"] = ["local", "authorized_registry"]
         context["capture"]["decision"] = "capture"
@@ -1551,6 +1593,14 @@ class ControllerRuntimeTest(unittest.TestCase):
         context["state"] = "exploration_execute"
         context["request"]["intent"] = "retrieve PostHog daily active users"
         context["request"]["requested_outcome"] = "retrieve PostHog daily active users"
+        context["exploration"].update(
+            {
+                "intent_kind": "goal_bound",
+                "provider": "PostHog",
+                "goal_status": "ready",
+                "goal": "retrieve PostHog daily active users",
+            }
+        )
         context["search"]["complete"] = True
         context["search"]["sources"] = ["local", "authorized_registry"]
         context["capture"].update(
@@ -1608,6 +1658,178 @@ class ControllerRuntimeTest(unittest.TestCase):
             failed.session.context["exploration"]["route_failure"],
         )
         self.assertEqual(1, failed.session.context["exploration"]["recovery_count"])
+
+    def test_setup_led_connection_asks_for_useful_goal_before_more_exploration(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="setup-led",
+            task_key="setup-led",
+            request_original="$play explore connect to PostHog",
+        )
+        context = dict(session.context)
+        context["state"] = "exploration_execute"
+        context["request"]["intent"] = "connect to PostHog"
+        context["request"]["requested_outcome"] = "connect to PostHog"
+        context["exploration"].update(
+            {
+                "intent_kind": "setup_led",
+                "provider": "PostHog",
+                "goal_status": "required",
+                "goal": None,
+            }
+        )
+        context["search"].update(
+            {"complete": True, "sources": ["local", "authorized_registry"]}
+        )
+        context["capture"].update(
+            {
+                "decision": "capture",
+                "reference": "cap_1234567890abcdef",
+                "workspace": "play-capture-posthog",
+                "status": "active",
+            }
+        )
+        context["execution"]["workspace"] = "play-capture-posthog"
+        context["consent"]["explore"] = "approved"
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("exploration_execute")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        connected = self.runtime.advance_session(
+            projected,
+            ControllerEvent(
+                id=EventId("exploration_prerequisite_ready"),
+                payload={"reason": "PostHog connected", "evidence_refs": ["@1"]},
+                guards={},
+            ),
+        )
+        offered = advance_until_yield(self.runtime, connected.session, root=ROOT)
+
+        self.assertEqual("exploration_goal_offer", offered.projection["state"]["id"])
+        self.assertEqual("describe_exploration_goal", offered.projection["instruction"]["id"])
+        self.assertIn("PostHog is connected", offered.projection["instruction"]["question"])
+        self.assertIn("Connection ready", offered.presentations[0])
+
+        resumed = self.runtime.advance_session(
+            offered.session,
+            ControllerEvent(
+                id=EventId("exploration_goal_supplied"),
+                payload={
+                    "prompt_version": "v1",
+                    "selected_at": "2026-08-18T00:00:00Z",
+                    "request": {
+                        "requested_outcome": "retrieve daily active users",
+                    },
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("exploration_execute", resumed.session.cursor.state)
+        self.assertEqual("play-capture-posthog", resumed.session.context["execution"]["workspace"])
+        self.assertEqual("retrieve daily active users", resumed.session.context["exploration"]["goal"])
+
+    def test_same_task_refinement_reuses_capture_instead_of_closing_it(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="refinement",
+            task_key="refinement",
+            request_original="connect to PostHog",
+        )
+        context = dict(session.context)
+        context["state"] = "save_judge"
+        context["request"]["intent"] = "inspect PostHog taxonomy"
+        context["request"]["requested_outcome"] = "inspect PostHog taxonomy"
+        context["capture"].update(
+            {
+                "decision": "capture",
+                "reference": "cap_1234567890abcdef",
+                "workspace": "play-capture-posthog",
+                "status": "verified",
+                "trajectory_ref": "sha256:old",
+            }
+        )
+        context["execution"]["workspace"] = "play-capture-posthog"
+        context["evidence"]["verification"] = "sha256:old"
+        context["output"]["primary"] = "taxonomy"
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("save_judge")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        advanced = self.runtime.advance_session(
+            projected,
+            ControllerEvent(
+                id=EventId("exploration_refinement_requested"),
+                payload={
+                    "request": {
+                        "original": "can you extract DAU for my projects",
+                        "requested_outcome": "extract DAU for my projects",
+                    },
+                },
+                guards={},
+            ),
+        )
+
+        self.assertEqual("exploration_execute", advanced.session.cursor.state)
+        self.assertEqual("play-capture-posthog", advanced.session.context["execution"]["workspace"])
+        self.assertEqual("active", advanced.session.context["capture"]["status"])
+        self.assertIsNone(advanced.session.context["capture"]["trajectory_ref"])
+        self.assertIsNone(advanced.session.context["output"]["primary"])
+
+    def test_existing_local_release_publication_enters_birth_capture_without_search(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="publish-local",
+            task_key="publish-local",
+            request_original="publish posthog-project-dau publicly under chetan",
+        )
+        qualified = self.runtime.advance_session(
+            replace(session, cursor=replace(session.cursor, state=StateId("qualify")), context={**session.context, "state": "qualify"}),
+            ControllerEvent(
+                id=EventId("play_publication_request"),
+                payload={
+                    "request": {"intent": "publish local posthog-project-dau"},
+                    "candidate": {"reference": "posthog-project-dau"},
+                    "publication": {"visibility": "public", "owner": "chetan"},
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("local_release_inspect", qualified.session.cursor.state)
+        self.assertEqual("public", qualified.session.context["consent"]["save"])
+
+        ready = self.runtime.advance_session(
+            qualified.session,
+            ControllerEvent(
+                id=EventId("local_release_ready"),
+                payload={
+                    "candidate": {
+                        "reference": "posthog-project-dau",
+                        "released_flow": "posthog-project-dau@0.0.1",
+                        "publication_status": "unpublished",
+                    },
+                    "play": {"version": "0.0.1"},
+                    "execution": {"workspace": "play-capture-posthog"},
+                    "capture": {
+                        "reference": "cap_1234567890abcdef",
+                        "workspace": "play-capture-posthog",
+                        "status": "verified",
+                        "trajectory_ref": "sha256:trajectory",
+                    },
+                    "evidence": {"verification": "sha256:trajectory"},
+                    "publication": {
+                        "owner": "chetan",
+                        "owner_resolution": "resolved",
+                    },
+                    "evidence_refs": ["sha256:trajectory"],
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("birth_capture", ready.session.cursor.state)
+        self.assertEqual("posthog-project-dau@0.0.1", ready.session.context["candidate"]["released_flow"])
 
     def test_digest_and_search_selections_bind_the_direct_run_contract(self) -> None:
         from play.runtime_context import apply_event, initial_context

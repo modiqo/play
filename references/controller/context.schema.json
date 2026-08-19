@@ -1120,6 +1120,10 @@
         "welcome_markdown",
         "welcome_ref",
         "resolve_ns",
+        "intent_kind",
+        "provider",
+        "goal_status",
+        "goal",
         "route_failure",
         "recovery_count"
       ],
@@ -1164,6 +1168,26 @@
             "null"
           ],
           "minimum": 0
+        },
+        "intent_kind": {
+          "enum": [
+            "unknown",
+            "setup_led",
+            "goal_bound"
+          ]
+        },
+        "provider": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "goal_status": {
+          "enum": [
+            "unknown",
+            "required",
+            "ready"
+          ]
+        },
+        "goal": {
+          "$ref": "#/$defs/nullableString"
         },
         "route_failure": {
           "$ref": "#/$defs/nullableString"

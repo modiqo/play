@@ -48,6 +48,14 @@ authorized. Only afterward may a new, publication-only `rote-registry` handoff p
 released Flow. That handoff carries the captured birth SHA and must echo it unchanged in its
 publication receipt. Never delegate author/release/publish as one task.
 
+An explicit request to publish a named Play that is already released locally uses the alternative
+`local_release_inspect` entry. It is not creator intent and must not search saved Plays or offer a
+new exploration. The read-only `rote-flow-authoring` handoff proves the exact local release is
+unpublished, verifies the requested namespace, and recovers the original capture workspace and
+trajectory. It may not edit, test, re-release, or publish. A valid receipt joins the lifecycle at
+`birth_capture`; missing provenance blocks. Never recommend `direct:` for recovery because direct
+mode bypasses both Play and Rote.
+
 If authoring returns evidence that it already published the Flow, emit
 `publication_boundary_violated` and block. Do not show links, share copy, congratulations, or offer
 to manufacture a retrospective birth certificate. The published registry artifact may remain

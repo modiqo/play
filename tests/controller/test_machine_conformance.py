@@ -653,6 +653,44 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["search_empty_offer"]["on"]["search_explore_selected"][0]["target"],
         )
 
+    def test_exploration_intent_and_existing_release_publication_are_typed(self) -> None:
+        qualify = ACTIONS["qualify_request"]
+        creation_fields = qualify["events"]["play_creation_request"]
+        for field in (
+            "exploration.intent_kind",
+            "exploration.provider",
+            "exploration.goal_status",
+            "exploration.goal",
+        ):
+            self.assertIn(field, creation_fields)
+        self.assertEqual(
+            "local_release_inspect",
+            MACHINE["states"]["qualify"]["on"]["play_publication_request"][0]["target"],
+        )
+        local_release = ACTIONS["inspect_local_release_for_publication"]
+        self.assertEqual("rote-flow-authoring", local_release["specialist"])
+        self.assertEqual("read", local_release["effect"])
+        policy = " ".join(local_release["command_policy"])
+        self.assertIn("Do not search for another Play", policy)
+        self.assertIn("originating workspace", policy)
+        self.assertIn("return local_release_unavailable", policy)
+
+        prerequisite = MACHINE["states"]["exploration_prerequisite_present"]["on"][
+            "exploration_prerequisite_presented"
+        ]
+        self.assertEqual("exploration_goal_is_ready", prerequisite[0]["guard"])
+        self.assertEqual("exploration_execute", prerequisite[0]["target"])
+        self.assertEqual("exploration_goal_is_required", prerequisite[1]["guard"])
+        self.assertEqual("exploration_goal_offer", prerequisite[1]["target"])
+        self.assertEqual(
+            "exploration_execute",
+            MACHINE["states"]["save_judge"]["on"]["exploration_refinement_requested"][0]["target"],
+        )
+
+        execute_policy = " ".join(ACTIONS["execute_captured_exploration"]["command_policy"])
+        for forbidden_operation in ("scaffold", "save", "release", "publish"):
+            self.assertIn(forbidden_operation, execute_policy)
+
     def test_unserved_outcomes_capture_or_step_aside_by_recorded_decision(self) -> None:
         for state, event, branch in (
             ("classify", "partial_match", 0),
@@ -764,7 +802,7 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertEqual({"save_judge"}, incoming)
 
     def test_open_text_prompts_have_stable_input_events(self) -> None:
-        for name in ("describe_awareness_need", "describe_creator_need"):
+        for name in ("describe_awareness_need", "describe_creator_need", "describe_exploration_goal"):
             prompt = PROMPTS[name]
             self.assertEqual("text", prompt["selection"])
             self.assertIn(prompt["input"]["event"], prompt["events"])

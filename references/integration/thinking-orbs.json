@@ -212,6 +212,10 @@
       "orb": "connecting",
       "label": "Resuming after a verified prerequisite…"
     },
+    "exploration_goal_offer": {
+      "orb": "listening",
+      "label": "Waiting for a useful outcome to explore…"
+    },
     "exploration_recovery_offer": {
       "orb": "listening",
       "label": "Waiting for another exploration route…"
@@ -295,6 +299,10 @@
     "author_release": {
       "orb": "composing",
       "label": "Composing the Play release…"
+    },
+    "local_release_inspect": {
+      "orb": "solving",
+      "label": "Verifying the local release and its origin…"
     },
     "birth_capture": {
       "orb": "shaping",

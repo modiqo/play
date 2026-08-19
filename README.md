@@ -237,13 +237,16 @@ stateDiagram-v2
     exploration_begin --> exploration_execute : visible start => typed Rote specialist handoff
     standby_exit --> exited : normal => no trajectory, no settle
     exploration_execute --> exploration_prerequisite_present : setup/auth prerequisite ready
-    exploration_prerequisite_present --> exploration_execute : visible resume
+    exploration_prerequisite_present --> exploration_execute : goal already declared
+    exploration_prerequisite_present --> exploration_goal_offer : connection-only request
+    exploration_goal_offer --> exploration_execute : useful outcome supplied
     exploration_execute --> exploration_recovery_offer : route failed
     exploration_recovery_offer --> exploration_execute : user chooses another tool
     exploration_execute --> exploration_verify : Rote returns result + verified workspace trajectory
     exploration_verify --> exploration_complete_present : outcome verified
     exploration_complete_present --> save_judge : visible completion
     save_judge --> crystallize : worth saving (bound capture evidence)
+    save_judge --> exploration_execute : same-task refinement
     save_judge --> exploration_one_off_present : one-off
     exploration_one_off_present --> exited : visible completion
 
@@ -254,6 +257,7 @@ stateDiagram-v2
     save_offer --> author_release : Team / Community
     save_offer --> completed : Skip
     author_release --> birth_capture : unpublished release
+    local_release_inspect --> birth_capture : verified existing unpublished release
     birth_capture --> publish : private org / public owner
     publish --> birth_bind : publication matches captured birth
     birth_bind --> index
@@ -505,8 +509,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.35/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.35 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.36/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.36 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -835,6 +839,14 @@ and only a fresh `rote-registry` handoff may publish that exact artifact while e
 birth SHA. If a broad registry publication request publishes early, the machine emits
 `publication_boundary_violated` and blocks instead of treating a registry summary as completion or
 offering a retrospective certificate.
+
+The same lifecycle accepts an explicit request to publish an already released local Play.
+Qualification emits `play_publication_request` with the local reference, visibility, and optional
+owner, bypassing saved-Play search and creator discovery. A read-only `rote-flow-authoring`
+inspection must prove the exact release is unpublished and recover the original verified Rote
+workspace; only then can Play capture birth and honor the explicit publication authorization. If
+that provenance cannot be recovered, Play blocks instead of inventing a workspace or suggesting
+`direct:`. Direct mode bypasses both Play and Rote and is therefore never a publication remedy.
 
 Public namespace resolution also happens before release. The typed
 [`play-public-owner`](scripts/bin/play-public-owner) probe reads the claimed Rote profile handle and

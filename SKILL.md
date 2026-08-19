@@ -197,9 +197,13 @@ the explicit empty-search approval always selects `capture`. Capture creates a R
 handle; normal creates neither.
 Adapter installation, authentication, token verification, capability probes, and connection smoke
 tests are prerequisites rather than completed exploration outcomes. Continue from them to the
-original requested outcome inside the same capture. If a prerequisite must cross a specialist
-boundary, return `exploration_prerequisite_ready`; only useful outcome-bearing work may return
-`exploration_outcome_ready` or enter save judgment.
+original requested outcome inside the same capture. Classify `connect to <provider>` as setup-led:
+after connection, ask what useful outcome the user wants to explore. Classify `connect to
+<provider> and <outcome>` as goal-bound: after connection, continue the already-declared outcome
+without asking again. If a prerequisite must cross a specialist boundary, return
+`exploration_prerequisite_ready`; only useful outcome-bearing work may return
+`exploration_outcome_ready` or enter save judgment. A same-task refinement received at save
+judgment resumes the same capture and workspace; never close it as one-off and restart search.
 Deliver every deterministic exploration transition presentation: start, prerequisite-ready,
 recovery, verified completion, and one-off completion. On a recoverable route failure, show the
 projected recovery choice instead of silently changing tools. A `direct:` request during exploration
@@ -216,6 +220,12 @@ decompose `rote play run` into registry pulls, adapter setup, or local-path exec
 treat its failure as authorization for a manual fallback. Preserve every primary payload exactly
 as received; compact summaries are incomplete results. Never place raw credentials in Play
 context, packets, logs, or responses.
+
+Publishing an already saved, locally released Play is a lifecycle continuation, not a new workflow
+request. Route it to the read-only local-release inspection state, recover and verify its originating
+workspace trajectory, capture its birth, then enter the requested Rote registry publication path.
+Do not search for another Play, offer **Explore and create**, or recommend `direct:`; direct mode
+bypasses both Play and Rote and therefore cannot complete the governed publication lifecycle.
 
 ## Fail closed
 

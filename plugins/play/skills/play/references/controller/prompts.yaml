@@ -179,6 +179,14 @@ prompts:
       exploration_retry_selected: [prompt_version, selected_at]
       exploration_stopped: [prompt_version, selected_at]
 
+  describe_exploration_goal:
+    question: "✓ {exploration.provider} is connected. What useful outcome would you like to explore with it?"
+    template_fields: [exploration.provider]
+    selection: text
+    input: {id: requested_outcome, label: Useful outcome, event: exploration_goal_supplied}
+    events:
+      exploration_goal_supplied: [prompt_version, selected_at, request.requested_outcome]
+
   approve_play_run:
     question: Pull or replace this remote Play as disclosed, then run it with the displayed parameters and effects?
     selection: single

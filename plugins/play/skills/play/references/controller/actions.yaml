@@ -18,6 +18,8 @@ guards:
   - search_is_complete
   - search_only_requested
   - capture_is_active
+  - exploration_goal_is_required
+  - exploration_goal_is_ready
   - match_satisfies_constraints
   - search_has_remaining_choices
   - captured_trajectory_is_verified
@@ -107,6 +109,8 @@ mutations:
   - enter_captured_exploration
   - record_exploration_phase
   - record_exploration_prerequisite
+  - record_exploration_goal
+  - record_exploration_refinement
   - record_exploration_route_failure
   - record_captured_exploration
   - enter_search_use
@@ -140,6 +144,8 @@ mutations:
   - enter_settled_judgment
   - record_save_worthiness
   - record_not_worth_saving
+  - record_publication_request
+  - record_existing_release
   - request_authentication_verification
   - approve_authentication
   - decline_authentication
@@ -379,6 +385,8 @@ actions:
       - Classify explicit or inferred requests for what is new, popular public Plays, or trending Plays as play_awareness_request; the digest owns truthful metric labels and must not call cumulative totals a time-window trend.
       - For exact_play_request, preserve the complete canonical owner/name reference supplied by the activation hook or cached catalog; never emit a bare Play name.
       - Treat explicit `$play explore ...` and `/play explore ...` requests as play_creation_request, never play_search_request; the creator path still searches local and authorized registry Plays before offering a captured exploration.
+      - Distinguish setup-led exploration from goal-bound exploration. "Connect to PostHog" is setup_led with exploration.goal_status=required; "connect to PostHog and retrieve DAU" is goal_bound with the useful DAU outcome already ready. Never invent a useful outcome from authentication, connection, probes, or taxonomy reads.
+      - Classify an explicit request to publish an already saved or locally released Play as play_publication_request. Preserve the local Play reference, requested visibility, and requested owner; never search for another Play, offer Explore and create, or recommend `direct:` for this lifecycle action.
       - Honor the scoped preference ledger; a request whose task class is ledgered silent must emit play_excluded without search, narration, or any mention of Play.
       - When the user states a scoped intervention preference (for example no Plays during prototyping, or always offer Plays for deploy chores), return the statement with its task class and policy on play_excluded so the ledger can record it; otherwise return null preference fields.
       - Classify every novel outcome before execution as capture or normal. Capture only when the likely multi-step, parameterizable work may become reusable and therefore must begin through Rote; normal means no trajectory is created and the task can never be settled post hoc.
@@ -387,7 +395,8 @@ actions:
       exact_play_request: [request.intent, request.requested_outcome, request.parameters, match.reference, modality_policy]
       play_search_request: [request.intent]
       play_awareness_request: [request.intent, awareness.window_days]
-      play_creation_request: [request.intent, request.requested_outcome, creator.intent, modality_policy, capture.decision, capture.reason, capture.task_class]
+      play_creation_request: [request.intent, request.requested_outcome, creator.intent, modality_policy, capture.decision, capture.reason, capture.task_class, exploration.intent_kind, exploration.provider, exploration.goal_status, exploration.goal]
+      play_publication_request: [request.intent, candidate.reference, publication.visibility, publication.owner]
       play_management_request: [request.intent, management.views]
       play_management_choice_required: [request.intent]
       play_birth_request: [request.intent, birth.selector]
@@ -419,9 +428,11 @@ actions:
       - Require the verified capture handle and Rote trajectory created before execution. Similar prose or a retrospective summary can never substitute for that evidence.
       - Never emit worth_saving for a failed or abandoned task, or when the session or ledger classes this work silent.
       - Use the capture-bound Rote workspace; the judgment event may not replace it.
+      - If the user supplies a same-task refinement or the useful outcome that should follow setup, emit exploration_refinement_requested and continue in the same capture workspace. Do not close the capture as not worth saving, restart Play/Rote search, or create a second workspace.
     events:
       worth_saving: [save_judge.assessment, save_judge.parameters, save_judge.step_count]
       not_worth_saving: [reason]
+      exploration_refinement_requested: [request.original, request.requested_outcome]
 
   collect_awareness_digest:
     kind: deterministic
@@ -536,9 +547,10 @@ actions:
       - If the user names an existing CLI, invoke rote-shell. Validate the exact executable inside the capture workspace with a minimal `deps.toml` plus `rote deps check`, then capture capability discovery and use through `rote proc`; never infer existence from prose or use raw `which` as proof.
       - rote-adapter-create owns catalog selection, spec validation, dry-run, auth and toolset decisions, real creation, adapter info, and the first green probe/call. After an adapter is ready, rote-workspace owns calls, cached responses, transformations, and outcome verification.
       - Adapter creation, authentication, token verification, capability probes, and smoke tests are prerequisites, not the requested outcome. After they succeed, continue the original request in the same capture; never reinterpret “connected” as completion and never ask for an outcome already present in request.requested_outcome.
+      - For setup-led exploration, return exploration_prerequisite_ready after the connection is verified so Play can ask for the first useful outcome. For goal-bound exploration, return the same prerequisite event and let Play resume the already-declared goal automatically.
       - Keep adapter, CLI, and mixed evidence in this one capture workspace. Do not call provider APIs, native CLIs, MCP tools, curl, browser tools, or custom scripts outside the selected Rote skill.
       - If an external authentication or setup boundary forces a return before useful work resumes, return exploration_prerequisite_ready with its evidence. Play will re-enter this same specialist action for the original outcome; do not manufacture output metadata or enter save judgment.
-      - Return exploration_outcome_ready only after at least one outcome-bearing operation beyond setup, with the complete user-visible result and a verified `rote trace --deps` trajectory bound to this capture. Play owns the subsequent save-worthiness and crystallization states; do not publish from this specialist action.
+      - Return exploration_outcome_ready only after at least one outcome-bearing operation beyond setup, with the complete user-visible result and a verified `rote trace --deps` trajectory bound to this capture. This action may not scaffold, export, save, author, lint, release, push, or publish a Play. Play alone decides save worthiness, then delegates crystallization, authoring, and publication through their separate lifecycle states.
       - On a recoverable route failure, preserve the failed evidence and return exploration_route_exhausted. Play will ask whether to discover another tool, continue through a direct side-step, or stop; never silently fall back to a different substrate.
       - A `direct:` request is a one-turn excursion. Do not consume or close this Play continuation, import direct work into the captured trajectory, or claim its evidence. When the user returns with “continue exploration,” resume this same workspace and revalidate any external state that changed.
       - Interactive questions belong to the invoked Rote specialist flow. Continue through them in place and return to Play only with one declared event.
@@ -551,7 +563,7 @@ actions:
     kind: deterministic
     owner: play
     effect: none
-    input_required: [request.requested_outcome, exploration.route_failure, exploration.recovery_count, capture.status, output.primary]
+    input_required: [request.requested_outcome, exploration.intent_kind, exploration.provider, exploration.goal_status, exploration.goal, exploration.route_failure, exploration.recovery_count, capture.status, output.primary]
     command_policy:
       - Render only the human exploration phase represented by the current state. Never expose state IDs, continuations, capture handles, workspace paths, receipt metadata, or tool-internal fields.
       - Keep the message short: what changed, what remains, and whether the user needs to choose or can keep steering.
@@ -565,6 +577,21 @@ actions:
         exploration_completion_presented: [presentation.markdown]
       exploration_one_off_present:
         exploration_one_off_presented: [presentation.markdown]
+
+  inspect_local_release_for_publication:
+    kind: delegated
+    owner: rote-specialist
+    specialist: rote-flow-authoring
+    effect: read
+    input_required: [candidate.reference, publication.visibility, consent.save]
+    command_policy:
+      - Inspect only the named existing local Play release. Do not search for another Play, scaffold, edit, test, lint, re-release, push, publish, or create a new workspace.
+      - Prove the release is unpublished and recover its exact released Flow version plus the original Rote workspace whose verified dependency trace produced it. A newly invented workspace, conversation summary, or connection-only probe is not valid birth evidence.
+      - For public publication, verify the requested owner is the claimed profile handle or an authorized organization namespace. Preserve the user's explicit visibility and owner without another save prompt.
+      - If the local release, originating workspace, verified trajectory, unpublished status, or requested namespace cannot be proven, return local_release_unavailable and fail closed with exact evidence.
+    events:
+      local_release_ready: [candidate.reference, candidate.released_flow, candidate.publication_status, play.version, execution.workspace, capture.reference, capture.workspace, capture.status, capture.trajectory_ref, evidence.verification, publication.owner, publication.owner_resolution, evidence_refs]
+      local_release_unavailable: [reason, evidence_refs]
 
   classify_adequacy:
     kind: deterministic

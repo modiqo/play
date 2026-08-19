@@ -42,6 +42,18 @@ when they must cross a boundary; the machine then resumes the original explorati
 entering verification or save judgment. Only useful outcome-bearing work may return
 `exploration_outcome_ready`.
 
+Exploration intent is typed. A setup-led request such as `connect to PostHog` reaches
+`exploration_goal_offer` after the connection is checked, while a goal-bound request such as
+`connect to PostHog and retrieve DAU` resumes the declared DAU goal immediately. A useful
+same-task refinement at `save_judge` returns to `exploration_execute` with the same capture and
+workspace rather than ending the trajectory and starting another search.
+
+An explicit publication request for an already released local Play enters
+`local_release_inspect`. The read-only flow-authoring handoff must recover the exact unpublished
+release and its originating verified workspace before the normal birth → registry publication →
+binding → indexing → inspection path can continue. It never enters saved-Play search or new
+exploration.
+
 The exploration-only journey surface deterministically presents start, prerequisite-ready,
 route-recovery, verified-completion, and one-off-completion phases. Tool discovery stays inside the
 Rote specialist, which must present alternatives, retain an “another tool” choice, verify the

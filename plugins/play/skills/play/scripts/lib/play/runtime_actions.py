@@ -256,6 +256,20 @@ def _commandless_result(
         outcome = _path_value(context, "request.requested_outcome")
         if not isinstance(state, str) or not isinstance(outcome, str) or not outcome:
             raise ControllerRuntimeError("exploration transition context is incomplete")
+        goal_status = _path_value(context, "exploration.goal_status")
+        provider = _path_value(context, "exploration.provider")
+        provider_label = provider if isinstance(provider, str) and provider else "The selected tool"
+        prerequisite_markdown = (
+            "🔌 **Connection ready**\n\n"
+            f"{provider_label} is connected and checked. Connection is setup, not the useful "
+            "result. Tell Play what you want to accomplish with it next."
+            if goal_status == "required"
+            else (
+                "🔌 **Prerequisite ready**\n\n"
+                f"The selected route is prepared for **{outcome}**. Connection or setup is "
+                "not the requested result; exploration is continuing in the same captured workspace."
+            )
+        )
         phase = {
             "exploration_begin": (
                 "exploration_started",
@@ -266,9 +280,7 @@ def _commandless_result(
             ),
             "exploration_prerequisite_present": (
                 "exploration_prerequisite_presented",
-                "🔌 **Prerequisite ready**\n\n"
-                f"The selected route is prepared for **{outcome}**. Connection or setup is "
-                "not the requested result; exploration is continuing in the same captured workspace.",
+                prerequisite_markdown,
             ),
             "exploration_complete_present": (
                 "exploration_completion_presented",

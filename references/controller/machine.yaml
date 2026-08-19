@@ -224,6 +224,7 @@ states:
       play_search_request: [{target: search, mutate: set_search_request}]
       play_awareness_request: [{target: awareness_collect, mutate: set_awareness_request}]
       play_creation_request: [{target: creator_search, mutate: set_creator_request}]
+      play_publication_request: [{target: local_release_inspect, mutate: record_publication_request}]
       play_management_request: [{target: management_list, mutate: set_management_request}]
       play_management_choice_required: [{target: management_offer, mutate: record_management_choices}]
       play_birth_request: [{target: birth_show, mutate: set_birth_request}]
@@ -573,8 +574,19 @@ states:
     requires: [request.requested_outcome, capture.status]
     entry: {action: present_exploration_transition}
     "on":
-      exploration_prerequisite_presented: [{target: exploration_execute, mutate: record_exploration_phase}]
+      exploration_prerequisite_presented:
+        - {guard: exploration_goal_is_ready, target: exploration_execute, mutate: record_exploration_phase}
+        - {guard: exploration_goal_is_required, target: exploration_goal_offer, mutate: record_exploration_phase}
+        - {target: blocked, mutate: record_blocker}
       action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  exploration_goal_offer:
+    owner: play
+    checkpoint: after
+    requires: [exploration.provider, exploration.goal_status]
+    prompt: describe_exploration_goal
+    "on":
+      exploration_goal_supplied: [{target: exploration_execute, mutate: record_exploration_goal}]
 
   exploration_recovery_offer:
     owner: play
@@ -613,6 +625,7 @@ states:
     "on":
       worth_saving: [{target: crystallize, mutate: record_save_worthiness}]
       not_worth_saving: [{target: exploration_one_off_present, mutate: record_not_worth_saving}]
+      exploration_refinement_requested: [{target: exploration_execute, mutate: record_exploration_refinement}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   exploration_one_off_present:
@@ -622,6 +635,18 @@ states:
     entry: {action: present_exploration_transition}
     "on":
       exploration_one_off_presented: [{target: exited, mutate: record_not_worth_saving}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  local_release_inspect:
+    owner: rote-specialist
+    checkpoint: both
+    requires: [candidate.reference, publication.visibility, consent.save]
+    entry: {action: inspect_local_release_for_publication}
+    "on":
+      local_release_ready:
+        - {guard: released_candidate_is_unpublished, target: birth_capture, mutate: record_existing_release}
+        - {target: blocked, mutate: record_publication_boundary_violation}
+      local_release_unavailable: [{target: blocked, mutate: record_blocker}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   crystallize:

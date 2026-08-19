@@ -14,6 +14,9 @@ check: package-check
     scripts/bin/play-question choose_empty_search_path --harness codex --check
     scripts/bin/play-question choose_empty_search_path --harness claude --check
     scripts/bin/play-question choose_empty_search_path --harness kimi --check
+    scripts/bin/play-question describe_exploration_goal --harness codex --context-json '{"exploration":{"provider":"PostHog"}}' --check
+    scripts/bin/play-question describe_exploration_goal --harness claude --context-json '{"exploration":{"provider":"PostHog"}}' --check
+    scripts/bin/play-question describe_exploration_goal --harness kimi --context-json '{"exploration":{"provider":"PostHog"}}' --check
     scripts/bin/play-question private_public_or_skip --harness codex --context-json '{"publication":{"owner_summary":"Your claimed handle is ready."}}' --check
     scripts/bin/play-question private_public_or_skip --harness claude --context-json '{"publication":{"owner_summary":"Your claimed handle is ready."}}' --check
     scripts/bin/play-question private_public_or_skip --harness kimi --context-json '{"publication":{"owner_summary":"Your claimed handle is ready."}}' --check
