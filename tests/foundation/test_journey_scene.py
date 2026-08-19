@@ -205,6 +205,14 @@ class JourneySceneTest(unittest.TestCase):
                 interactions = json.loads(response.read())
                 self.assertEqual(INTERACTIONS_SCHEMA, interactions["schema"])
                 self.assertEqual(len(self.activities), interactions["total"])
+                self.assertIn(
+                    "read",
+                    {
+                        item.get("effect")
+                        for items in interactions["sites"].values()
+                        for item in items
+                    },
+                )
                 self.assertNotIn("params", json.dumps(interactions))
             with urllib.request.urlopen(
                 f"{base}/api/workspaces?token=viewer-secret", timeout=2
@@ -256,6 +264,10 @@ class JourneySceneTest(unittest.TestCase):
                 self.assertIn(b"FROZEN VANTAGE", viewer)
                 self.assertIn(b"SITUATIONAL AWARENESS", viewer)
                 self.assertIn(b"DRAG TO LOOK 360", viewer)
+                self.assertIn(b"LOOK AROUND", viewer)
+                self.assertIn(b"behind-interaction", viewer)
+                self.assertIn(b"PRIOR VANTAGE", viewer)
+                self.assertIn(b"ROUTE DIRECTION", viewer)
                 self.assertIn(b"NEXT SNAPSHOT", viewer)
             with urllib.request.urlopen(
                 f"{base}/api/events?token=viewer-secret", timeout=2

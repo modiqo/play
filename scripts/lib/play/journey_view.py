@@ -177,6 +177,9 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
                     "provider": activity.get("provider")
                     if isinstance(activity.get("provider"), str)
                     else None,
+                    "effect": activity.get("effect")
+                    if isinstance(activity.get("effect"), str)
+                    else None,
                     "status": str(activity.get("status") or "unknown"),
                     "duration_ms": int(activity.get("duration_ms") or 0),
                     "tokens": int(activity.get("tokens") or 0),

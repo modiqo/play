@@ -526,7 +526,7 @@ const WHY = {
   play: 'Make the verified procedure available for future runs.',
 }
 
-function JourneyGuide({story, interactions, replay, playing, frozen, onOpen}) {
+function JourneyGuide({story, interactions, replay, playing, frozen, onOpen, onNavigate}) {
   if (!story?.chapters?.length) return null
   const playbackIndex = Math.max(0, Math.min(story.chapters.length - 1, Math.ceil(replay * story.chapters.length) - 1))
   const liveIndex = Math.max(0, story.chapters.findIndex((chapter) => chapter.id === story.current_chapter))
@@ -536,16 +536,28 @@ function JourneyGuide({story, interactions, replay, playing, frozen, onOpen}) {
   const next = story.chapters[index + 1]
   const records = interactions?.sites?.[current.id] || []
   const capabilities = [...new Set(records.map(capabilityName))]
+  const effects = [...new Set(records.map((record) => record.effect).filter(Boolean))]
+  const latency = records.reduce((sum, record) => sum + Number(record.duration_ms || 0), 0)
+  const consumed = records.reduce((sum, record) => sum + Number(record.tokens || 0), 0)
+  const succeeded = records.filter((record) => record.status === 'succeeded').length
   return <aside className={`journey-guide${frozen ? ' frozen' : ''}`} onClick={() => onOpen({siteId: current.id, sequence: null})}>
     <div className="guide-kicker"><i />{playing ? 'TRAVERSING' : frozen ? 'FROZEN VANTAGE' : story.state === 'active' ? 'NOW' : 'RECORDED JOURNEY'}<span>{String(index + 1).padStart(2, '0')} / {String(story.chapters.length).padStart(2, '0')}</span></div>
     <h1>{current.title}</h1>
     <p><strong>{KIND_LABEL[current.kind] || current.kind} → {WORLD_ROLE[current.kind] || 'journey stage'}.</strong> {WORLD_STORY[current.kind] || WHY[current.kind] || 'Advance the requested outcome while preserving evidence.'}</p>
+    {frozen && <div className="vantage-nudge"><strong>EXPLORE</strong><span>Drag or use arrow keys to look through 360°. Scroll to move forward or backward. Every illuminated callout opens that structure’s evidence.</span></div>}
     <dl>
       <dt>HAPPENED</dt><dd>{current.detail || current.title}</dd>
       <dt>STRUCTURES</dt><dd>{records.length ? `${records.length} illuminated · select any callout for evidence` : 'No tool interactions recorded at this vantage'}</dd>
-      {capabilities.length > 0 && <><dt>EQUIPPED</dt><dd>{capabilities.join(' · ')}</dd></>}
+      <dt>CAPABILITIES</dt><dd>{capabilities.length ? capabilities.join(' · ') : 'No tool capability used here'}</dd>
+      <dt>EFFECT</dt><dd>{effects.length ? effects.join(' · ') : current.kind === 'effect' ? 'Outcome-bearing work' : 'No external effect recorded'}</dd>
+      <dt>INSIGHT</dt><dd>{succeeded}/{records.length} interactions succeeded · {formatNumber(consumed)} tokens · {formatNumber(latency)} ms</dd>
       <dt>NEXT</dt><dd>{next?.title || 'Deliver the verified outcome'}</dd>
     </dl>
+    {frozen && <nav className="vantage-navigation" aria-label="Frozen vantage navigation">
+      <button disabled={index === 0} onClick={(event) => { event.stopPropagation(); onNavigate(index - 1) }}>← PRIOR VANTAGE</button>
+      <span>ROUTE DIRECTION</span>
+      <button className="forward" disabled={index >= story.chapters.length - 1} onClick={(event) => { event.stopPropagation(); onNavigate(index + 1) }}>FORWARD →</button>
+    </nav>}
     <div className="guide-progress"><i style={{width: `${Math.max(2, (index + 1) / story.chapters.length * 100)}%`}} /></div>
   </aside>
 }
@@ -825,10 +837,14 @@ function App() {
       playback.current = null
       setPlaying(false)
       setObserving(true)
+      const vantageIndex = story?.chapters.findIndex((chapter) => chapter.id === value.siteId) ?? -1
+      if (vantageIndex >= 0) {
+        setReplay(vantageIndex / Math.max(1, story.chapters.length - 1))
+      }
       setMessage(value.sequence ? `Inspecting interaction @${value.sequence}` : 'Situational awareness opened')
     }
     setSelected(value)
-  }, [])
+  }, [story])
 
   const chapter = story?.chapters.find((item) => item.id === selected?.siteId)
   const interaction = selected?.sequence
@@ -918,7 +934,7 @@ function App() {
         </>}
       </>}
     </aside>
-    {mode === 'follow' && story && interactions && <JourneyGuide story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} onOpen={selectVantage} />}
+    {mode === 'follow' && story && interactions && <JourneyGuide story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} onOpen={selectVantage} onNavigate={jumpToChapter} />}
     {mode === 'follow' && story && interactions && <CapabilityRail story={story} interactions={interactions} replay={replay} onJump={jumpToChapter} />}
     <WorldModel open={worldModelOpen} onToggle={() => setWorldModelOpen((value) => !value)} />
     <Telemetry story={story} open={telemetryOpen} onToggle={() => setTelemetryOpen((value) => !value)} />

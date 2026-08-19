@@ -216,6 +216,30 @@ function makeInteractionCallout(record, chapter, index, onActivate) {
   return {label, root, sequence: record.sequence}
 }
 
+function clampVisibleCallouts(labelLayer, viewport) {
+  const bounds = viewport.getBoundingClientRect()
+  const horizontalInset = 18
+  const topInset = 18
+  const bottomInset = 82
+  const callouts = labelLayer.querySelectorAll(
+    '.world-callout.expanded, .world-callout.current, .world-callout.frozen, .world-interaction-callout.proximity, .world-interaction-callout.selected',
+  )
+  callouts.forEach((callout) => {
+    callout.style.marginLeft = '0px'
+    callout.style.marginTop = '0px'
+    const rect = callout.getBoundingClientRect()
+    if (!rect.width || !rect.height) return
+    let offsetX = 0
+    let offsetY = 0
+    if (rect.left < bounds.left + horizontalInset) offsetX = bounds.left + horizontalInset - rect.left
+    else if (rect.right > bounds.right - horizontalInset) offsetX = bounds.right - horizontalInset - rect.right
+    if (rect.top < bounds.top + topInset) offsetY = bounds.top + topInset - rect.top
+    else if (rect.bottom > bounds.bottom - bottomInset) offsetY = bounds.bottom - bottomInset - rect.bottom
+    callout.style.marginLeft = `${Math.round(offsetX)}px`
+    callout.style.marginTop = `${Math.round(offsetY)}px`
+  })
+}
+
 export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect}) {
   const host = useRef(null)
   const runtime = useRef(null)
@@ -295,15 +319,23 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
 
       const sites = []
       const interactionMeshes = []
+      const semanticMeshes = []
       story.chapters.forEach((chapter, index) => {
         const site = new THREE.Group()
         site.position.copy(positions[index])
         const platform = new THREE.Mesh(new THREE.BoxGeometry(15, .24, 12), material(0x111518))
         platform.position.y = .08
         platform.receiveShadow = true
+        platform.userData = {siteId: chapter.id, sequence: null}
+        semanticMeshes.push(platform)
         site.add(platform)
 
         const landmark = landmarkFor(chapter)
+        landmark.traverse((object) => {
+          if (!object.isMesh) return
+          object.userData = {siteId: chapter.id, sequence: null}
+          semanticMeshes.push(object)
+        })
         site.add(landmark)
         const records = interactions?.sites?.[chapter.id] || []
         const markers = []
@@ -319,11 +351,17 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           site.add(tower)
           interactionMeshes.push(tower)
           const marker = makeInteractionCallout(record, chapter, recordIndex, (selection) => {
-            onSelect((current) => current?.sequence === selection.sequence ? null : selection)
+            onSelect(selectedRef.current?.sequence === selection.sequence ? null : selection)
           })
+          marker.hovered = false
+          marker.root.addEventListener('pointerenter', () => { marker.hovered = true })
+          marker.root.addEventListener('pointerleave', () => { marker.hovered = false })
+          marker.root.addEventListener('focus', () => { marker.hovered = true })
+          marker.root.addEventListener('blur', () => { marker.hovered = false })
           marker.label.position.set(tower.position.x, height + .75, tower.position.z)
           site.add(marker.label)
-          markers.push({...marker, tower})
+          marker.tower = tower
+          markers.push(marker)
         })
         const {label, root} = makeCallout(chapter, records.length, story.chapters.length, (siteId) => {
           if (selectedRef.current?.siteId === siteId && !selectedRef.current?.sequence) {
@@ -352,6 +390,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       focusRing.rotation.x = -Math.PI / 2
       scene.add(focusRing)
 
+      const actionableMeshes = interactionMeshes.concat(semanticMeshes)
       const raycaster = new THREE.Raycaster()
       const pointer = new THREE.Vector2()
       let lookYaw = 0
@@ -360,6 +399,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       let pointerMoved = false
       let pointerX = 0
       let pointerY = 0
+      const walkOffset = new THREE.Vector3()
+      const currentLookDirection = new THREE.Vector3(0, 0, -1)
       const onPointerDown = (event) => {
         if (!frozenRef.current || event.button !== 0) return
         pointerDown = true
@@ -370,7 +411,16 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         renderer.domElement.setPointerCapture?.(event.pointerId)
       }
       const onPointerMove = (event) => {
-        if (!pointerDown || !frozenRef.current) return
+        if (!pointerDown) {
+          const bounds = renderer.domElement.getBoundingClientRect()
+          pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1
+          pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1
+          raycaster.setFromCamera(pointer, camera)
+          const actionable = raycaster.intersectObjects(actionableMeshes, false)[0]
+          renderer.domElement.classList.toggle('vantage-hover', Boolean(actionable))
+          return
+        }
+        if (!frozenRef.current) return
         const deltaX = event.clientX - pointerX
         const deltaY = event.clientY - pointerY
         if (Math.abs(deltaX) + Math.abs(deltaY) > 2) pointerMoved = true
@@ -384,6 +434,16 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         renderer.domElement.classList.remove('looking')
         renderer.domElement.releasePointerCapture?.(event.pointerId)
       }
+      const onWheel = (event) => {
+        if (!frozenRef.current) return
+        event.preventDefault()
+        const stride = THREE.MathUtils.clamp(-event.deltaY * .008, -1.8, 1.8)
+        const groundDirection = currentLookDirection.clone().setY(0)
+        if (groundDirection.lengthSq() < .001) return
+        groundDirection.normalize()
+        walkOffset.addScaledVector(groundDirection, stride)
+        if (walkOffset.length() > 12) walkOffset.setLength(12)
+      }
       const onPointer = (event) => {
         if (pointerMoved) {
           pointerMoved = false
@@ -393,9 +453,17 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1
         pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1
         raycaster.setFromCamera(pointer, camera)
-        const hit = raycaster.intersectObjects(interactionMeshes, false)[0]
-        if (hit) onSelect(hit.object.userData)
-        else onSelect(null)
+        const interactionHit = raycaster.intersectObjects(interactionMeshes, false)[0]
+        if (interactionHit) {
+          onSelect(interactionHit.object.userData)
+          return
+        }
+        const semanticHit = raycaster.intersectObjects(semanticMeshes, false)[0]
+        if (semanticHit) {
+          onSelect(semanticHit.object.userData)
+          return
+        }
+        if (frozenRef.current) onSelect(null)
       }
       const onKeyDown = (event) => {
         if (!frozenRef.current || event.target instanceof HTMLInputElement || event.target instanceof HTMLButtonElement) return
@@ -410,6 +478,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       renderer.domElement.addEventListener('pointermove', onPointerMove)
       renderer.domElement.addEventListener('pointerup', onPointerUp)
       renderer.domElement.addEventListener('pointercancel', onPointerUp)
+      renderer.domElement.addEventListener('wheel', onWheel, {passive: false})
       renderer.domElement.addEventListener('click', onPointer)
       window.addEventListener('keydown', onKeyDown)
 
@@ -444,7 +513,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         const direction = ahead.clone().sub(current).normalize()
         if (direction.lengthSq() < .01) direction.set(0, 0, -1)
 
-        const focus = selectedRef.current?.siteId
+        const focus = selectedRef.current?.sequence ? selectedRef.current.siteId : null
         const focusSite = sites.find((site) => site.chapter.id === focus)
         if (focusSite) {
           desiredCamera.copy(focusSite.worldPosition).add(new THREE.Vector3(focusSite.chapter.order % 2 === 0 ? -10 : 10, 5.2, 9.5))
@@ -457,7 +526,9 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             Math.sin(lookPitch),
             -Math.cos(yaw) * Math.cos(lookPitch),
           )
+          currentLookDirection.copy(lookDirection)
           desiredCamera.copy(current).addScaledVector(direction, -1.4)
+          desiredCamera.add(walkOffset)
           desiredCamera.y = 2.25
           desiredLook.copy(desiredCamera).addScaledVector(lookDirection, 12)
         } else {
@@ -480,6 +551,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           dismissed.current.delete(sites[reached]?.chapter.id)
           lookYaw = 0
           lookPitch = 0
+          walkOffset.set(0, 0, 0)
           previousReached = reached
         }
         focusRing.position.copy(positions[reached]).setY(.16)
@@ -488,8 +560,11 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         sites.forEach((site, siteIndex) => {
           site.group.visible = siteIndex <= reached + 1
           const isCurrent = siteIndex === reached
-          const isSelected = selectedRef.current?.siteId === site.chapter.id
+          const isSelectedSite = selectedRef.current?.siteId === site.chapter.id
+          const isSelected = isSelectedSite && !selectedRef.current?.sequence
+          const interactionEngaged = (isSelectedSite && Boolean(selectedRef.current?.sequence)) || site.markers.some((marker) => marker.hovered)
           site.label.classList.toggle('expanded', isSelected || (isCurrent && !selectedRef.current && !dismissed.current.has(site.chapter.id)))
+          site.label.classList.toggle('behind-interaction', interactionEngaged)
           site.label.classList.toggle('current', isCurrent)
           site.label.classList.toggle('frozen', isCurrent && frozenRef.current)
           site.label.classList.toggle('complete', siteIndex < reached)
@@ -512,6 +587,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         })
         renderer.render(scene, camera)
         labels.render(scene, camera)
+        clampVisibleCallouts(labels.domElement, host.current)
         frame = requestAnimationFrame(render)
       }
       render()
@@ -525,6 +601,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         renderer.domElement.removeEventListener('pointermove', onPointerMove)
         renderer.domElement.removeEventListener('pointerup', onPointerUp)
         renderer.domElement.removeEventListener('pointercancel', onPointerUp)
+        renderer.domElement.removeEventListener('wheel', onWheel)
         renderer.domElement.removeEventListener('click', onPointer)
         scene.traverse((object) => {
           object.geometry?.dispose?.()
@@ -552,6 +629,6 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
   return <div className="journey-world" ref={host}>
     {error && <div className="world-error">3D JOURNEY UNAVAILABLE · {error}</div>}
     <div className="world-reticle"><i /><span>{frozen ? 'SITUATIONAL AWARENESS' : 'FOLLOWING THE AGENT'}</span></div>
-    <div className="world-instruction">{frozen ? 'DRAG TO LOOK 360° · ARROW KEYS ALSO LOOK · SELECT ANY ILLUMINATED CALLOUT FOR EVIDENCE' : 'THE PATH REVEALS AS THE WORK PROGRESSES · FREEZE AT ANY STAGE TO LOOK AROUND'}</div>
+    <div className="world-instruction">{frozen ? 'DRAG TO LOOK 360° · SCROLL TO MOVE FORWARD OR BACK · SELECT ANY ILLUMINATED CALLOUT FOR EVIDENCE' : 'THE PATH REVEALS AS THE WORK PROGRESSES · CLICK A VANTAGE TO FREEZE AND LOOK AROUND'}</div>
   </div>
 }

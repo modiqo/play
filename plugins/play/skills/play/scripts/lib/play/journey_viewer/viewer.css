@@ -58,6 +58,7 @@ main {
 }
 .is-frozen .journey-world .world-canvas { cursor: grab; }
 .is-frozen .journey-world .world-canvas.looking { cursor: grabbing; }
+.journey-world .world-canvas.vantage-hover { cursor: crosshair; }
 .journey-world .world-labels { pointer-events: none; overflow: hidden; }
 .world-error {
   position: absolute; z-index: 8; inset: 50% auto auto 50%; transform: translate(-50%, -50%);
@@ -90,6 +91,10 @@ main {
 }
 .world-callout.complete:not(.expanded) { opacity: .6; }
 .world-callout.next:not(.expanded) { opacity: .34; }
+.world-callout.behind-interaction {
+  opacity: .1; filter: blur(1px); pointer-events: none;
+  transform: translateY(-10px) scale(.97);
+}
 .callout-index, .callout-kind {
   color: #858b8d; font-size: 7px; font-weight: 400; letter-spacing: .13em; text-transform: uppercase;
 }
@@ -143,6 +148,10 @@ main {
 .world-interaction-callout:hover, .world-interaction-callout.selected {
   width: 202px; border-color: rgba(240, 160, 58, 1); background: rgba(13, 15, 17, .98);
   opacity: 1; transform: translateY(-4px) scale(1.035); box-shadow: 0 0 34px rgba(232, 132, 19, .23);
+}
+.world-interaction-callout:focus-visible {
+  outline: 1px solid rgba(240,160,58,.95); outline-offset: 3px;
+  border-color: rgba(240,160,58,1); box-shadow: 0 0 36px rgba(232,132,19,.28);
 }
 .world-interaction-callout span { color: #f0a03a; font-size: 7px; letter-spacing: .1em; }
 .world-interaction-callout strong { overflow: hidden; color: #d4d7d6; font-size: 7px; font-weight: 400; white-space: nowrap; text-overflow: ellipsis; }
@@ -256,9 +265,18 @@ header {
 .journey-guide h1 { margin: 13px 0 8px; color: var(--ink); font-size: 16px; line-height: 1.28; font-weight: 500; }
 .journey-guide > p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
 .journey-guide > p strong { color: var(--ink); font-weight: 500; }
-.journey-guide dl { display: grid; grid-template-columns: 48px 1fr; gap: 6px 9px; margin: 13px 0 0; padding-top: 11px; border-top: 1px solid var(--line); font-size: 7px; line-height: 1.45; }
+.vantage-nudge { display: grid; grid-template-columns: 66px 1fr; gap: 9px; margin-top: 11px; padding: 8px 9px; border-left: 2px solid var(--accent); background: var(--soft); }
+.vantage-nudge strong { color: var(--ink); font-size: 7px; font-weight: 500; letter-spacing: .1em; }
+.vantage-nudge span { color: var(--muted); font-size: 7px; line-height: 1.5; }
+.journey-guide dl { display: grid; grid-template-columns: 64px 1fr; gap: 6px 9px; margin: 13px 0 0; padding-top: 11px; border-top: 1px solid var(--line); font-size: 7px; line-height: 1.45; }
 .journey-guide dt { color: var(--faint); }
 .journey-guide dd { margin: 0; color: var(--muted); }
+.vantage-navigation { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; margin-top: 12px; }
+.vantage-navigation span { color: var(--faint); font-size: 6px; letter-spacing: .12em; text-align: center; }
+.vantage-navigation button { padding: 7px 8px; border: 1px solid var(--line); background: transparent; color: var(--muted); font: 7px/1 inherit; letter-spacing: .08em; cursor: pointer; }
+.vantage-navigation button:hover { border-color: var(--accent); color: var(--ink); }
+.vantage-navigation button.forward { border-color: rgba(232,132,19,.7); color: var(--ink); background: var(--soft); }
+.vantage-navigation button:disabled { opacity: .26; cursor: default; border-color: var(--line); background: transparent; color: var(--muted); }
 .guide-progress { height: 2px; margin-top: 13px; background: var(--line); overflow: hidden; }
 .guide-progress i { display: block; height: 100%; background: var(--accent); box-shadow: 0 0 12px rgba(232,132,19,.55); transition: width 220ms linear; }
 
