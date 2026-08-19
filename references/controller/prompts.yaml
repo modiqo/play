@@ -168,6 +168,17 @@ prompts:
       search_explore_selected: [prompt_version, selected_at]
       search_dismissed: [prompt_version, selected_at]
 
+  choose_exploration_recovery:
+    question: "⚠ Route blocked: {exploration.route_failure} Choose another exploration path, or use `direct: <task>` for a one-turn side-step and return with `continue exploration`?"
+    template_fields: [exploration.route_failure]
+    selection: single
+    choices:
+      - {id: retry, label: Try another tool, description: "Return to tool discovery, show the alternatives, and wait for my selection before continuing.", event: exploration_retry_selected, recommended: true}
+      - {id: stop, label: Stop exploration, description: "Keep the evidence recorded so far but do not save or publish a Play.", event: exploration_stopped}
+    events:
+      exploration_retry_selected: [prompt_version, selected_at]
+      exploration_stopped: [prompt_version, selected_at]
+
   approve_play_run:
     question: Pull or replace this remote Play as disclosed, then run it with the displayed parameters and effects?
     selection: single
@@ -200,7 +211,7 @@ prompts:
       authentication_declined: [prompt_version, selected_at, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.original_packet_sha256]
 
   private_public_or_skip:
-    question: "{publication.owner_summary} How should I preserve this verified Play?"
+    question: "💾 SAVE — {publication.owner_summary} How should I preserve this verified exploration as a Play?"
     template_fields: [publication.owner_summary]
     selection: single
     choices:
@@ -213,7 +224,7 @@ prompts:
       save_skipped: [prompt_version, selected_at]
 
   select_public_owner:
-    question: "{publication.owner_summary} Which public namespace should own this Play?"
+    question: "🏷 OWNER — {publication.owner_summary} Which public namespace should own this Play?"
     template_fields: [publication.owner_summary]
     selection: single
     choices_from:

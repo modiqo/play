@@ -354,7 +354,7 @@ def render_pulse(pulse: Mapping[str, Any]) -> str:
     if errors:
         status += f" · {errors} error{'s' if errors != 1 else ''} preserved"
     lines = [
-        "🧭 **Exploration pulse**",
+        "📍 **Exploration progress**",
         "",
         (
             f"**Progress:** {pulse.get('new_steps', 0)} new workspace steps "
@@ -402,7 +402,8 @@ def render_pulse(pulse: Mapping[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "Rote is still recording the checked trajectory; you can keep steering the agent.",
+            "Exploration is still active. Keep steering, ask to try another tool, or use "
+            "`direct: <task>` for one turn; return with `continue exploration`.",
         ]
     )
     return "\n".join(lines)

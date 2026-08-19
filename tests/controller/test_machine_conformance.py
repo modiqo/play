@@ -677,12 +677,17 @@ class MachineConformanceTest(unittest.TestCase):
             ACTIONS["record_standby"]["command"],
         )
         self.assertEqual(
-            "exploration_execute",
+            "exploration_begin",
             MACHINE["states"]["standby_exit"]["on"]["standby_recorded"][0]["target"],
         )
         self.assertEqual(
             "capture_is_active",
             MACHINE["states"]["standby_exit"]["on"]["standby_recorded"][0]["guard"],
+        )
+        self.assertEqual(
+            "exploration_execute",
+            MACHINE["states"]["exploration_begin"]["on"]
+            ["exploration_started"][0]["target"],
         )
         self.assertEqual(
             "exited",
@@ -702,7 +707,7 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertIn("rote deps check", policy)
         self.assertIn("rote proc", policy)
         self.assertEqual(
-            "exploration_execute",
+            "exploration_prerequisite_present",
             MACHINE["states"]["exploration_execute"]["on"]
             ["exploration_prerequisite_ready"][0]["target"],
         )
@@ -710,6 +715,23 @@ class MachineConformanceTest(unittest.TestCase):
             "exploration_prerequisite_ready", exploration["events"]
         )
         self.assertIn("prerequisites, not the requested outcome", policy)
+        self.assertIn("Choose another tool", policy)
+        self.assertIn("direct:", policy)
+        self.assertEqual(
+            "exploration_recovery_offer",
+            MACHINE["states"]["exploration_execute"]["on"]
+            ["exploration_route_exhausted"][0]["target"],
+        )
+        recovery = PROMPTS["choose_exploration_recovery"]
+        self.assertIn("direct: <task>", recovery["question"])
+        self.assertEqual(
+            ["exploration_retry_selected", "exploration_stopped"],
+            [choice["event"] for choice in recovery["choices"]],
+        )
+        self.assertEqual(
+            "present_exploration_transition",
+            MACHINE["states"]["exploration_complete_present"]["entry"]["action"],
+        )
 
     def test_settled_reentry_judges_the_trace_before_any_save_offer(self) -> None:
         self.assertEqual(
@@ -729,7 +751,7 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["save_judge"]["on"]["worth_saving"][0]["target"],
         )
         self.assertEqual(
-            "exited",
+            "exploration_one_off_present",
             MACHINE["states"]["save_judge"]["on"]["not_worth_saving"][0]["target"],
         )
         incoming = {

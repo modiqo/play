@@ -24,8 +24,9 @@ captured exploration pulses are claimed by the Stop hook, while the daily recall
 only when the user asks for it.
 
 An approved empty-search exploration is not a terminal standby. `record_standby` creates the
-capture and workspace, then `capture_is_active` routes to `exploration_execute`. That delegated
-state invokes the `rote` entrypoint with the unchanged outcome and completed no-match evidence.
+capture and workspace, then `capture_is_active` routes through the visible `exploration_begin`
+phase to `exploration_execute`. That delegated state invokes the `rote` entrypoint with the
+unchanged outcome and completed no-match evidence.
 Rote owns all nested routing: `rote-task-routing` runs explore/inventory/catalog gates,
 `rote-adapter-create` adapts an accepted API, `rote-shell` validates and records an accepted CLI,
 and `rote-workspace` executes adapter work. Play accepts only a complete result plus a verified,
@@ -40,3 +41,10 @@ token verification, capability probes, and smoke tests return `exploration_prere
 when they must cross a boundary; the machine then resumes the original exploration without
 entering verification or save judgment. Only useful outcome-bearing work may return
 `exploration_outcome_ready`.
+
+The exploration-only journey surface deterministically presents start, prerequisite-ready,
+route-recovery, verified-completion, and one-off-completion phases. Tool discovery stays inside the
+Rote specialist, which must present alternatives, retain an “another tool” choice, verify the
+selected route, and wait before execution. A `direct:` turn leaves the Play continuation and Rote
+workspace paused; it is not captured evidence and `continue exploration` resumes only after changed
+external state is revalidated.

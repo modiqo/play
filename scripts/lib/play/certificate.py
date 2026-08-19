@@ -210,7 +210,7 @@ def render_certificate(
     modalities = trace.get("modalities")
     modality_text = ", ".join(modalities) if isinstance(modalities, list) else ""
     lines = [
-        "# ✦ Play Birth Certificate",
+        "# 🚀 Play published and verified",
         "",
         *_fenced(_box(certificate_lines)),
         "",
@@ -243,7 +243,7 @@ def render_certificate(
         lines.extend(
             [
                 "",
-                "## Share the certified Play",
+                "## 📣 Share your Play",
                 "",
                 "X:",
                 "",

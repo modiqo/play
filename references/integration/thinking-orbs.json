@@ -200,13 +200,33 @@
       "orb": "listening",
       "label": "Waiting to explore and create…"
     },
+    "exploration_begin": {
+      "orb": "connecting",
+      "label": "Opening the captured exploration…"
+    },
     "exploration_execute": {
       "orb": "weaving",
       "label": "Routing the captured journey through Rote…"
     },
+    "exploration_prerequisite_present": {
+      "orb": "connecting",
+      "label": "Resuming after a verified prerequisite…"
+    },
+    "exploration_recovery_offer": {
+      "orb": "listening",
+      "label": "Waiting for another exploration route…"
+    },
     "exploration_verify": {
       "orb": "solving",
       "label": "Verifying the result and recorded trajectory…"
+    },
+    "exploration_complete_present": {
+      "orb": "shaping",
+      "label": "Presenting the verified exploration…"
+    },
+    "exploration_one_off_present": {
+      "orb": "breathing",
+      "label": "Closing the one-off exploration…"
     },
     "classify": {
       "orb": "solving",

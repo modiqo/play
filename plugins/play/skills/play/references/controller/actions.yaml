@@ -105,7 +105,9 @@ mutations:
   - record_search_presentation
   - start_empty_search_exploration
   - enter_captured_exploration
+  - record_exploration_phase
   - record_exploration_prerequisite
+  - record_exploration_route_failure
   - record_captured_exploration
   - enter_search_use
   - record_search_dismissal
@@ -528,18 +530,41 @@ actions:
       - Enter the already-created capture workspace and invoke rote-task-routing with the original user intent, empty-search evidence, workspace path, and the requirement to create a reusable workflow.
       - Begin routing with `rote explore <request.requested_outcome>`. If it suggests a newly available full Play, return to rote-flow-run; otherwise preserve the same workspace and continue substrate discovery.
       - For provider or API intent, inventory installed adapters first. If none covers the required operation, run `rote adapter catalog search` with both provider and operation terms through rote-task-routing.
-      - When catalog candidates exist, present their protocol, authentication, capability fit, and install impact, then offer **Adapt API** through rote-adapter-create or **Use existing CLI** through rote-shell. Never silently install a catalog result or choose a protocol for the user.
+      - When routes are discovered, present a bounded **Find tools** choice showing protocol, authentication, capability fit, and install impact. Always include **Choose another tool**. Do not adapt, install, authenticate, or execute until the user selects a route.
+      - Verify the selected adapter, CLI, browser, or other route still exists and covers the requested operation, then announce **Begin exploration** before the first outcome-bearing operation. Never confuse selection with execution.
+      - When catalog candidates exist, offer **Adapt API** through rote-adapter-create or **Use existing CLI** through rote-shell. Never silently install a catalog result or choose a protocol for the user.
       - If the user names an existing CLI, invoke rote-shell. Validate the exact executable inside the capture workspace with a minimal `deps.toml` plus `rote deps check`, then capture capability discovery and use through `rote proc`; never infer existence from prose or use raw `which` as proof.
       - rote-adapter-create owns catalog selection, spec validation, dry-run, auth and toolset decisions, real creation, adapter info, and the first green probe/call. After an adapter is ready, rote-workspace owns calls, cached responses, transformations, and outcome verification.
       - Adapter creation, authentication, token verification, capability probes, and smoke tests are prerequisites, not the requested outcome. After they succeed, continue the original request in the same capture; never reinterpret “connected” as completion and never ask for an outcome already present in request.requested_outcome.
       - Keep adapter, CLI, and mixed evidence in this one capture workspace. Do not call provider APIs, native CLIs, MCP tools, curl, browser tools, or custom scripts outside the selected Rote skill.
       - If an external authentication or setup boundary forces a return before useful work resumes, return exploration_prerequisite_ready with its evidence. Play will re-enter this same specialist action for the original outcome; do not manufacture output metadata or enter save judgment.
       - Return exploration_outcome_ready only after at least one outcome-bearing operation beyond setup, with the complete user-visible result and a verified `rote trace --deps` trajectory bound to this capture. Play owns the subsequent save-worthiness and crystallization states; do not publish from this specialist action.
+      - On a recoverable route failure, preserve the failed evidence and return exploration_route_exhausted. Play will ask whether to discover another tool, continue through a direct side-step, or stop; never silently fall back to a different substrate.
+      - A `direct:` request is a one-turn excursion. Do not consume or close this Play continuation, import direct work into the captured trajectory, or claim its evidence. When the user returns with “continue exploration,” resume this same workspace and revalidate any external state that changed.
       - Interactive questions belong to the invoked Rote specialist flow. Continue through them in place and return to Play only with one declared event.
     events:
       exploration_prerequisite_ready: [reason, evidence_refs]
       exploration_outcome_ready: [capture.status, capture.trajectory_ref, evidence.verification, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
       exploration_route_exhausted: [reason, recoverable, owner, evidence_refs]
+
+  present_exploration_transition:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [request.requested_outcome, exploration.route_failure, exploration.recovery_count, capture.status, output.primary]
+    command_policy:
+      - Render only the human exploration phase represented by the current state. Never expose state IDs, continuations, capture handles, workspace paths, receipt metadata, or tool-internal fields.
+      - Keep the message short: what changed, what remains, and whether the user needs to choose or can keep steering.
+      - Connection and setup phases must explicitly say the requested outcome has not completed yet. Verified completion must distinguish outcome-bearing work from excluded setup probes.
+    events_by_state:
+      exploration_begin:
+        exploration_started: [presentation.markdown]
+      exploration_prerequisite_present:
+        exploration_prerequisite_presented: [presentation.markdown]
+      exploration_complete_present:
+        exploration_completion_presented: [presentation.markdown]
+      exploration_one_off_present:
+        exploration_one_off_presented: [presentation.markdown]
 
   classify_adequacy:
     kind: deterministic

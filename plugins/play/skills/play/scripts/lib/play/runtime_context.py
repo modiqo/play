@@ -16,7 +16,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "eb0ad0cc801cd1c1640c8410eaf1e2aef4e775ab9388768c0470d3f9da3f0dae"
+SUPPORTED_MUTATION_SET_SHA256 = "5ecacd349cf44e9248087d7489432f939fe9360c7fe4abe5d9a213792295fde3"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -134,6 +134,8 @@ def initial_context(
             "welcome_markdown": None,
             "welcome_ref": None,
             "resolve_ns": None,
+            "route_failure": None,
+            "recovery_count": 0,
         },
         "adapter_discovery": {
             "status": "unknown",
@@ -533,6 +535,13 @@ def _apply_mutation_semantics(
         if not isinstance(workspace, str) or not workspace:
             raise RuntimeContextError("captured exploration requires a workspace")
         context["execution"]["workspace"] = workspace
+
+    if mutation == "record_exploration_route_failure":
+        reason = payload.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            raise RuntimeContextError("exploration route failure requires a reason")
+        context["exploration"]["route_failure"] = reason.strip()
+        context["exploration"]["recovery_count"] += 1
 
     if mutation == "record_captured_exploration":
         outcome = context["request"].get("requested_outcome")

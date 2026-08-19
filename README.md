@@ -233,13 +233,19 @@ stateDiagram-v2
     use_receipt --> receipt
 
     %% ── Pre-work capture gate ──
-    standby_exit --> exploration_execute : active capture => typed Rote specialist handoff
+    standby_exit --> exploration_begin : active capture
+    exploration_begin --> exploration_execute : visible start => typed Rote specialist handoff
     standby_exit --> exited : normal => no trajectory, no settle
-    exploration_execute --> exploration_execute : setup/auth prerequisite ready
+    exploration_execute --> exploration_prerequisite_present : setup/auth prerequisite ready
+    exploration_prerequisite_present --> exploration_execute : visible resume
+    exploration_execute --> exploration_recovery_offer : route failed
+    exploration_recovery_offer --> exploration_execute : user chooses another tool
     exploration_execute --> exploration_verify : Rote returns result + verified workspace trajectory
-    exploration_verify --> save_judge : outcome verified
+    exploration_verify --> exploration_complete_present : outcome verified
+    exploration_complete_present --> save_judge : visible completion
     save_judge --> crystallize : worth saving (bound capture evidence)
-    save_judge --> exited : one-off
+    save_judge --> exploration_one_off_present : one-off
+    exploration_one_off_present --> exited : visible completion
 
     %% ── Save lifecycle (delegated to rote specialists) ──
     crystallize --> save_prepare : rote-flow-crystallization candidate
@@ -499,8 +505,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.34/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.34 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.35/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.35 sh
 ```
 
 To inspect the small bootstrap before running it:

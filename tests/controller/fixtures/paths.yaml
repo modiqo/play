@@ -209,10 +209,13 @@ cases:
         target: search_present
       - {state: search_present, event: search_empty, target: search_empty_offer}
       - {state: search_empty_offer, event: search_explore_selected, target: standby_exit}
-      - {state: standby_exit, event: standby_recorded, guards: {capture_is_active: true}, target: exploration_execute}
+      - {state: standby_exit, event: standby_recorded, guards: {capture_is_active: true}, target: exploration_begin}
+      - {state: exploration_begin, event: exploration_started, target: exploration_execute}
       - {state: exploration_execute, event: exploration_outcome_ready, target: exploration_verify}
-      - {state: exploration_verify, event: outcome_verified, target: save_judge}
-      - {state: save_judge, event: not_worth_saving, target: exited}
+      - {state: exploration_verify, event: outcome_verified, target: exploration_complete_present}
+      - {state: exploration_complete_present, event: exploration_completion_presented, target: save_judge}
+      - {state: save_judge, event: not_worth_saving, target: exploration_one_off_present}
+      - {state: exploration_one_off_present, event: exploration_one_off_presented, target: exited}
     terminal: exited
     excludes: [classify, use_inspect, use_run]
 
@@ -243,10 +246,13 @@ cases:
       - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
       - {state: classify, event: no_match, target: search_empty_offer}
       - {state: search_empty_offer, event: search_explore_selected, target: standby_exit}
-      - {state: standby_exit, event: standby_recorded, guards: {capture_is_active: true}, target: exploration_execute}
+      - {state: standby_exit, event: standby_recorded, guards: {capture_is_active: true}, target: exploration_begin}
+      - {state: exploration_begin, event: exploration_started, target: exploration_execute}
       - {state: exploration_execute, event: exploration_outcome_ready, target: exploration_verify}
-      - {state: exploration_verify, event: outcome_verified, target: save_judge}
-      - {state: save_judge, event: not_worth_saving, target: exited}
+      - {state: exploration_verify, event: outcome_verified, target: exploration_complete_present}
+      - {state: exploration_complete_present, event: exploration_completion_presented, target: save_judge}
+      - {state: save_judge, event: not_worth_saving, target: exploration_one_off_present}
+      - {state: exploration_one_off_present, event: exploration_one_off_presented, target: exited}
     terminal: exited
     excludes: [use_run]
 
@@ -285,17 +291,21 @@ cases:
       - {state: search, event: search_ready, guards: {search_is_complete: true}, target: classify}
       - {state: classify, event: no_match, target: search_empty_offer}
       - {state: search_empty_offer, event: search_explore_selected, target: standby_exit}
-      - {state: standby_exit, event: standby_recorded, guards: {capture_is_active: true}, target: exploration_execute}
+      - {state: standby_exit, event: standby_recorded, guards: {capture_is_active: true}, target: exploration_begin}
+      - {state: exploration_begin, event: exploration_started, target: exploration_execute}
       - {state: exploration_execute, event: exploration_outcome_ready, target: exploration_verify}
-      - {state: exploration_verify, event: outcome_verified, target: save_judge}
-      - {state: save_judge, event: not_worth_saving, target: exited}
+      - {state: exploration_verify, event: outcome_verified, target: exploration_complete_present}
+      - {state: exploration_complete_present, event: exploration_completion_presented, target: save_judge}
+      - {state: save_judge, event: not_worth_saving, target: exploration_one_off_present}
+      - {state: exploration_one_off_present, event: exploration_one_off_presented, target: exited}
     terminal: exited
     excludes: [use_inspect, crystallize]
 
   - name: settled one-off work exits without a save offer
     steps:
       - {state: invoke, event: settled_task_invocation, target: save_judge}
-      - {state: save_judge, event: not_worth_saving, target: exited}
+      - {state: save_judge, event: not_worth_saving, target: exploration_one_off_present}
+      - {state: exploration_one_off_present, event: exploration_one_off_presented, target: exited}
     terminal: exited
     excludes: [qualify, search, crystallize, save_offer]
 
@@ -594,10 +604,13 @@ cases:
         target: creator_classify
       - {state: creator_classify, event: creator_no_match, target: search_empty_offer}
       - {state: search_empty_offer, event: search_explore_selected, target: standby_exit}
-      - {state: standby_exit, event: standby_recorded, guards: {capture_is_active: true}, target: exploration_execute}
+      - {state: standby_exit, event: standby_recorded, guards: {capture_is_active: true}, target: exploration_begin}
+      - {state: exploration_begin, event: exploration_started, target: exploration_execute}
       - {state: exploration_execute, event: exploration_outcome_ready, target: exploration_verify}
-      - {state: exploration_verify, event: outcome_verified, target: save_judge}
-      - {state: save_judge, event: not_worth_saving, target: exited}
+      - {state: exploration_verify, event: outcome_verified, target: exploration_complete_present}
+      - {state: exploration_complete_present, event: exploration_completion_presented, target: save_judge}
+      - {state: save_judge, event: not_worth_saving, target: exploration_one_off_present}
+      - {state: exploration_one_off_present, event: exploration_one_off_presented, target: exited}
     terminal: exited
     excludes: [crystallize]
 
@@ -613,9 +626,12 @@ cases:
     steps:
       - {state: creator_classify, event: creator_match_ready, target: creator_offer}
       - {state: creator_offer, event: creator_adapt_selected, target: standby_exit}
-      - {state: standby_exit, event: standby_recorded, guards: {capture_is_active: true}, target: exploration_execute}
+      - {state: standby_exit, event: standby_recorded, guards: {capture_is_active: true}, target: exploration_begin}
+      - {state: exploration_begin, event: exploration_started, target: exploration_execute}
       - {state: exploration_execute, event: exploration_outcome_ready, target: exploration_verify}
-      - {state: exploration_verify, event: outcome_verified, target: save_judge}
-      - {state: save_judge, event: not_worth_saving, target: exited}
+      - {state: exploration_verify, event: outcome_verified, target: exploration_complete_present}
+      - {state: exploration_complete_present, event: exploration_completion_presented, target: save_judge}
+      - {state: save_judge, event: not_worth_saving, target: exploration_one_off_present}
+      - {state: exploration_one_off_present, event: exploration_one_off_presented, target: exited}
     terminal: exited
     excludes: [use_inspect]

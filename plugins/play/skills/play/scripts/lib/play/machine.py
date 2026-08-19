@@ -698,8 +698,10 @@ def validate_bundle(
     )
     check(
         states.get("standby_exit", {}).get("entry", {}).get("action") == "record_standby"
-        and _target(states, "standby_exit", "standby_recorded") == "exploration_execute"
+        and _target(states, "standby_exit", "standby_recorded") == "exploration_begin"
         and states.get("standby_exit", {}).get("on", {}).get("standby_recorded", [{}])[0].get("guard") == "capture_is_active"
+        and _target(states, "exploration_begin", "exploration_started")
+        == "exploration_execute"
         and _target(states, "standby_exit", "standby_recorded", 1) == "exited",
         "standby must route active captures to Rote exploration and let normal work exit",
     )
@@ -709,7 +711,22 @@ def validate_bundle(
         and actions.get("execute_captured_exploration", {}).get("specialist") == "rote"
         and _target(states, "exploration_execute", "exploration_outcome_ready")
         == "exploration_verify"
-        and _target(states, "exploration_verify", "outcome_verified") == "save_judge",
+        and _target(states, "exploration_execute", "exploration_prerequisite_ready")
+        == "exploration_prerequisite_present"
+        and _target(
+            states,
+            "exploration_prerequisite_present",
+            "exploration_prerequisite_presented",
+        )
+        == "exploration_execute"
+        and _target(states, "exploration_execute", "exploration_route_exhausted")
+        == "exploration_recovery_offer"
+        and _target(states, "exploration_verify", "outcome_verified")
+        == "exploration_complete_present"
+        and _target(
+            states, "exploration_complete_present", "exploration_completion_presented"
+        )
+        == "save_judge",
         "captured exploration must enter Rote routing, verify the outcome, then judge its recorded trajectory",
     )
     check(
@@ -722,7 +739,12 @@ def validate_bundle(
         == "judge_save_worthiness"
         and actions.get("judge_save_worthiness", {}).get("kind") == "evaluator"
         and _target(states, "save_judge", "worth_saving") == "crystallize"
-        and _target(states, "save_judge", "not_worth_saving") == "exited",
+        and _target(states, "save_judge", "not_worth_saving")
+        == "exploration_one_off_present"
+        and _target(
+            states, "exploration_one_off_present", "exploration_one_off_presented"
+        )
+        == "exited",
         "save worthiness must be judged from trace evidence and route only to crystallization or a quiet exit",
     )
     check(

@@ -543,8 +543,17 @@ states:
     entry: {action: record_standby}
     "on":
       standby_recorded:
-        - {guard: capture_is_active, target: exploration_execute, mutate: enter_captured_exploration}
+        - {guard: capture_is_active, target: exploration_begin, mutate: enter_captured_exploration}
         - {target: exited, mutate: record_save_hook}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  exploration_begin:
+    owner: play
+    checkpoint: after
+    requires: [request.requested_outcome, capture.status]
+    entry: {action: present_exploration_transition}
+    "on":
+      exploration_started: [{target: exploration_execute, mutate: record_exploration_phase}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   exploration_execute:
@@ -553,10 +562,28 @@ states:
     requires: [request.original, request.intent, request.requested_outcome, search.complete, capture.reference, capture.workspace, capture.status, execution.workspace, consent.explore]
     entry: {action: execute_captured_exploration}
     "on":
-      exploration_prerequisite_ready: [{target: exploration_execute, mutate: record_exploration_prerequisite}]
+      exploration_prerequisite_ready: [{target: exploration_prerequisite_present, mutate: record_exploration_prerequisite}]
       exploration_outcome_ready: [{target: exploration_verify, mutate: record_captured_exploration}]
-      exploration_route_exhausted: [{target: blocked, mutate: record_blocker}]
+      exploration_route_exhausted: [{target: exploration_recovery_offer, mutate: record_exploration_route_failure}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  exploration_prerequisite_present:
+    owner: play
+    checkpoint: after
+    requires: [request.requested_outcome, capture.status]
+    entry: {action: present_exploration_transition}
+    "on":
+      exploration_prerequisite_presented: [{target: exploration_execute, mutate: record_exploration_phase}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  exploration_recovery_offer:
+    owner: play
+    checkpoint: after
+    requires: [request.requested_outcome, exploration.route_failure, exploration.recovery_count]
+    prompt: choose_exploration_recovery
+    "on":
+      exploration_retry_selected: [{target: exploration_execute, mutate: record_exploration_phase}]
+      exploration_stopped: [{target: exited, mutate: record_not_worth_saving}]
 
   exploration_verify:
     owner: play
@@ -564,9 +591,18 @@ states:
     requires: [request.requested_outcome, capture.reference, capture.workspace, capture.status, capture.trajectory_ref, evidence.verification]
     entry: {action: verify_play_output}
     "on":
-      outcome_verified: [{target: save_judge, mutate: record_verification}]
+      outcome_verified: [{target: exploration_complete_present, mutate: record_verification}]
       outcome_not_verified: [{target: blocked, mutate: record_failed_receipt}]
       play_drifted: [{target: blocked, mutate: record_failed_receipt}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  exploration_complete_present:
+    owner: play
+    checkpoint: after
+    requires: [request.requested_outcome, output.primary, evidence.verification]
+    entry: {action: present_exploration_transition}
+    "on":
+      exploration_completion_presented: [{target: save_judge, mutate: record_exploration_phase}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   save_judge:
@@ -576,7 +612,16 @@ states:
     entry: {action: judge_save_worthiness}
     "on":
       worth_saving: [{target: crystallize, mutate: record_save_worthiness}]
-      not_worth_saving: [{target: exited, mutate: record_not_worth_saving}]
+      not_worth_saving: [{target: exploration_one_off_present, mutate: record_not_worth_saving}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  exploration_one_off_present:
+    owner: play
+    checkpoint: after
+    requires: [request.requested_outcome]
+    entry: {action: present_exploration_transition}
+    "on":
+      exploration_one_off_presented: [{target: exited, mutate: record_not_worth_saving}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   crystallize:

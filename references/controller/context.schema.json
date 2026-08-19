@@ -1119,7 +1119,9 @@
         "identity_ref",
         "welcome_markdown",
         "welcome_ref",
-        "resolve_ns"
+        "resolve_ns",
+        "route_failure",
+        "recovery_count"
       ],
       "additionalProperties": false,
       "properties": {
@@ -1161,6 +1163,13 @@
             "integer",
             "null"
           ],
+          "minimum": 0
+        },
+        "route_failure": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "recovery_count": {
+          "type": "integer",
           "minimum": 0
         }
       }

@@ -188,7 +188,9 @@ If the user accepts, the next deterministic transition creates the capture and R
 before any work begins, then yields directly to the `rote` specialist. That specialist must invoke
 `rote-task-routing`; API adaptation belongs to `rote-adapter-create`, existing CLI discovery and
 validation belong to `rote-shell` using `rote deps` and `rote proc`, and adapter execution belongs
-to `rote-workspace`. Continue the original outcome through that returned workspace. If the user
+to `rote-workspace`. Present the discovered routes, always allow another tool, wait for the user's
+selection, verify that selection, and announce the first outcome-bearing step before execution.
+Continue the original outcome through that returned workspace. If the user
 declines, stop without creating a workspace. Never invent a second search picker or ask for the
 outcome again. Before novel outcome work starts, the runtime classifies it as `capture` or `normal`;
 the explicit empty-search approval always selects `capture`. Capture creates a Rote workspace and
@@ -198,6 +200,12 @@ tests are prerequisites rather than completed exploration outcomes. Continue fro
 original requested outcome inside the same capture. If a prerequisite must cross a specialist
 boundary, return `exploration_prerequisite_ready`; only useful outcome-bearing work may return
 `exploration_outcome_ready` or enter save judgment.
+Deliver every deterministic exploration transition presentation: start, prerequisite-ready,
+recovery, verified completion, and one-off completion. On a recoverable route failure, show the
+projected recovery choice instead of silently changing tools. A `direct:` request during exploration
+does not consume the Play continuation or import direct work into the captured evidence. Complete
+that one direct turn, state that exploration remains paused, and resume the same workspace only
+when the user says `continue exploration`, revalidating any external state that changed.
 Only an active captured exploration may display workspace analytics. Its Stop hook stays silent
 until both the configured step interval and time throttle are due, then shows one compact pulse;
 ordinary requests and recalled Play runs never show Rote workspace statistics.

@@ -278,11 +278,14 @@ Play:  checks the captured evidence, then offers Team, Community, or Skip
 Your expertise matters while the Play is forming. A good captured path has distinct stages, inputs
 that can vary on reuse, a stable output, and a verified happy-path rerun.
 
-During active captured exploration, Play occasionally shows an **Exploration pulse** derived from
+During active captured exploration, Play occasionally shows **Exploration progress** derived from
 the Rote workspace journal: new steps, successes and errors, operation latency, payload tokens,
 cached-query savings, recent trajectory nodes, and dependency edges. It waits for five new steps
 and at least two minutes after the previous pulse, so it teaches progress without narrating every
 tool call. These statistics never appear during ordinary work or while running an existing Play.
+Use `direct: <task>` for a one-turn side-step without closing the capture, then say
+`continue exploration` to return. Direct work stays outside the saved trajectory until Play
+revalidates any state it changed.
 
 ```text
 $play create a reusable <outcome>

@@ -48,7 +48,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(76, len(self.runtime.bundle.states))
+        self.assertEqual(81, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -1486,7 +1486,8 @@ class ControllerRuntimeTest(unittest.TestCase):
                 guards={},
             ),
         )
-        projection = self.runtime.project_session(advanced.session).as_dict()
+        begun = advance_until_yield(self.runtime, advanced.session, root=ROOT)
+        projection = begun.projection
 
         self.assertEqual("exploration_execute", projection["state"]["id"])
         self.assertEqual("specialist", projection["state"]["boundary"])
@@ -1499,10 +1500,11 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertIn("rote-workspace", policy)
         self.assertIn("rote deps check", policy)
         self.assertIn("rote proc", policy)
+        self.assertIn("Exploration started", begun.presentations[0])
 
         trajectory_ref = "sha256:" + "a" * 64
         completed = self.runtime.advance_session(
-            advanced.session,
+            begun.session,
             ControllerEvent(
                 id=EventId("exploration_outcome_ready"),
                 payload={
@@ -1533,10 +1535,79 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         self.assertEqual("save_judge", yielded.projection["state"]["id"])
         self.assertEqual("model", yielded.projection["state"]["boundary"])
+        self.assertIn("Exploration verified", yielded.presentations[0])
         self.assertEqual("outcome_verified", yielded.trace[0].event)
         self.assertEqual(trajectory_ref, yielded.session.context["capture"]["trajectory_ref"])
         self.assertEqual(trajectory_ref, yielded.session.context["evidence"]["verification"])
         self.assertTrue(yielded.session.context["evidence"]["responses"])
+
+    def test_exploration_prerequisite_and_route_recovery_are_visible(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="exploration-phases",
+            task_key="exploration-phases",
+            request_original="Explore PostHog daily active users",
+        )
+        context = dict(session.context)
+        context["state"] = "exploration_execute"
+        context["request"]["intent"] = "retrieve PostHog daily active users"
+        context["request"]["requested_outcome"] = "retrieve PostHog daily active users"
+        context["search"]["complete"] = True
+        context["search"]["sources"] = ["local", "authorized_registry"]
+        context["capture"].update(
+            {
+                "decision": "capture",
+                "reference": "cap_1234567890abcdef",
+                "workspace": "play-capture-posthog-dau",
+                "status": "active",
+            }
+        )
+        context["execution"]["workspace"] = "play-capture-posthog-dau"
+        context["consent"]["explore"] = "approved"
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("exploration_execute")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        prerequisite = self.runtime.advance_session(
+            projected,
+            ControllerEvent(
+                id=EventId("exploration_prerequisite_ready"),
+                payload={
+                    "reason": "PostHog OAuth connected",
+                    "evidence_refs": ["@1"],
+                },
+                guards={},
+            ),
+        )
+        resumed = advance_until_yield(self.runtime, prerequisite.session, root=ROOT)
+        self.assertEqual("exploration_execute", resumed.projection["state"]["id"])
+        self.assertIn("Prerequisite ready", resumed.presentations[0])
+        self.assertIn("not the requested result", resumed.presentations[0])
+
+        failed = self.runtime.advance_session(
+            resumed.session,
+            ControllerEvent(
+                id=EventId("exploration_route_exhausted"),
+                payload={
+                    "reason": "The selected endpoint lacks the requested breakdown",
+                    "recoverable": True,
+                    "owner": "rote",
+                    "evidence_refs": ["@2"],
+                },
+                guards={},
+            ),
+        )
+        recovery = failed.projection.as_dict()
+        self.assertEqual("exploration_recovery_offer", recovery["state"]["id"])
+        self.assertIn("Try another tool", str(recovery["instruction"]["choices"]))
+        self.assertIn("direct: <task>", recovery["instruction"]["question"])
+        self.assertEqual(
+            "The selected endpoint lacks the requested breakdown",
+            failed.session.context["exploration"]["route_failure"],
+        )
+        self.assertEqual(1, failed.session.context["exploration"]["recovery_count"])
 
     def test_digest_and_search_selections_bind_the_direct_run_contract(self) -> None:
         from play.runtime_context import apply_event, initial_context

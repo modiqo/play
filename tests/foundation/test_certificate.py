@@ -129,7 +129,8 @@ class CertificatePresentationTest(unittest.TestCase):
         self.assertIn(self.payload()["publication"]["uri"], result["presentation_markdown"])
         self.assertIn("[Modiqo Pricing Grid — Compare pricing choices.]", result["presentation_markdown"])
         self.assertIn("Associated credential contracts: **verified**", result["presentation_markdown"])
-        self.assertIn("## Share the certified Play", result["presentation_markdown"])
+        self.assertIn("# 🚀 Play published and verified", result["presentation_markdown"])
+        self.assertIn("## 📣 Share your Play", result["presentation_markdown"])
         self.assertIn("Dear chetan. It was a pleasure working with you", result["presentation_markdown"])
         self.assertIn("we did an excellent job", result["presentation_markdown"])
         self.assertLessEqual(len(result["publication"]["share_copy"]["x"]), 280)
@@ -142,7 +143,7 @@ class CertificatePresentationTest(unittest.TestCase):
         )
 
         self.assertIn("private — no public URI", result["presentation_markdown"])
-        self.assertNotIn("## Share the certified Play", result["presentation_markdown"])
+        self.assertNotIn("## 📣 Share your Play", result["presentation_markdown"])
         self.assertEqual(
             {"x": None, "linkedin": None}, result["publication"]["share_copy"]
         )

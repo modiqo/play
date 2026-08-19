@@ -251,6 +251,48 @@ def _blocked_action_event(
 def _commandless_result(
     action_id: str, context: Mapping[str, Any]
 ) -> dict[str, Any]:
+    if action_id == "present_exploration_transition":
+        state = context.get("state")
+        outcome = _path_value(context, "request.requested_outcome")
+        if not isinstance(state, str) or not isinstance(outcome, str) or not outcome:
+            raise ControllerRuntimeError("exploration transition context is incomplete")
+        phase = {
+            "exploration_begin": (
+                "exploration_started",
+                "🧭 **Exploration started**\n\n"
+                f"**Outcome:** {outcome}\n\n"
+                "Finding viable tools and routes now. You will choose before anything is "
+                "adapted, installed, authenticated, or run.",
+            ),
+            "exploration_prerequisite_present": (
+                "exploration_prerequisite_presented",
+                "🔌 **Prerequisite ready**\n\n"
+                f"The selected route is prepared for **{outcome}**. Connection or setup is "
+                "not the requested result; exploration is continuing in the same captured workspace.",
+            ),
+            "exploration_complete_present": (
+                "exploration_completion_presented",
+                "✓ **Exploration verified**\n\n"
+                f"The requested outcome—**{outcome}**—was produced and checked. Play is now "
+                "evaluating only the outcome-bearing steps for reuse; setup and connection probes are excluded.",
+            ),
+            "exploration_one_off_present": (
+                "exploration_one_off_presented",
+                "🧾 **Exploration complete**\n\n"
+                f"**{outcome}** was useful for this run, but the verified trajectory did not "
+                "meet the reusable-Play threshold. Nothing was saved or published.",
+            ),
+        }.get(state)
+        if phase is None:
+            raise ControllerRuntimeError(
+                f"unsupported exploration presentation state {state}"
+            )
+        event, markdown = phase
+        return {
+            "event": event,
+            "presentation": {"markdown": markdown},
+            "presentation_markdown": markdown,
+        }
     if action_id == "present_search_results":
         request = context.get("request")
         search = context.get("search")
