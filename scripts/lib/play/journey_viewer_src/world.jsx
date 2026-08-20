@@ -9,8 +9,78 @@ import {createWorldNavigation} from './world-navigation.js'
 import {KIND_LABEL, WORLD_ROLE} from './semantics.js'
 import {groupInteractionPlaques} from './interaction-plaques.mjs'
 import {layoutTemporalCorridor} from './temporal-corridor.mjs'
-import {plaqueIsVisible, updateMarkerAppearance} from './marker-appearance.mjs'
+import {plaqueIsVisible, temporalNeighborhood, updateMarkerAppearance} from './marker-appearance.mjs'
 import {interactionDurationArc, interactionRadius} from './interaction-metrics.mjs'
+
+const THREAD_STEEL = 0x717c7f
+const THREAD_PREVIOUS = 0xaeb8ba
+
+function makeTemporalThreads(markers) {
+  return markers.slice(1).map((marker, index) => {
+    const previous = markers[index]
+    const start = previous.bead.position.clone()
+    const end = marker.bead.position.clone()
+    const delta = end.clone().sub(start)
+    const distance = Math.max(.001, delta.length())
+    const lateral = new THREE.Vector3(-delta.z, 0, delta.x)
+    if (lateral.lengthSq() > .0001) lateral.normalize()
+    const sag = THREE.MathUtils.clamp(.07 + distance * .025, .09, .24)
+    const bow = (index % 2 === 0 ? 1 : -1) * THREE.MathUtils.clamp(distance * .018, .025, .11)
+    const first = start.clone().lerp(end, .28).addScaledVector(lateral, bow * .65)
+    const middle = start.clone().lerp(end, .5).addScaledVector(lateral, bow)
+    const last = start.clone().lerp(end, .72).addScaledVector(lateral, bow * .65)
+    first.y -= sag * .62
+    middle.y -= sag
+    last.y -= sag * .62
+    const curve = new THREE.CatmullRomCurve3([start, first, middle, last, end], false, 'centripetal', .48)
+    const material = new THREE.MeshPhysicalMaterial({
+      color: THREAD_STEEL,
+      roughness: .3,
+      metalness: .03,
+      clearcoat: .72,
+      clearcoatRoughness: .2,
+      transmission: .08,
+      thickness: .08,
+      transparent: true,
+      opacity: .11,
+      depthTest: true,
+      depthWrite: false,
+      emissive: THREAD_STEEL,
+      emissiveIntensity: .015,
+    })
+    const mesh = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, THREE.MathUtils.clamp(Math.round(distance * 5), 14, 32), .013, 5, false),
+      material,
+    )
+    mesh.renderOrder = -1
+    return {mesh, material, from: previous.sequence, to: marker.sequence}
+  })
+}
+
+function updateTemporalThreadAppearance(thread, {
+  relation = null,
+  current = false,
+  future = false,
+  interactionFocus = false,
+  selectedSite = false,
+  elapsed = 0,
+  index = 0,
+} = {}) {
+  const incoming = relation === 'previous' && selectedSite
+  const outgoing = relation === 'next' && selectedSite
+  const selectedSegment = incoming || outgoing
+  const breath = .92 + Math.sin(elapsed * 1.15 + index * .73) * .08
+  thread.material.color.setHex(outgoing ? AMBER : incoming ? THREAD_PREVIOUS : THREAD_STEEL)
+  thread.material.emissive.setHex(outgoing ? AMBER : incoming ? THREAD_PREVIOUS : THREAD_STEEL)
+  thread.material.opacity = selectedSegment
+    ? (outgoing ? .48 : .32) * breath
+    : future ? .004
+      : interactionFocus ? .007
+        : current ? .1 + Math.sin(elapsed * .8 + index) * .012 : .022
+  thread.material.emissiveIntensity = selectedSegment
+    ? (outgoing ? .42 : .16) * breath
+    : current && !interactionFocus ? .018 : .004
+}
 
 export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect}) {
   const host = useRef(null)
@@ -204,6 +274,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           interactionMeshes.push(bead)
           markers.push({bead, halo, indexRoot: indexLabel.root, temporal, sequence: record.sequence, baseY})
         })
+        const threads = makeTemporalThreads(markers)
+        threads.forEach((thread) => site.add(thread.mesh))
         const plaques = groupInteractionPlaques(temporalCorridor.points).map((group, plaqueIndex) => {
           const plaque = makeInteractionPlaque(group, chapter, plaqueIndex, (selection) => {
             onSelect(selectedRef.current?.sequence === selection.sequence ? null : selection)
@@ -228,7 +300,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         scene.add(site)
         sites.push({
           chapter, group: site, platform, landmark, landmarkMaterials, focusEdges, label: root,
-          timeLabels: temporalStructure.userData.timeLabels || [], markers, plaques, worldPosition: site.position.clone(),
+          timeLabels: temporalStructure.userData.timeLabels || [], markers, threads, plaques, worldPosition: site.position.clone(),
           approachDistance: Math.max(12.5, landmarkSize.z * .5 + 8, landmarkSize.x * .38 + 8),
           eyeHeight: THREE.MathUtils.clamp(landmarkSize.y * .42, 2.5, 3.8),
         })
@@ -362,8 +434,14 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
               timeLabel.classList.toggle('future-dimmed', isFuture)
               timeLabel.classList.toggle('focus-muted', interactionFocus)
             })
+            const temporalFocus = temporalNeighborhood(
+              site.markers,
+              isSelectedSite ? selectedSequence : null,
+            )
             site.markers.forEach((marker, markerIndex) => {
               const markerSelected = selectedSequence === marker.sequence && isSelectedSite
+              const temporalRelation = temporalFocus.markerRelations[markerIndex]
+              const temporalAdjacent = temporalRelation === 'previous' || temporalRelation === 'next'
               const proximity = isCurrent || Boolean(markerSelected)
               marker.bead.userData.actionable = isCurrent || markerSelected
               const pulse = proximity
@@ -378,7 +456,19 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
                 pulse,
                 frozen: frozenRef.current,
                 future: isFuture,
-                muted: interactionFocus && !markerSelected,
+                muted: interactionFocus && !markerSelected && !temporalAdjacent,
+                temporalRelation,
+              })
+            })
+            site.threads.forEach((thread, threadIndex) => {
+              updateTemporalThreadAppearance(thread, {
+                relation: temporalFocus.segmentRelations[threadIndex],
+                current: isCurrent,
+                future: isFuture,
+                interactionFocus,
+                selectedSite: isSelectedSite,
+                elapsed,
+                index: threadIndex,
               })
             })
             site.plaques.forEach((plaque) => {

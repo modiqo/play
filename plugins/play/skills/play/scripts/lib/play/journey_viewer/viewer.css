@@ -137,6 +137,14 @@ main {
 .world-interaction-index.selected {
   border-color: #f0a03a; color: #ffd08d; transform: scale(1.12); box-shadow: 0 0 30px rgba(232,132,19,.34);
 }
+.world-interaction-index.temporal-previous {
+  border-color: rgba(174,184,186,.62); color: #b8c0c1; transform: scale(1.035);
+  box-shadow: 0 0 18px rgba(174,184,186,.12);
+}
+.world-interaction-index.temporal-next {
+  border-color: rgba(240,160,58,.76); color: #e9a452; transform: scale(1.055);
+  box-shadow: 0 0 22px rgba(232,132,19,.2);
+}
 .world-interaction-index.muted, .world-interaction-index.future {
   opacity: .025; filter: blur(2px); pointer-events: none;
 }
