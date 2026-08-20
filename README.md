@@ -334,11 +334,15 @@ $play journey live
 play-journey view --active
 ```
 
-The command starts a missed background projector when necessary, then returns after starting or
-reusing an owner-private loopback viewer. Every Play capture registered in
+The command starts a missed background projector when necessary, stops older Journey HTTP servers,
+then starts one owner-private loopback viewer on the stable default `127.0.0.1:52050`. Override that
+single port with `--port <n>` or `PLAY_JOURNEY_PORT=<n>`; repeated launches replace the singleton
+instead of accumulating listeners. Every Play capture registered in
 `~/.rote-play/standby.json` appears in the Journey rail; the rail is not a raw directory listing of
-every Rote workspace. **Active** means the capture can still grow, while **Viewing** identifies the
-map currently on screen. Selecting an older pre-projector capture starts its isolated read-only
+every Rote workspace. **Live · updating** means an active capture has a recent Rote heartbeat,
+**Live · quiet** means it can still grow but has no recent command, and **Recorded** cannot grow.
+At the live head, incoming generations advance to the new call site; an inspected or frozen vantage
+keeps its exact site while the map refreshes. Selecting an older pre-projector capture starts its isolated read-only
 projection and switches after the first graph is ready. A capture whose source workspace and graph
 are both unavailable remains visible but disabled rather than disappearing from its history.
 

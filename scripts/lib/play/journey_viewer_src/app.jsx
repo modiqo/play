@@ -19,11 +19,11 @@ export default function App() {
     ? interactions?.sites?.[selected.siteId]?.find((item) => item.sequence === selected.sequence)
     : null
   const selectedWorkspace = index?.workspaces.find((item) => item.id === workspace)
-  const liveCapture = selectedWorkspace?.capture_state === 'active'
+  const liveCapture = selectedWorkspace?.journey_mode === 'live'
   const liveActivity = Boolean(liveCapture && selectedWorkspace?.active_recently)
   const recalled = story?.origin?.kind === 'recalled_play'
   const isTutorial = story?.origin?.kind === 'tutorial'
-  const status = isTutorial ? 'START HERE' : recalled ? 'RECALLED PLAY' : liveActivity ? 'LIVE' : liveCapture ? 'IDLE' : 'HISTORY'
+  const status = isTutorial ? 'START HERE' : recalled ? 'RECALLED PLAY' : liveActivity ? 'LIVE · UPDATING' : liveCapture ? 'LIVE · QUIET' : 'RECORDED'
   const replayChapter = story ? Math.min(story.chapters.length - 1, Math.floor(replay * Math.max(1, story.chapters.length - 1) + .001)) : 0
   const currentReplayChapter = story?.chapters[replayChapter]
   const frozen = mode === 'follow' && observing && !playing
@@ -48,7 +48,7 @@ export default function App() {
           ? <JourneyWorld key={`follow:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} selected={selected} onSelect={selectVantage} />
           : <Cartography key={`${mode}:${story.journey_key}`} story={story} scene={scene} interactions={interactions} replay={replay} playing={playing} audit={mode === 'audit'} selected={selected} onSelect={setSelected} fitSignal={fitSignal} />
         : loadError
-          ? <div className="loading failed"><strong>JOURNEY CONNECTION LOST</strong><span>{loadError}</span><code>./scripts/bin/play-journey view --active</code></div>
+          ? <div className="loading failed"><strong>JOURNEY CONNECTION LOST</strong><span>{loadError}</span><code>play-journey view --active</code></div>
           : <div className="loading"><i />CONSTRUCTING JOURNEY ATLAS</div>}
     </section>
     <header>
@@ -74,13 +74,15 @@ export default function App() {
       <div className="workspace-list">{index?.workspaces.map((item) => {
         const unavailable = !item.graph_ready && !item.projectable
         const stateLabel = workspace === item.id
-          ? item.tutorial ? 'VIEWING · TUTORIAL' : recalled ? 'VIEWING · RECALLED' : item.active_recently ? 'VIEWING · LIVE' : item.capture_state === 'active' ? 'VIEWING · IDLE' : 'VIEWING'
+          ? item.tutorial ? 'VIEWING · TUTORIAL' : recalled ? 'VIEWING · RECALLED' : item.journey_mode === 'live' && item.active_recently ? 'VIEWING · LIVE' : item.journey_mode === 'live' ? 'VIEWING · QUIET' : item.journey_mode === 'workspace' ? 'VIEWING · WORKSPACE' : 'VIEWING · RECORDED'
           : item.tutorial
             ? 'START HERE'
-            : item.graph_ready && item.active_recently
-            ? 'LIVE'
-            : item.graph_ready && item.capture_state === 'active'
-              ? 'IDLE'
+            : item.graph_ready && item.journey_mode === 'live' && item.active_recently
+            ? 'LIVE · UPDATING'
+            : item.graph_ready && item.journey_mode === 'live'
+              ? 'LIVE · QUIET'
+            : item.graph_ready && item.journey_mode === 'workspace'
+              ? 'WORKSPACE SNAPSHOT'
             : item.graph_ready
               ? 'RECORDED'
               : item.projectable
@@ -93,7 +95,7 @@ export default function App() {
             : item.workspace_available
               ? 'Rote workspace · no Play capture'
               : 'workspace unavailable'
-        return <button key={item.id} disabled={unavailable} className={`workspace-card${workspace === item.id ? ' active' : ''}${item.active_recently ? ' live' : ''}`} onClick={() => choose(item)}>
+        return <button key={item.id} disabled={unavailable} className={`workspace-card${workspace === item.id ? ' active' : ''}${item.journey_mode === 'live' && item.active_recently ? ' live' : ''}`} onClick={() => choose(item)}>
         <i /><span>{item.intent}</span>
         <small><b>{stateLabel}</b><em>{coverage}</em></small>
       </button>})}</div>

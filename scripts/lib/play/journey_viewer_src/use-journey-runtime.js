@@ -2,6 +2,7 @@ import {useCallback, useEffect, useRef, useState} from 'react'
 import {api, trackWorkspaceLocation, workspaceFromLocation} from './api.js'
 import {useJourneyPlayback} from './use-journey-playback.js'
 import {chooseWorkspace} from './workspace-choice.mjs'
+import {reconcileJourneyPosition} from './journey-position.mjs'
 
 export function useJourneyRuntime() {
   const [index, setIndex] = useState(null)
@@ -27,10 +28,18 @@ export function useJourneyRuntime() {
   const [refreshing, setRefreshing] = useState(false)
   const playback = useRef(null)
   const materialGeneration = useRef(null)
+  const storyRef = useRef(null)
+  const selectedRef = useRef(null)
+  const observingRef = useRef(false)
+  const playingRef = useRef(false)
   const {togglePlayback, jumpToChapter, selectVantage, freezeAtProgress} = useJourneyPlayback({
     story, replay, setReplay, playing, setPlaying, setObserving, playback,
     setSelected, setFitSignal, setMessage,
   })
+
+  useEffect(() => { selectedRef.current = selected }, [selected])
+  useEffect(() => { observingRef.current = observing }, [observing])
+  useEffect(() => { playingRef.current = playing }, [playing])
 
   const loadIndex = useCallback(async () => {
     const response = await fetch(api('/api/workspaces'), {cache: 'no-store'})
@@ -62,12 +71,21 @@ export function useJourneyRuntime() {
     const nextTutorial = nextStory.origin?.kind === 'tutorial'
       ? await fetch(api('/api/tutorial', {workspace: id}), {cache: 'no-store'}).then((response) => response.ok ? response.json() : null)
       : null
+    const previousStory = storyRef.current
+    setReplay((current) => reconcileJourneyPosition({
+      previousStory,
+      nextStory,
+      replay: current,
+      selected: selectedRef.current,
+      quiet,
+      followHead: !observingRef.current && !playingRef.current,
+    }))
+    storyRef.current = nextStory
     setStory(nextStory)
     setScene(nextScene)
     setInteractions(nextInteractions)
     setTutorial(nextTutorial)
     setSelected((current) => nextStory.chapters.some((chapter) => chapter.id === current?.siteId) ? current : null)
-    if (!quiet) setReplay(nextStory.state === 'active' ? 1 : 0)
     if (!quiet) setObserving(false)
     if (!quiet) setMessage(nextStory.state === 'active' ? 'Live journey connected' : 'Recorded journey loaded')
     setLastSnapshotAt(Date.now())

@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import json
 import hashlib
+import fcntl
 import os
 import secrets
+import shlex
+import signal
 import subprocess
 import sys
 import time
 import urllib.parse
 import webbrowser
 from collections.abc import Mapping
+from contextlib import contextmanager
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +26,7 @@ from .journey import (
     _capture,
     _snapshot_path,
     journey_directory,
+    journey_root,
     load_graph,
     load_snapshot,
     schedule_worker,
@@ -71,6 +76,8 @@ CONTENT_TYPES = {
 }
 MAX_LIFETIME_SECONDS = 8 * 60 * 60
 PROJECTION_START_TIMEOUT_SECONDS = 4.0
+DEFAULT_VIEWER_PORT = 52050
+VIEWER_STOP_TIMEOUT_SECONDS = 2.0
 
 
 class JourneyViewError(RuntimeError):
@@ -107,7 +114,103 @@ def _ensure_graph_ready(
 
 
 def _viewer_state_path(capture_ref: str, *, root: Path | None = None) -> Path:
-    return journey_directory(capture_ref, root=root) / "viewer.json"
+    """Return the single owner-private viewer state, independent of capture."""
+
+    del capture_ref
+    return journey_root(root) / "viewer.json"
+
+
+def _viewer_state_paths(*, root: Path | None = None) -> list[Path]:
+    """Include the singleton state and legacy per-capture states for cleanup."""
+
+    base = journey_root(root)
+    return [base / "viewer.json", *sorted(base.glob("journey-*/viewer.json"))]
+
+
+def _journey_server_pids_from_process_list(processes: str) -> set[int]:
+    """Select only detached Play Journey HTTP servers from a process listing."""
+
+    selected: set[int] = set()
+    for line in processes.splitlines():
+        fields = line.strip().split(None, 1)
+        if len(fields) != 2 or not fields[0].isdigit():
+            continue
+        try:
+            command = shlex.split(fields[1])
+        except ValueError:
+            continue
+        launcher_indexes = [
+            index for index, value in enumerate(command) if Path(value).name == "play-journey"
+        ]
+        if any(
+            index + 1 < len(command)
+            and command[index + 1] == "serve"
+            and "--viewer-token" in command[index + 2 :]
+            for index in launcher_indexes
+        ):
+            selected.add(int(fields[0]))
+    return selected
+
+
+def _journey_server_pids(*, root: Path | None = None) -> set[int]:
+    del root
+    selected: set[int] = set()
+    try:
+        result = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        selected.update(_journey_server_pids_from_process_list(result.stdout))
+    except (OSError, subprocess.SubprocessError):
+        pass
+    selected.discard(os.getpid())
+    return selected
+
+
+def _stop_journey_viewers(*, root: Path | None = None) -> list[int]:
+    """Stop every detached Journey HTTP server and clear its transient state."""
+
+    pids = sorted(_journey_server_pids(root=root))
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except PermissionError as error:
+            raise JourneyViewError(f"Cannot stop existing Journey viewer process {pid}") from error
+    deadline = time.monotonic() + VIEWER_STOP_TIMEOUT_SECONDS
+    while any(_pid_running(pid) for pid in pids) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    for pid in pids:
+        if not _pid_running(pid):
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    for path in _viewer_state_paths(root=root):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            continue
+    return pids
+
+
+@contextmanager
+def _viewer_launch_lock(*, root: Path | None = None):
+    path = journey_root(root) / "viewer.lock"
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with path.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _viewer_asset_sha256() -> str:
@@ -142,6 +245,7 @@ def _existing_viewer(capture_ref: str, *, root: Path | None = None) -> dict[str,
     if (
         not isinstance(value, Mapping)
         or value.get("schema") != VIEWER_SCHEMA
+        or value.get("capture_ref") != capture_ref
         or not _pid_running(value.get("pid"))
         or not isinstance(value.get("url"), str)
         or value.get("asset_sha256") != _viewer_asset_sha256()
@@ -393,6 +497,11 @@ def _handler_type(
     return JourneyHandler
 
 
+class JourneyThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
 def make_server(
     capture_ref: str,
     token: str,
@@ -402,11 +511,10 @@ def make_server(
 ) -> ThreadingHTTPServer:
     """Create a loopback-only viewer server; caller owns its lifecycle."""
 
-    server = ThreadingHTTPServer(
+    server = JourneyThreadingHTTPServer(
         ("127.0.0.1", port),
         _handler_type(capture_ref, token, root=root),
     )
-    server.daemon_threads = True
     return server
 
 
@@ -415,7 +523,7 @@ def serve_viewer(
     token: str,
     *,
     root: Path | None = None,
-    port: int = 0,
+    port: int = DEFAULT_VIEWER_PORT,
     lifetime_seconds: int = MAX_LIFETIME_SECONDS,
 ) -> int:
     server = make_server(capture_ref, token, root=root, port=port)
@@ -427,6 +535,7 @@ def serve_viewer(
         {
             "schema": VIEWER_SCHEMA,
             "pid": os.getpid(),
+            "capture_ref": capture_ref,
             "port": actual_port,
             "url": url,
             "asset_sha256": _viewer_asset_sha256(),
@@ -440,6 +549,12 @@ def serve_viewer(
             server.handle_request()
     finally:
         server.server_close()
+        try:
+            state = load_json(_viewer_state_path(capture_ref, root=root))
+            if isinstance(state, Mapping) and state.get("pid") == os.getpid():
+                _viewer_state_path(capture_ref, root=root).unlink(missing_ok=True)
+        except (OSError, ValueError):
+            pass
     return 0
 
 
@@ -448,46 +563,53 @@ def launch_viewer(
     *,
     root: Path | None = None,
     open_browser: bool = True,
+    port: int = DEFAULT_VIEWER_PORT,
 ) -> dict[str, Any]:
-    """Start or reuse the detached viewer without delaying exploration."""
+    """Replace every detached Journey server with one singleton fixed-port server."""
 
     _ensure_graph_ready(capture_ref, root=root)
-    existing = _existing_viewer(capture_ref, root=root)
-    if existing is not None:
-        if open_browser:
-            webbrowser.open(str(existing["url"]))
-        return existing
-    token = secrets.token_urlsafe(24)
-    executable = Path(sys.argv[0]).resolve()
-    environment = os.environ.copy()
-    if root is not None:
-        environment["PLAY_JOURNEY_ROOT"] = str(root)
-    command = [
-        sys.executable,
-        str(executable),
-        "serve",
-        "--capture",
-        capture_ref,
-        "--viewer-token",
-        token,
-    ]
-    process = subprocess.Popen(
-        command,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=environment,
-        start_new_session=True,
-    )
-    deadline = time.monotonic() + 3.0
-    state: dict[str, Any] | None = None
-    while time.monotonic() < deadline:
-        state = _existing_viewer(capture_ref, root=root)
-        if state is not None and state.get("pid") == process.pid:
-            break
-        time.sleep(0.05)
-    if state is None or state.get("pid") != process.pid:
-        raise JourneyViewError("The local Journey viewer did not become ready")
+    selected_port = max(1, min(65535, int(port)))
+    with _viewer_launch_lock(root=root):
+        stopped = _stop_journey_viewers(root=root)
+        token = secrets.token_urlsafe(24)
+        executable = Path(sys.argv[0]).resolve()
+        environment = os.environ.copy()
+        if root is not None:
+            environment["PLAY_JOURNEY_ROOT"] = str(root)
+        command = [
+            sys.executable,
+            str(executable),
+            "serve",
+            "--capture",
+            capture_ref,
+            "--viewer-token",
+            token,
+            "--port",
+            str(selected_port),
+        ]
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=environment,
+            start_new_session=True,
+        )
+        deadline = time.monotonic() + 3.0
+        state: dict[str, Any] | None = None
+        while time.monotonic() < deadline:
+            state = _existing_viewer(capture_ref, root=root)
+            if state is not None and state.get("pid") == process.pid:
+                break
+            if process.poll() is not None:
+                break
+            time.sleep(0.05)
+        if state is None or state.get("pid") != process.pid:
+            previous = f" after stopping {len(stopped)} older viewer{'s' if len(stopped) != 1 else ''}" if stopped else ""
+            raise JourneyViewError(
+                f"The local Journey viewer could not bind 127.0.0.1:{selected_port}{previous}; "
+                "choose another port with --port or PLAY_JOURNEY_PORT"
+            )
     if open_browser:
         webbrowser.open(str(state["url"]))
     return state

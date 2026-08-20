@@ -30,6 +30,12 @@ from .journey_tutorial import TUTORIAL_REFERENCE, TUTORIAL_WORKSPACE_ID, ensure_
 LIVE_ACTIVITY_WINDOW_SECONDS = 30.0
 
 
+def _journey_mode(capture_state: object) -> str:
+    """Classify whether a captured journey can still grow."""
+
+    return "live" if str(capture_state or "") == "active" else "recorded"
+
+
 def _workspace_activity(workspace_path: Path | None) -> tuple[float | None, bool]:
     """Return a bounded workspace heartbeat without scanning the workspace tree."""
 
@@ -253,6 +259,7 @@ def _workspace_catalog(
             "workspace_path": None,
             "created_at": "2026-08-20T16:00:00Z",
             "capture_state": "tutorial",
+            "journey_mode": "tutorial",
             "live": False,
             "activity_epoch": None,
             "active_recently": False,
@@ -287,6 +294,7 @@ def _workspace_catalog(
                     "workspace_path": str(workspace_path),
                     "created_at": None,
                     "capture_state": "workspace",
+                    "journey_mode": "workspace",
                     "live": False,
                     "activity_epoch": activity_epoch,
                     "active_recently": active_recently,
@@ -318,6 +326,7 @@ def _workspace_catalog(
             and _pid_running(worker.get("pid"))
         )
         telemetry = graph.get("telemetry") if isinstance(graph, Mapping) else {}
+        capture_state = str(capture.get("status") or "unknown")
         summaries.append(
             {
                 "id": workspace_id,
@@ -325,7 +334,8 @@ def _workspace_catalog(
                 "workspace": str(capture.get("workspace") or workspace_path.name),
                 "workspace_path": str(workspace_path),
                 "created_at": capture.get("created_at"),
-                "capture_state": str(capture.get("status") or "unknown"),
+                "capture_state": capture_state,
+                "journey_mode": _journey_mode(capture_state),
                 "live": live,
                 "activity_epoch": activity_epoch,
                 "active_recently": active_recently,
@@ -363,6 +373,7 @@ def _workspace_catalog(
                 "workspace_path": None,
                 "created_at": graph.get("created_at") if isinstance(graph, Mapping) else None,
                 "capture_state": graph.get("state", "unknown") if isinstance(graph, Mapping) else "unknown",
+                "journey_mode": "recorded",
                 "live": False,
                 "activity_epoch": None,
                 "active_recently": False,

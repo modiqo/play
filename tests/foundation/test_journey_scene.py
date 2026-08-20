@@ -19,6 +19,7 @@ from scripts.lib.play.journey import (
     _workspace_fingerprint,
     _persist_graph_state,
     _snapshot_path,
+    active_capture_reference,
     build_graph,
     materialize_snapshot,
 )
@@ -32,17 +33,21 @@ from scripts.lib.play.journey_tutorial import (
     tutorial_payload,
 )
 from scripts.lib.play.journey_view import (
+    DEFAULT_VIEWER_PORT,
     EXCHANGE_SCHEMA,
     INTERACTIONS_SCHEMA,
     _ensure_graph_ready,
     _exchange_projection,
     _interaction_projection,
+    _journey_server_pids_from_process_list,
     _refresh_workspace_catalog,
+    _viewer_state_path,
     _workspace_activity,
     _workspace_catalog,
     _workspace_index,
     make_server,
 )
+from scripts.lib.play.journey_view_catalog import _journey_mode
 from scripts.lib.play.private_store import atomic_write_json
 
 
@@ -192,6 +197,42 @@ class JourneySceneTest(unittest.TestCase):
         wal.write_bytes(b"new command")
         self.assertNotEqual(first, _workspace_fingerprint(workspace))
 
+    def test_viewer_uses_one_state_file_and_strictly_matches_only_serve_processes(self) -> None:
+        self.assertEqual(
+            _viewer_state_path("capture-a", root=self.journeys),
+            _viewer_state_path("capture-b", root=self.journeys),
+        )
+        self.assertEqual(DEFAULT_VIEWER_PORT, 52050)
+        processes = """
+        101 /usr/bin/python /opt/play-journey serve --capture x --viewer-token secret --port 52050
+        102 /usr/bin/python /opt/play-journey view --active
+        103 /usr/bin/python unrelated-server --viewer-token secret
+        """
+        self.assertEqual({101}, _journey_server_pids_from_process_list(processes))
+
+    def test_journey_mode_distinguishes_growing_captures_from_recordings(self) -> None:
+        self.assertEqual("live", _journey_mode("active"))
+        self.assertEqual("recorded", _journey_mode("completed"))
+        self.assertEqual("recorded", _journey_mode("blocked"))
+
+    def test_active_capture_requires_a_present_rote_workspace(self) -> None:
+        standby = Path(self.temporary.name) / "standby-active.json"
+        missing = Path(self.temporary.name) / "missing-workspace"
+        present = Path(self.temporary.name) / "present-workspace"
+        database = present / ".rote" / "workspace.db"
+        database.parent.mkdir(parents=True)
+        database.write_bytes(b"workspace")
+        atomic_write_json(
+            standby,
+            {
+                "captures": [
+                    {"reference": "cap-present", "status": "active", "workspace_path": str(present)},
+                    {"reference": "cap-stale", "status": "active", "workspace_path": str(missing)},
+                ]
+            },
+        )
+        self.assertEqual("cap-present", active_capture_reference(standby_path=standby))
+
     def test_workspace_refresh_aligns_archive_to_current_rote_root(self) -> None:
         rote_home = Path(self.temporary.name) / "rote-home"
         workspaces = rote_home / "rote" / "workspaces"
@@ -267,11 +308,13 @@ class JourneySceneTest(unittest.TestCase):
         current_summary = next(item for item in summaries if item["workspace"] == current.name)
         untracked_summary = next(item for item in summaries if item["workspace"] == untracked.name)
         self.assertTrue(current_summary["graph_ready"])
+        self.assertEqual("live", current_summary["journey_mode"])
         self.assertTrue(current_summary["projectable"])
         self.assertEqual(str(current), current_summary["workspace_path"])
         self.assertFalse(untracked_summary["graph_ready"])
         self.assertTrue(untracked_summary["projectable"])
         self.assertEqual("workspace", untracked_summary["capture_state"])
+        self.assertEqual("workspace", untracked_summary["journey_mode"])
         self.assertEqual(current_summary["id"], index["selected_id"])
         self.assertEqual(1, refreshed["reconciliation"]["stale_captures_hidden"])
         self.assertEqual(2, refreshed["reconciliation"]["current_workspaces"])

@@ -83,10 +83,13 @@ verification or crystallization guard; Rote remains the evidence authority.
 
 `play-journey view --active` is the read-only live renderer. It resolves the active capture without
 printing its reference, serves compiled WebGL assets only on `127.0.0.1` behind a random
-owner-private token, and follows new generations without entering the Play machine or running
+owner-private token, replaces every older Journey HTTP server with one singleton on port `52050`
+by default, and follows new generations without entering the Play machine or running
 effect-bearing Rote work. Its `play.journey-story/v1` input is a deterministic human projection:
 stable graph order fixes traversal, semantic kind fixes the teaching stage, and every landmark
-retains opaque canonical evidence references. Semantic zoom separates the human Journey, one
+retains opaque canonical evidence references. At the live head a new generation advances to the
+newest call site; an inspected or frozen vantage remains pinned by semantic site identity rather
+than drifting as a normalized percentage. Semantic zoom separates the human Journey, one
 phase's recorded interactions, and a lazily loaded redacted exchange. The playback control enacts
 the same deterministic traversal for static and live captures; it does not execute Rote or mutate
 the capture. The complete graph—not the visual story or exchange display—is the audit authority.

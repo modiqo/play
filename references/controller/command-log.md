@@ -107,7 +107,7 @@ captured workflow:
 | `play-journey graph --capture <opaque-ref> --json` | Read the complete persisted semantic graph and evidence mappings. |
 | `play-journey story --capture <opaque-ref> --json` | Derive the deterministic human landmark sequence used by the live viewer without dropping canonical evidence references. |
 | `play-journey scene --capture <opaque-ref> --json` | Derive the complete deterministic `play.journey-scene/v1` isometric geometry. |
-| `play-journey view --active` | Start a missed projector if necessary, then open the token-protected WebGL Journey world; recorded journeys begin at **Play**, playback changes to **Freeze**, and a frozen vantage changes to **Resume**. |
+| `play-journey view --active [--port <n>]` | Stop older Journey HTTP servers, start one token-protected WebGL world on stable port `52050` by default, and follow the live head while preserving an explicitly inspected vantage across refreshes. |
 | `play-journey doctor --capture <opaque-ref> --json` | Report bounded snapshot and worker health metadata. |
 | `play-journey refresh --capture <opaque-ref> [--json]` | Run one incremental background-style refresh. |
 | `play-journey rebuild --capture <opaque-ref> [--json]` | Rebuild the disposable projection from authoritative evidence. |

@@ -47,8 +47,8 @@ it never searches the registry or stores prompt text or credentials.
 If the unchanged request is `play journey live`, `$play journey live`, `/play journey live`, or
 asks to open the active exploration's live Journey map, do not enter the state machine or run
 preflight. Run the bundled `scripts/bin/play-journey view --active`. It resolves the active capture
-owner-privately, starts a missed background projector when necessary, starts or reuses a
-token-protected read-only server on `127.0.0.1`, opens the
+owner-privately, starts a missed background projector when necessary, replaces older Journey HTTP
+servers with one token-protected read-only singleton on `127.0.0.1:52050`, opens the
 deterministic isometric map, prints its local URL, and returns immediately. It must never start a
 capture, invoke Rote, expose the capture reference, or authorize an effect. If no active Journey is
 ready, present the CLI's exact blocker and leave the exploration unchanged.

@@ -2315,7 +2315,7 @@ def doctor(capture_ref: str, *, root: Path | None = None) -> dict[str, Any]:
 
 
 def active_capture_reference(*, standby_path: Path | None = None) -> str | None:
-    """Resolve the newest active capture without exposing its private path."""
+    """Resolve the newest active capture whose Rote workspace still exists."""
 
     try:
         store = load_json(_standby_path(standby_path))
@@ -2325,10 +2325,14 @@ def active_capture_reference(*, standby_path: Path | None = None) -> str | None:
     if not isinstance(captures, list):
         return None
     for capture in reversed(captures):
+        workspace_value = capture.get("workspace_path") if isinstance(capture, Mapping) else None
+        workspace = Path(workspace_value) if isinstance(workspace_value, str) else None
         if (
             isinstance(capture, Mapping)
             and capture.get("status") == "active"
             and isinstance(capture.get("reference"), str)
+            and workspace is not None
+            and (workspace / ".rote" / "workspace.db").is_file()
         ):
             return str(capture["reference"])
     return None
@@ -2358,6 +2362,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     view_target.add_argument("--capture")
     view_target.add_argument("--active", action="store_true")
     view.add_argument("--no-open", action="store_true")
+    view.add_argument("--port", type=int)
     view.add_argument("--json", action="store_true")
     serve = subparsers.add_parser("serve")
     serve.add_argument("--capture", required=True)
@@ -2381,12 +2386,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             lifetime_seconds=max(1, int(arguments.lifetime_seconds)),
         )
     if arguments.command == "view":
-        from .journey_view import JourneyViewError, launch_viewer
+        from .journey_view import DEFAULT_VIEWER_PORT, JourneyViewError, launch_viewer
 
         try:
+            configured_port = arguments.port
+            if configured_port is None:
+                try:
+                    configured_port = int(
+                        os.environ.get("PLAY_JOURNEY_PORT", str(DEFAULT_VIEWER_PORT))
+                    )
+                except ValueError as error:
+                    raise JourneyViewError("PLAY_JOURNEY_PORT must be an integer") from error
+            if configured_port < 1 or configured_port > 65535:
+                raise JourneyViewError("Journey viewer port must be between 1 and 65535")
             payload = launch_viewer(
                 capture_ref,
                 open_browser=not bool(arguments.no_open),
+                port=configured_port,
             )
         except JourneyViewError as error:
             parser.exit(1, f"play-journey: {error}\n")
