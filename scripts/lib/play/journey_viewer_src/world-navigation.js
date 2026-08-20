@@ -1,5 +1,20 @@
 import * as THREE from 'three'
 
+/** Frame a selected interaction squarely from the temporal rail's front. */
+export function applyInteractionFocusView(
+  markerWorld,
+  desiredCamera,
+  desiredLook,
+  {markerCount = 1} = {},
+) {
+  const distance = THREE.MathUtils.clamp(8.6 + Math.log1p(Math.max(1, markerCount)) * 1.15, 9.4, 13.4)
+  desiredLook.copy(markerWorld)
+  desiredCamera.copy(markerWorld)
+  desiredCamera.y += .65
+  desiredCamera.z += distance
+  return distance
+}
+
 export function createWorldNavigation({canvas, camera, frozenRef, interactionMeshes, semanticMeshes, onSelect}) {
   const raycaster = new THREE.Raycaster()
   const pointer = new THREE.Vector2()

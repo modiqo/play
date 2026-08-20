@@ -5,7 +5,7 @@ import {BokehPass} from 'three/addons/postprocessing/BokehPass.js'
 import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js'
 import {RenderPass} from 'three/addons/postprocessing/RenderPass.js'
 import {AMBER, GROUND, clampVisibleCallouts, eventHaloMaterial, glassBeadMaterial, journeyPositions, landmarkFor, makeCallout, makeInteractionIndex, makeInteractionPlaque, makeTemporalCorridor, material} from './world-elements.js'
-import {createWorldNavigation} from './world-navigation.js'
+import {applyInteractionFocusView, createWorldNavigation} from './world-navigation.js'
 import {KIND_LABEL, WORLD_ROLE} from './semantics.js'
 import {groupInteractionPlaques} from './interaction-plaques.mjs'
 import {layoutTemporalCorridor} from './temporal-corridor.mjs'
@@ -384,11 +384,15 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           const direction = ahead.clone().sub(current).normalize()
           if (direction.lengthSq() < .01) direction.set(0, 0, -1)
 
-          const focus = selectedRef.current?.sequence ? selectedRef.current.siteId : null
+          const selectedSequence = selectedRef.current?.sequence
+          const focus = selectedSequence ? selectedRef.current.siteId : null
           const focusSite = sites.find((site) => site?.chapter.id === focus)
-          if (focusSite) {
-            desiredCamera.copy(focusSite.worldPosition).add(new THREE.Vector3(focusSite.chapter.order % 2 === 0 ? -10 : 10, 5.2, 9.5))
-            desiredLook.copy(focusSite.worldPosition).setY(2.3)
+          const focusMarker = focusSite?.markers.find((marker) => marker.sequence === selectedSequence)
+          if (focusMarker) {
+            const markerWorld = focusMarker.bead.getWorldPosition(new THREE.Vector3())
+            applyInteractionFocusView(markerWorld, desiredCamera, desiredLook, {
+              markerCount: focusSite.markers.length,
+            })
           } else if (frozenRef.current) {
             navigation.applyFrozenView(current, direction, desiredCamera, desiredLook, sites[index])
           } else {
@@ -415,7 +419,6 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           focusRing.position.copy(positions[reached]).setY(.16)
           const ringPulse = 1 + Math.sin(elapsed * 2.2) * .045
           focusRing.scale.set(ringPulse, ringPulse, ringPulse)
-          const selectedSequence = selectedRef.current?.sequence
           const interactionFocus = selectedSequence !== undefined && selectedSequence !== null
           const visibleWindow = journeyVisibilityWindow(sites.length, reached)
           route.material.opacity = interactionFocus ? .1 : 1

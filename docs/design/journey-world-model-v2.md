@@ -297,6 +297,12 @@ Visual variables have one meaning each:
 Latency is represented once by the duration footprint. Token volume is represented once by height;
 the two signals are never blended into a composite score.
 
+Selecting an operation changes the camera state, not the temporal grammar. The focus camera moves
+squarely in front of the selected bead, aligns horizontally with it, and looks directly at its
+center. That head-on view preserves the local rail's left-to-right order while the canonical
+predecessor and successor remain softly illuminated; generic alternating site offsets must not
+turn evidence inspection into a side view.
+
 ## Start Here tutorial workspace
 
 Journey ships a deterministic, resettable recorded workspace that teaches the world through the
