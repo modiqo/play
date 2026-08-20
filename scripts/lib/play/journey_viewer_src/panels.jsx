@@ -1,4 +1,4 @@
-import React from 'react'
+import React, {useEffect, useState} from 'react'
 import {formatNumber} from './format.js'
 import {KIND_LABEL, MAP_MEANING, WORLD_ROLE, WORLD_STORY} from './semantics.js'
 
@@ -34,6 +34,7 @@ const WHY = {
 }
 
 export function JourneyGuide({story, interactions, replay, playing, frozen, onOpen, onNavigate}) {
+  const [compact, setCompact] = useState(false)
   if (!story?.chapters?.length) return null
   const playbackIndex = Math.max(0, Math.min(story.chapters.length - 1, Math.ceil(replay * story.chapters.length) - 1))
   const liveIndex = Math.max(0, story.chapters.findIndex((chapter) => chapter.id === story.current_chapter))
@@ -42,14 +43,16 @@ export function JourneyGuide({story, interactions, replay, playing, frozen, onOp
   const current = story.chapters[index]
   const next = story.chapters[index + 1]
   const records = interactions?.sites?.[current.id] || []
-  const capabilities = [...new Set(records.map(capabilityName))]
-  const effects = [...new Set(records.map((record) => record.effect).filter(Boolean))]
+  const capabilities = [...new Set(records.map((record) => capabilityLabel(record)))]
+  const effects = [...new Set(records.map((record) => record.effect_profile?.posture || record.effect).filter(Boolean))]
   const latency = records.reduce((sum, record) => sum + Number(record.duration_ms || 0), 0)
   const consumed = records.reduce((sum, record) => sum + Number(record.tokens || 0), 0)
   const succeeded = records.filter((record) => record.status === 'succeeded').length
-  return <aside className={`journey-guide${frozen ? ' frozen' : ''}`} onClick={() => onOpen({siteId: current.id, sequence: null})}>
-    <div className="guide-kicker"><i />{playing ? 'TRAVERSING' : frozen ? 'FROZEN VANTAGE' : story.state === 'active' ? 'NOW' : 'RECORDED JOURNEY'}<span>{String(index + 1).padStart(2, '0')} / {String(story.chapters.length).padStart(2, '0')}</span></div>
+  const navigate = (event, target) => { event.stopPropagation(); onNavigate(target) }
+  return <aside className={`journey-guide${frozen ? ' frozen' : ''}${compact ? ' compact' : ''}`} onClick={() => !compact && onOpen({siteId: current.id, sequence: null})}>
+    <div className="guide-kicker"><i />{playing ? 'TRAVERSING' : frozen ? 'FROZEN VANTAGE' : story.state === 'active' ? 'NOW' : 'RECORDED JOURNEY'}<span>{String(index + 1).padStart(2, '0')} / {String(story.chapters.length).padStart(2, '0')}</span><button className="guide-compact-toggle" onClick={(event) => { event.stopPropagation(); setCompact((value) => !value) }} aria-label={compact ? 'Expand vantage controls' : 'Minimize vantage controls'} title={compact ? 'Expand' : 'Minimize'}>{compact ? '+' : '−'}</button></div>
     <h1>{current.title}</h1>
+    {!compact && <>
     <p><strong>{KIND_LABEL[current.kind] || current.kind} → {WORLD_ROLE[current.kind] || 'journey stage'}.</strong> {WORLD_STORY[current.kind] || WHY[current.kind] || 'Advance the requested outcome while preserving evidence.'}</p>
     {frozen && <div className="vantage-nudge"><strong>EXPLORE</strong><span>Drag or use arrow keys to look through 360°. Scroll to move forward or backward. Every illuminated callout opens that structure’s evidence.</span></div>}
     <dl>
@@ -59,11 +62,11 @@ export function JourneyGuide({story, interactions, replay, playing, frozen, onOp
       <dt>EFFECT</dt><dd>{effects.length ? effects.join(' · ') : current.kind === 'effect' ? 'Outcome-bearing work' : 'No external effect recorded'}</dd>
       <dt>INSIGHT</dt><dd>{succeeded}/{records.length} interactions succeeded · {formatNumber(consumed)} tokens · {formatNumber(latency)} ms</dd>
       <dt>NEXT</dt><dd>{next?.title || 'Deliver the verified outcome'}</dd>
-    </dl>
+    </dl></>}
     {frozen && <nav className="vantage-navigation" aria-label="Frozen vantage navigation">
-      <button disabled={index === 0} onClick={(event) => { event.stopPropagation(); onNavigate(index - 1) }}>← PRIOR VANTAGE</button>
-      <span>ROUTE DIRECTION</span>
-      <button className="forward" disabled={index >= story.chapters.length - 1} onClick={(event) => { event.stopPropagation(); onNavigate(index + 1) }}>FORWARD →</button>
+      <button disabled={index === 0} onClick={(event) => navigate(event, index - 1)}>{compact ? '← BACK' : '← PRIOR VANTAGE'}</button>
+      {!compact && <span>ROUTE DIRECTION</span>}
+      <button className="forward" disabled={index >= story.chapters.length - 1} onClick={(event) => navigate(event, index + 1)}>{compact ? 'NEXT →' : 'FORWARD →'}</button>
     </nav>}
     <div className="guide-progress"><i style={{width: `${Math.max(2, (index + 1) / story.chapters.length * 100)}%`}} /></div>
   </aside>
@@ -86,46 +89,118 @@ export function WorldModel({open, onToggle}) {
   </>
 }
 
-function capabilityName(record) {
-  if (record.provider) return record.provider
+const CAPABILITY_FAMILIES = {
+  adapter: {label: 'ADAPTER · API', note: 'Typed service manifests and operations'},
+  proc: {label: 'SHELL · PROC', note: 'Local CLIs executed as processes'},
+  browser: {label: 'BROWSER · BROWSE', note: 'Lease · ledger · slice · lens · action'},
+}
+
+function fallbackCapability(record) {
   const operation = String(record.operation || 'local')
-  return operation.split(/[\s.]/)[0] || 'local'
+  const name = operation.split(/[\s.]/)[0] || 'local'
+  const commandType = String(record.command_type || '')
+  if (commandType.startsWith('Process') || commandType === 'StreamFollow') {
+    return {family: 'proc', id: name, label: `${name} CLI`, interface: 'shell', mode: commandType === 'ProcessPtyRun' ? 'pty' : 'argv'}
+  }
+  // Old snapshots did not preserve the endpoint and MCP envelope required to
+  // prove adapter/browser ownership. Keep them visible in evidence, but never
+  // invent an equipped system from a provider label or operation wording.
+  return {family: 'legacy', id: `legacy:${commandType}:${name}`, label: 'Legacy interaction', interface: 'unknown'}
+}
+
+function capabilityOf(record) {
+  return record?.capability && typeof record.capability === 'object' ? record.capability : fallbackCapability(record)
+}
+
+function capabilityKey(record) {
+  const capability = capabilityOf(record)
+  const unit = capability.family === 'browser' ? capability.primitive : capability.id
+  return `${capability.family}:${unit || capability.label}`
+}
+
+function capabilityLabel(record) {
+  const capability = capabilityOf(record)
+  return capability.family === 'rote' ? capability.label : `${capability.label} · ${capability.interface}`
+}
+
+function effectPosture(entry) {
+  const values = entry.postures
+  if (values.has('unknown')) return 'UNKNOWN EFFECT'
+  if (values.has('mixed') || values.has('read') && values.has('write')) return 'READ + WRITE'
+  if (values.has('write')) return 'WRITE'
+  if (values.has('read')) return 'READ'
+  return 'UNKNOWN EFFECT'
+}
+
+function capabilityDetail(entry) {
+  const {capability, modes, scopes} = entry
+  const access = `${effectPosture(entry)}${entry.destructive ? ' · DESTRUCTIVE' : ''}`
+  const scope = [...scopes].map((value) => value.replaceAll('_', ' ')).join(' + ')
+  if (capability.family === 'adapter') {
+    const manifest = capability.manifest || {}
+    return [access, scope, [...modes].join(' + '), manifest.spec_type, capability.transport].filter(Boolean).join(' · ')
+  }
+  if (capability.family === 'proc') return [access, scope, [...modes].join(' · ') || capability.mode || 'argv'].filter(Boolean).join(' · ')
+  if (capability.family === 'browser') return [access, scope, capability.primitive || 'browse'].filter(Boolean).join(' · ')
+  return [access, scope, capability.primitive || 'workspace'].filter(Boolean).join(' · ')
 }
 
 export function CapabilityRail({story, interactions, replay, onJump}) {
+  const [expanded, setExpanded] = useState({adapter: true, proc: true, browser: true})
   const chapterIndex = Math.max(0, Math.min(story.chapters.length - 1, Math.floor(replay * Math.max(1, story.chapters.length - 1) + .001)))
   const currentChapter = story.chapters[chapterIndex]
-  const activeNames = new Set((interactions?.sites?.[currentChapter?.id] || []).map(capabilityName))
-  const entries = []
-  const byName = new Map()
-  story.chapters.forEach((chapter) => {
+  const activeRecords = (interactions?.sites?.[currentChapter?.id] || []).filter((record) => capabilityOf(record).family in CAPABILITY_FAMILIES)
+  const activeKeys = new Set(activeRecords.map(capabilityKey))
+  const byKey = new Map()
+  story.chapters.forEach((chapter, sourceIndex) => {
     for (const record of interactions?.sites?.[chapter.id] || []) {
-      const name = capabilityName(record)
-      const existing = byName.get(name)
-      const entry = existing || {name, first: chapter.order, last: chapter.order, count: 0}
-      entry.first = Math.min(entry.first, chapter.order)
-      entry.last = Math.max(entry.last, chapter.order)
+      const capability = capabilityOf(record)
+      if (!(capability.family in CAPABILITY_FAMILIES)) continue
+      const key = capabilityKey(record)
+      const existing = byKey.get(key)
+      const entry = existing || {key, capability, firstIndex: sourceIndex, lastIndex: sourceIndex, count: 0, modes: new Set(), tools: new Set(), postures: new Set(), scopes: new Set(), destructive: false}
+      entry.firstIndex = Math.min(entry.firstIndex, sourceIndex)
+      entry.lastIndex = Math.max(entry.lastIndex, sourceIndex)
       entry.count += 1
-      byName.set(name, entry)
+      if (capability.phase) entry.modes.add(capability.phase)
+      if (capability.mode) entry.modes.add(capability.mode)
+      if (capability.tool) entry.tools.add(capability.tool)
+      for (const operation of capability.operations || []) entry.tools.add(operation)
+      const profile = record.effect_profile || {}
+      entry.postures.add(profile.posture || record.effect || 'unknown')
+      for (const scope of profile.scopes || []) entry.scopes.add(scope)
+      entry.destructive ||= profile.destructive === true
+      byKey.set(key, entry)
     }
   })
-  for (const entry of byName.values()) entries.push(entry)
-  entries.sort((left, right) => {
-    const leftActive = activeNames.has(left.name) ? 0 : 1
-    const rightActive = activeNames.has(right.name) ? 0 : 1
-    return leftActive - rightActive || left.first - right.first || left.name.localeCompare(right.name)
+  const entries = [...byKey.values()].filter((entry) => entry.firstIndex <= chapterIndex).sort((left, right) => {
+    const leftActive = activeKeys.has(left.key) ? 0 : 1
+    const rightActive = activeKeys.has(right.key) ? 0 : 1
+    return leftActive - rightActive || left.firstIndex - right.firstIndex || left.capability.label.localeCompare(right.capability.label)
   })
-  if (!entries.length) return null
+  const groups = Object.keys(CAPABILITY_FAMILIES).map((family) => ({family, entries: entries.filter((entry) => entry.capability.family === family)})).filter((group) => group.entries.length)
+  const activeFamilies = groups.filter((group) => group.entries.some((entry) => activeKeys.has(entry.key))).map((group) => group.family).join(':')
+  useEffect(() => {
+    if (!activeFamilies) return
+    setExpanded((current) => {
+      const next = {...current}
+      activeFamilies.split(':').forEach((family) => { next[family] = true })
+      return next
+    })
+  }, [activeFamilies])
   return <aside className="capability-rail">
-    <h2>CAPABILITIES</h2><p>What the agent can use on this journey</p>
-    <div>{entries.slice(0, 8).map((entry) => {
-      const active = activeNames.has(entry.name)
-      const used = entry.first <= chapterIndex
-      return <button key={entry.name} className={active ? 'active' : used ? 'used' : ''} onClick={() => onJump(entry.first)}>
-        <i /><span>{entry.name}</span><small>{active ? 'IN USE' : used ? 'USED' : 'AVAILABLE'}</small><em>{entry.count}</em>
+    <h2><i />USING CAPABILITIES <span>{activeKeys.size} ACTIVE</span></h2><p>The agent’s equipped systems in this situated environment</p>
+    <div>{groups.length ? groups.map((group) => <section className={`capability-family ${group.family}`} key={group.family}>
+      <button className="capability-family-toggle" onClick={() => setExpanded((current) => ({...current, [group.family]: !current[group.family]}))} aria-expanded={expanded[group.family]}>
+        <span><strong>{CAPABILITY_FAMILIES[group.family].label}</strong><small>{CAPABILITY_FAMILIES[group.family].note}</small></span><b>{group.entries.length}</b><i>{expanded[group.family] ? '−' : '+'}</i>
       </button>
-    })}</div>
+      {expanded[group.family] && <div className="capability-family-items">{group.entries.slice(0, 6).map((entry) => {
+        const active = activeKeys.has(entry.key)
+        const used = entry.firstIndex <= chapterIndex
+        return <button key={entry.key} className={`capability-item ${active ? 'active' : used ? 'used' : ''}`} onClick={() => onJump(entry.firstIndex)} title={`${entry.capability.label}: ${[...entry.tools].join(', ')}`}>
+          <i /><span><strong>{entry.capability.label}</strong><small>{capabilityDetail(entry)}</small></span><b>{active ? 'IN USE' : used ? 'USED' : 'AHEAD'}</b><em>{entry.count}</em>
+        </button>
+      })}</div>}
+    </section>) : <div className="capability-empty"><strong>NO SYSTEM EQUIPPED</strong><span>The agent has fixed the intent but has not used an API, shell, or browser capability at this vantage.</span></div>}</div>
   </aside>
 }
-
-

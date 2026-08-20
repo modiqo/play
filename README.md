@@ -335,10 +335,12 @@ play-journey view --active
 ```
 
 The command starts a missed background projector when necessary, then returns after starting or
-reusing an owner-private loopback viewer. Every capture appears in the Journey rail: **Active** means
-the capture can still grow, while **Viewing** identifies the map currently on screen. Selecting an
-older pre-projector capture starts its isolated read-only projection and switches after the first
-graph is ready.
+reusing an owner-private loopback viewer. Every Play capture registered in
+`~/.rote-play/standby.json` appears in the Journey rail; the rail is not a raw directory listing of
+every Rote workspace. **Active** means the capture can still grow, while **Viewing** identifies the
+map currently on screen. Selecting an older pre-projector capture starts its isolated read-only
+projection and switches after the first graph is ready. A capture whose source workspace and graph
+are both unavailable remains visible but disabled rather than disappearing from its history.
 
 The Deck.gl viewer does not draw Rote commands as anonymous boxes. It consumes the deterministic
 [`play.journey-story/v1`](references/explore/journey-story.schema.json) projection and uses semantic
@@ -353,6 +355,24 @@ edge remain preserved underneath; raw evidence is loaded only for the explicitly
 is never copied into the Journey graph. The earlier
 [`play.journey-scene/v1`](references/explore/journey-scene.schema.json) remains a diagnostic geometry
 contract, not the primary viewer.
+
+The Journey loadout keeps Rote's execution substrates explicit. **API adapters** are recognized
+from Rote's canonical `adapter/<id>` MCP envelope—not provider labels—and show whether the agent
+probed for operations, made one call, or made a batch call, plus the concrete operations,
+manifest/spec, transport, authentication type, access scope, and contract fingerprint;
+**local CLIs** show the actual program and whether it ran as argv, PTY, background lease, or stream;
+and **browser systems** show page leases, ledger snapshots, slices, evidence lenses, actions, waits,
+and ref rebases. Cached-response queries remain subordinate Rote memory. This capability plane says
+*what the agent used* while the semantic world model independently says *why the step existed*.
+Read/write posture is equally typed: adapter tool hints or declared HTTP methods, process policy
+risk tags, and browser ledger primitives are the only effect sources. Names such as `gh`, `curl`,
+`get`, or `publish` are never treated as safety evidence; missing typed evidence remains unknown.
+The capability rail exposes that posture and scope without changing the underlying graph. Each
+vantage places every canonical `@N` on a compact left-to-right frontage timeline, with its evidence
+tower immediately behind the corresponding index. Recorded journeys start at **Play**, become
+**Freeze** while moving, and show
+**Resume** only after the user freezes at a vantage. All enrichment occurs in the detached projector,
+never in the viewer or prompt hook.
 
 Install converges both features in `~/.rote-play/journal-settings.json`. Reinstalling fills missing
 defaults without silently re-enabling a journal the user explicitly disabled.

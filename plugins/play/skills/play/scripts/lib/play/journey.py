@@ -19,12 +19,19 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from .journey_capabilities import (
+    adapter_invocation,
+    adapter_manifest_summary,
+    attach_browser_lenses,
+    capability_descriptor,
+)
+from .journey_effects import classify_effect
 from .private_store import atomic_write_json, ensure_private_directory, load_json
 from .state_home import state_path
 
@@ -33,7 +40,7 @@ SCHEMA = "play.journey-viewport/v1"
 FULL_GRAPH_SCHEMA = "play.journey-graph/v1"
 EVENT_SCHEMA = "play.journey-source-event/v1"
 WORKER_SCHEMA = "play.journey-worker/v1"
-PROJECTION_VERSION = "rules-v2"
+PROJECTION_VERSION = "rules-v5"
 DATABASE_SCHEMA_VERSION = 1
 
 MAX_LABEL_CHARS = 120
@@ -90,29 +97,6 @@ EDGE_KINDS = {
 }
 
 _SAFE_TEXT = re.compile(r"[^A-Za-z0-9 _.:/@+()#-]+")
-_AUTH_WORDS = re.compile(
-    r"(?<![A-Za-z0-9])(?:adapter[._ -]?auth(?:entication)?[._ -]?ensure|oauth|"
-    r"authenticate|authentication|authorize|authorization|login|sign[._ -]?in|"
-    r"credential|permission|scope|token[._ -]?(?:health|status|set|refresh))"
-    r"(?![A-Za-z0-9])",
-    re.IGNORECASE,
-)
-_WRITE_WORDS = re.compile(
-    r"(?<![A-Za-z0-9])(?:create|update|delete|remove|send|publish|push|commit|"
-    r"deploy|merge|close|assign|comment|upload|write|modify|set|invite|revoke|"
-    r"cancel)(?![A-Za-z0-9])",
-    re.IGNORECASE,
-)
-_VERIFY_WORDS = re.compile(
-    r"(?<![A-Za-z0-9])(?:test|lint|validate|verify|verification|assert|smoke|"
-    r"diff[._ -]?check|health)(?![A-Za-z0-9])",
-    re.IGNORECASE,
-)
-_CAPABILITY_WORDS = re.compile(
-    r"(?<![A-Za-z0-9])(?:probe|catalog|tools?/list|capabilit(?:y|ies)|schema|"
-    r"discover|help|which)(?![A-Za-z0-9])",
-    re.IGNORECASE,
-)
 _READ_ONLY_PROGRAMS = {
     "cat",
     "find",
@@ -130,77 +114,7 @@ _READ_ONLY_PROGRAMS = {
 }
 _SHELL_PROGRAMS = {"bash", "dash", "fish", "sh", "zsh"}
 _INTERPRETER_PROGRAMS = {"deno", "node", "perl", "python", "python3", "ruby"}
-_VERIFY_PROGRAMS = {
-    "eslint",
-    "jest",
-    "mypy",
-    "pytest",
-    "ruff",
-    "tsc",
-    "unittest",
-    "vitest",
-}
 _PROCESS_WRITE_PROGRAMS = {"cp", "install", "mkdir", "mv", "rm", "rmdir", "tee", "touch"}
-_GIT_READ_VERBS = {"blame", "diff", "grep", "log", "rev-parse", "show", "status"}
-_GIT_WRITE_VERBS = {
-    "add",
-    "branch",
-    "checkout",
-    "cherry-pick",
-    "commit",
-    "merge",
-    "mv",
-    "push",
-    "rebase",
-    "reset",
-    "restore",
-    "revert",
-    "rm",
-    "switch",
-    "tag",
-}
-_BROWSER_READ_OPERATIONS = {"browser_snapshot", "browser_tabs"}
-_READ_ACTIONS = {
-    "check",
-    "describe",
-    "download",
-    "fetch",
-    "find",
-    "get",
-    "inspect",
-    "list",
-    "query",
-    "read",
-    "retrieve",
-    "search",
-    "show",
-    "status",
-}
-_WRITE_ACTIONS = {
-    "add",
-    "approve",
-    "assign",
-    "cancel",
-    "close",
-    "comment",
-    "commit",
-    "create",
-    "delete",
-    "deploy",
-    "edit",
-    "invite",
-    "merge",
-    "modify",
-    "publish",
-    "push",
-    "remove",
-    "revoke",
-    "send",
-    "set",
-    "update",
-    "upload",
-    "write",
-}
 
 
 class JourneyError(RuntimeError):
@@ -443,7 +357,7 @@ def _read_events(capture_ref: str, *, root: Path | None = None) -> list[dict[str
 
 
 def _response_metadata(workspace: Path, response_ids: Sequence[int]) -> dict[int, dict[str, Any]]:
-    """Read only bounded response-envelope metadata, never payload contents."""
+    """Read bounded envelope metadata and allowlisted typed policy receipts."""
 
     metadata: dict[int, dict[str, Any]] = {}
     for response_id in sorted(set(response_ids)):
@@ -479,11 +393,27 @@ def _response_metadata(workspace: Path, response_ids: Sequence[int]) -> dict[int
         tokens = envelope.get("tokens")
         tokens = tokens if isinstance(tokens, Mapping) else {}
         total_tokens = tokens.get("total_tokens")
-        metadata[response_id] = {
+        item: dict[str, Any] = {
             "ok": bool(ok),
             "duration_ms": int(duration) if isinstance(duration, int) else 0,
             "tokens": int(total_tokens) if isinstance(total_tokens, int) else 0,
         }
+        policy = body.get("policy")
+        policy = policy if isinstance(policy, Mapping) else {}
+        risk_tags = policy.get("risk_tags")
+        if isinstance(risk_tags, list):
+            item["process_policy"] = {
+                "state": _safe_label(policy.get("state"), fallback="unknown"),
+                "decision": _safe_label(policy.get("decision"), fallback="unknown"),
+                "risk_tags": sorted(
+                    {
+                        _safe_label(tag).lower()
+                        for tag in risk_tags
+                        if isinstance(tag, str)
+                    }
+                ),
+            }
+        metadata[response_id] = item
     return metadata
 
 
@@ -550,8 +480,9 @@ def _operation(entry: Mapping[str, Any], payload: Mapping[str, Any]) -> tuple[st
     ephemeral = command_type
     if command_type == "HttpRequest":
         endpoint = str(payload.get("endpoint") or "external")
-        if endpoint.startswith("adapter/"):
-            provider = endpoint.split("/", 1)[1]
+        adapter = adapter_invocation(payload)
+        if adapter is not None:
+            provider = str(adapter["adapter_id"])
         body = payload.get("body")
         body = body if isinstance(body, Mapping) else {}
         method = str(body.get("method") or payload.get("method") or "request")
@@ -559,11 +490,15 @@ def _operation(entry: Mapping[str, Any], payload: Mapping[str, Any]) -> tuple[st
         params = params if isinstance(params, Mapping) else {}
         name = params.get("name")
         operation = str(name) if isinstance(name, str) and name else method
-        arguments = params.get("arguments")
-        arguments = arguments if isinstance(arguments, Mapping) else {}
-        nested_tool = arguments.get("tool_name")
-        if operation.endswith("_call") and isinstance(nested_tool, str) and nested_tool:
-            operation = nested_tool
+        if adapter is not None:
+            operations = adapter.get("operations")
+            operations = operations if isinstance(operations, list) else []
+            if adapter.get("phase") == "probe":
+                operation = str(adapter.get("wrapper") or operation)
+            elif len(operations) == 1:
+                operation = str(operations[0])
+            elif operations:
+                operation = f"batch call ({len(operations)} operations)"
         ephemeral = " ".join((endpoint, method, operation))
     elif command_type.startswith("Process"):
         invocation = payload.get("invocation")
@@ -595,29 +530,24 @@ def _operation(entry: Mapping[str, Any], payload: Mapping[str, Any]) -> tuple[st
     return _safe_label(operation, fallback=command_type), provider, ephemeral
 
 
-def _operation_effect(operation: str) -> str:
-    """Classify an adapter operation from its structural action token."""
+def _classify(
+    command_type: str,
+    operation: str,
+    capability: Mapping[str, Any],
+    effect_profile: Mapping[str, Any],
+) -> tuple[str, str | None]:
+    """Assign semantic role after typed Rote effect classification.
 
-    tokens = [
-        token
-        for token in re.split(r"[^A-Za-z0-9]+", operation.lower())
-        if token
-    ]
-    if not tokens:
-        return "external"
-    for token in (tokens[0], tokens[-1]):
-        if token in _READ_ACTIONS:
-            return "read"
-        if token in _WRITE_ACTIONS:
-            return "write"
-    read = any(token in _READ_ACTIONS for token in tokens)
-    write = any(token in _WRITE_ACTIONS for token in tokens)
-    if read != write:
-        return "read" if read else "write"
-    return "external"
+    Operation text remains display copy. It is never used to infer read/write
+    posture. The only named operation below is Rote's exact auth contract.
+    """
 
-
-def _classify(command_type: str, operation: str, provider: str | None, ephemeral: str) -> tuple[str, str | None]:
+    posture = str(effect_profile.get("posture") or "unknown")
+    risk_tags = {
+        str(value)
+        for value in effect_profile.get("risk_tags", [])
+        if isinstance(value, str)
+    }
     if command_type in {"QueryRead", "QueryExtract", "Display", "StreamFollow"}:
         return "evidence", "supporting"
     if command_type == "ComposeEmail":
@@ -626,44 +556,27 @@ def _classify(command_type: str, operation: str, provider: str | None, ephemeral
         return "capability", None
     if command_type == "SetVariable":
         return "decision", "local"
-    if command_type == "HttpRequest" or command_type == "DataQuery":
-        # Adapter operation names are structural metadata. Request payloads are
-        # deliberately excluded so data containing words such as "token" or
-        # "permission" cannot change the node kind.
-        if operation == "initialize" or _CAPABILITY_WORDS.search(operation):
+    if command_type in {"HttpRequest", "DataQuery"}:
+        family = str(capability.get("family") or "")
+        phase = str(capability.get("phase") or "")
+        primitive = str(capability.get("primitive") or "")
+        if phase in {"probe", "protocol"} or (
+            primitive == "lease" and operation == "initialize"
+        ):
             return "capability", None
-        if _AUTH_WORDS.search(operation):
+        if operation == "adapter.auth.ensure":
             return "authority", None
-        if _VERIFY_WORDS.search(operation):
-            return "evidence", "verification"
-        if operation in _BROWSER_READ_OPERATIONS:
-            return "effect", "read"
-        return "effect", _operation_effect(operation)
+        if family in {"adapter", "browser"} or command_type == "DataQuery":
+            return "effect", posture
+        return "effect", "unknown"
     if command_type.startswith("Process"):
-        program = operation.split(" ", 1)[0]
-        verb = operation.split(" ", 1)[1] if " " in operation else ""
-        if program in _READ_ONLY_PROGRAMS:
-            return "phase", "inspection"
-        if program == "git" and verb in _GIT_READ_VERBS:
-            return "phase", "inspection"
-        operation_parts = set(re.split(r"[^A-Za-z0-9_-]+", operation.lower()))
-        verifies = (
-            program in _VERIFY_PROGRAMS
-            or bool(operation_parts & _VERIFY_PROGRAMS)
-            or (program == "cargo" and verb in {"clippy", "fmt", "test"})
-            or (program in {"deno", "node", "npm", "npx", "pnpm", "yarn"} and verb == "test")
-        )
-        if verifies or _VERIFY_WORDS.search(operation):
-            return "evidence", "verification"
-        if _CAPABILITY_WORDS.search(operation):
-            return "capability", None
-        if _AUTH_WORDS.search(operation):
+        if "interactive_auth" in risk_tags:
             return "authority", None
-        if program in _PROCESS_WRITE_PROGRAMS or (program == "git" and verb in _GIT_WRITE_VERBS):
-            return "effect", "local_write"
-        if _WRITE_WORDS.search(operation):
-            return "effect", "local_write"
-        return "phase", "local"
+        if posture == "read":
+            return "phase", "inspection"
+        if posture in {"write", "mixed"}:
+            return "effect", posture
+        return "phase", "unknown"
     return "phase", "supporting"
 
 
@@ -671,6 +584,8 @@ def normalize_entries(
     entries: Sequence[Mapping[str, Any]],
     *,
     response_metadata: Mapping[int, Mapping[str, Any]] | None = None,
+    manifest_resolver: Callable[[str], Mapping[str, Any] | None] | None = None,
+    tool_resolver: Callable[[str, str], Mapping[str, Any] | None] | None = None,
 ) -> list[dict[str, Any]]:
     """Normalize Rote command rows without retaining request or response payloads."""
 
@@ -683,9 +598,23 @@ def normalize_entries(
         command_type = _safe_label(raw.get("command_type"), fallback="Unknown")
         payload = _command_payload(raw)
         response_ids = _response_ids(raw)
-        operation, provider, ephemeral = _operation(raw, payload)
-        kind, role = _classify(command_type, operation, provider, ephemeral)
+        operation, provider, _ephemeral = _operation(raw, payload)
+        capability = capability_descriptor(
+            command_type,
+            payload,
+            operation,
+            provider,
+            manifest_resolver=manifest_resolver,
+        )
         response_meta = [metadata[item] for item in response_ids if item in metadata]
+        effect_profile = classify_effect(
+            command_type,
+            payload,
+            capability,
+            tool_resolver=tool_resolver,
+            typed_receipts=response_meta,
+        )
+        kind, role = _classify(command_type, operation, capability, effect_profile)
         ok = all(bool(item.get("ok", True)) for item in response_meta)
         if not response_meta:
             ok = not bool(raw.get("skip_export"))
@@ -712,6 +641,8 @@ def normalize_entries(
                 ),
                 "operation": operation,
                 "provider": _safe_label(provider) if provider else None,
+                "capability": capability,
+                "effect_profile": effect_profile,
                 "kind": "blocker" if not ok else kind,
                 "role": "failed" if not ok else role,
                 "effect": role if kind == "effect" else None,
@@ -723,7 +654,9 @@ def normalize_entries(
                 "timestamp": raw.get("timestamp") if isinstance(raw.get("timestamp"), str) else None,
             }
         )
-    return sorted(activities, key=lambda item: item["sequence"])
+    activities.sort(key=lambda item: item["sequence"])
+    attach_browser_lenses(activities)
+    return activities
 
 
 def normalize_dependencies(values: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -763,7 +696,7 @@ def _activity_label(activity: Mapping[str, Any]) -> str:
         return "Inspect relevant source and context"
     if kind == "effect" and effect == "read":
         return f"Retrieve data from {provider_label or operation}"
-    if kind == "effect" and effect in {"write", "local_write"}:
+    if kind == "effect" and effect in {"write", "mixed"}:
         return f"Apply changes through {provider_label or operation}"
     if kind == "effect":
         return f"Use {provider_label or operation}"
@@ -1352,6 +1285,11 @@ def _workspace_fingerprint(workspace: Path) -> str:
             stat = path.stat()
         except OSError:
             continue
+        # Opening SQLite for a read can create or retouch an empty WAL.  It is
+        # observer noise, not workspace activity; including it makes the
+        # detached projector continuously trigger itself.
+        if relative.name == "workspace.db-wal" and stat.st_size == 0:
+            continue
         parts.append(f"{relative}:{stat.st_size}:{stat.st_mtime_ns}")
     responses = workspace / ".rote" / "responses"
     try:
@@ -1684,10 +1622,15 @@ def refresh_capture(
         raw_entries = [dict(item) for item in log_value if isinstance(item, Mapping)]
         response_ids = [response_id for item in raw_entries for response_id in _response_ids(item)]
         metadata = _response_metadata(workspace, response_ids)
-        new_activities = normalize_entries(raw_entries, response_metadata=metadata)
+        new_activities = normalize_entries(
+            raw_entries,
+            response_metadata=metadata,
+            manifest_resolver=adapter_manifest_summary,
+        )
         by_sequence = {int(item["sequence"]): item for item in activities}
         by_sequence.update({int(item["sequence"]): item for item in new_activities})
         activities = [by_sequence[key] for key in sorted(by_sequence)]
+        attach_browser_lenses(activities)
 
     dependencies = [
         dict(item) for item in source.get("dependencies", []) if isinstance(item, Mapping)

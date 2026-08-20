@@ -15,9 +15,11 @@ export function createWorldNavigation({canvas, camera, frozenRef, interactionMes
 
   const pointRaycaster = (event) => {
     const bounds = canvas.getBoundingClientRect()
+    if (bounds.width <= 0 || bounds.height <= 0) return false
     pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1
     pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1
     raycaster.setFromCamera(pointer, camera)
+    return true
   }
 
   const onPointerDown = (event) => {
@@ -32,7 +34,7 @@ export function createWorldNavigation({canvas, camera, frozenRef, interactionMes
 
   const onPointerMove = (event) => {
     if (!pointerDown) {
-      pointRaycaster(event)
+      if (!pointRaycaster(event)) return
       const actionable = raycaster.intersectObjects(actionableMeshes, false)[0]
       canvas.classList.toggle('vantage-hover', Boolean(actionable))
       return
@@ -42,6 +44,7 @@ export function createWorldNavigation({canvas, camera, frozenRef, interactionMes
     const deltaY = event.clientY - pointerY
     if (Math.abs(deltaX) + Math.abs(deltaY) > 2) pointerMoved = true
     lookYaw -= deltaX * .006
+    lookYaw = THREE.MathUtils.euclideanModulo(lookYaw + Math.PI, Math.PI * 2) - Math.PI
     lookPitch = THREE.MathUtils.clamp(lookPitch - deltaY * .0045, -.82, .82)
     pointerX = event.clientX
     pointerY = event.clientY
@@ -69,7 +72,7 @@ export function createWorldNavigation({canvas, camera, frozenRef, interactionMes
       pointerMoved = false
       return
     }
-    pointRaycaster(event)
+    if (!pointRaycaster(event)) return
     const interactionHit = raycaster.intersectObjects(interactionMeshes, false)[0]
     if (interactionHit) {
       onSelect(interactionHit.object.userData)
@@ -103,7 +106,7 @@ export function createWorldNavigation({canvas, camera, frozenRef, interactionMes
   window.addEventListener('keydown', onKeyDown)
 
   return {
-    applyFrozenView(current, direction, desiredCamera, desiredLook) {
+    applyFrozenView(current, direction, desiredCamera, desiredLook, vantage = {}) {
       const baseYaw = Math.atan2(direction.x, -direction.z)
       const yaw = baseYaw + lookYaw
       const lookDirection = new THREE.Vector3(
@@ -112,8 +115,10 @@ export function createWorldNavigation({canvas, camera, frozenRef, interactionMes
         -Math.cos(yaw) * Math.cos(lookPitch),
       )
       currentLookDirection.copy(lookDirection)
-      desiredCamera.copy(current).addScaledVector(direction, -1.4).add(walkOffset)
-      desiredCamera.y = 2.25
+      const approachDistance = THREE.MathUtils.clamp(Number(vantage.approachDistance) || 12.5, 10, 18)
+      const eyeHeight = THREE.MathUtils.clamp(Number(vantage.eyeHeight) || 2.8, 2.1, 4.2)
+      desiredCamera.copy(current).addScaledVector(direction, -approachDistance).add(walkOffset)
+      desiredCamera.y = eyeHeight
       desiredLook.copy(desiredCamera).addScaledVector(lookDirection, 12)
     },
     reset() {

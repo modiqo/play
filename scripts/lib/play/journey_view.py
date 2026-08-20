@@ -32,6 +32,7 @@ from .journey import (
     load_snapshot,
     schedule_worker,
 )
+from .journey_capabilities import capability_descriptor
 from .journey_scene import JourneySceneError, build_scene
 from .journey_story import build_story
 from .private_store import atomic_write_json, load_json
@@ -76,9 +77,12 @@ def _workspace_activity(workspace_path: Path | None) -> tuple[float | None, bool
     modified: list[float] = []
     for candidate in candidates:
         try:
-            modified.append(candidate.stat().st_mtime)
+            stat = candidate.stat()
         except OSError:
             continue
+        if candidate.name == "workspace.db-wal" and stat.st_size == 0:
+            continue
+        modified.append(stat.st_mtime)
     if not modified:
         return None, False
     activity_epoch = max(modified)
@@ -169,14 +173,46 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
             if activity is None:
                 continue
             assigned.add(sequence)
+            command_type = str(activity.get("command_type") or "Unknown")
+            operation = str(activity.get("operation") or "interaction")
+            provider = (
+                activity.get("provider")
+                if isinstance(activity.get("provider"), str)
+                else None
+            )
+            capability = activity.get("capability")
+            if not isinstance(capability, Mapping):
+                # Journeys projected before rules-v3 do not carry structured
+                # capability metadata.  Derive a safe compatibility descriptor
+                # from the persisted command type and display operation so old
+                # maps do not collapse every CLI into "Rote workspace".
+                legacy_payload: dict[str, Any] = {}
+                if command_type.startswith("Process") or command_type == "StreamFollow":
+                    program = operation.split(maxsplit=1)[0] if operation else "process"
+                    legacy_payload = {"invocation": {"program": program, "args": []}}
+                capability = capability_descriptor(
+                    command_type,
+                    legacy_payload,
+                    operation,
+                    provider,
+                )
             interactions.append(
                 {
                     "sequence": sequence,
-                    "command_type": str(activity.get("command_type") or "Unknown"),
-                    "operation": str(activity.get("operation") or "interaction"),
-                    "provider": activity.get("provider")
-                    if isinstance(activity.get("provider"), str)
-                    else None,
+                    "command_type": command_type,
+                    "operation": operation,
+                    "provider": provider,
+                    "capability": dict(capability),
+                    "effect_profile": dict(activity["effect_profile"])
+                    if isinstance(activity.get("effect_profile"), Mapping)
+                    else {
+                        "schema": "play.journey-effect/v1",
+                        "posture": str(activity.get("effect") or "unknown"),
+                        "scopes": [],
+                        "source": "legacy_projection",
+                        "confidence": "unknown",
+                        "destructive": None,
+                    },
                     "effect": activity.get("effect")
                     if isinstance(activity.get("effect"), str)
                     else None,

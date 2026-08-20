@@ -14,6 +14,7 @@ from unittest.mock import patch
 from jsonschema import Draft202012Validator
 
 from scripts.lib.play.journey import (
+    _workspace_fingerprint,
     _persist_graph_state,
     _snapshot_path,
     build_graph,
@@ -26,6 +27,7 @@ from scripts.lib.play.journey_view import (
     INTERACTIONS_SCHEMA,
     _ensure_graph_ready,
     _exchange_projection,
+    _interaction_projection,
     _workspace_activity,
     make_server,
 )
@@ -102,6 +104,86 @@ class JourneySceneTest(unittest.TestCase):
             activity_epoch, active_recently = _workspace_activity(workspace)
             self.assertEqual(900.0, activity_epoch)
             self.assertFalse(active_recently)
+
+    def test_empty_sqlite_wal_is_not_workspace_activity(self) -> None:
+        workspace = Path(self.temporary.name) / "quiet-workspace"
+        rote = workspace / ".rote"
+        rote.mkdir(parents=True)
+        database = rote / "workspace.db"
+        marker = rote / "workspace.marker"
+        wal = rote / "workspace.db-wal"
+        database.write_bytes(b"database")
+        marker.write_text("quiet", encoding="utf-8")
+        wal.write_bytes(b"")
+
+        import os
+
+        os.utime(database, (1900.0, 1900.0))
+        os.utime(marker, (1900.0, 1900.0))
+        first = _workspace_fingerprint(workspace)
+        os.utime(wal, (2000.0, 2000.0))
+        second = _workspace_fingerprint(workspace)
+        with patch("scripts.lib.play.journey_view.time.time", return_value=2010.0):
+            _activity_epoch, active_recently = _workspace_activity(workspace)
+
+        self.assertEqual(first, second)
+        self.assertFalse(active_recently)
+
+        wal.write_bytes(b"new command")
+        self.assertNotEqual(first, _workspace_fingerprint(workspace))
+
+    def test_legacy_interactions_receive_structured_capability_families(self) -> None:
+        capture = {**self.capture, "reference": "cap_legacy-capabilities"}
+        activities = [
+            {
+                **activity(1, "capability"),
+                "command_type": "ProcessExec",
+                "operation": "rg --files",
+            },
+            {
+                **activity(2, "evidence"),
+                "command_type": "QueryRead",
+                "operation": "query stored evidence",
+            },
+            {
+                **activity(3, "effect", provider="github"),
+                "command_type": "HttpRequest",
+                "operation": "repos/list-contributors",
+            },
+        ]
+        graph = build_graph(
+            capture,
+            activities=activities,
+            dependencies=[],
+            stats={"commands": len(activities), "responses": len(activities)},
+        )
+        _persist_graph_state(
+            capture["reference"],
+            fingerprint="e" * 64,
+            command_count=len(activities),
+            activities=activities,
+            dependencies=[],
+            graph=graph,
+            root=self.journeys,
+        )
+
+        projected = _interaction_projection(capture["reference"], root=self.journeys)
+        descriptors = {
+            item["sequence"]: item["capability"]
+            for records in projected["sites"].values()
+            for item in records
+        }
+
+        self.assertEqual(
+            ("proc", "rg"),
+            (descriptors[1]["family"], descriptors[1]["id"]),
+        )
+        self.assertEqual("rote", descriptors[2]["family"])
+        # A legacy projection has already discarded the typed adapter endpoint
+        # and MCP envelope. A provider display label alone is not sufficient to
+        # reconstruct adapter ownership, so the compatibility path refuses to
+        # guess.
+        self.assertEqual("rote", descriptors[3]["family"])
 
     def test_scene_is_complete_deterministic_and_schema_valid(self) -> None:
         graph = self.graph(self.activities)
@@ -269,6 +351,9 @@ class JourneySceneTest(unittest.TestCase):
                 self.assertIn(b"PRIOR VANTAGE", viewer)
                 self.assertIn(b"ROUTE DIRECTION", viewer)
                 self.assertIn(b"NEXT SNAPSHOT", viewer)
+                self.assertIn(b"USING CAPABILITIES", viewer)
+                self.assertIn(b"SHELL ", viewer)
+                self.assertIn(b"NO SYSTEM EQUIPPED", viewer)
             with urllib.request.urlopen(
                 f"{base}/api/events?token=viewer-secret", timeout=2
             ) as response:

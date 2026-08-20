@@ -1,8 +1,11 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react'
 import * as THREE from 'three'
 import {CSS2DRenderer} from 'three/addons/renderers/CSS2DRenderer.js'
-import {AMBER, GROUND, clampVisibleCallouts, journeyPositions, landmarkFor, makeCallout, makeInteractionCallout, material} from './world-elements.js'
+import {AMBER, GROUND, clampVisibleCallouts, glassTowerEdge, glassTowerMaterial, journeyPositions, landmarkFor, makeCallout, makeInteractionCallout, material} from './world-elements.js'
 import {createWorldNavigation} from './world-navigation.js'
+import {KIND_LABEL, WORLD_ROLE} from './semantics.js'
+import {layoutTemporalCorridor} from './temporal-corridor.mjs'
+import {updateMarkerAppearance} from './marker-appearance.mjs'
 
 export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect}) {
   const host = useRef(null)
@@ -14,6 +17,11 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
   const dismissed = useRef(new Set())
   const [error, setError] = useState('')
   const positions = useMemo(() => journeyPositions(story.chapters), [story])
+  const replayValue = Number(replay)
+  const vantageIndex = Number.isFinite(replayValue)
+    ? Math.max(0, Math.min(story.chapters.length - 1, Math.floor(THREE.MathUtils.clamp(replayValue, 0, 1) * Math.max(1, story.chapters.length - 1) + .001)))
+    : 0
+  const vantage = story.chapters[vantageIndex]
 
   useEffect(() => { replayRef.current = replay }, [replay])
   useEffect(() => { selectedRef.current = selected }, [selected])
@@ -22,11 +30,39 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
 
   useEffect(() => {
     if (!host.current) return undefined
+    setError('')
+    dismissed.current.clear()
     let disposed = false
     let frame = 0
     let renderer
+    let labels
+    let observer
+    let navigation
+    let scene
+    const cleanup = () => {
+      if (disposed) return
+      disposed = true
+      cancelAnimationFrame(frame)
+      observer?.disconnect()
+      navigation?.dispose()
+      scene?.traverse((object) => {
+        object.geometry?.dispose?.()
+        if (Array.isArray(object.material)) object.material.forEach((item) => { item.map?.dispose?.(); item.dispose?.() })
+        else {
+          object.material?.map?.dispose?.()
+          object.material?.dispose?.()
+        }
+      })
+      renderer?.dispose?.()
+      labels?.domElement?.remove()
+      renderer?.domElement?.remove()
+      runtime.current = null
+    }
     try {
-      const scene = new THREE.Scene()
+      if (!positions.length || positions.some((point) => !point || ![point.x, point.y, point.z].every(Number.isFinite))) {
+        throw new Error('Journey route has no valid vantage points')
+      }
+      scene = new THREE.Scene()
       scene.background = new THREE.Color(GROUND)
       scene.fog = new THREE.FogExp2(GROUND, .015)
       const camera = new THREE.PerspectiveCamera(54, 1, .1, 260)
@@ -42,7 +78,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       renderer.domElement.className = 'world-canvas'
       host.current.appendChild(renderer.domElement)
 
-      const labels = new CSS2DRenderer()
+      labels = new CSS2DRenderer()
       labels.domElement.className = 'world-labels'
       host.current.appendChild(labels.domElement)
 
@@ -95,6 +131,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         site.add(platform)
 
         const landmark = landmarkFor(chapter)
+        const landmarkSize = new THREE.Box3().setFromObject(landmark).getSize(new THREE.Vector3())
         landmark.traverse((object) => {
           if (!object.isMesh) return
           object.userData = {siteId: chapter.id, sequence: null}
@@ -102,14 +139,20 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         })
         site.add(landmark)
         const records = interactions?.sites?.[chapter.id] || []
+        const temporalCorridor = layoutTemporalCorridor(records)
+        const towerFootprint = THREE.MathUtils.clamp(6.3 / Math.max(1, temporalCorridor.points.length), .24, .55)
         const markers = []
-        records.forEach((record, recordIndex) => {
+        let maximumTowerHeight = 0
+        temporalCorridor.points.forEach((temporal, recordIndex) => {
+          const record = {...temporal.record, temporal}
           const signal = Math.log2(2 + Number(record.duration_ms || 0) / 90 + Number(record.tokens || 0) / 700)
-          const height = Math.max(.7, Math.min(5.8, signal))
-          const tower = new THREE.Mesh(new THREE.BoxGeometry(.55, height, .55), material(record.status === 'error' ? 0x8d8f8e : 0x555a5d))
-          const side = recordIndex % 2 === 0 ? -1 : 1
-          const rank = Math.floor(recordIndex / 2)
-          tower.position.set(side * (4.2 + (rank % 3) * .85), height / 2, 3.7 - Math.floor(rank / 3) * 1.15)
+          const height = Math.max(.7, Math.min(4.6, signal))
+          maximumTowerHeight = Math.max(maximumTowerHeight, height)
+          const towerGeometry = new THREE.BoxGeometry(towerFootprint, height, towerFootprint)
+          const tower = new THREE.Mesh(towerGeometry, glassTowerMaterial())
+          const towerEdge = glassTowerEdge(towerGeometry)
+          tower.add(towerEdge)
+          tower.position.set(temporal.x, height / 2, temporal.z)
           tower.castShadow = true
           tower.userData = {siteId: chapter.id, sequence: record.sequence}
           site.add(tower)
@@ -125,6 +168,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           marker.label.position.set(tower.position.x, height + .75, tower.position.z)
           site.add(marker.label)
           marker.tower = tower
+          marker.edge = towerEdge
+          marker.temporal = temporal
           markers.push(marker)
         })
         const {label, root} = makeCallout(chapter, records.length, story.chapters.length, (siteId) => {
@@ -136,9 +181,14 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             onSelect({siteId, sequence: null})
           }
         })
+        label.position.y = Math.max(4.9, landmarkSize.y + 1.2, maximumTowerHeight + 2.15)
         site.add(label)
         scene.add(site)
-        sites.push({chapter, group: site, label: root, markers, worldPosition: site.position.clone()})
+        sites.push({
+          chapter, group: site, label: root, markers, worldPosition: site.position.clone(),
+          approachDistance: Math.max(12.5, landmarkSize.z * .5 + 8, landmarkSize.x * .38 + 8),
+          eyeHeight: THREE.MathUtils.clamp(landmarkSize.y * .42, 2.5, 3.8),
+        })
       })
 
       const traveler = new THREE.Mesh(
@@ -154,7 +204,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       focusRing.rotation.x = -Math.PI / 2
       scene.add(focusRing)
 
-      const navigation = createWorldNavigation({
+      navigation = createWorldNavigation({
         canvas: renderer.domElement, camera, frozenRef, interactionMeshes, semanticMeshes, onSelect,
       })
 
@@ -167,7 +217,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         renderer.setSize(width, height, false)
         labels.setSize(width, height)
       }
-      const observer = new ResizeObserver(resize)
+      observer = new ResizeObserver(resize)
       observer.observe(host.current)
       resize()
 
@@ -176,51 +226,59 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       const desiredCamera = new THREE.Vector3()
       const desiredLook = new THREE.Vector3()
       let previousReached = -1
+      let lastCalloutLayout = 0
       const render = () => {
         if (disposed) return
-        const elapsed = performance.now() / 1000
-        const progress = THREE.MathUtils.clamp(replayRef.current, 0, 1)
-        const scaled = progress * Math.max(1, positions.length - 1)
-        const index = Math.min(positions.length - 1, Math.floor(scaled))
-        const nextIndex = Math.min(positions.length - 1, index + 1)
-        const amount = scaled - index
-        const current = positions[index].clone().lerp(positions[nextIndex], amount)
-        const ahead = positions[Math.min(positions.length - 1, nextIndex + 1)].clone()
-        const direction = ahead.clone().sub(current).normalize()
-        if (direction.lengthSq() < .01) direction.set(0, 0, -1)
+        try {
+          const elapsed = performance.now() / 1000
+          const replayValue = Number(replayRef.current)
+          const progress = Number.isFinite(replayValue) ? THREE.MathUtils.clamp(replayValue, 0, 1) : 0
+          const lastIndex = positions.length - 1
+          const scaled = progress * Math.max(1, lastIndex)
+          const index = Math.max(0, Math.min(lastIndex, Math.floor(scaled)))
+          const nextIndex = Math.max(0, Math.min(lastIndex, index + 1))
+          const amount = scaled - index
+          const currentPoint = positions[index]
+          const nextPoint = positions[nextIndex]
+          const aheadPoint = positions[Math.max(0, Math.min(lastIndex, nextIndex + 1))]
+          if (!currentPoint || !nextPoint || !aheadPoint) throw new Error('Journey route changed while rendering')
+          const current = currentPoint.clone().lerp(nextPoint, amount)
+          const ahead = aheadPoint.clone()
+          const direction = ahead.clone().sub(current).normalize()
+          if (direction.lengthSq() < .01) direction.set(0, 0, -1)
 
-        const focus = selectedRef.current?.sequence ? selectedRef.current.siteId : null
-        const focusSite = sites.find((site) => site.chapter.id === focus)
-        if (focusSite) {
-          desiredCamera.copy(focusSite.worldPosition).add(new THREE.Vector3(focusSite.chapter.order % 2 === 0 ? -10 : 10, 5.2, 9.5))
-          desiredLook.copy(focusSite.worldPosition).setY(2.3)
-        } else if (frozenRef.current) {
-          navigation.applyFrozenView(current, direction, desiredCamera, desiredLook)
-        } else {
-          const side = index % 2 === 0 ? 1 : -1
-          desiredCamera.copy(current).addScaledVector(direction, -8.2)
-          desiredCamera.x -= side * 2.2
-          desiredCamera.y = 3.4
-          desiredLook.copy(current).addScaledVector(direction, 3.5)
-          desiredLook.y = 2.35
-        }
-        camera.position.lerp(desiredCamera, playingRef.current ? .065 : .1)
-        cameraTarget.lerp(desiredLook, .09)
-        camera.lookAt(cameraTarget)
-        traveler.position.copy(current).setY(.22 + Math.sin(elapsed * 3.2) * .025)
-        traveler.rotation.y = elapsed * 1.1
-        amberLight.position.copy(traveler.position).setY(2.1)
+          const focus = selectedRef.current?.sequence ? selectedRef.current.siteId : null
+          const focusSite = sites.find((site) => site.chapter.id === focus)
+          if (focusSite) {
+            desiredCamera.copy(focusSite.worldPosition).add(new THREE.Vector3(focusSite.chapter.order % 2 === 0 ? -10 : 10, 5.2, 9.5))
+            desiredLook.copy(focusSite.worldPosition).setY(2.3)
+          } else if (frozenRef.current) {
+            navigation.applyFrozenView(current, direction, desiredCamera, desiredLook, sites[index])
+          } else {
+            const side = index % 2 === 0 ? 1 : -1
+            desiredCamera.copy(current).addScaledVector(direction, -8.2)
+            desiredCamera.x -= side * 2.2
+            desiredCamera.y = 3.4
+            desiredLook.copy(current).addScaledVector(direction, 3.5)
+            desiredLook.y = 2.35
+          }
+          camera.position.lerp(desiredCamera, playingRef.current ? .065 : .1)
+          cameraTarget.lerp(desiredLook, .09)
+          camera.lookAt(cameraTarget)
+          traveler.position.copy(current).setY(.22 + Math.sin(elapsed * 3.2) * .025)
+          traveler.rotation.y = elapsed * 1.1
+          amberLight.position.copy(traveler.position).setY(2.1)
 
-        const reached = Math.max(0, Math.floor(scaled + .001))
-        if (reached !== previousReached) {
-          dismissed.current.delete(sites[reached]?.chapter.id)
-          navigation.reset()
-          previousReached = reached
-        }
-        focusRing.position.copy(positions[reached]).setY(.16)
-        const ringPulse = 1 + Math.sin(elapsed * 2.2) * .045
-        focusRing.scale.set(ringPulse, ringPulse, ringPulse)
-        sites.forEach((site, siteIndex) => {
+          const reached = Math.max(0, Math.min(lastIndex, Math.floor(scaled + .001)))
+          if (reached !== previousReached) {
+            dismissed.current.delete(sites[reached]?.chapter.id)
+            navigation.reset()
+            previousReached = reached
+          }
+          focusRing.position.copy(positions[reached]).setY(.16)
+          const ringPulse = 1 + Math.sin(elapsed * 2.2) * .045
+          focusRing.scale.set(ringPulse, ringPulse, ringPulse)
+          sites.forEach((site, siteIndex) => {
           site.group.visible = siteIndex <= reached + 1
           const isCurrent = siteIndex === reached
           const isSelectedSite = selectedRef.current?.siteId === site.chapter.id
@@ -243,36 +301,32 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             const pulse = proximity
               ? frozenRef.current ? .88 : .42 + Math.max(0, Math.sin(elapsed * 2.3 - markerIndex * .72)) * .8
               : 0
-            marker.tower.material.emissive.setHex(AMBER)
-            marker.tower.material.emissiveIntensity = pulse
-            marker.tower.scale.y = proximity && !frozenRef.current ? 1 + Math.max(0, Math.sin(elapsed * 2.3 - markerIndex * .72)) * .025 : 1
+            updateMarkerAppearance(marker, {
+              selected: markerSelected,
+              proximity,
+              pulse,
+              frozen: frozenRef.current,
+            })
           })
-        })
-        renderer.render(scene, camera)
-        labels.render(scene, camera)
-        clampVisibleCallouts(labels.domElement, host.current)
-        frame = requestAnimationFrame(render)
+          })
+          renderer.render(scene, camera)
+          labels.render(scene, camera)
+          const layoutNow = performance.now()
+          if (host.current && (layoutNow - lastCalloutLayout >= 80 || previousReached !== reached)) {
+            clampVisibleCallouts(labels.domElement, host.current)
+            lastCalloutLayout = layoutNow
+          }
+          frame = requestAnimationFrame(render)
+        } catch (caught) {
+          setError(caught instanceof Error ? caught.message : String(caught))
+          cleanup()
+        }
       }
       render()
-
-      return () => {
-        disposed = true
-        cancelAnimationFrame(frame)
-        observer.disconnect()
-        navigation.dispose()
-        scene.traverse((object) => {
-          object.geometry?.dispose?.()
-          if (Array.isArray(object.material)) object.material.forEach((item) => item.dispose?.())
-          else object.material?.dispose?.()
-        })
-        renderer.dispose()
-        labels.domElement.remove()
-        renderer.domElement.remove()
-        runtime.current = null
-      }
+      return cleanup
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
-      renderer?.dispose?.()
+      cleanup()
       return undefined
     }
   }, [interactions, onSelect, positions, story])
@@ -285,7 +339,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
 
   return <div className="journey-world" ref={host}>
     {error && <div className="world-error">3D JOURNEY UNAVAILABLE · {error}</div>}
-    <div className="world-reticle"><i /><span>{frozen ? 'SITUATIONAL AWARENESS' : 'FOLLOWING THE AGENT'}</span></div>
+    <div className="world-reticle"><i /><span>{frozen ? `${WORLD_ROLE[vantage?.kind] || 'Journey stage'} · ${KIND_LABEL[vantage?.kind] || vantage?.kind || 'Vantage'} · SITUATIONAL AWARENESS` : 'FOLLOWING THE AGENT'}</span></div>
     <div className="world-instruction">{frozen ? 'DRAG TO LOOK 360° · SCROLL TO MOVE FORWARD OR BACK · SELECT ANY ILLUMINATED CALLOUT FOR EVIDENCE' : 'THE PATH REVEALS AS THE WORK PROGRESSES · CLICK A VANTAGE TO FREEZE AND LOOK AROUND'}</div>
   </div>
 }

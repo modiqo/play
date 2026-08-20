@@ -57,6 +57,12 @@ supported JSON surfaces when evidence changes, and groups operational `@N` activ
 nodes such as capability, authority, effect, blocker, recovery, evidence, milestone, and Play
 candidate.
 
+Each projected activity also receives a typed `play.journey-effect/v1` posture. Adapter reads and
+writes come from Rote tool hints or declared HTTP methods, process posture comes from persisted
+policy risk tags, and browser posture comes from ledger primitives. Play never guesses access from
+CLI names or operation verbs; absent evidence is `unknown`. The viewer uses these same records for
+its adapter/shell/browser capability loadout and indexed frontage timeline.
+
 The Stop hook never runs Rote, parses a trace, opens the workspace database, classifies activity,
 or waits for the worker. It reads one bounded `play.journey-viewport/v1` snapshot and claims a material
 generation exactly once. A missing, stale, malformed, slow, or oversized snapshot is silent. The
@@ -101,7 +107,7 @@ captured workflow:
 | `play-journey graph --capture <opaque-ref> --json` | Read the complete persisted semantic graph and evidence mappings. |
 | `play-journey story --capture <opaque-ref> --json` | Derive the deterministic human landmark sequence used by the live viewer without dropping canonical evidence references. |
 | `play-journey scene --capture <opaque-ref> --json` | Derive the complete deterministic `play.journey-scene/v1` isometric geometry. |
-| `play-journey view --active` | Start a missed projector if necessary, then open the token-protected WebGL Journey world; distinguish active captures from the workspace being viewed. |
+| `play-journey view --active` | Start a missed projector if necessary, then open the token-protected WebGL Journey world; recorded journeys begin at **Play**, playback changes to **Freeze**, and a frozen vantage changes to **Resume**. |
 | `play-journey doctor --capture <opaque-ref> --json` | Report bounded snapshot and worker health metadata. |
 | `play-journey refresh --capture <opaque-ref> [--json]` | Run one incremental background-style refresh. |
 | `play-journey rebuild --capture <opaque-ref> [--json]` | Rebuild the disposable projection from authoritative evidence. |

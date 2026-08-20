@@ -13,6 +13,7 @@ from jsonschema import Draft202012Validator
 
 from scripts.lib.play.journey import (
     MAX_SNAPSHOT_NODES,
+    PROJECTION_VERSION,
     SCHEMA,
     append_source_event,
     build_graph,
@@ -29,6 +30,7 @@ from scripts.lib.play.journey import (
     render_snapshot,
     run_worker,
 )
+from scripts.lib.play.journey_capabilities import adapter_manifest_summary
 from scripts.lib.play.private_store import atomic_write_json
 from scripts.lib.play.sidekick import start_capture
 
@@ -53,7 +55,19 @@ def raw_command(
     }
 
 
-def adapter_command(sequence: int, operation: str, response_id: int) -> dict:
+def adapter_command(
+    sequence: int,
+    operation: str,
+    response_id: int,
+    *,
+    envelope: str = "call",
+) -> dict:
+    wrapper = f"gmail_{envelope}"
+    arguments = (
+        {"query": "find the Gmail operation"}
+        if envelope == "probe"
+        else {"tool_name": operation, "arguments": {"query": "secret@example.com"}}
+    )
     return raw_command(
         sequence,
         command_type="HttpRequest",
@@ -63,8 +77,8 @@ def adapter_command(sequence: int, operation: str, response_id: int) -> dict:
             "body": {
                 "method": "tools/call",
                 "params": {
-                    "name": operation,
-                    "arguments": {"query": "secret@example.com"},
+                    "name": wrapper,
+                    "arguments": arguments,
                 },
             },
         },
@@ -93,12 +107,25 @@ class JourneyProjectionTest(unittest.TestCase):
         self.temporary.cleanup()
 
     @staticmethod
-    def metadata(*, ok: bool = True, duration: int = 10, tokens: int = 20) -> dict:
-        return {"ok": ok, "duration_ms": duration, "tokens": tokens}
+    def metadata(
+        *,
+        ok: bool = True,
+        duration: int = 10,
+        tokens: int = 20,
+        risk_tags: list[str] | None = None,
+    ) -> dict:
+        value = {"ok": ok, "duration_ms": duration, "tokens": tokens}
+        if risk_tags is not None:
+            value["process_policy"] = {
+                "state": "evaluated",
+                "decision": "allowed",
+                "risk_tags": risk_tags,
+            }
+        return value
 
     def test_normalization_classifies_adapter_work_without_persisting_payloads(self) -> None:
         rows = [
-            adapter_command(1, "gmail_probe", 1),
+            adapter_command(1, "gmail_probe", 1, envelope="probe"),
             adapter_command(2, "gmail.users.messages.list", 2),
             adapter_command(3, "gmail.users.messages.get", 3),
         ]
@@ -109,12 +136,33 @@ class JourneyProjectionTest(unittest.TestCase):
                 2: self.metadata(),
                 3: self.metadata(),
             },
+            tool_resolver=lambda _adapter_id, _operation: {"method": "GET"},
         )
 
         self.assertEqual("capability", activities[0]["kind"])
         self.assertEqual("effect", activities[1]["kind"])
         self.assertEqual("read", activities[1]["effect"])
         self.assertEqual("gmail", activities[1]["provider"])
+        self.assertEqual("probe", activities[0]["capability"]["phase"])
+        self.assertEqual("gmail_probe", activities[0]["capability"]["wrapper"])
+        self.assertEqual(
+            {
+                "family": "adapter",
+                "interface": "api",
+                "id": "gmail",
+                "phase": "call",
+                "mode": "single",
+                "wrapper": "gmail_call",
+                "tool": "gmail.users.messages.list",
+                "operations": ["gmail.users.messages.list"],
+                "transport": "adapter",
+            },
+            {
+                key: value
+                for key, value in activities[1]["capability"].items()
+                if key not in {"schema", "label"}
+            },
+        )
         serialized = json.dumps(activities)
         self.assertNotIn("secret@example.com", serialized)
         self.assertNotIn("arguments", serialized)
@@ -153,13 +201,121 @@ class JourneyProjectionTest(unittest.TestCase):
             response_metadata={1: self.metadata(), 2: self.metadata()},
         )
 
-        self.assertEqual(("phase", "local"), (activities[0]["kind"], activities[0]["role"]))
+        self.assertEqual(("phase", "unknown"), (activities[0]["kind"], activities[0]["role"]))
         self.assertEqual(
-            ("phase", "inspection"),
+            ("phase", "unknown"),
             (activities[1]["kind"], activities[1]["role"]),
         )
+        self.assertTrue(all(item["effect_profile"]["source"] == "process_policy_missing" for item in activities))
 
-    def test_adapter_classification_uses_structural_operation_names(self) -> None:
+    def test_process_effects_use_typed_policy_risk_tags(self) -> None:
+        rows = [
+            raw_command(
+                1,
+                command_type="ProcessExec",
+                response_id=1,
+                params={
+                    "invocation": {"program": "mystery", "args": []},
+                },
+            ),
+            raw_command(
+                2,
+                command_type="ProcessExec",
+                response_id=2,
+                params={
+                    "invocation": {"program": "mystery", "args": []},
+                },
+            ),
+            raw_command(
+                3,
+                command_type="ProcessExec",
+                response_id=3,
+                params={
+                    "invocation": {"program": "mystery", "args": []},
+                },
+            ),
+        ]
+
+        activities = normalize_entries(
+            rows,
+            response_metadata={
+                1: self.metadata(risk_tags=["read_fs"]),
+                2: self.metadata(risk_tags=["read_fs", "write_fs"]),
+                3: self.metadata(risk_tags=["network"]),
+            },
+        )
+
+        self.assertEqual(
+            [("phase", "inspection"), ("effect", "mixed"), ("phase", "unknown")],
+            [(item["kind"], item["role"]) for item in activities],
+        )
+        self.assertEqual(
+            ["read", "mixed", "unknown"],
+            [item["effect_profile"]["posture"] for item in activities],
+        )
+        self.assertEqual("process_policy", activities[0]["effect_profile"]["source"])
+
+    def test_response_metadata_allowlists_process_policy_receipt(self) -> None:
+        responses = self.workspace / ".rote" / "responses"
+        (responses / "@1.json").write_text(
+            json.dumps(
+                {
+                    "response": {
+                        "status": 200,
+                        "body": {
+                            "policy": {
+                                "state": "evaluated",
+                                "decision": "warned",
+                                "risk_tags": ["write_fs", "read_fs"],
+                                "redactions": [{"field": "SECRET", "value": "never-copy"}],
+                            },
+                            "stdout": "private command output",
+                        },
+                    }
+                }
+            )
+        )
+
+        from scripts.lib.play.journey import _response_metadata
+
+        metadata = _response_metadata(self.workspace, [1])
+
+        self.assertEqual(
+            {
+                "state": "evaluated",
+                "decision": "warned",
+                "risk_tags": ["read_fs", "write_fs"],
+            },
+            metadata[1]["process_policy"],
+        )
+        self.assertNotIn("stdout", metadata[1])
+        self.assertNotIn("redactions", metadata[1]["process_policy"])
+
+    def test_adapter_effects_use_tool_hints_and_fail_closed_without_them(self) -> None:
+        rows = [
+            adapter_command(1, "native.read", 1),
+            adapter_command(2, "native.write", 2),
+            adapter_command(3, "native.opaque", 3),
+        ]
+        contracts = {
+            "native.read": {"method": "MCP", "hints": {"readOnlyHint": True}},
+            "native.write": {"method": "MCP", "hints": {"readOnlyHint": False}},
+            "native.opaque": {"method": "MCP"},
+        }
+
+        activities = normalize_entries(
+            rows,
+            response_metadata={index: self.metadata() for index in range(1, 4)},
+            tool_resolver=lambda _adapter_id, operation: contracts[operation],
+        )
+
+        self.assertEqual(
+            ["read", "write", "unknown"],
+            [item["effect_profile"]["posture"] for item in activities],
+        )
+        self.assertEqual("unknown", activities[2]["effect"])
+
+    def test_adapter_semantics_use_typed_contracts_not_operation_words(self) -> None:
         operations = [
             "adapter.auth.ensure",
             "tools/list",
@@ -176,25 +332,28 @@ class JourneyProjectionTest(unittest.TestCase):
         activities = normalize_entries(
             [adapter_command(index, operation, index) for index, operation in enumerate(operations, 1)],
             response_metadata={index: self.metadata() for index in range(1, len(operations) + 1)},
+            tool_resolver=lambda _adapter_id, operation: {
+                "method": "POST" if operation in {"issues.create", "issues/add-assignees", "sign_in"} else "GET"
+            },
         )
 
         self.assertEqual(
             [
                 ("authority", None),
-                ("capability", None),
                 ("effect", "read"),
-                ("effect", "read"),
-                ("effect", "write"),
-                ("evidence", None),
                 ("effect", "read"),
                 ("effect", "read"),
                 ("effect", "write"),
-                ("authority", None),
-                ("capability", None),
+                ("effect", "read"),
+                ("effect", "read"),
+                ("effect", "read"),
+                ("effect", "write"),
+                ("effect", "write"),
+                ("effect", "read"),
             ],
             [(item["kind"], item["effect"]) for item in activities],
         )
-        self.assertEqual("verification", activities[5]["role"])
+        self.assertTrue(all(item["effect_profile"]["source"] == "adapter_tool_contract" for item in activities[1:]))
 
     def test_generic_adapter_calls_use_the_nested_tool_name(self) -> None:
         row = raw_command(
@@ -216,10 +375,63 @@ class JourneyProjectionTest(unittest.TestCase):
             },
         )
 
-        activity = normalize_entries([row], response_metadata={1: self.metadata()})[0]
+        activity = normalize_entries(
+            [row],
+            response_metadata={1: self.metadata()},
+            tool_resolver=lambda _adapter_id, _operation: {"method": "PATCH"},
+        )[0]
 
         self.assertEqual("pulls/update", activity["operation"])
         self.assertEqual(("effect", "write"), (activity["kind"], activity["effect"]))
+        self.assertEqual("call", activity["capability"]["phase"])
+        self.assertEqual(["pulls/update"], activity["capability"]["operations"])
+
+    def test_adapter_batch_call_preserves_each_concrete_operation(self) -> None:
+        row = raw_command(
+            1,
+            command_type="HttpRequest",
+            response_id=1,
+            params={
+                "endpoint": "/adapter/github-api",
+                "body": {
+                    "method": "tools/call",
+                    "params": {
+                        "name": "github_api_batch_call",
+                        "arguments": {
+                            "calls": [
+                                {"tool_name": "repos/get", "arguments": {}},
+                                {"tool_name": "pulls/list", "arguments": {}},
+                            ]
+                        },
+                    },
+                },
+            },
+        )
+
+        capability = normalize_entries(
+            [row], response_metadata={1: self.metadata()}
+        )[0]["capability"]
+
+        self.assertEqual(("adapter", "github-api"), (capability["family"], capability["id"]))
+        self.assertEqual(("call", "batch"), (capability["phase"], capability["mode"]))
+        self.assertEqual(["repos/get", "pulls/list"], capability["operations"])
+
+    def test_generic_http_provider_label_is_not_an_adapter_contract(self) -> None:
+        row = raw_command(
+            1,
+            command_type="HttpRequest",
+            response_id=1,
+            params={
+                "endpoint": "https://api.example.test",
+                "body": {"method": "tools/call", "params": {"name": "github_call"}},
+            },
+        )
+
+        capability = normalize_entries(
+            [row], response_metadata={1: self.metadata()}
+        )[0]["capability"]
+
+        self.assertEqual("rote", capability["family"])
 
     def test_browser_inventory_and_reads_have_distinct_semantics(self) -> None:
         rows = [
@@ -233,18 +445,139 @@ class JourneyProjectionTest(unittest.TestCase):
                 },
             )
             for index, operation in enumerate(
-                ("initialize", "browser_tabs", "browser_snapshot", "browser_click"), 1
+                ("initialize", "browser_tabs", "browser_snapshot", "browser_navigate", "browser_click"), 1
             )
         ]
         activities = normalize_entries(
             rows,
-            response_metadata={index: self.metadata() for index in range(1, 5)},
+            response_metadata={index: self.metadata() for index in range(1, 6)},
         )
 
         self.assertEqual("capability", activities[0]["kind"])
         self.assertEqual("read", activities[1]["effect"])
         self.assertEqual("read", activities[2]["effect"])
-        self.assertEqual("external", activities[3]["effect"])
+        self.assertEqual("read", activities[3]["effect"])
+        self.assertEqual("unknown", activities[4]["effect"])
+        self.assertEqual(
+            ["lease", "lease", "ledger", "navigate", "action"],
+            [item["capability"]["primitive"] for item in activities],
+        )
+        self.assertTrue(all(item["capability"]["family"] == "browser" for item in activities))
+
+    def test_browser_query_read_becomes_an_evidence_lens(self) -> None:
+        rows = [
+            raw_command(
+                1,
+                command_type="HttpRequest",
+                response_id=1,
+                params={
+                    "endpoint": "stdio:/playwright-nosandbox",
+                    "body": {"method": "tools/call", "params": {"name": "browser_snapshot"}},
+                },
+            ),
+            raw_command(
+                2,
+                command_type="QueryRead",
+                response_id=None,
+                params={"source_response": 1, "query": ".content[0].text"},
+            ),
+        ]
+
+        activities = normalize_entries(rows, response_metadata={1: self.metadata()})
+
+        self.assertEqual("browser", activities[1]["capability"]["family"])
+        self.assertEqual("lens", activities[1]["capability"]["primitive"])
+
+    def test_process_capability_exposes_wrapped_cli_and_execution_mode(self) -> None:
+        rows = [
+            raw_command(
+                1,
+                command_type="ProcessExec",
+                response_id=1,
+                params={
+                    "invocation": {
+                        "kind": "direct_argv",
+                        "program": "npx",
+                        "args": ["wrangler", "pages", "deploy", "site"],
+                    }
+                },
+            ),
+            raw_command(
+                2,
+                command_type="ProcessBackgroundStart",
+                response_id=2,
+                params={
+                    "invocation": {
+                        "kind": "direct_argv",
+                        "program": "python3",
+                        "args": ["-m", "http.server"],
+                    }
+                },
+            ),
+        ]
+
+        activities = normalize_entries(
+            rows,
+            response_metadata={1: self.metadata(), 2: self.metadata()},
+        )
+
+        self.assertEqual(
+            ("proc", "wrangler", "argv"),
+            tuple(activities[0]["capability"][key] for key in ("family", "id", "mode")),
+        )
+        self.assertEqual("background", activities[1]["capability"]["mode"])
+
+    def test_adapter_capability_carries_safe_manifest_contract(self) -> None:
+        manifest = {
+            "schema": 2,
+            "name": "GitHub",
+            "spec_type": "openapi3",
+            "transport": "http",
+            "auth_type": "bearer",
+            "operation_scope": "read-write",
+            "fingerprint": "mcp_safe",
+            "status": "ready",
+        }
+
+        activity = normalize_entries(
+            [adapter_command(1, "issues.create", 1)],
+            response_metadata={1: self.metadata()},
+            manifest_resolver=lambda _adapter_id: manifest,
+        )[0]
+
+        self.assertEqual("GitHub", activity["capability"]["label"])
+        self.assertEqual(manifest, activity["capability"]["manifest"])
+
+    def test_adapter_manifest_summary_allowlists_non_secret_contract_fields(self) -> None:
+        adapter = self.base / "rote-home" / "adapters" / "github"
+        adapter.mkdir(parents=True)
+        (adapter / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema": 2,
+                    "id": "github",
+                    "name": "GitHub",
+                    "spec_type": "openapi3",
+                    "spec_version": "3.0.3",
+                    "fingerprint": "mcp_public_contract",
+                    "auth": {"type": "bearer", "token_env": "GITHUB_TOKEN"},
+                    "operation_scope": "read-write",
+                    "status": "ready",
+                    "base_url": "https://api.github.com",
+                }
+            )
+        )
+        adapter_manifest_summary.cache_clear()
+        with patch.dict(os.environ, {"ROTE_HOME": str(self.base / "rote-home")}):
+            summary = adapter_manifest_summary("github")
+        adapter_manifest_summary.cache_clear()
+
+        self.assertIsNotNone(summary)
+        assert summary is not None
+        self.assertEqual("http", summary["transport"])
+        self.assertEqual("bearer", summary["auth_type"])
+        self.assertNotIn("token_env", summary)
+        self.assertNotIn("base_url", summary)
 
     def test_inline_interpreter_source_is_not_semantic_metadata(self) -> None:
         rows = [
@@ -271,9 +604,9 @@ class JourneyProjectionTest(unittest.TestCase):
             response_metadata={1: self.metadata(), 2: self.metadata()},
         )
 
-        self.assertEqual(("phase", "local"), (activities[0]["kind"], activities[0]["role"]))
+        self.assertEqual(("phase", "unknown"), (activities[0]["kind"], activities[0]["role"]))
         self.assertEqual(
-            ("evidence", "verification"),
+            ("phase", "unknown"),
             (activities[1]["kind"], activities[1]["role"]),
         )
 
@@ -296,6 +629,9 @@ class JourneyProjectionTest(unittest.TestCase):
         activities = normalize_entries(
             rows,
             response_metadata={1: self.metadata(), 2: self.metadata()},
+            tool_resolver=lambda _adapter_id, operation: {
+                "method": "POST" if operation == "issues.create" else "GET"
+            },
         )
         graph = build_graph(
             self.capture,
@@ -701,7 +1037,7 @@ class JourneyProjectionTest(unittest.TestCase):
             second = refresh_capture(self.capture, root=self.journeys)
 
         assert second is not None
-        self.assertEqual("rules-v2", second["projection_version"])
+        self.assertEqual(PROJECTION_VERSION, second["projection_version"])
         self.assertEqual(6, len(calls))
 
     def test_idle_fingerprint_is_constant_time_with_respect_to_response_count(self) -> None:

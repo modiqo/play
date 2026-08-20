@@ -21,29 +21,47 @@ export default function App() {
   const selectedWorkspace = index?.workspaces.find((item) => item.id === workspace)
   const liveCapture = selectedWorkspace?.capture_state === 'active'
   const liveActivity = Boolean(liveCapture && selectedWorkspace?.active_recently)
-  const status = liveActivity ? 'LIVE' : liveCapture ? 'LIVE · IDLE' : 'HISTORY'
+  const status = liveActivity ? 'LIVE' : liveCapture ? 'IDLE' : 'HISTORY'
   const replayChapter = story ? Math.min(story.chapters.length - 1, Math.floor(replay * Math.max(1, story.chapters.length - 1) + .001)) : 0
+  const currentReplayChapter = story?.chapters[replayChapter]
   const frozen = mode === 'follow' && observing && !playing
 
   const showEvidencePanel = chapter && (mode !== 'follow' || interaction)
+  const changeMode = (nextMode) => {
+    if (nextMode === mode) {
+      if (nextMode !== 'follow') setFitSignal((value) => value + 1)
+      return
+    }
+    freezeAtProgress(replay)
+    setSelected(null)
+    setMode(nextMode)
+    if (nextMode !== 'follow') setFitSignal((value) => value + 1)
+  }
 
   return <main className={`dark mode-${mode}${frozen ? ' is-frozen' : ''}`}>
     <section className="atlas-stage">
       {story && scene && interactions
         ? mode === 'follow'
-          ? <JourneyWorld story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} selected={selected} onSelect={selectVantage} />
-          : <Cartography story={story} scene={scene} interactions={interactions} replay={replay} playing={playing} audit={mode === 'audit'} selected={selected} onSelect={setSelected} fitSignal={fitSignal} />
+          ? <JourneyWorld key={`follow:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} selected={selected} onSelect={selectVantage} />
+          : <Cartography key={`${mode}:${story.journey_key}`} story={story} scene={scene} interactions={interactions} replay={replay} playing={playing} audit={mode === 'audit'} selected={selected} onSelect={setSelected} fitSignal={fitSignal} />
         : loadError
           ? <div className="loading failed"><strong>JOURNEY CONNECTION LOST</strong><span>{loadError}</span><code>./scripts/bin/play-journey view --active</code></div>
           : <div className="loading"><i />CONSTRUCTING JOURNEY ATLAS</div>}
     </section>
     <header>
       <button className="brand" onClick={() => setJourneysOpen((value) => !value)}><strong>PLAY CARTOGRAPHY</strong><small>{mode === 'follow' ? 'JOURNEY FOLLOW' : mode === 'audit' ? 'EVIDENCE AUDIT' : 'JOURNEY ATLAS'}</small></button>
-      <div className={`header-title${liveActivity ? ' live' : ''}`}><i />{status}{liveCapture && <b>NEXT SNAPSHOT {String(snapshotCountdown).padStart(2, '0')}s</b>}<span>{story?.outcome || 'Captured exploration'}</span></div>
+      <div className={`header-title${liveActivity ? ' live' : ''}`}>
+        <i />
+        <div className="header-state"><b>{status}</b>{liveActivity && <small>NEXT SNAPSHOT {String(snapshotCountdown).padStart(2, '0')}s</small>}</div>
+        <div className="header-identity" title={`${selectedWorkspace?.intent || story?.outcome || 'Captured exploration'}\n${selectedWorkspace?.workspace || workspace || ''}`}>
+          <span>{selectedWorkspace?.intent || story?.outcome || 'Captured exploration'}</span>
+          <code>{selectedWorkspace?.workspace || workspace || 'Workspace loading'}</code>
+        </div>
+      </div>
       <div className="header-actions">
-        <button className={mode === 'follow' ? 'active' : ''} onClick={() => { setMode('follow'); setSelected(null) }}>FOLLOW</button>
-        <button className={mode === 'atlas' ? 'active' : ''} onClick={() => { setMode('atlas'); setSelected(null); setFitSignal((value) => value + 1) }}>ATLAS</button>
-        <button className={mode === 'audit' ? 'active' : ''} onClick={() => { setMode('audit'); setSelected(null); setFitSignal((value) => value + 1) }}>AUDIT</button>
+        <button className={mode === 'follow' ? 'active' : ''} onClick={() => changeMode('follow')}>FOLLOW</button>
+        <button className={mode === 'atlas' ? 'active' : ''} onClick={() => changeMode('atlas')}>ATLAS</button>
+        <button className={mode === 'audit' ? 'active' : ''} onClick={() => changeMode('audit')}>AUDIT</button>
         {mode !== 'follow' && <button onClick={() => setFitSignal((value) => value + 1)}>FIT</button>}
       </div>
     </header>
@@ -78,9 +96,21 @@ export default function App() {
         {interaction ? <>
           <dl>
             <dt>OPERATION</dt><dd>{interaction.operation}</dd><dt>STATE</dt><dd>{interaction.status}</dd>
+            <dt>ACCESS</dt><dd>{(interaction.effect_profile?.posture || interaction.effect || 'unknown').toUpperCase()}</dd>
+            <dt>SCOPE</dt><dd>{interaction.effect_profile?.scopes?.join(' · ') || 'not declared'}</dd>
+            <dt>BASIS</dt><dd>{interaction.effect_profile?.source?.replaceAll('_', ' ') || 'legacy projection'}</dd>
             <dt>LATENCY</dt><dd>{formatNumber(interaction.duration_ms)} ms</dd><dt>TOKENS</dt><dd>{formatNumber(interaction.tokens)}</dd>
             <dt>AVOIDED</dt><dd>{formatNumber(interaction.tokens_saved)}</dd>
             {interaction.provider && <><dt>PROVIDER</dt><dd>{interaction.provider}</dd></>}
+            {interaction.capability && <>
+              <dt>CAPABILITY</dt><dd>{interaction.capability.family} · {interaction.capability.interface}</dd>
+              <dt>SYSTEM</dt><dd>{interaction.capability.label}</dd>
+              {interaction.capability.mode && <><dt>MODE</dt><dd>{interaction.capability.mode}</dd></>}
+              {interaction.capability.primitive && <><dt>PRIMITIVE</dt><dd>{interaction.capability.primitive}</dd></>}
+              {interaction.capability.transport && <><dt>TRANSPORT</dt><dd>{interaction.capability.transport}</dd></>}
+              {interaction.capability.manifest?.spec_type && <><dt>MANIFEST</dt><dd>{interaction.capability.manifest.spec_type} · schema {interaction.capability.manifest.schema}</dd></>}
+              {interaction.capability.manifest?.operation_scope && <><dt>ACCESS</dt><dd>{interaction.capability.manifest.operation_scope}</dd></>}
+            </>}
           </dl>
           <section className="exchange">
             {exchange?.loading && <p>LOADING OWNER-PRIVATE EVIDENCE…</p>}
@@ -103,14 +133,38 @@ export default function App() {
       </>}
     </aside>
     {mode === 'follow' && story && interactions && <JourneyGuide story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} onOpen={selectVantage} onNavigate={jumpToChapter} />}
-    {mode === 'follow' && story && interactions && <CapabilityRail story={story} interactions={interactions} replay={replay} onJump={jumpToChapter} />}
+    {mode === 'follow' && story && interactions && !showEvidencePanel && <CapabilityRail story={story} interactions={interactions} replay={replay} onJump={jumpToChapter} />}
     <WorldModel open={worldModelOpen} onToggle={() => setWorldModelOpen((value) => !value)} />
     <Telemetry story={story} open={telemetryOpen} onToggle={() => setTelemetryOpen((value) => !value)} />
     <footer>
       <button onClick={() => setJourneysOpen((value) => !value)}>☷ JOURNEYS</button>
       <span>{story ? `${story.audit.canonical_nodes} STAGES · ${interactions?.total || 0} INTERACTIONS · GEN ${story.graph_generation}` : 'WAITING FOR GRAPH'}</span>
-      <div className="replay"><button className={playing ? 'playing' : frozen ? 'frozen' : ''} onClick={togglePlayback}>{playing ? 'Ⅱ FREEZE' : frozen ? '▶ RESUME' : '▶ PLAY'}</button><div className="replay-track"><input aria-label="Journey replay" type="range" min="0" max="1" step="0.002" value={replay} onChange={(event) => { freezeAtProgress(Number(event.target.value)) }} /><div className="chapter-markers">{story?.chapters.map((item, itemIndex) => <button key={item.id} className={itemIndex === replayChapter ? 'current' : itemIndex < replayChapter ? 'reached' : ''} style={{left: `${itemIndex / Math.max(1, story.chapters.length - 1) * 100}%`}} onClick={() => jumpToChapter(itemIndex)} aria-label={`Freeze at stage ${itemIndex + 1}: ${item.title}`} />)}</div></div><em>{story ? `${replayChapter + 1}/${story.chapters.length}` : '0/0'}</em></div>
-      <span className="footer-message">{frozen ? `FROZEN VANTAGE · ${message}` : lastSnapshotAt && liveCapture ? `SNAPSHOT ${new Date(lastSnapshotAt).toLocaleTimeString()} · ${message}` : message}</span>
+      <div className="replay">
+        <button className={playing ? 'playing' : frozen ? 'frozen' : ''} onClick={togglePlayback}>{playing ? 'Ⅱ FREEZE' : frozen ? '▶ RESUME' : '▶ PLAY'}</button>
+        <div className="replay-track" style={{'--progress': `${replay * 100}%`}}>
+          <input aria-label="Journey replay" type="range" min="0" max="1" step="0.002" value={replay} onChange={(event) => { freezeAtProgress(Number(event.target.value)) }} />
+          <div className="chapter-markers">
+            {story?.chapters.map((item, itemIndex) => {
+              const number = String(itemIndex + 1).padStart(2, '0')
+              const kind = (KIND_LABEL[item.kind] || item.kind || 'stage').toUpperCase()
+              return <button
+                key={item.id}
+                className={itemIndex === replayChapter ? 'current' : itemIndex < replayChapter ? 'reached' : ''}
+                style={{left: `${itemIndex / Math.max(1, story.chapters.length - 1) * 100}%`}}
+                onClick={() => jumpToChapter(itemIndex)}
+                aria-label={`Freeze at stage ${number}: ${kind}, ${item.title}`}
+                data-tooltip={`${number} · ${kind} · ${item.title}`}
+              />
+            })}
+          </div>
+        </div>
+        <em className="replay-position">
+          {story
+            ? <><b>{String(replayChapter + 1).padStart(2, '0')}</b><span>/ {String(story.chapters.length).padStart(2, '0')} · {(KIND_LABEL[currentReplayChapter?.kind] || currentReplayChapter?.kind || 'stage').toUpperCase()}</span></>
+            : '00 / 00'}
+        </em>
+      </div>
+      <span className="footer-message">{playing ? `PLAYING · ${message}` : frozen ? `FROZEN VANTAGE · ${message}` : lastSnapshotAt && liveCapture ? `READY TO PLAY · SNAPSHOT ${new Date(lastSnapshotAt).toLocaleTimeString()} · ${message}` : `READY TO PLAY · ${message}`}</span>
     </footer>
   </main>
 }

@@ -413,36 +413,81 @@ Rules classify structural facts conservatively:
 |---|---|
 | Catalog search, probe, tool listing, adapter inspection | `capability` |
 | `adapter.auth.ensure`, token-health check, browser auth | `authority` |
-| Declared external read | `effect` with `read` attribute |
-| Declared external write | `effect` with `write` attribute |
-| Process-policy mutation or privileged operation | `effect` with bounded policy attributes |
+| Adapter tool `readOnlyHint: true`, or HTTP `GET`/`HEAD`/`OPTIONS` | `effect` with `read` posture |
+| Adapter tool `readOnlyHint: false`, or HTTP `POST`/`PUT`/`PATCH`/`DELETE` | `effect` with `write` posture |
+| Process policy `risk_tags` containing both read and write scopes | `effect` with `mixed` posture |
+| Process policy `risk_tags` containing a write or privileged scope | `effect` with `write` posture and bounded policy attributes |
+| Browser ledger read primitive (`lease`, `ledger`, `slice`, `lens`, `wait`, `navigate`) | read posture; navigation also declares external-service scope |
+| Browser action without a typed effect receipt | unknown external effect |
 | Query/extraction/transformation | supporting `evidence` or phase work |
 | Assertion, comparison, smoke test | `evidence` with verification candidate |
 | Produced content-addressed file or canonical URI | `artifact` |
 | Failed operation | `blocker` |
 | Equivalent successful operation after failure | `recovery` |
 
-Unknown operations remain `unclassified`. The classifier may not infer read-only safety from a
-program name such as `curl`, `gh`, or `deno`.
+Every normalized activity carries a `play.journey-effect/v1` record with `posture`, `scopes`,
+`source`, `confidence`, and `destructive`; typed sources may also retain bounded `risk_tags` and HTTP
+`methods`. Unknown operations remain explicitly `unknown`. The classifier may not infer read-only
+safety from a program or operation name such as `curl`, `gh`, `get_user`, or `delete_cache`.
 
-The rules operate only on structural metadata: command family, adapter/provider identifier,
-declared operation or nested tool name, executable, and bounded subcommand. Free-text arguments,
-inline source, shell bodies, search needles, request payloads, and response content never influence
-the semantic kind. A command that searches documentation for words such as `sign-in`, `token`,
-`schema`, or `publish` therefore remains an inspection/local phase rather than becoming authority,
-capability, or effect.
+The effect posture has a closed source precedence. Adapter calls use the exact nested operation to
+look up Rote's installed `tools.json` contract, preferring MCP tool hints and falling back only to
+the declared HTTP method. Process activity uses Rote's persisted process-policy `risk_tags`.
+Browser activity uses the typed ledger primitive. Workspace query/display records use their Rote
+command type. Missing or contradictory evidence fails closed to `unknown`; network-bearing process
+records remain unknown unless Rote supplies a stronger typed contract.
 
-Operation names use boundary-aware action tokens. The leading action wins when present
-(`list_send_failures` is a read); otherwise the terminal action is used (`pulls/update` is a write).
-Generic adapter wrappers such as `github_call` are classified from their declared nested
-`tool_name`, not the wrapper name or its arguments. Browser initialization is capability discovery;
-tabs and snapshots are reads; unsafe or opaque browser code remains an unknown external effect.
+Free-text arguments, inline source, shell bodies, search needles, operation verbs, request payloads,
+and response content never influence read/write posture. A command or adapter operation containing
+words such as `get`, `list`, `delete`, `publish`, or `approve` therefore cannot manufacture safety or
+authority. Browser initialization is capability discovery; ledger/slice/lens records are reads;
+unsafe or opaque browser actions remain unknown until a typed effect receipt exists.
 
 Supporting `QueryRead`/`QueryExtract` activity attaches to the semantic node that owns its declared
 `source_response`. It never attaches merely to the most recently projected node. This preserves the
 causal evidence relationship when an agent reads an older response after newer work has occurred.
 Classifier revisions increment `projection_version`; the background projector then rebuilds even
 when the underlying Rote workspace fingerprint has not changed.
+
+### Capability substrate is orthogonal to semantic kind
+
+Every normalized activity also carries a `play.journey-capability/v1` descriptor. Semantic kind
+answers **why the interaction exists** (`effect`, `evidence`, `authority`, and so on); the
+capability descriptor answers **what execution system performed it**. Conflating these planes made
+the viewer label cached queries as tools and shell wrappers as services.
+
+| Rote substrate | Journey family | Persisted safe vocabulary | Viewer model |
+|---|---|---|---|
+| canonical `adapter/<id>` MCP `tools/call` and `DataQuery` | `adapter` / `api` | adapter ID and name, `probe`/`call` phase, wrapper mode, concrete operation names, manifest schema, spec type/version, transport, auth type, operation scope, fingerprint, status | API station with its typed service contract |
+| `ProcessExec`, PTY, background and stream records | `proc` / `shell` | actual CLI/program and mode (`argv`, `pty`, `background`, lease lifecycle, stream) | local tool loadout |
+| Playwright/browser stdio plus the browser ledger | `browser` / `browse` | page lease, ledger/snapshot, slice, evidence lens, action, wait and rebase primitives | navigation system rather than a generic adapter |
+| cached query/display and workspace bookkeeping | `rote` / `workspace` | query, extract, display or workspace primitive | supporting memory, visually subordinate to capabilities |
+
+The Rote browser repository calls the compact snapshot view a **slice**. “Lens” is Play's
+user-facing name for a query/extraction focused through a browser response; it is assigned only by
+the declared `source_response` edge. Adapter manifests are read once by the detached projector and
+reduced to the allowlisted fields above. The viewer never reads Rote manifests, browser ledgers, or
+command payloads while rendering.
+
+Adapter ownership is parsed from Rote's wire contract, not guessed from UI text. The endpoint must
+be canonical `adapter/<id>` (with the accepted optional leading slash), the request must carry the
+MCP method `tools/call`, and generated envelopes are matched against the adapter-normalized
+`<id>_probe`, `<id>_call`, `<id>_batch_call`, or `<id>_probe_call` grammar. Single-call operations
+come from `params.arguments.tool_name`; batch operations come from every
+`params.arguments.calls[].tool_name`. A generic HTTP request, a provider display label, and a
+cached `QueryRead` cannot equip an adapter. Legacy projections that no longer retain this typed
+wire evidence remain explicitly unclassified instead of receiving a guessed capability.
+
+The capability rail consumes the same typed record rather than deriving access from its label. It
+groups execution systems as adapter/API, process/shell, and browser/browse, then displays each
+system's aggregate `READ`, `WRITE`, `READ + WRITE`, or `UNKNOWN EFFECT` posture and scopes. The
+vantage frontage preserves every chronological interaction index and binds it to the corresponding
+tower and evidence reference. The timeline is explanatory display geometry; canonical activity and
+evidence remain in the full graph.
+
+This enrichment occurs only in the detached projector. Adapter tool indexes are loaded at most once
+per adapter per worker and are never read by the prompt hook or browser viewer, preserving the zero
+foreground-work constraint.
 
 ### 3. Segment with DAG motifs
 
@@ -757,6 +802,30 @@ The detailed conversational inspection commands are not part of the first implem
 - Retained: `play.journey-scene/v1` as a deterministic diagnostic contract; it is no longer the
   primary presentation surface.
 - Keep renderer and any later enrichment failures isolated from the capture worker and Play machine.
+
+#### Reusable spatial grammar inside a vantage
+
+The world model and the activity record use two nested scales. Semantic stages remain the macro
+journey. Recorded interactions inside one stage use the renderer-independent
+`play.temporal-corridor/v1` grammar:
+
+- earlier work is left and later work is right on a compact frontage timeline;
+- canonical command sequence is authoritative ordering;
+- every `@N` index remains visible on the timeline, with its tower clustered immediately behind it
+  and in front of the semantic landmark;
+- horizontal distance is elapsed time on a bounded logarithmic scale, so a long wait is visible
+  without pushing the rest of the journey off-screen;
+- depth lanes are allocated only when typed timestamps and durations prove that intervals overlap;
+  sequential work remains in one compact row;
+- a temporal spine, explicit index ticks, and concurrency connectors explain the cluster;
+- tower height remains latency/payload telemetry and never encodes time, importance, or quality;
+- every projected point retains sequence, timestamp interval, delta, lane, and the original
+  interaction reference.
+
+The grammar returns plain geometry and contains no Three.js, Deck.gl, DOM, or terminal dependency.
+The 3D world, atlas, static captures, and later terminal projections can therefore render the same
+placement contract without recreating chronology heuristics. Missing timestamps degrade to stable
+sequence spacing; they never manufacture parallelism.
 
 ## Test and benchmark plan
 

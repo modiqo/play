@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useRef, useState} from 'react'
-import {api} from './api.js'
+import {api, trackWorkspaceLocation, workspaceFromLocation} from './api.js'
 
 export function useJourneyRuntime() {
   const [index, setIndex] = useState(null)
@@ -11,7 +11,7 @@ export function useJourneyRuntime() {
   const [exchange, setExchange] = useState(null)
   const [replay, setReplay] = useState(1)
   const [playing, setPlaying] = useState(false)
-  const [observing, setObserving] = useState(true)
+  const [observing, setObserving] = useState(false)
   const [snapshotCountdown, setSnapshotCountdown] = useState(10)
   const [lastSnapshotAt, setLastSnapshotAt] = useState(null)
   const [fitSignal, setFitSignal] = useState(0)
@@ -22,6 +22,7 @@ export function useJourneyRuntime() {
   const [telemetryOpen, setTelemetryOpen] = useState(false)
   const [worldModelOpen, setWorldModelOpen] = useState(false)
   const playback = useRef(null)
+  const materialGeneration = useRef(null)
 
   const loadIndex = useCallback(async () => {
     const response = await fetch(api('/api/workspaces'), {cache: 'no-store'})
@@ -29,7 +30,14 @@ export function useJourneyRuntime() {
     const value = await response.json()
     setLoadError('')
     setIndex(value)
-    setWorkspace((current) => current || value.selected_id || value.workspaces[0]?.id || '')
+    setWorkspace((current) => {
+      if (current) return current
+      const requested = value.workspaces.find((item) => item.id === workspaceFromLocation || item.workspace === workspaceFromLocation)
+      const selectedId = requested?.id || value.selected_id || value.workspaces[0]?.id || ''
+      const selected = value.workspaces.find((item) => item.id === selectedId)
+      if (selectedId) trackWorkspaceLocation(selected?.workspace || selectedId)
+      return selectedId
+    })
     return value
   }, [])
 
@@ -47,7 +55,7 @@ export function useJourneyRuntime() {
     setInteractions(nextInteractions)
     setSelected((current) => nextStory.chapters.some((chapter) => chapter.id === current?.siteId) ? current : null)
     if (!quiet) setReplay(nextStory.state === 'active' ? 1 : 0)
-    if (!quiet) setObserving(true)
+    if (!quiet) setObserving(false)
     if (!quiet) setMessage(nextStory.state === 'active' ? 'Live journey connected' : 'Recorded journey loaded')
     setLastSnapshotAt(Date.now())
   }, [])
@@ -79,6 +87,7 @@ export function useJourneyRuntime() {
       }
       await loadJourney(item.id)
       setWorkspace(item.id)
+      trackWorkspaceLocation(item.workspace || item.id)
       setJourneysOpen(false)
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)) }
   }
@@ -93,7 +102,14 @@ export function useJourneyRuntime() {
     if (!workspace) return undefined
     loadJourney(workspace).catch((error) => setMessage(error.message))
     const events = new EventSource(api('/api/events', {workspace}))
-    events.addEventListener('journey', () => {
+    events.addEventListener('journey', (event) => {
+      let generation = null
+      try { generation = JSON.parse(event.data)?.material_generation ?? null } catch {}
+      if (generation !== null && generation === materialGeneration.current) {
+        setSnapshotCountdown(10)
+        return
+      }
+      materialGeneration.current = generation
       loadJourney(workspace, true).catch(() => {})
       loadIndex().catch(() => {})
       setSnapshotCountdown(10)
@@ -113,7 +129,7 @@ export function useJourneyRuntime() {
         loadIndex()
           .then((nextIndex) => {
             const currentWorkspace = nextIndex.workspaces.find((item) => item.id === workspace)
-            if (currentWorkspace?.capture_state === 'active') {
+            if (currentWorkspace?.active_recently) {
               return loadJourney(workspace, true)
             }
             return undefined
@@ -242,4 +258,3 @@ export function useJourneyRuntime() {
     choose, togglePlayback, jumpToChapter, selectVantage, freezeAtProgress,
   }
 }
-
