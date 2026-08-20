@@ -8,6 +8,7 @@ export function useJourneyRuntime() {
   const [story, setStory] = useState(null)
   const [scene, setScene] = useState(null)
   const [interactions, setInteractions] = useState(null)
+  const [tutorial, setTutorial] = useState(null)
   const [selected, setSelected] = useState(null)
   const [exchange, setExchange] = useState(null)
   const [replay, setReplay] = useState(1)
@@ -58,9 +59,13 @@ export function useJourneyRuntime() {
     ])
     if (!storyResponse.ok || !sceneResponse.ok || !interactionResponse.ok) throw new Error('Journey map is unavailable')
     const [nextStory, nextScene, nextInteractions] = await Promise.all([storyResponse.json(), sceneResponse.json(), interactionResponse.json()])
+    const nextTutorial = nextStory.origin?.kind === 'tutorial'
+      ? await fetch(api('/api/tutorial', {workspace: id}), {cache: 'no-store'}).then((response) => response.ok ? response.json() : null)
+      : null
     setStory(nextStory)
     setScene(nextScene)
     setInteractions(nextInteractions)
+    setTutorial(nextTutorial)
     setSelected((current) => nextStory.chapters.some((chapter) => chapter.id === current?.siteId) ? current : null)
     if (!quiet) setReplay(nextStory.state === 'active' ? 1 : 0)
     if (!quiet) setObserving(false)
@@ -130,6 +135,7 @@ export function useJourneyRuntime() {
         setStory(null)
         setScene(null)
         setInteractions(null)
+        setTutorial(null)
         setSelected(null)
         setExchange(null)
         setPlaying(false)
@@ -145,6 +151,7 @@ export function useJourneyRuntime() {
         setStory(null)
         setScene(null)
         setInteractions(null)
+        setTutorial(null)
         setExchange(null)
         await choose(target)
       }
@@ -231,7 +238,7 @@ export function useJourneyRuntime() {
 
 
   return {
-    index, workspace, story, scene, interactions, selected, setSelected, exchange,
+    index, workspace, story, scene, interactions, tutorial, selected, setSelected, exchange,
     replay, playing, observing, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
     mode, setMode, message, loadError, journeysOpen, setJourneysOpen,
     telemetryOpen, setTelemetryOpen, worldModelOpen, setWorldModelOpen, refreshing,

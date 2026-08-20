@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import {CSS2DObject} from 'three/addons/renderers/CSS2DRenderer.js'
 import {formatNumber} from './format.js'
-import {KIND_LABEL, MAP_MEANING, WORLD_ROLE, WORLD_STORY} from './semantics.js'
+import {KIND_LABEL, MAP_MEANING, WORLD_ROLE, WORLD_STORY, worldSpec} from './semantics.js'
 
 const INK_SOFT = 0x565c5f
 const INK_DARK = 0x24282b
@@ -142,50 +142,78 @@ export function landmarkFor(chapter) {
   const pale = 0x767c7e
   const gray = INK_SOFT
   const dark = INK_DARK
+  const landmark = worldSpec(chapter.kind).landmark
+  const modality = chapter.modalities?.[0]
 
-  if (chapter.kind === 'intent') {
+  if (landmark === 'gate') {
     box(group, [.7, 5.4, .7], [-3.8, 2.7, 0], pale)
     box(group, [.7, 5.4, .7], [3.8, 2.7, 0], pale)
     box(group, [8.3, .7, .7], [0, 5.1, 0], pale)
-  } else if (chapter.kind === 'decision') {
+  } else if (landmark === 'fork') {
     beamBetween(group, new THREE.Vector3(0, .18, 3), new THREE.Vector3(-4.8, .18, -3.8), .32, pale)
     beamBetween(group, new THREE.Vector3(0, .18, 3), new THREE.Vector3(4.8, .18, -3.8), .32, pale)
     box(group, [.8, 3.8, .8], [0, 1.9, 1], gray)
-  } else if (chapter.kind === 'capability') {
+  } else if (landmark === 'station') {
     box(group, [2.5, 5.8, 2.5], [-3.8, 2.9, 0], pale)
     box(group, [2.5, 5.8, 2.5], [3.8, 2.9, 0], pale)
     box(group, [4.6, .35, .9], [0, 1.15, -1.8], gray)
-  } else if (chapter.kind === 'authority') {
+    if (modality === 'call') {
+      for (const x of [-1.4, 0, 1.4]) box(group, [.55, .55, .55], [x, 2.15, -2.05], AMBER)
+    } else if (modality === 'shell') {
+      box(group, [4.4, 2.7, .28], [0, 3.1, -2.05], dark)
+      box(group, [3.4, .18, .2], [0, 2.65, -2.23], AMBER)
+    } else if (modality === 'drive') {
+      const lens = new THREE.Mesh(new THREE.TorusGeometry(1.35, .18, 10, 36), material(AMBER))
+      lens.position.set(0, 3.2, -2.15)
+      group.add(lens)
+    }
+  } else if (landmark === 'checkpoint') {
     box(group, [.55, 6.2, .55], [-4.2, 3.1, 0], pale)
     box(group, [.55, 6.2, .55], [4.2, 3.1, 0], pale)
     box(group, [9, .55, .55], [0, 5.9, 0], pale)
     for (let x = -3; x <= 3; x += 1.5) box(group, [.18, 4.5, .18], [x, 2.25, 0], gray)
-  } else if (chapter.kind === 'effect') {
+  } else if (landmark === 'crater') {
     effectCrater(group)
-  } else if (chapter.kind === 'evidence') {
+  } else if (landmark === 'observatory') {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(3.5, .22, 12, 64), material(pale))
     ring.rotation.x = Math.PI / 2
     ring.position.y = 3.6
     ring.castShadow = true
     group.add(ring)
     box(group, [.35, 4.8, .35], [0, 2.4, 0], gray)
-  } else if (chapter.kind === 'blocker') {
+  } else if (landmark === 'barricade') {
     beamBetween(group, new THREE.Vector3(-4.6, .4, 0), new THREE.Vector3(4.6, 5.5, 0), .72, pale)
     beamBetween(group, new THREE.Vector3(4.6, .4, 0), new THREE.Vector3(-4.6, 5.5, 0), .72, pale)
-  } else if (chapter.kind === 'recovery') {
+  } else if (landmark === 'bridge') {
     box(group, [.7, 4.5, .7], [-4.2, 2.25, 0], pale)
     box(group, [.7, 4.5, .7], [4.2, 2.25, 0], pale)
     const arch = new THREE.Mesh(new THREE.TorusGeometry(4.2, .36, 12, 48, Math.PI), material(pale))
     arch.position.y = 4.4
     arch.rotation.z = Math.PI
     group.add(arch)
-  } else if (chapter.kind === 'milestone') {
+  } else if (landmark === 'monument') {
     const obelisk = new THREE.Mesh(new THREE.CylinderGeometry(.45, 1.5, 8.2, 4), material(pale))
     obelisk.position.y = 4.1
     obelisk.rotation.y = Math.PI / 4
     obelisk.castShadow = true
     group.add(obelisk)
-  } else if (chapter.kind === 'artifact' || chapter.kind === 'play_candidate' || chapter.kind === 'play') {
+  } else if (landmark === 'archive') {
+    box(group, [6.4, 5.2, 1.2], [0, 2.6, 0], dark)
+    for (const y of [1.1, 2.6, 4.1]) box(group, [5.7, .2, 1.45], [0, y, 0], pale)
+    for (const x of [-2.1, -.7, .7, 2.1]) box(group, [.16, 4.4, 1.4], [x, 2.6, 0], gray)
+  } else if (landmark === 'blueprint') {
+    box(group, [7.2, .22, 5.2], [0, .18, 0], dark)
+    beamBetween(group, new THREE.Vector3(-3.1, .42, -2), new THREE.Vector3(3.1, .42, 2), .16, pale)
+    beamBetween(group, new THREE.Vector3(3.1, .42, -2), new THREE.Vector3(-3.1, .42, 2), .16, pale)
+    for (const x of [-3.1, 3.1]) for (const z of [-2, 2]) box(group, [.24, 2.8, .24], [x, 1.4, z], AMBER)
+  } else if (landmark === 'gateway') {
+    box(group, [.7, 5.4, .7], [-3.8, 2.7, 0], pale)
+    box(group, [.7, 5.4, .7], [3.8, 2.7, 0], pale)
+    const gateway = new THREE.Mesh(new THREE.TorusGeometry(3.8, .42, 12, 48, Math.PI), material(AMBER))
+    gateway.position.y = 5.2
+    gateway.rotation.z = Math.PI
+    group.add(gateway)
+  } else if (landmark === 'destination') {
     box(group, [6.5, 4.5, 5], [0, 2.25, 0], pale)
     box(group, [3.4, 3.2, .32], [0, 1.6, 2.64], dark)
     box(group, [.35, 1.3, .35], [0, 1.6, 2.86], gray)
@@ -263,7 +291,7 @@ export function makeInteractionPlaque(group, chapter, index, onActivate) {
   trigger.innerHTML = `
     <span>${escapeHtml(group.label)}</span>
     <strong>${escapeHtml(group.system)}${group.count > 1 ? ` · ${group.count}` : ''}</strong>
-    <i>${escapeHtml(group.posture.toUpperCase())} · ${group.count > 1 ? 'OPEN GROUP' : 'OPEN EVIDENCE'}</i>`
+    <i>${escapeHtml(group.deltaLabel)} · ${escapeHtml(group.posture.toUpperCase())} · ${group.count > 1 ? 'OPEN GROUP' : 'OPEN EVIDENCE'}</i>`
 
   const tray = document.createElement('div')
   tray.className = 'plaque-tray'
@@ -295,6 +323,34 @@ export function makeInteractionPlaque(group, chapter, index, onActivate) {
   const label = new CSS2DObject(anchor)
   label.center.set(.5, 0)
   return {label, root, trigger, sequences: group.sequences, records: group.records}
+}
+
+export function makeTemporalCorridor(site, corridor) {
+  const group = new THREE.Group()
+  const [start, end] = corridor.spine
+  beamBetween(
+    group,
+    new THREE.Vector3(start.x, .13, start.z),
+    new THREE.Vector3(end.x, .13, end.z),
+    .055,
+    AMBER,
+  )
+  corridor.points.forEach((point) => {
+    box(group, [.035, .12, .42], [point.baseX, .13, point.baseZ], point.order === corridor.points.length - 1 ? AMBER : INK_SOFT)
+  })
+  for (const [position, copy, side] of [
+    [corridor.entrance, corridor.labels?.entrance || 'PAST', 'past'],
+    [corridor.exit, corridor.labels?.exit || 'PRESENT', 'present'],
+  ]) {
+    const root = document.createElement('span')
+    root.className = `world-time-label ${side}`
+    root.textContent = copy
+    const label = new CSS2DObject(root)
+    label.position.set(position.x, .08, position.z + .34)
+    group.add(label)
+  }
+  group.userData = {siteId: site.id, temporalCorridor: true}
+  return group
 }
 
 export function clampVisibleCallouts(labelLayer, viewport) {

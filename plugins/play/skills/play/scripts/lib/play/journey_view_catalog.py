@@ -24,6 +24,7 @@ from .journey import (
     schedule_worker,
 )
 from .private_store import load_json
+from .journey_tutorial import TUTORIAL_REFERENCE, TUTORIAL_WORKSPACE_ID, ensure_tutorial
 
 
 LIVE_ACTIVITY_WINDOW_SECONDS = 30.0
@@ -243,8 +244,30 @@ def _workspace_catalog(
         ):
             captures_by_workspace[_canonical_path(Path(workspace_value))] = value
 
-    summaries: list[dict[str, Any]] = []
-    lookup: dict[str, str] = {}
+    tutorial = ensure_tutorial(root=root)
+    summaries: list[dict[str, Any]] = [
+        {
+            "id": TUTORIAL_WORKSPACE_ID,
+            "intent": "Start Here · learn the Journey world",
+            "workspace": "start-here",
+            "workspace_path": None,
+            "created_at": "2026-08-20T16:00:00Z",
+            "capture_state": "tutorial",
+            "live": False,
+            "activity_epoch": None,
+            "active_recently": False,
+            "selected": selected_ref == TUTORIAL_REFERENCE,
+            "workspace_available": True,
+            "evidence_available": True,
+            "graph_ready": True,
+            "projectable": False,
+            "tutorial": True,
+            "nodes": len(tutorial.get("nodes", [])),
+            "edges": len(tutorial.get("edges", [])),
+            "commands": int(tutorial.get("telemetry", {}).get("commands") or 0),
+        }
+    ]
+    lookup: dict[str, str] = {TUTORIAL_WORKSPACE_ID: TUTORIAL_REFERENCE}
     for workspace_path in _rote_workspaces():
         capture = captures_by_workspace.get(_canonical_path(workspace_path))
         evidence_available = (workspace_path / ".rote" / "workspace.db").is_file()
@@ -360,9 +383,17 @@ def _selected_workspace_id(workspaces: list[dict[str, Any]]) -> str:
     selected = next((item for item in workspaces if item.get("selected")), None)
     if selected is not None:
         return str(selected["id"])
-    usable = next((item for item in workspaces if item.get("graph_ready")), None)
+    usable = next(
+        (item for item in workspaces if item.get("graph_ready") and not item.get("tutorial")),
+        None,
+    )
     if usable is None:
-        usable = next((item for item in workspaces if item.get("projectable")), None)
+        usable = next(
+            (item for item in workspaces if item.get("projectable") and not item.get("tutorial")),
+            None,
+        )
+    if usable is None:
+        usable = next((item for item in workspaces if item.get("graph_ready")), None)
     return str(usable["id"]) if usable is not None else ""
 
 
@@ -437,11 +468,12 @@ def _refresh_workspace_catalog(
         "workspace_root": str(_rote_workspace_root()),
         "workspaces": refreshed,
         "reconciliation": {
-            "current_workspaces": len(refreshed),
+            "current_workspaces": sum(1 for item in refreshed if not item.get("tutorial")),
             "mapped_captures": sum(
                 1
                 for item in refreshed
                 if item.get("workspace_available")
+                and not item.get("tutorial")
                 and item.get("capture_state") != "workspace"
             ),
             "stale_captures_hidden": stale,

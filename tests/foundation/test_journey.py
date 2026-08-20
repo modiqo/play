@@ -256,6 +256,123 @@ class JourneyProjectionTest(unittest.TestCase):
         )
         self.assertEqual("process_policy", activities[0]["effect_profile"]["source"])
 
+    def test_world_model_classifies_modalities_lifecycle_and_primitive_gaps(self) -> None:
+        rows = [
+            raw_command(
+                1,
+                command_type="InitSession",
+                response_id=1,
+                params={"endpoint": "adapter/notion"},
+            ),
+            raw_command(
+                2,
+                command_type="HttpRequest",
+                response_id=2,
+                params={
+                    "endpoint": "adapter/notion",
+                    "body": {
+                        "method": "tools/call",
+                        "params": {
+                            "name": "notion_call",
+                            "arguments": {
+                                "tool_name": "adapter.auth.ensure",
+                                "arguments": {},
+                            },
+                        },
+                    },
+                },
+            ),
+            raw_command(
+                3,
+                command_type="For",
+                response_id=3,
+                params={
+                    "source_response": 2,
+                    "source_query": ".items[]",
+                    "parallel": False,
+                    "endpoint": "adapter/notion",
+                    "method": "POST",
+                    "body_template": "{}",
+                    "use_session": True,
+                },
+            ),
+            raw_command(
+                4,
+                command_type="Inject",
+                response_id=4,
+                params={"file_path": "fixture.json", "as_response_id": None},
+            ),
+            raw_command(
+                5,
+                command_type="ProcessBackgroundStart",
+                response_id=5,
+                params={
+                    "invocation": {"program": "vite", "args": []},
+                    "lease_id": "lease-demo",
+                },
+            ),
+            raw_command(
+                6,
+                command_type="ProcessBackgroundWait",
+                response_id=6,
+                params={"lease_id": "lease-demo"},
+            ),
+            raw_command(
+                7,
+                command_type="ProcessBackgroundStop",
+                response_id=7,
+                params={"lease_id": "lease-demo"},
+            ),
+        ]
+        activities = normalize_entries(
+            rows,
+            response_metadata={index: self.metadata() for index in range(1, 8)},
+        )
+
+        self.assertEqual(
+            [
+                ("call", "initialize", "capability"),
+                ("call", "authorize", "authority"),
+                ("call", "use", "effect"),
+                (None, "initialize", "evidence"),
+                ("shell", "use", "phase"),
+                ("shell", "observe", "phase"),
+                ("shell", "close", "effect"),
+            ],
+            [
+                (item["modality"], item["lifecycle_phase"], item["kind"])
+                for item in activities
+            ],
+        )
+        self.assertEqual(
+            activities[4]["capability_ref"],
+            activities[5]["capability_ref"],
+        )
+        self.assertEqual(
+            activities[5]["capability_ref"],
+            activities[6]["capability_ref"],
+        )
+
+        graph = build_graph(
+            self.capture,
+            activities=activities,
+            dependencies=[],
+            stats={"commands": len(activities), "responses": len(activities)},
+        )
+        self.assertEqual({"call", "shell"}, {item["modality"] for item in graph["capabilities"]})
+        notion = next(item for item in graph["capabilities"] if item["subject"] == "notion")
+        shell = next(item for item in graph["capabilities"] if item["modality"] == "shell")
+        self.assertEqual("observed_session_init", notion["initialization"]["basis"])
+        self.assertEqual("satisfied", notion["authorization"]["state"])
+        self.assertEqual("closed", shell["state"])
+        self.assertTrue(
+            any(
+                edge["kind"] == "executes"
+                and edge["source"] != edge["target"]
+                for edge in graph["edges"]
+            )
+        )
+
     def test_response_metadata_allowlists_process_policy_receipt(self) -> None:
         responses = self.workspace / ".rote" / "responses"
         (responses / "@1.json").write_text(
@@ -1113,8 +1230,9 @@ class JourneyProjectionTest(unittest.TestCase):
         self.assertEqual(3, graph["source_cursor"]["rote_response_id"])
         self.assertEqual(["@1"], graph["nodes"][0]["evidence"]["rote_responses"])
         provider_nodes = [node for node in graph["nodes"] if node.get("provider") == "gmail"]
-        self.assertEqual(1, len(provider_nodes))
-        self.assertEqual(2, provider_nodes[0]["activity_count"])
+        self.assertEqual({"capability", "effect"}, {node["kind"] for node in provider_nodes})
+        effect_node = next(node for node in provider_nodes if node["kind"] == "effect")
+        self.assertEqual(2, effect_node["activity_count"])
         self.assertEqual(
             {"@2", "@3"},
             {

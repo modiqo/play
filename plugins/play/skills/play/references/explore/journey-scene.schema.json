@@ -33,7 +33,7 @@
       "required": ["label", "source"],
       "properties": {
         "label": {"type": "string", "minLength": 1, "maxLength": 400},
-        "source": {"const": "play_capture"}
+        "source": {"enum": ["play_capture", "recalled_play", "tutorial"]}
       }
     },
     "projection": {

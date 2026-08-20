@@ -56,6 +56,7 @@ export function groupInteractionPlaques(points = [], {maximumGroupSize = 6} = {}
       count: group.records.length,
       sequences: group.records.map((record) => record.sequence),
       label: sequenceLabel(group.records),
+      deltaLabel: group.points[0]?.deltaLabel || 'NEXT',
       x,
       z,
     }

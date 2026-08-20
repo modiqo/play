@@ -23,7 +23,14 @@ from scripts.lib.play.journey import (
     materialize_snapshot,
 )
 from scripts.lib.play.journey_scene import SCHEMA, build_scene
-from scripts.lib.play.journey_story import SCHEMA as STORY_SCHEMA
+from scripts.lib.play.journey_story import SCHEMA as STORY_SCHEMA, build_story
+from scripts.lib.play.journey_tutorial import (
+    TUTORIAL_REFERENCE,
+    TUTORIAL_WORKSPACE_ID,
+    ensure_tutorial,
+    tutorial_exchange,
+    tutorial_payload,
+)
 from scripts.lib.play.journey_view import (
     EXCHANGE_SCHEMA,
     INTERACTIONS_SCHEMA,
@@ -91,6 +98,47 @@ class JourneySceneTest(unittest.TestCase):
             dependencies=[],
             stats={"commands": len(activities), "responses": len(activities)},
         )
+
+    def test_start_here_is_a_deterministic_recorded_workspace(self) -> None:
+        graph = ensure_tutorial(root=self.journeys)
+        story = build_story(graph)
+        scene = build_scene(graph)
+        index = _workspace_index(TUTORIAL_REFERENCE, root=self.journeys)
+
+        self.assertEqual("tutorial", graph["origin"]["kind"])
+        self.assertEqual("tutorial", graph["route"]["mode"])
+        self.assertEqual(
+            {"call", "shell", "drive"},
+            {item["modality"] for item in graph["capabilities"]},
+        )
+        self.assertTrue({"blocker", "recovery"}.issubset({item["kind"] for item in graph["nodes"]}))
+        shell_station = next(
+            chapter["order"]
+            for chapter in story["chapters"]
+            if chapter["kind"] == "capability" and "shell" in chapter["modalities"]
+        )
+        shell_operation = next(
+            chapter["order"]
+            for chapter in story["chapters"]
+            if chapter["kind"] == "phase" and "shell" in chapter["modalities"]
+        )
+        self.assertLess(shell_station, shell_operation)
+        self.assertEqual(TUTORIAL_WORKSPACE_ID, index["selected_id"])
+        self.assertEqual("start-here-v2", tutorial_payload()["version"])
+        exchange = tutorial_exchange(2)
+        self.assertIsNotNone(exchange)
+        assert exchange is not None
+        self.assertEqual(2, exchange["sequence"])
+        failed_exchange = tutorial_exchange(4)
+        assert failed_exchange is not None
+        self.assertFalse(failed_exchange["response"]["ok"])
+        for filename, value in (
+            ("journey-graph.schema.json", graph),
+            ("journey-story.schema.json", story),
+            ("journey-scene.schema.json", scene),
+        ):
+            schema = json.loads((ROOT / "references/explore" / filename).read_text())
+            Draft202012Validator(schema).validate(value)
 
     def test_workspace_activity_uses_bounded_rote_heartbeat_files(self) -> None:
         workspace = Path(self.temporary.name) / "activity-workspace"
@@ -204,7 +252,7 @@ class JourneySceneTest(unittest.TestCase):
                 refreshed = _refresh_workspace_catalog("cap_stale", root=self.journeys)
 
         self.assertEqual(
-            {"play-capture-current", "dag-hello"},
+            {"start-here", "play-capture-current", "dag-hello"},
             {item["workspace"] for item in summaries},
         )
         self.assertNotIn("cap_stale", lookup.values())

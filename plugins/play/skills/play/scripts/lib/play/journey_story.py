@@ -84,6 +84,7 @@ def build_story(graph: Mapping[str, Any]) -> dict[str, Any]:
         raw_nodes,
         key=lambda node: (
             -1 if node.get("kind") == "intent" else int(node.get("first_sequence") or 10**9),
+            {"capability": 0, "authority": 1}.get(str(node.get("kind") or ""), 2),
             str(node.get("id") or ""),
         ),
     )
@@ -121,6 +122,21 @@ def build_story(graph: Mapping[str, Any]) -> dict[str, Any]:
                 "z": round(min(4.5, math.log2(max(1, duration + 1)) / 3), 3),
             },
             "activity_count": int(node.get("activity_count") or 0),
+            "capability_refs": [
+                str(value)
+                for value in node.get("capability_refs", [])
+                if isinstance(value, str)
+            ],
+            "modalities": [
+                str(value)
+                for value in node.get("modalities", [])
+                if isinstance(value, str)
+            ],
+            "lifecycle_phases": [
+                str(value)
+                for value in node.get("lifecycle_phases", [])
+                if isinstance(value, str)
+            ],
             "telemetry": {
                 "duration_ms": duration,
                 "payload_tokens": int(telemetry.get("payload_tokens") or 0),
@@ -167,6 +183,11 @@ def build_story(graph: Mapping[str, Any]) -> dict[str, Any]:
         "capability_discovery_avoided": False,
         "typed_provider_operations": 0,
     }
+    capabilities = [
+        dict(value)
+        for value in graph.get("capabilities", [])
+        if isinstance(value, Mapping)
+    ]
     story = {
         "schema": SCHEMA,
         "journey_key": str(graph.get("journey_key") or ""),
@@ -176,6 +197,7 @@ def build_story(graph: Mapping[str, Any]) -> dict[str, Any]:
         "origin": origin,
         "route": route,
         "benefit": benefit,
+        "capabilities": capabilities,
         "chapters": chapters,
         "routes": routes,
         "current_chapter": str(graph.get("current_node") or chapters[-1]["id"]),
@@ -183,6 +205,7 @@ def build_story(graph: Mapping[str, Any]) -> dict[str, Any]:
         "audit": {
             "canonical_nodes": len(raw_nodes),
             "canonical_edges": len([edge for edge in edges if isinstance(edge, Mapping)]),
+            "canonical_capabilities": len(capabilities),
             "preserved_chapter_ids": [chapter["id"] for chapter in chapters],
         },
         "updated_at": str(graph.get("updated_at") or ""),

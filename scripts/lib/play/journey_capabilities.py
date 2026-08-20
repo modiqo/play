@@ -231,6 +231,39 @@ def capability_descriptor(
     """Describe the Rote execution substrate without semantic guesswork."""
 
     endpoint = str(payload.get("endpoint") or "")
+    endpoint_match = _ADAPTER_ENDPOINT.fullmatch(endpoint)
+    if command_type == "InitSession" and _BROWSER_ENDPOINT.search(endpoint):
+        return {
+            "schema": SCHEMA,
+            "family": "browser",
+            "interface": "browse",
+            "id": "browser:lease",
+            "label": "Browser session",
+            "primitive": "lease",
+            "phase": "initialize",
+            "tool": "initialize",
+            "transport": "stdio",
+        }
+    if command_type == "InitSession" and endpoint_match is not None:
+        adapter_id = endpoint_match.group("adapter_id")
+        resolver = manifest_resolver or (lambda _adapter_id: None)
+        manifest = resolver(adapter_id)
+        manifest = dict(manifest) if isinstance(manifest, Mapping) else {}
+        descriptor: dict[str, Any] = {
+            "schema": SCHEMA,
+            "family": "adapter",
+            "interface": "api",
+            "id": adapter_id,
+            "label": str(manifest.get("name") or adapter_id),
+            "phase": "initialize",
+            "mode": "session",
+            "tool": "initialize",
+            "operations": [],
+            "transport": str(manifest.get("transport") or "adapter"),
+        }
+        if manifest:
+            descriptor["manifest"] = manifest
+        return descriptor
     if command_type == "HttpRequest" and (
         _BROWSER_ENDPOINT.search(endpoint) or operation.startswith("browser_")
     ):
@@ -295,19 +328,42 @@ def capability_descriptor(
         return {key: value for key, value in descriptor.items() if value is not None}
 
     if adapter is not None:
+        adapter_id = str(adapter["adapter_id"])
+        resolver = manifest_resolver or (lambda _adapter_id: None)
+        manifest = resolver(adapter_id)
+        manifest = dict(manifest) if isinstance(manifest, Mapping) else {}
         return {
             "schema": SCHEMA,
-            "family": "rote",
-            "interface": "workspace",
-            "id": f"rote:adapter-protocol:{adapter['adapter_id']}",
-            "label": "Adapter protocol",
+            "family": "adapter",
+            "interface": "api",
+            "id": adapter_id,
+            "label": str(manifest.get("name") or adapter_id),
+            "phase": "protocol",
+            "mode": str(adapter["mode"]),
             "primitive": "adapter protocol",
             "tool": str(adapter["mode"]),
+            "operations": [],
+            "transport": str(manifest.get("transport") or "adapter"),
+        }
+
+    if command_type == "For":
+        adapter_id = endpoint_match.group("adapter_id") if endpoint_match is not None else "http"
+        return {
+            "schema": SCHEMA,
+            "family": "adapter",
+            "interface": "api",
+            "id": adapter_id,
+            "label": adapter_id if adapter_id != "http" else "HTTP endpoint",
+            "phase": "call",
+            "mode": "iteration",
+            "tool": operation,
+            "operations": [],
+            "transport": "http",
         }
 
     if command_type.startswith("Process") or command_type == "StreamFollow":
         cli = _process_cli(payload)
-        return {
+        descriptor = {
             "schema": SCHEMA,
             "family": "proc",
             "interface": "shell",
@@ -316,6 +372,10 @@ def capability_descriptor(
             "tool": cli,
             "mode": _process_mode(command_type),
         }
+        lease_id = payload.get("lease_id")
+        if isinstance(lease_id, str) and lease_id:
+            descriptor["lease_id"] = lease_id
+        return descriptor
 
     primitive = {
         "QueryRead": "query",

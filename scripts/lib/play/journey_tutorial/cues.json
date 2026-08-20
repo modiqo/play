@@ -1,0 +1,24 @@
+{
+  "schema": "play.journey-tutorial-cues/v1",
+  "version": "start-here-v2",
+  "title": "Start Here: how an agent journey becomes a world",
+  "audio": {
+    "voice": null,
+    "music": null,
+    "available": false,
+    "production": "ElevenLabs voice through the Rote adapter; licensed music mixed beneath narration"
+  },
+  "cues": [
+    {"chapter": 0, "start_seconds": 0, "landmark": "Starting gate", "primitive": "Intent", "text": "We embody the agent inside its operating situation, turning its trace into a spatio-temporal experience. This gate fixes the destination before a route is chosen—an homage to worlds learned through movement, landmarks, and time."},
+    {"chapter": 1, "start_seconds": 10, "landmark": "Station", "primitive": "Capability · CALL", "text": "The twin-tower station means an equipped capability instance. CALL identifies the adapter modality. Its first local tower records initialization: left-to-right position is time, width is latency, and height is token volume."},
+    {"chapter": 2, "start_seconds": 19, "landmark": "Checkpoint", "primitive": "Authority", "text": "The barred checkpoint means authority. The route cannot honestly continue until required access is satisfied. The tower is the authorization operation performed through the already-equipped CALL station."},
+    {"chapter": 3, "start_seconds": 29, "landmark": "Worksite", "primitive": "Effect", "text": "The crater-like worksite means an external effect. The operation uses the capability but is not itself the capability. Read its tower footprint for latency and its height for tokens; those signals are never blended."},
+    {"chapter": 4, "start_seconds": 39, "landmark": "Barricade", "primitive": "Blocker", "text": "The crossed barricade keeps failure visible. A failed operation stops progress here instead of disappearing behind a retry. Its evidence tower remains inspectable."},
+    {"chapter": 5, "start_seconds": 49, "landmark": "Bridge", "primitive": "Recovery", "text": "The bridge reconnects the intended route. A corrected operation follows the blocker, preserving both failure and recovery as part of the remembered trace."},
+    {"chapter": 6, "start_seconds": 59, "landmark": "Station", "primitive": "Capability · SHELL", "text": "This station equips SHELL, Rote's proc modality, before the local command is presented as work. The station persists as the system; its towers are the operations performed through it."},
+    {"chapter": 7, "start_seconds": 69, "landmark": "Phase chamber", "primitive": "Operation phase", "text": "The chamber groups supporting work. At every site the frontage runs from PAST to PRESENT. Wider towers took longer, taller towers used more tokens, and deeper lanes appear only when operations truly overlapped."},
+    {"chapter": 8, "start_seconds": 79, "landmark": "Station", "primitive": "Capability · DRIVE", "text": "This station equips DRIVE, the browser modality: one leased page session with an evidence ledger. Browser actions remain operations owned by that capability instance."},
+    {"chapter": 9, "start_seconds": 89, "landmark": "Worksite", "primitive": "Browser effect + observation", "text": "Two towers share this browser worksite. Their order and spacing show the sequence and elapsed gap; width shows latency, height shows tokens, and a deeper lane would prove overlap."},
+    {"chapter": 10, "start_seconds": 99, "landmark": "Destination", "primitive": "Artifact", "text": "The destination means verified work has become something the user can keep or use. You can now carry the same shape, lifecycle, modality, and tower grammar into a real workspace."}
+  ]
+}

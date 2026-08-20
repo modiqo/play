@@ -1,12 +1,13 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react'
 import * as THREE from 'three'
 import {CSS2DRenderer} from 'three/addons/renderers/CSS2DRenderer.js'
-import {AMBER, GROUND, clampVisibleCallouts, glassTowerEdge, glassTowerMaterial, journeyPositions, landmarkFor, makeCallout, makeInteractionPlaque, material} from './world-elements.js'
+import {AMBER, GROUND, clampVisibleCallouts, glassTowerEdge, glassTowerMaterial, journeyPositions, landmarkFor, makeCallout, makeInteractionPlaque, makeTemporalCorridor, material} from './world-elements.js'
 import {createWorldNavigation} from './world-navigation.js'
 import {KIND_LABEL, WORLD_ROLE} from './semantics.js'
 import {groupInteractionPlaques} from './interaction-plaques.mjs'
 import {layoutTemporalCorridor} from './temporal-corridor.mjs'
 import {plaqueIsVisible, updateMarkerAppearance} from './marker-appearance.mjs'
+import {towerHeight, towerWidth} from './tower-metrics.mjs'
 
 export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect}) {
   const host = useRef(null)
@@ -141,15 +142,15 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         site.add(landmark)
         const records = interactions?.sites?.[chapter.id] || []
         const temporalCorridor = layoutTemporalCorridor(records)
+        site.add(makeTemporalCorridor(chapter, temporalCorridor))
         const towerFootprint = THREE.MathUtils.clamp(6.3 / Math.max(1, temporalCorridor.points.length), .24, .55)
         const markers = []
         let maximumTowerHeight = 0
         temporalCorridor.points.forEach((temporal, recordIndex) => {
           const record = {...temporal.record, temporal}
-          const signal = Math.log2(2 + Number(record.duration_ms || 0) / 90 + Number(record.tokens || 0) / 700)
-          const height = Math.max(.7, Math.min(4.6, signal))
+          const height = towerHeight(record)
           maximumTowerHeight = Math.max(maximumTowerHeight, height)
-          const towerGeometry = new THREE.BoxGeometry(towerFootprint, height, towerFootprint)
+          const towerGeometry = new THREE.BoxGeometry(towerWidth(temporal, towerFootprint), height, towerFootprint)
           const tower = new THREE.Mesh(towerGeometry, glassTowerMaterial())
           const towerEdge = glassTowerEdge(towerGeometry)
           tower.add(towerEdge)

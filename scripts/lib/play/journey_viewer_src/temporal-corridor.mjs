@@ -29,6 +29,11 @@ function formatDelta(deltaMs, first) {
   return `+${(deltaMs / 60_000).toFixed(deltaMs < 600_000 ? 1 : 0)} min`
 }
 
+function durationFootprint(durationMs) {
+  const signal = Math.log1p(Math.max(0, durationMs) / 40)
+  return Math.max(.24, Math.min(.86, .24 + signal * .1))
+}
+
 function chronological(records) {
   return [...records].map((record, sourceIndex) => ({record, sourceIndex})).sort((left, right) => {
     const leftSequence = finiteNumber(left.record?.sequence, left.sourceIndex)
@@ -103,12 +108,14 @@ export function layoutTemporalCorridor(records = [], options = {}) {
       z: baseZ - settings.towerInset - entry.lane * settings.lanePitch,
       tickRotation: 0,
       deltaLabel: formatDelta(entry.deltaMs, index === 0),
+      durationWidth: durationFootprint(entry.durationMs),
     }
   })
 
   return {
     schema: 'play.temporal-corridor/v1',
     direction: 'left-to-right',
+    labels: {entrance: 'PAST', exit: 'PRESENT'},
     orientation: 'frontage-timeline',
     frontage: {z: settings.timelineZ, towerInset: settings.towerInset},
     entrance: {x: startX - .38, z: settings.timelineZ, tangentX: 1, tangentZ: 0},

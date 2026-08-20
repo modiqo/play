@@ -31,6 +31,7 @@ from .journey_capabilities import (
     attach_browser_lenses,
     capability_descriptor,
 )
+from .journey_world_model import capability_instances, enrich_operation
 from .journey_effects import classify_effect
 from .private_store import atomic_write_json, ensure_private_directory, load_json
 from .state_home import state_path
@@ -40,7 +41,7 @@ SCHEMA = "play.journey-viewport/v1"
 FULL_GRAPH_SCHEMA = "play.journey-graph/v1"
 EVENT_SCHEMA = "play.journey-source-event/v1"
 WORKER_SCHEMA = "play.journey-worker/v1"
-PROJECTION_VERSION = "rules-v6"
+PROJECTION_VERSION = "rules-v7"
 DATABASE_SCHEMA_VERSION = 1
 
 MAX_LABEL_CHARS = 120
@@ -641,7 +642,7 @@ def _classify(
         for value in effect_profile.get("risk_tags", [])
         if isinstance(value, str)
     }
-    if command_type in {"QueryRead", "QueryExtract", "Display", "StreamFollow"}:
+    if command_type in {"QueryRead", "QueryExtract", "Display", "StreamFollow", "Inject"}:
         return "evidence", "supporting"
     if command_type == "ComposeEmail":
         return "artifact", None
@@ -649,7 +650,7 @@ def _classify(
         return "capability", None
     if command_type == "SetVariable":
         return "decision", "local"
-    if command_type in {"HttpRequest", "DataQuery"}:
+    if command_type in {"HttpRequest", "DataQuery", "For"}:
         family = str(capability.get("family") or "")
         phase = str(capability.get("phase") or "")
         primitive = str(capability.get("primitive") or "")
@@ -659,9 +660,13 @@ def _classify(
             return "capability", None
         if operation == "adapter.auth.ensure":
             return "authority", None
-        if family in {"adapter", "browser"} or command_type == "DataQuery":
+        if family in {"adapter", "browser"} or command_type in {"DataQuery", "For"}:
             return "effect", posture
         return "effect", "unknown"
+    if command_type in {"ProcessBackgroundStatus", "ProcessBackgroundWait"}:
+        return "phase", "supporting"
+    if command_type == "ProcessBackgroundStop":
+        return "effect", posture
     if command_type.startswith("Process"):
         if "interactive_auth" in risk_tags:
             return "authority", None
@@ -722,8 +727,7 @@ def normalize_entries(
             else 0
         )
         signature = f"{command_type}:{provider or '-'}:{operation.lower()}"
-        activities.append(
-            {
+        activity = {
                 "sequence": sequence,
                 "command_type": command_type,
                 "response_refs": [f"@{item}" for item in response_ids],
@@ -751,9 +755,11 @@ def normalize_entries(
                     else "command_log"
                 ),
             }
-        )
+        activities.append(activity)
     activities.sort(key=lambda item: item["sequence"])
     attach_browser_lenses(activities)
+    for activity in activities:
+        enrich_operation(activity)
     return activities
 
 
@@ -829,6 +835,15 @@ def _append_activity(node: dict[str, Any], activity: Mapping[str, Any]) -> None:
     telemetry["payload_tokens"] += int(activity.get("tokens") or 0)
     telemetry["tokens_saved"] += int(activity.get("tokens_saved") or 0)
     node["activity_count"] += 1
+    capability_ref = activity.get("capability_ref")
+    if isinstance(capability_ref, str) and capability_ref not in node["capability_refs"]:
+        node["capability_refs"].append(capability_ref)
+    modality = activity.get("modality")
+    if isinstance(modality, str) and modality not in node["modalities"]:
+        node["modalities"].append(modality)
+    lifecycle = activity.get("lifecycle_phase")
+    if isinstance(lifecycle, str) and lifecycle not in node["lifecycle_phases"]:
+        node["lifecycle_phases"].append(lifecycle)
 
 
 def _new_node(activity: Mapping[str, Any], label: str, *, kind: str | None = None) -> dict[str, Any]:
@@ -845,6 +860,9 @@ def _new_node(activity: Mapping[str, Any], label: str, *, kind: str | None = Non
         "effect": activity.get("effect"),
         "provider": activity.get("provider"),
         "activity_count": 0,
+        "capability_refs": [],
+        "modalities": [],
+        "lifecycle_phases": [],
         "evidence": _empty_evidence(),
         "telemetry": {"duration_ms": 0, "payload_tokens": 0, "tokens_saved": 0},
         "first_sequence": int(activity["sequence"]),
@@ -852,6 +870,38 @@ def _new_node(activity: Mapping[str, Any], label: str, *, kind: str | None = Non
     }
     _append_activity(node, activity)
     return node
+
+
+def _capability_node(instance: Mapping[str, Any]) -> dict[str, Any]:
+    """Create an honest station when first use precedes explicit initialization."""
+
+    initialization = instance.get("initialization")
+    initialization = initialization if isinstance(initialization, Mapping) else {}
+    sequence = initialization.get("first_sequence")
+    sequence = sequence if isinstance(sequence, int) and sequence > 0 else None
+    reference = str(instance.get("id") or "")
+    label = _safe_label(instance.get("label"), fallback="Equipped capability")
+    modality = str(instance.get("modality") or "")
+    evidence = _empty_evidence()
+    if sequence is not None:
+        evidence["rote_commands"].append(sequence)
+    return {
+        "id": _node_id("capability", label, sequence or reference),
+        "kind": "capability",
+        "label": f"Equip {label} capability",
+        "status": "failed" if instance.get("state") == "failed" else "satisfied",
+        "confidence": "deterministic",
+        "effect": None,
+        "provider": str(instance.get("subject") or label),
+        "activity_count": 0,
+        "capability_refs": [reference] if reference else [],
+        "modalities": [modality] if modality else [],
+        "lifecycle_phases": ["initialize"],
+        "evidence": evidence,
+        "telemetry": {"duration_ms": 0, "payload_tokens": 0, "tokens_saved": 0},
+        "first_sequence": sequence,
+        "last_sequence": sequence,
+    }
 
 
 def _event_node(event: Mapping[str, Any], ordinal: int) -> dict[str, Any] | None:
@@ -876,6 +926,9 @@ def _event_node(event: Mapping[str, Any], ordinal: int) -> dict[str, Any] | None
         "effect": None,
         "provider": None,
         "activity_count": 1,
+        "capability_refs": [],
+        "modalities": [],
+        "lifecycle_phases": [],
         "evidence": evidence,
         "telemetry": {"duration_ms": 0, "payload_tokens": 0, "tokens_saved": 0},
         "first_sequence": None,
@@ -890,6 +943,9 @@ def _semantic_signature(node: Mapping[str, Any]) -> tuple[Any, ...]:
         node.get("status"),
         node.get("effect"),
         node.get("activity_count"),
+        tuple(node.get("capability_refs", [])),
+        tuple(node.get("modalities", [])),
+        tuple(node.get("lifecycle_phases", [])),
     )
 
 
@@ -919,6 +975,30 @@ def _compact_nodes(
         "effect": None,
         "provider": None,
         "activity_count": sum(int(node.get("activity_count") or 0) for node in omitted),
+        "capability_refs": sorted(
+            {
+                str(reference)
+                for node in omitted
+                for reference in node.get("capability_refs", [])
+                if isinstance(reference, str)
+            }
+        ),
+        "modalities": sorted(
+            {
+                str(modality)
+                for node in omitted
+                for modality in node.get("modalities", [])
+                if isinstance(modality, str)
+            }
+        ),
+        "lifecycle_phases": sorted(
+            {
+                str(phase)
+                for node in omitted
+                for phase in node.get("lifecycle_phases", [])
+                if isinstance(phase, str)
+            }
+        ),
         "evidence": _empty_evidence(),
         "telemetry": {
             "duration_ms": telemetry_total("duration_ms"),
@@ -986,6 +1066,9 @@ def build_graph(
         "effect": None,
         "provider": None,
         "activity_count": 0,
+        "capability_refs": [],
+        "modalities": [],
+        "lifecycle_phases": [],
         "evidence": _empty_evidence(),
         "telemetry": {"duration_ms": 0, "payload_tokens": 0, "tokens_saved": 0},
         "first_sequence": None,
@@ -993,6 +1076,19 @@ def build_graph(
     }
     nodes: list[dict[str, Any]] = [intent_node]
     nodes_by_id: dict[str, dict[str, Any]] = {"node_intent": intent_node}
+    capabilities = capability_instances(activities)
+    explicit_capability_refs = {
+        str(activity["capability_ref"])
+        for activity in activities
+        if activity.get("kind") == "capability"
+        and isinstance(activity.get("capability_ref"), str)
+    }
+    for instance in capabilities:
+        if instance["id"] in explicit_capability_refs:
+            continue
+        station = _capability_node(instance)
+        nodes.append(station)
+        nodes_by_id[station["id"]] = station
     activity_to_node: dict[int, str] = {}
     response_to_node: dict[int, str] = {}
     failure_by_signature: dict[str, str] = {}
@@ -1141,6 +1237,23 @@ def build_graph(
         if source_node and target_node:
             add_edge(source_node, target_node, "derived_from")
 
+    capability_nodes: dict[str, str] = {}
+    for node in nodes:
+        if node.get("kind") != "capability":
+            continue
+        for reference in node.get("capability_refs", []):
+            if isinstance(reference, str):
+                capability_nodes.setdefault(reference, str(node["id"]))
+    for node in nodes:
+        for reference in node.get("capability_refs", []):
+            station_id = capability_nodes.get(str(reference))
+            if station_id is None or station_id == node.get("id"):
+                continue
+            if node.get("kind") == "authority":
+                add_edge(station_id, str(node["id"]), "requires")
+            elif node.get("kind") == "effect":
+                add_edge(station_id, str(node["id"]), "executes")
+
     # Add the causal vocabulary used by people and renderers.  These edges are
     # a deterministic projection over the ordered semantic nodes: each source
     # selects its nearest compatible successor, stopping when a newer source
@@ -1192,9 +1305,14 @@ def build_graph(
         if isinstance(item, Mapping)
     }
     edge_set = {(item["source"], item["target"], item["kind"]) for item in edges}
+    previous_capabilities = (
+        previous.get("capabilities", []) if isinstance(previous, Mapping) else []
+    )
     material = bool(
         [node_id for node_id in changed_node_ids if node_id != "node_intent"]
         or edge_set != previous_edges
+        or json.dumps(capabilities, sort_keys=True, separators=(",", ":"))
+        != json.dumps(previous_capabilities, sort_keys=True, separators=(",", ":"))
     )
     previous_generation = int(previous.get("generation") or 0) if isinstance(previous, Mapping) else 0
     previous_material = (
@@ -1238,6 +1356,7 @@ def build_graph(
                 activity.get("source") == "typed_response" for activity in activities
             ),
         },
+        "capabilities": capabilities,
         "nodes": nodes,
         "edges": edges,
         "current_node": current_node,
@@ -1327,14 +1446,33 @@ def materialize_snapshot(graph: Mapping[str, Any]) -> dict[str, Any]:
         "total_edges": len(graph_edges),
         "evidence_refs_omitted": omitted_evidence_refs,
     }
+    capability_values = graph.get("capabilities")
+    capability_values = capability_values if isinstance(capability_values, list) else []
+    bounded_capabilities: list[dict[str, Any]] = []
+    for value in capability_values[:MAX_SNAPSHOT_NODES]:
+        if not isinstance(value, Mapping):
+            continue
+        capability = dict(value)
+        for key in ("operation_sequences", "evidence_sequences"):
+            sequences = capability.get(key)
+            sequences = list(sequences) if isinstance(sequences, list) else []
+            capability[key] = sequences[-MAX_SNAPSHOT_EVIDENCE_REFS:]
+        bounded_capabilities.append(capability)
     snapshot = {
-        **{key: value for key, value in graph.items() if key not in {"nodes", "edges", "presentation"}},
+        **{
+            key: value
+            for key, value in graph.items()
+            if key not in {"capabilities", "nodes", "edges", "presentation"}
+        },
         "schema": SCHEMA,
+        "capabilities": bounded_capabilities,
         "nodes": nodes,
         "edges": edges[:MAX_SNAPSHOT_EDGES],
         "presentation": presentation,
     }
     if len(snapshot["edges"]) != len(graph_edges):
+        snapshot["presentation"]["complete"] = False
+    if len(bounded_capabilities) != len(capability_values):
         snapshot["presentation"]["complete"] = False
     current_node = snapshot.get("current_node")
     if current_node not in retained_ids:
@@ -1815,6 +1953,9 @@ def refresh_capture(
         by_sequence.update({int(item["sequence"]): item for item in new_activities})
         activities = [by_sequence[key] for key in sorted(by_sequence)]
         attach_browser_lenses(activities)
+
+    for activity in activities:
+        enrich_operation(activity)
 
     dependencies = [
         dict(item) for item in source.get("dependencies", []) if isinstance(item, Mapping)

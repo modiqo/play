@@ -17,6 +17,16 @@ test('orders canonical indexes left to right on the frontage timeline', () => {
   assert.equal(layout.points[0].baseZ, layout.points[2].baseZ)
   assert.equal(layout.points[0].deltaLabel, 'START')
   assert.equal(layout.points[1].deltaLabel, '+300 ms')
+  assert.deepEqual(layout.labels, {entrance: 'PAST', exit: 'PRESENT'})
+})
+
+test('uses duration for footprint without changing chronology', () => {
+  const layout = layoutTemporalCorridor([
+    {sequence: 1, timestamp: at(0), duration_ms: 10},
+    {sequence: 2, timestamp: at(50), duration_ms: 5000},
+  ])
+  assert.ok(layout.points[1].durationWidth > layout.points[0].durationWidth)
+  assert.ok(layout.points.every((point) => point.durationWidth >= .24 && point.durationWidth <= .86))
 })
 
 test('clusters towers behind the timeline and uses depth only for overlap', () => {

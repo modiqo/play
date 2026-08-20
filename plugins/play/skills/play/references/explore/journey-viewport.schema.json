@@ -14,6 +14,7 @@
     "origin",
     "route",
     "benefit",
+    "capabilities",
     "nodes",
     "edges",
     "current_node",
@@ -35,18 +36,20 @@
       "required": ["label", "source"],
       "properties": {
         "label": {"type": "string", "minLength": 1, "maxLength": 400},
-        "source": {"enum": ["play_capture", "recalled_play"]}
+        "source": {"enum": ["play_capture", "recalled_play", "tutorial"]}
       }
     },
     "origin": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "kind": {"const": "recalled_play"},
+        "kind": {"enum": ["recalled_play", "tutorial"]},
         "run_id": {"type": ["string", "null"]},
         "exact_reference": {"type": ["string", "null"]},
         "association_basis": {"enum": ["typed_workspace", "rote_namespace_time"]},
-        "exploration_skipped": {"const": true}
+        "exploration_skipped": {"const": true},
+        "source": {"const": "packaged_recording"},
+        "recording_version": {"type": "string", "minLength": 1, "maxLength": 40}
       }
     },
     "route": {
@@ -54,7 +57,7 @@
       "additionalProperties": false,
       "required": ["mode", "exploration_skipped", "label"],
       "properties": {
-        "mode": {"enum": ["known", "exploration"]},
+        "mode": {"enum": ["known", "exploration", "tutorial"]},
         "exploration_skipped": {"type": "boolean"},
         "label": {"type": "string", "minLength": 1, "maxLength": 120}
       }
@@ -68,6 +71,11 @@
         "capability_discovery_avoided": {"type": "boolean"},
         "typed_provider_operations": {"type": "integer", "minimum": 0}
       }
+    },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 96,
+      "items": {"$ref": "#/$defs/capabilityInstance"}
     },
     "nodes": {
       "type": "array",
@@ -171,6 +179,41 @@
         "responses": {"type": "integer", "minimum": 0}
       }
     },
+    "capabilityInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "id", "modality", "family", "interface", "subject", "label", "state", "initialization", "authorization", "operation_sequences", "evidence_sequences"],
+      "properties": {
+        "schema": {"const": "play.journey-capability-instance/v1"},
+        "id": {"type": "string", "pattern": "^cap_[a-f0-9]{20}$"},
+        "modality": {"enum": ["call", "shell", "drive"]},
+        "family": {"enum": ["adapter", "proc", "browser"]},
+        "interface": {"type": "string", "minLength": 1, "maxLength": 32},
+        "subject": {"type": "string", "minLength": 1, "maxLength": 160},
+        "label": {"type": "string", "minLength": 1, "maxLength": 160},
+        "state": {"enum": ["ready", "active", "failed", "closed"]},
+        "initialization": {
+          "type": "object", "additionalProperties": false,
+          "required": ["state", "basis", "first_sequence"],
+          "properties": {
+            "state": {"enum": ["initialized", "ready", "failed"]},
+            "basis": {"enum": ["observed_probe", "observed_session_init", "observed_dependency_check", "observed_input_init", "observed_protocol_init", "observed_use", "legacy_projection"]},
+            "first_sequence": {"type": ["integer", "null"], "minimum": 1}
+          }
+        },
+        "authorization": {
+          "type": "object", "additionalProperties": false,
+          "required": ["state", "required", "basis"],
+          "properties": {
+            "state": {"enum": ["not_applicable", "unknown", "required", "satisfied", "failed"]},
+            "required": {"type": ["boolean", "null"]},
+            "basis": {"enum": ["typed_authority_operation", "no_authority_signal", "not_observed", "legacy_projection"]}
+          }
+        },
+        "operation_sequences": {"type": "array", "maxItems": 128, "items": {"type": "integer", "minimum": 1}},
+        "evidence_sequences": {"type": "array", "maxItems": 128, "items": {"type": "integer", "minimum": 1}}
+      }
+    },
     "node": {
       "type": "object",
       "additionalProperties": false,
@@ -183,6 +226,9 @@
         "effect",
         "provider",
         "activity_count",
+        "capability_refs",
+        "modalities",
+        "lifecycle_phases",
         "evidence",
         "telemetry",
         "first_sequence",
@@ -226,6 +272,9 @@
         "effect": {"type": ["string", "null"], "maxLength": 40},
         "provider": {"type": ["string", "null"], "maxLength": 120},
         "activity_count": {"type": "integer", "minimum": 0},
+        "capability_refs": {"type": "array", "maxItems": 32, "items": {"type": "string", "pattern": "^cap_[a-f0-9]{20}$"}},
+        "modalities": {"type": "array", "maxItems": 3, "items": {"enum": ["call", "shell", "drive"]}},
+        "lifecycle_phases": {"type": "array", "maxItems": 5, "items": {"enum": ["initialize", "authorize", "use", "observe", "close"]}},
         "evidence": {"$ref": "#/$defs/evidence"},
         "telemetry": {"$ref": "#/$defs/telemetry"},
         "first_sequence": {"type": ["integer", "null"], "minimum": 1},

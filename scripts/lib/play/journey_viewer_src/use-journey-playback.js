@@ -17,8 +17,9 @@ export function useJourneyPlayback({
     let frame = 0
     const count = story.chapters.length
     const intervals = Math.max(1, count - 1)
-    const dwellMs = 2800
-    const travelMs = 4200
+    const tutorial = story.origin?.kind === 'tutorial'
+    const dwellMs = tutorial ? 6500 : 2800
+    const travelMs = tutorial ? 3200 : 4200
     const cycleMs = dwellMs + travelMs
     const startingUnits = (playback.current?.from || 0) * intervals
     const startingStage = Math.min(intervals, Math.floor(startingUnits))

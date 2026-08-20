@@ -58,6 +58,7 @@ from .journey_view_evidence import (
     _redact_exchange_value,
     _redact_text,
 )
+from .journey_tutorial import TUTORIAL_REFERENCE, tutorial_exchange, tutorial_payload
 from .private_store import atomic_write_json, load_json
 
 
@@ -126,6 +127,10 @@ def _viewer_implementation_sha256() -> str:
     for path in sorted(module_root.glob("journey*.py")):
         digest.update(path.name.encode())
         digest.update(path.read_bytes())
+    for path in sorted((module_root / "journey_tutorial").glob("*")):
+        if path.is_file():
+            digest.update(path.name.encode())
+            digest.update(path.read_bytes())
     return "sha256:" + digest.hexdigest()
 
 
@@ -238,6 +243,12 @@ def _handler_type(
             _workspaces, workspace_lookup = _workspace_catalog(capture_ref, root=root)
             requested_workspace = query.get("workspace", [""])[0]
             selected_capture = workspace_lookup.get(requested_workspace, capture_ref)
+            if parsed.path == "/api/tutorial":
+                if selected_capture != TUTORIAL_REFERENCE:
+                    self._send_json({"error": "tutorial_unavailable"}, status=HTTPStatus.NOT_FOUND)
+                    return
+                self._send_json(tutorial_payload())
+                return
             if parsed.path == "/api/scene":
                 graph = load_graph(selected_capture, root=root)
                 if graph is None:
@@ -284,7 +295,11 @@ def _handler_type(
                 except ValueError:
                     self._send_json({"error": "interaction_unavailable"}, status=HTTPStatus.NOT_FOUND)
                     return
-                exchange = _exchange_projection(selected_capture, sequence, root=root)
+                exchange = (
+                    tutorial_exchange(sequence)
+                    if selected_capture == TUTORIAL_REFERENCE
+                    else _exchange_projection(selected_capture, sequence, root=root)
+                )
                 if exchange is None:
                     self._send_json({"error": "interaction_unavailable"}, status=HTTPStatus.NOT_FOUND)
                     return

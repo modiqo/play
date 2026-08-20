@@ -1,6 +1,6 @@
-import React, {useEffect, useState} from 'react'
+import React, {useEffect, useRef, useState} from 'react'
 import {formatNumber} from './format.js'
-import {KIND_LABEL, MAP_MEANING, WORLD_ROLE, WORLD_STORY} from './semantics.js'
+import {KIND_LABEL, MAP_MEANING, MODALITY_VOCABULARY, WORLD_MODEL_KINDS, WORLD_ROLE, WORLD_STORY, worldSpec} from './semantics.js'
 
 export function Telemetry({story, open, onToggle}) {
   const latency = Number(story?.telemetry.duration_ms || 0)
@@ -73,8 +73,6 @@ export function JourneyGuide({story, interactions, replay, playing, frozen, onOp
   </aside>
 }
 
-const WORLD_MODEL_KINDS = ['intent', 'capability', 'authority', 'effect', 'evidence', 'blocker', 'recovery', 'milestone', 'artifact', 'play_candidate']
-
 export function WorldModel({open, onToggle}) {
   return <>
     <button className="world-model-toggle" onClick={onToggle} aria-expanded={open}>◇ WORLD MODEL</button>
@@ -82,18 +80,89 @@ export function WorldModel({open, onToggle}) {
       <div className="panel-heading"><span>HOW TO READ THIS WORLD</span><button onClick={onToggle}>×</button></div>
       <p>The same spatial vocabulary repeats across every journey. Shape tells you what role a place has before you inspect its evidence.</p>
       <dl>{WORLD_MODEL_KINDS.map((kind) => <React.Fragment key={kind}>
-        <dt><i className={`world-glyph ${kind}`} />{KIND_LABEL[kind]}</dt>
+        <dt><i className={`world-glyph ${worldSpec(kind).glyph}`} />{KIND_LABEL[kind]}</dt>
         <dd><strong>{WORLD_ROLE[kind]}</strong><span>{WORLD_STORY[kind]}</span></dd>
       </React.Fragment>)}</dl>
+      <div className="world-modalities">{Object.entries(MODALITY_VOCABULARY).map(([modality, value]) => <div key={modality}><i className={`modality-mark ${modality}`} /><span><strong>{value.label}</strong><small>{value.note}</small></span></div>)}</div>
       <div className="world-model-note"><i className="route-mark" />The amber route is the agent’s path. Structures around a stop are recorded interactions; select one to inspect its redacted exchange.</div>
     </aside>
   </>
 }
 
+export function TutorialNarration({tutorial, replay, chapterCount}) {
+  const audio = useRef(null)
+  const [playing, setPlaying] = useState(false)
+  const [muted, setMuted] = useState(false)
+  const index = Math.max(0, Math.min(Math.max(0, chapterCount - 1), Math.floor(replay * Math.max(1, chapterCount - 1) + .001)))
+  const cue = tutorial?.cues?.find((item) => item.chapter === index) || tutorial?.cues?.[0]
+  const source = tutorial?.audio?.voice
+  useEffect(() => {
+    if (!audio.current || !source || !cue) return
+    if (Math.abs(audio.current.currentTime - Number(cue.start_seconds || 0)) > 3) audio.current.currentTime = Number(cue.start_seconds || 0)
+  }, [cue?.chapter, source])
+  if (!tutorial || !cue) return null
+  const toggle = () => {
+    if (!audio.current) return
+    if (audio.current.paused) audio.current.play().then(() => setPlaying(true)).catch(() => setPlaying(false))
+    else { audio.current.pause(); setPlaying(false) }
+  }
+  return <aside className="tutorial-narration" aria-live="polite">
+    <div><strong>{escapeTutorialLabel(cue.landmark)} · {escapeTutorialLabel(cue.primitive)}</strong><span>{String(index + 1).padStart(2, '0')} / {String(chapterCount).padStart(2, '0')}</span></div>
+    <p>{cue.text}</p>
+    {source
+      ? <nav><button onClick={toggle}>{playing ? 'Ⅱ PAUSE VOICE' : '▶ PLAY VOICE'}</button><button onClick={() => { if (audio.current) audio.current.muted = !muted; setMuted(!muted) }}>{muted ? 'UNMUTE' : 'MUTE'}</button></nav>
+      : <small>CAPTIONED EDITION · VOICE + MUSIC PRODUCTION PENDING</small>}
+    {source && <audio ref={audio} src={source} onEnded={() => setPlaying(false)} />}
+  </aside>
+}
+
+function escapeTutorialLabel(value) {
+  return String(value || 'START HERE').toUpperCase()
+}
+
+function BionicText({children}) {
+  return String(children).split(/(\s+)/).map((part, index) => {
+    if (/^\s+$/.test(part)) return part
+    const letters = part.match(/^([^A-Za-z0-9]*)([A-Za-z0-9]+)(.*)$/)
+    if (!letters) return part
+    const [, before, word, after] = letters
+    const pivot = Math.max(1, Math.ceil(word.length * .48))
+    return <React.Fragment key={`${part}:${index}`}>{before}<b>{word.slice(0, pivot)}</b>{word.slice(pivot)}{after}</React.Fragment>
+  })
+}
+
+export function TutorialExperience({tutorial, replay, chapterCount, playing, onBegin, onChooseWorkspace}) {
+  const [entered, setEntered] = useState(false)
+  if (!tutorial) return null
+  if (!entered) return <aside className="tutorial-intro">
+    <span>START HERE · BEFORE YOU PRESS PLAY</span>
+    <h1><BionicText>We do not anthropomorphize the agent. We embody it.</BionicText></h1>
+    <p><BionicText>Most interfaces describe an agent from the outside, as if it were a person. This world does the opposite: it places you at the agent’s vantage point, inside the situation where it is operating.</BionicText></p>
+    <p><BionicText>The world model begins with exact primitives, then paraphrases them as a spatial narrative you can experience.</BionicText></p>
+    <p><BionicText>It turns an agent trace into a spatio-temporal experience: an homage to Doom, Wolfenstein 3D, and Halo, games that taught us a world through movement, landmarks, and time. We borrow that legibility, not their visual style.</BionicText></p>
+    <dl>
+      <dt>INTENT</dt><dd><BionicText>The destination fixed before a route is chosen.</BionicText></dd>
+      <dt>CAPABILITY</dt><dd><BionicText>An equipped system, initialized before it is used.</BionicText></dd>
+      <dt>MODALITY</dt><dd><BionicText>CALL for adapters, SHELL for proc, DRIVE for browser.</BionicText></dd>
+      <dt>OPERATION</dt><dd><BionicText>An action performed through the equipped system.</BionicText></dd>
+      <dt>AUTHORITY</dt><dd><BionicText>Permission satisfied when the route requires it.</BionicText></dd>
+      <dt>OUTCOME</dt><dd><BionicText>Effect, evidence, blocker, recovery, milestone, or artifact.</BionicText></dd>
+    </dl>
+    <button onClick={() => { setEntered(true); onBegin() }}>ENTER THE VANTAGE · PLAY JOURNEY →</button>
+  </aside>
+  if (replay >= .999 && !playing) return <aside className="tutorial-complete">
+    <span>WORLD MODEL ORIENTED</span>
+    <h1><BionicText>Now enter a real situation.</BionicText></h1>
+    <p><BionicText>Choose a live or recorded Rote workspace. The same primitives, landmarks, capability lifecycle, and time grammar will repeat there.</BionicText></p>
+    <button onClick={onChooseWorkspace}>CHOOSE A WORKSPACE →</button>
+  </aside>
+  return <TutorialNarration tutorial={tutorial} replay={replay} chapterCount={chapterCount} />
+}
+
 const CAPABILITY_FAMILIES = {
-  adapter: {label: 'ADAPTER · API', note: 'Typed service manifests and operations'},
-  proc: {label: 'SHELL · PROC', note: 'Local CLIs executed as processes'},
-  browser: {label: 'BROWSER · BROWSE', note: 'Lease · ledger · slice · lens · action'},
+  adapter: {label: MODALITY_VOCABULARY.call.label, note: MODALITY_VOCABULARY.call.note},
+  proc: {label: MODALITY_VOCABULARY.shell.label, note: MODALITY_VOCABULARY.shell.note},
+  browser: {label: MODALITY_VOCABULARY.drive.label, note: MODALITY_VOCABULARY.drive.note},
 }
 
 function fallbackCapability(record) {
@@ -114,6 +183,7 @@ function capabilityOf(record) {
 }
 
 function capabilityKey(record) {
+  if (record?.capability_ref) return record.capability_ref
   const capability = capabilityOf(record)
   const unit = capability.family === 'browser' ? capability.primitive : capability.id
   return `${capability.family}:${unit || capability.label}`
@@ -134,16 +204,17 @@ function effectPosture(entry) {
 }
 
 function capabilityDetail(entry) {
-  const {capability, modes, scopes} = entry
+  const {capability, modes, scopes, instance} = entry
   const access = `${effectPosture(entry)}${entry.destructive ? ' · DESTRUCTIVE' : ''}`
   const scope = [...scopes].map((value) => value.replaceAll('_', ' ')).join(' + ')
+  const lifecycle = instance ? `INIT ${instance.initialization?.state || 'unknown'} · AUTH ${instance.authorization?.state || 'unknown'} · ${instance.state}` : ''
   if (capability.family === 'adapter') {
     const manifest = capability.manifest || {}
-    return [access, scope, [...modes].join(' + '), manifest.spec_type, capability.transport].filter(Boolean).join(' · ')
+    return [lifecycle, access, scope, [...modes].join(' + '), manifest.spec_type, capability.transport].filter(Boolean).join(' · ')
   }
-  if (capability.family === 'proc') return [access, scope, [...modes].join(' · ') || capability.mode || 'argv'].filter(Boolean).join(' · ')
-  if (capability.family === 'browser') return [access, scope, capability.primitive || 'browse'].filter(Boolean).join(' · ')
-  return [access, scope, capability.primitive || 'workspace'].filter(Boolean).join(' · ')
+  if (capability.family === 'proc') return [lifecycle, access, scope, [...modes].join(' · ') || capability.mode || 'argv'].filter(Boolean).join(' · ')
+  if (capability.family === 'browser') return [lifecycle, access, scope, capability.primitive || 'browse'].filter(Boolean).join(' · ')
+  return [lifecycle, access, scope, capability.primitive || 'workspace'].filter(Boolean).join(' · ')
 }
 
 export function CapabilityRail({story, interactions, replay, onJump}) {
@@ -152,6 +223,7 @@ export function CapabilityRail({story, interactions, replay, onJump}) {
   const currentChapter = story.chapters[chapterIndex]
   const activeRecords = (interactions?.sites?.[currentChapter?.id] || []).filter((record) => capabilityOf(record).family in CAPABILITY_FAMILIES)
   const activeKeys = new Set(activeRecords.map(capabilityKey))
+  const instances = new Map((story.capabilities || []).map((instance) => [instance.id, instance]))
   const byKey = new Map()
   story.chapters.forEach((chapter, sourceIndex) => {
     for (const record of interactions?.sites?.[chapter.id] || []) {
@@ -159,7 +231,7 @@ export function CapabilityRail({story, interactions, replay, onJump}) {
       if (!(capability.family in CAPABILITY_FAMILIES)) continue
       const key = capabilityKey(record)
       const existing = byKey.get(key)
-      const entry = existing || {key, capability, firstIndex: sourceIndex, lastIndex: sourceIndex, count: 0, modes: new Set(), tools: new Set(), postures: new Set(), scopes: new Set(), destructive: false}
+      const entry = existing || {key, capability, instance: instances.get(record.capability_ref), firstIndex: sourceIndex, lastIndex: sourceIndex, count: 0, modes: new Set(), tools: new Set(), postures: new Set(), scopes: new Set(), destructive: false}
       entry.firstIndex = Math.min(entry.firstIndex, sourceIndex)
       entry.lastIndex = Math.max(entry.lastIndex, sourceIndex)
       entry.count += 1

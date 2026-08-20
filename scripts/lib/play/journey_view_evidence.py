@@ -11,6 +11,7 @@ from typing import Any
 
 from .journey import _capture, _load_source
 from .journey_capabilities import capability_descriptor
+from .journey_world_model import enrich_operation
 
 
 INTERACTIONS_SCHEMA = "play.journey-interactions/v1"
@@ -128,6 +129,9 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
                     operation,
                     provider,
                 )
+            operation_context = dict(activity)
+            operation_context["capability"] = capability
+            enrich_operation(operation_context)
             interactions.append(
                 {
                     "sequence": sequence,
@@ -135,6 +139,15 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
                     "operation": operation,
                     "provider": provider,
                     "capability": dict(capability),
+                    "capability_ref": operation_context.get("capability_ref")
+                    if isinstance(operation_context.get("capability_ref"), str)
+                    else None,
+                    "modality": operation_context.get("modality")
+                    if isinstance(operation_context.get("modality"), str)
+                    else None,
+                    "lifecycle_phase": operation_context.get("lifecycle_phase")
+                    if isinstance(operation_context.get("lifecycle_phase"), str)
+                    else "use",
                     "effect_profile": dict(activity["effect_profile"])
                     if isinstance(activity.get("effect_profile"), Mapping)
                     else {

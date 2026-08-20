@@ -1,14 +1,14 @@
 import React from 'react'
 import Cartography from './atlas.jsx'
 import {formatNumber} from './format.js'
-import {CapabilityRail, JourneyGuide, Telemetry, WorldModel} from './panels.jsx'
+import {CapabilityRail, JourneyGuide, Telemetry, TutorialExperience, WorldModel} from './panels.jsx'
 import {KIND_LABEL, MAP_MEANING} from './semantics.js'
 import {useJourneyRuntime} from './use-journey-runtime.js'
 import JourneyWorld from './world.jsx'
 
 export default function App() {
   const {
-    index, workspace, story, scene, interactions, selected, setSelected, exchange,
+    index, workspace, story, scene, interactions, tutorial, selected, setSelected, exchange,
     replay, playing, observing, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
     mode, setMode, message, loadError, journeysOpen, setJourneysOpen,
     telemetryOpen, setTelemetryOpen, worldModelOpen, setWorldModelOpen, refreshing,
@@ -22,7 +22,8 @@ export default function App() {
   const liveCapture = selectedWorkspace?.capture_state === 'active'
   const liveActivity = Boolean(liveCapture && selectedWorkspace?.active_recently)
   const recalled = story?.origin?.kind === 'recalled_play'
-  const status = recalled ? 'RECALLED PLAY' : liveActivity ? 'LIVE' : liveCapture ? 'IDLE' : 'HISTORY'
+  const isTutorial = story?.origin?.kind === 'tutorial'
+  const status = isTutorial ? 'START HERE' : recalled ? 'RECALLED PLAY' : liveActivity ? 'LIVE' : liveCapture ? 'IDLE' : 'HISTORY'
   const replayChapter = story ? Math.min(story.chapters.length - 1, Math.floor(replay * Math.max(1, story.chapters.length - 1) + .001)) : 0
   const currentReplayChapter = story?.chapters[replayChapter]
   const frozen = mode === 'follow' && observing && !playing
@@ -72,8 +73,10 @@ export default function App() {
       <div className="workspace-list">{index?.workspaces.map((item) => {
         const unavailable = !item.graph_ready && !item.projectable
         const stateLabel = workspace === item.id
-          ? recalled ? 'VIEWING · RECALLED' : item.active_recently ? 'VIEWING · LIVE' : item.capture_state === 'active' ? 'VIEWING · IDLE' : 'VIEWING'
-          : item.graph_ready && item.active_recently
+          ? item.tutorial ? 'VIEWING · TUTORIAL' : recalled ? 'VIEWING · RECALLED' : item.active_recently ? 'VIEWING · LIVE' : item.capture_state === 'active' ? 'VIEWING · IDLE' : 'VIEWING'
+          : item.tutorial
+            ? 'START HERE'
+            : item.graph_ready && item.active_recently
             ? 'LIVE'
             : item.graph_ready && item.capture_state === 'active'
               ? 'IDLE'
@@ -112,6 +115,9 @@ export default function App() {
             {interaction.provider && <><dt>PROVIDER</dt><dd>{interaction.provider}</dd></>}
             {interaction.capability && <>
               <dt>CAPABILITY</dt><dd>{interaction.capability.family} · {interaction.capability.interface}</dd>
+              {interaction.capability_ref && <><dt>INSTANCE</dt><dd>{interaction.capability_ref}</dd></>}
+              {interaction.modality && <><dt>MODALITY</dt><dd>{interaction.modality.toUpperCase()}</dd></>}
+              {interaction.lifecycle_phase && <><dt>LIFECYCLE</dt><dd>{interaction.lifecycle_phase.toUpperCase()}</dd></>}
               <dt>SYSTEM</dt><dd>{interaction.capability.label}</dd>
               {interaction.capability.mode && <><dt>MODE</dt><dd>{interaction.capability.mode}</dd></>}
               {interaction.capability.primitive && <><dt>PRIMITIVE</dt><dd>{interaction.capability.primitive}</dd></>}
@@ -141,6 +147,7 @@ export default function App() {
       </>}
     </aside>
     {mode === 'follow' && story && interactions && <JourneyGuide story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} onOpen={selectVantage} onNavigate={jumpToChapter} />}
+    {mode === 'follow' && story && tutorial && <TutorialExperience key={story.journey_key} tutorial={tutorial} replay={replay} chapterCount={story.chapters.length} playing={playing} onBegin={() => { jumpToChapter(0); togglePlayback() }} onChooseWorkspace={() => setJourneysOpen(true)} />}
     {mode === 'follow' && story && interactions && !showEvidencePanel && <CapabilityRail story={story} interactions={interactions} replay={replay} onJump={jumpToChapter} />}
     <WorldModel open={worldModelOpen} onToggle={() => setWorldModelOpen((value) => !value)} />
     <Telemetry story={story} open={telemetryOpen} onToggle={() => setTelemetryOpen((value) => !value)} />

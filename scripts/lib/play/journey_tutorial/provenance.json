@@ -1,0 +1,7 @@
+{
+  "schema": "play.journey-media-provenance/v1",
+  "status": "awaiting-production",
+  "voice": {"provider": "ElevenLabs", "adapter": "elevenlabs", "operation": null, "voice_id": null, "model_id": null},
+  "music": {"source": null, "license": null, "sha256": null},
+  "mix": {"file": null, "sha256": null, "reviewed": false}
+}
