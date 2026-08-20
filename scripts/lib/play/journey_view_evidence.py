@@ -12,6 +12,7 @@ from typing import Any
 from .journey import _capture, _load_source
 from .journey_capabilities import capability_descriptor
 from .journey_world_model import enrich_operation
+from .journey_view_catalog import _workspace_capture_for_reference
 
 
 INTERACTIONS_SCHEMA = "play.journey-interactions/v1"
@@ -161,6 +162,12 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
                     "effect": activity.get("effect")
                     if isinstance(activity.get("effect"), str)
                     else None,
+                    "semantic_kind": str(
+                        activity.get("semantic_kind") or activity.get("kind") or "phase"
+                    ),
+                    "semantic_role": activity.get("role")
+                    if isinstance(activity.get("role"), str)
+                    else None,
                     "status": str(activity.get("status") or "unknown"),
                     "duration_ms": int(activity.get("duration_ms") or 0),
                     "tokens": int(activity.get("tokens") or 0),
@@ -198,6 +205,8 @@ def _exchange_projection(
     if sequence not in allowed:
         return None
     capture = _capture(capture_ref)
+    if capture is None:
+        capture = _workspace_capture_for_reference(capture_ref)
     workspace_value = capture.get("workspace_path") if isinstance(capture, Mapping) else None
     if not isinstance(workspace_value, str):
         return None

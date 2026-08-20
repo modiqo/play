@@ -81,6 +81,7 @@ MAX_LIFETIME_SECONDS = 8 * 60 * 60
 PROJECTION_START_TIMEOUT_SECONDS = 4.0
 DEFAULT_VIEWER_PORT = 52050
 VIEWER_STOP_TIMEOUT_SECONDS = 2.0
+VIEWER_KILL_SETTLE_SECONDS = 1.0
 WORKSPACE_SYNC_INTERVAL_SECONDS = 1.0
 
 
@@ -201,6 +202,9 @@ def _stop_journey_viewers(*, root: Path | None = None) -> list[int]:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+    settle_deadline = time.monotonic() + VIEWER_KILL_SETTLE_SECONDS
+    while any(_pid_running(pid) for pid in pids) and time.monotonic() < settle_deadline:
+        time.sleep(0.05)
     for path in _viewer_state_paths(root=root):
         try:
             path.unlink()

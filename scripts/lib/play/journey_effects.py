@@ -19,7 +19,7 @@ SCHEMA = "play.journey-effect/v1"
 
 _READ_HTTP_METHODS = {"GET", "HEAD", "OPTIONS"}
 _WRITE_HTTP_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-_BROWSER_READ_PRIMITIVES = {"lease", "ledger", "slice", "lens", "wait", "navigate"}
+_BROWSER_READ_PRIMITIVES = {"inventory", "ledger", "slice", "lens", "wait", "navigate"}
 _PROCESS_WRITE_TAGS = {
     "write_fs",
     "write_outside_workspace",
@@ -257,6 +257,9 @@ def classify_effect(
         phase = str(capability.get("phase") or "")
         if phase == "probe":
             return _profile("read", scopes=("external_service",), source="adapter_probe")
+        if command_type == "For" and capability.get("id") == "http":
+            method = str(capability.get("http_method") or "").upper()
+            return _adapter_operation_profile({"method": method})
         adapter_id = str(capability.get("id") or "")
         operations = capability.get("operations")
         operations = operations if isinstance(operations, list) else []
@@ -272,7 +275,6 @@ def classify_effect(
         return _process_profile(payload, typed_receipts)
     if family == "browser":
         primitive = str(capability.get("primitive") or "")
-        tool = str(capability.get("tool") or "")
         if primitive in _BROWSER_READ_PRIMITIVES:
             scopes = ("external_service", "browser_state") if primitive == "navigate" else ("browser_state",)
             return _profile("read", scopes=scopes, source="browser_ledger_primitive")

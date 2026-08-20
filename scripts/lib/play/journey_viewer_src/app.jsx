@@ -18,6 +18,7 @@ export default function App() {
   const interaction = selected?.sequence
     ? interactions?.sites?.[selected.siteId]?.find((item) => item.sequence === selected.sequence)
     : null
+  const presentedKind = interaction?.semantic_kind || chapter?.kind
   const selectedWorkspace = index?.workspaces.find((item) => item.id === workspace)
   const liveCapture = selectedWorkspace?.journey_mode === 'live'
   const liveActivity = Boolean(liveCapture && selectedWorkspace?.active_recently)
@@ -104,9 +105,10 @@ export default function App() {
     <aside className={`landmark-panel${showEvidencePanel ? ' visible' : ''}`}>
       {showEvidencePanel && <>
         <div className="panel-heading"><span>{interaction ? `INTERACTION @${interaction.sequence}` : `DISTRICT ${String(chapter.order + 1).padStart(2, '0')}`}</span><button onClick={() => setSelected(null)}>×</button></div>
-        <span className="kind">{KIND_LABEL[chapter.kind] || chapter.kind}</span>
-        <h1>{chapter.title}</h1><p>{chapter.detail}</p>
-        <div className="meaning"><strong>WHY THIS STEP EXISTS</strong><span>{MAP_MEANING[chapter.kind] || 'Advances the requested outcome while preserving evidence.'}</span></div>
+        <span className="kind">{KIND_LABEL[presentedKind] || presentedKind}</span>
+        <h1>{interaction ? interaction.capability?.label || interaction.operation : chapter.title}</h1>
+        <p>{interaction ? `${interaction.operation} · situated at ${chapter.title}` : chapter.detail}</p>
+        <div className="meaning"><strong>WHY THIS STEP EXISTS</strong><span>{MAP_MEANING[presentedKind] || 'Advances the requested outcome while preserving evidence.'}</span></div>
         {interaction ? <>
           <dl>
             <dt>OPERATION</dt><dd>{interaction.operation}</dd><dt>STATE</dt><dd>{interaction.status}</dd>

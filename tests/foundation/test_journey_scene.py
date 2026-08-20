@@ -696,6 +696,52 @@ class JourneySceneTest(unittest.TestCase):
         self.assertNotIn("body-secret", encoded)
         self.assertIn("[REDACTED]", encoded)
 
+        interactions = _interaction_projection(
+            self.capture["reference"], root=self.journeys
+        )
+        projected = next(items for items in interactions["sites"].values() if items)[0]
+        self.assertEqual(self.activities[0]["kind"], projected["semantic_kind"])
+
+    def test_attached_workspace_reference_resolves_private_exchange(self) -> None:
+        graph = self.graph(self.activities[:1])
+        _persist_graph_state(
+            self.capture["reference"],
+            fingerprint="f" * 64,
+            command_count=1,
+            activities=self.activities[:1],
+            dependencies=[],
+            graph=graph,
+            root=self.journeys,
+        )
+        workspace = Path(self.temporary.name) / "attached-workspace"
+        response_root = workspace / ".rote" / "responses"
+        response_root.mkdir(parents=True)
+        with closing(sqlite3.connect(workspace / ".rote" / "workspace.db")) as connection:
+            connection.execute(
+                "CREATE TABLE command_log (sequence INTEGER PRIMARY KEY, command_type TEXT, "
+                "params TEXT, response_ids TEXT, timestamp TEXT)"
+            )
+            connection.execute(
+                "INSERT INTO command_log VALUES (?, ?, ?, ?, ?)",
+                (1, "HttpRequest", "{}", "[1]", "2026-08-20T00:00:00Z"),
+            )
+            connection.commit()
+        (response_root / "@1.json").write_text(
+            json.dumps({"request": {"method": "tools/call"}, "response": {"ok": True}})
+        )
+
+        with patch("scripts.lib.play.journey_view_evidence._capture", return_value=None), patch(
+            "scripts.lib.play.journey_view_evidence._workspace_capture_for_reference",
+            return_value={"workspace_path": str(workspace)},
+        ):
+            exchange = _exchange_projection(
+                self.capture["reference"], 1, root=self.journeys
+            )
+
+        self.assertIsNotNone(exchange)
+        assert exchange is not None
+        self.assertEqual({"ok": True}, exchange["response"])
+
     def test_view_starts_a_missed_projector_and_waits_for_the_first_graph(self) -> None:
         graph = self.graph(self.activities)
         with patch(

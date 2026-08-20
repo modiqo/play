@@ -16,6 +16,7 @@ from scripts.lib.play.journey import (
     MAX_SNAPSHOT_NODES,
     PROJECTION_VERSION,
     SCHEMA,
+    _browser_response_metadata,
     append_source_event,
     build_graph,
     build_snapshot,
@@ -335,7 +336,7 @@ class JourneyProjectionTest(unittest.TestCase):
                 ("call", "authorize", "authority"),
                 ("call", "use", "effect"),
                 (None, "initialize", "evidence"),
-                ("shell", "use", "phase"),
+                ("shell", "use", "effect"),
                 ("shell", "observe", "phase"),
                 ("shell", "close", "effect"),
             ],
@@ -583,6 +584,13 @@ class JourneyProjectionTest(unittest.TestCase):
         self.assertEqual("rote", capability["family"])
 
     def test_browser_inventory_and_reads_have_distinct_semantics(self) -> None:
+        operations = (
+            ("initialize", {}),
+            ("browser_tabs", {"action": "list"}),
+            ("browser_snapshot", {}),
+            ("browser_navigate", {}),
+            ("browser_click", {}),
+        )
         rows = [
             raw_command(
                 index,
@@ -590,12 +598,13 @@ class JourneyProjectionTest(unittest.TestCase):
                 response_id=index,
                 params={
                     "endpoint": "stdio:/browser",
-                    "body": {"method": "tools/call", "params": {"name": operation}},
+                    "body": {
+                        "method": "tools/call",
+                        "params": {"name": operation, "arguments": arguments},
+                    },
                 },
             )
-            for index, operation in enumerate(
-                ("initialize", "browser_tabs", "browser_snapshot", "browser_navigate", "browser_click"), 1
-            )
+            for index, (operation, arguments) in enumerate(operations, 1)
         ]
         activities = normalize_entries(
             rows,
@@ -603,15 +612,218 @@ class JourneyProjectionTest(unittest.TestCase):
         )
 
         self.assertEqual("capability", activities[0]["kind"])
-        self.assertEqual("read", activities[1]["effect"])
-        self.assertEqual("read", activities[2]["effect"])
+        self.assertEqual(("evidence", None), (activities[1]["kind"], activities[1]["effect"]))
+        self.assertEqual(("evidence", None), (activities[2]["kind"], activities[2]["effect"]))
         self.assertEqual("read", activities[3]["effect"])
         self.assertEqual("unknown", activities[4]["effect"])
         self.assertEqual(
-            ["lease", "lease", "ledger", "navigate", "action"],
+            ["lease", "inventory", "ledger", "navigate", "action"],
             [item["capability"]["primitive"] for item in activities],
         )
+        self.assertEqual(["initialize", "observe", "observe", "use", "use"], [
+            item["lifecycle_phase"] for item in activities
+        ])
         self.assertTrue(all(item["capability"]["family"] == "browser" for item in activities))
+
+    def test_browser_ledger_identifies_generated_wait_as_observation(self) -> None:
+        ledger_root = self.workspace / ".rote" / "browser"
+        ledger_root.mkdir(parents=True)
+        (ledger_root / "ledger.json").write_text(
+            json.dumps({"waits": [{"response_id": 7, "settled": True}]})
+        )
+        row = raw_command(
+            1,
+            command_type="HttpRequest",
+            response_id=7,
+            params={
+                "endpoint": "stdio:/playwright-nosandbox",
+                "body": {
+                    "method": "tools/call",
+                    "params": {"name": "browser_run_code_unsafe", "arguments": {"code": "opaque"}},
+                },
+            },
+        )
+
+        activity = normalize_entries(
+            [row],
+            response_metadata={7: self.metadata()},
+            browser_metadata=_browser_response_metadata(self.workspace),
+        )[0]
+
+        self.assertEqual(("wait", "evidence", "observe"), (
+            activity["capability"]["primitive"],
+            activity["kind"],
+            activity["lifecycle_phase"],
+        ))
+        self.assertNotIn("opaque", json.dumps(activity))
+
+    def test_browser_ledger_prefers_blockers_and_authority_over_observations(self) -> None:
+        ledger_root = self.workspace / ".rote" / "browser"
+        ledger_root.mkdir(parents=True)
+        (ledger_root / "ledger.json").write_text(
+            json.dumps(
+                {
+                    "snapshots": [
+                        {"response_id": 7},
+                        {"response_id": 8},
+                    ],
+                    "policy_gates": [{"response_id": 7}],
+                    "capture_failures": [{"response_id": 8}],
+                }
+            )
+        )
+
+        metadata = _browser_response_metadata(self.workspace)
+
+        self.assertEqual("authority", metadata[7]["kind"])
+        self.assertEqual("blocker", metadata[8]["kind"])
+
+    def test_browser_operation_taxonomy_covers_observe_use_and_authority(self) -> None:
+        cases = (
+            ("browser_tabs", {"action": "list"}, None, "inventory", "evidence", "observe"),
+            ("browser_tabs", {"action": "new"}, None, "lease", "effect", "use"),
+            ("browser_snapshot", {}, None, "ledger", "evidence", "observe"),
+            ("browser_take_screenshot", {}, None, "ledger", "evidence", "observe"),
+            ("browser_wait_for", {}, None, "wait", "evidence", "observe"),
+            ("browser_navigate", {}, None, "navigate", "effect", "use"),
+            ("browser_navigate_back", {}, None, "navigate", "effect", "use"),
+            ("browser_click", {}, {"kind": "action", "action_kind": "click"}, "action", "effect", "use"),
+            ("browser_type", {}, {"kind": "action", "action_kind": "type"}, "action", "effect", "use"),
+            ("browser_run_code", {}, None, "action", "effect", "use"),
+            ("browser_snapshot", {}, {"kind": "authority"}, "authority", "authority", "authorize"),
+            ("browser_snapshot", {}, {"kind": "blocker"}, "ledger", "blocker", "observe"),
+        )
+        for index, (tool, arguments, browser_record, primitive, kind, lifecycle) in enumerate(cases, 1):
+            with self.subTest(tool=tool, browser_record=browser_record):
+                row = raw_command(
+                    index,
+                    command_type="HttpRequest",
+                    response_id=index,
+                    params={
+                        "endpoint": "stdio:/playwright-nosandbox",
+                        "body": {
+                            "method": "tools/call",
+                            "params": {"name": tool, "arguments": arguments},
+                        },
+                    },
+                )
+                activity = normalize_entries(
+                    [row],
+                    response_metadata={index: self.metadata()},
+                    browser_metadata={index: browser_record} if browser_record else {},
+                )[0]
+                self.assertEqual((primitive, kind, lifecycle), (
+                    activity["capability"]["primitive"],
+                    activity["kind"],
+                    activity["lifecycle_phase"],
+                ))
+
+    def test_proc_operation_taxonomy_uses_policy_and_lease_lifecycle(self) -> None:
+        rows = [
+            raw_command(1, command_type="ProcessExec", response_id=1, params={"invocation": {"program": "rg", "args": []}}),
+            raw_command(2, command_type="ProcessExec", response_id=2, params={"invocation": {"program": "touch", "args": []}}),
+            raw_command(3, command_type="ProcessPtyRun", response_id=3, params={"invocation": {"program": "bash", "args": []}}),
+            raw_command(4, command_type="ProcessExec", response_id=4, params={"invocation": {"program": "gh", "args": []}}),
+            raw_command(5, command_type="ProcessBackgroundStart", response_id=5, params={"invocation": {"program": "server", "args": []}, "lease_id": "proc-1"}),
+            raw_command(6, command_type="ProcessBackgroundStatus", response_id=6, params={"lease_id": "proc-1"}),
+            raw_command(7, command_type="ProcessBackgroundWait", response_id=7, params={"lease_id": "proc-1"}),
+            raw_command(8, command_type="ProcessBackgroundStop", response_id=8, params={"lease_id": "proc-1"}),
+            raw_command(9, command_type="StreamFollow", response_id=9, params={"invocation": {"kind": "process", "lease_id": "proc-1"}}),
+        ]
+        metadata = {
+            1: self.metadata(risk_tags=["read_fs"]),
+            2: self.metadata(risk_tags=["write_fs"]),
+            3: self.metadata(risk_tags=["pty"]),
+            4: self.metadata(risk_tags=["interactive_auth"]),
+            **{index: self.metadata() for index in range(5, 10)},
+        }
+
+        activities = normalize_entries(rows, response_metadata=metadata)
+
+        self.assertEqual(
+            [
+                ("phase", "inspection", "use"),
+                ("effect", "write", "use"),
+                ("phase", "unknown", "use"),
+                ("authority", None, "authorize"),
+                ("effect", "unknown", "use"),
+                ("phase", "supporting", "observe"),
+                ("phase", "supporting", "observe"),
+                ("effect", "unknown", "close"),
+                ("evidence", "supporting", "observe"),
+            ],
+            [(item["kind"], item["role"], item["lifecycle_phase"]) for item in activities],
+        )
+        self.assertEqual(
+            activities[4]["capability_ref"], activities[5]["capability_ref"]
+        )
+
+    def test_iterated_adapter_and_http_calls_preserve_typed_effects(self) -> None:
+        adapter_body = json.dumps(
+            {
+                "method": "tools/call",
+                "params": {
+                    "name": "github_call",
+                    "arguments": {"tool_name": "issues.list", "arguments": {"owner": "$owner"}},
+                },
+            }
+        )
+        rows = [
+            raw_command(
+                1,
+                command_type="For",
+                response_id=1,
+                params={
+                    "source_response": 9,
+                    "source_query": ".items[]",
+                    "parallel": True,
+                    "endpoint": "adapter/github",
+                    "method": "POST",
+                    "body_template": adapter_body,
+                },
+            ),
+            raw_command(
+                2,
+                command_type="For",
+                response_id=2,
+                params={
+                    "source_response": 9,
+                    "source_query": ".items[]",
+                    "parallel": False,
+                    "endpoint": "https://api.example.test/items",
+                    "method": "GET",
+                    "body_template": "{}",
+                },
+            ),
+            raw_command(
+                3,
+                command_type="For",
+                response_id=3,
+                params={
+                    "source_response": 9,
+                    "source_query": ".items[]",
+                    "parallel": False,
+                    "endpoint": "https://api.example.test/items",
+                    "method": "DELETE",
+                    "body_template": "{}",
+                },
+            ),
+        ]
+
+        activities = normalize_entries(
+            rows,
+            response_metadata={index: self.metadata() for index in range(1, 4)},
+            tool_resolver=lambda _adapter, _operation: {"method": "GET"},
+        )
+
+        self.assertEqual(("issues.list", "github", "parallel iteration", "read"), (
+            activities[0]["operation"],
+            activities[0]["provider"],
+            activities[0]["capability"]["mode"],
+            activities[0]["effect"],
+        ))
+        self.assertEqual(("read", "write"), (activities[1]["effect"], activities[2]["effect"]))
+        self.assertTrue(all(item["kind"] == "effect" for item in activities))
 
     def test_browser_query_read_becomes_an_evidence_lens(self) -> None:
         rows = [

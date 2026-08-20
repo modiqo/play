@@ -93,11 +93,50 @@ def adapter_manifest_summary(adapter_id: str) -> dict[str, Any] | None:
     return {key: item for key, item in summary.items() if item is not None}
 
 
-def _browser_primitive(operation: str) -> tuple[str, str]:
+def _browser_action(payload: Mapping[str, Any]) -> str | None:
+    """Return one allowlisted browser action without retaining arguments."""
+
+    body = payload.get("body")
+    body = body if isinstance(body, Mapping) else {}
+    params = body.get("params")
+    params = params if isinstance(params, Mapping) else {}
+    arguments = params.get("arguments")
+    arguments = arguments if isinstance(arguments, Mapping) else {}
+    action = arguments.get("action")
+    if not isinstance(action, str):
+        return None
+    value = action.lower().replace("-", "_")
+    return value if value in {"list", "new", "select", "activate", "close"} else None
+
+
+def _browser_primitive(
+    operation: str,
+    payload: Mapping[str, Any],
+    browser_record: Mapping[str, Any] | None = None,
+) -> tuple[str, str]:
     value = operation.lower().replace("-", "_")
+    record_kind = str((browser_record or {}).get("kind") or "")
+    if record_kind == "authority":
+        return "authority", "Browser authority"
+    if record_kind == "blocker":
+        return "ledger", "Browser capture"
+    if record_kind == "wait":
+        return "wait", "Browser wait"
+    if record_kind in {"snapshot", "assertion"}:
+        return "ledger", "Page observation"
+    if record_kind == "action":
+        return "action", "Browser action"
+    action = _browser_action(payload)
+    if "tabs" in value and action == "list":
+        return "inventory", "Tab inventory"
     if "tabs" in value or "lease" in value or value == "initialize":
         return "lease", "Page lease"
-    if "snapshot" in value or "ledger" in value or "history" in value:
+    if (
+        "snapshot" in value
+        or "screenshot" in value
+        or "ledger" in value
+        or "history" in value
+    ):
         return "ledger", "Page ledger"
     if "slice" in value:
         return "slice", "Snapshot slice"
@@ -174,9 +213,25 @@ def adapter_invocation(payload: Mapping[str, Any]) -> dict[str, Any] | None:
         return None
     adapter_id = match.group("adapter_id")
     body = payload.get("body")
+    template_present = isinstance(payload.get("body_template"), str)
+    if not isinstance(body, Mapping):
+        template = payload.get("body_template")
+        if isinstance(template, str):
+            try:
+                body = json.loads(template)
+            except json.JSONDecodeError:
+                body = None
     body = body if isinstance(body, Mapping) else {}
     method = _safe_string(body.get("method")) or ""
     if method != "tools/call":
+        if template_present:
+            return {
+                "adapter_id": adapter_id,
+                "phase": "call",
+                "mode": "iteration",
+                "wrapper": None,
+                "operations": [],
+            }
         return {
             "adapter_id": adapter_id,
             "phase": "protocol",
@@ -227,6 +282,7 @@ def capability_descriptor(
     provider: str | None,
     *,
     manifest_resolver: Callable[[str], Mapping[str, Any] | None] | None = None,
+    browser_record: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Describe the Rote execution substrate without semantic guesswork."""
 
@@ -267,8 +323,8 @@ def capability_descriptor(
     if command_type == "HttpRequest" and (
         _BROWSER_ENDPOINT.search(endpoint) or operation.startswith("browser_")
     ):
-        primitive, label = _browser_primitive(operation)
-        return {
+        primitive, label = _browser_primitive(operation, payload, browser_record)
+        descriptor = {
             "schema": SCHEMA,
             "family": "browser",
             "interface": "browse",
@@ -278,8 +334,19 @@ def capability_descriptor(
             "tool": operation,
             "transport": "stdio",
         }
+        action = _browser_action(payload)
+        if action is not None:
+            descriptor["action"] = action
+        record_kind = (browser_record or {}).get("kind")
+        if isinstance(record_kind, str):
+            descriptor["record_kind"] = record_kind
+        return descriptor
 
-    adapter = adapter_invocation(payload) if command_type == "HttpRequest" else None
+    adapter = (
+        adapter_invocation(payload)
+        if command_type in {"HttpRequest", "For"}
+        else None
+    )
     if adapter is not None and adapter["phase"] != "protocol":
         adapter_id = str(adapter["adapter_id"])
         resolver = manifest_resolver or (lambda _adapter_id: None)
@@ -301,6 +368,12 @@ def capability_descriptor(
             "operations": operations,
             "transport": str(manifest.get("transport") or "adapter"),
         }
+        if command_type == "For":
+            descriptor["mode"] = (
+                "parallel iteration"
+                if payload.get("parallel") is True
+                else "sequential iteration"
+            )
         if manifest:
             descriptor["manifest"] = manifest
         return {key: value for key, value in descriptor.items() if value is not None}
@@ -359,6 +432,7 @@ def capability_descriptor(
             "tool": operation,
             "operations": [],
             "transport": "http",
+            "http_method": str(payload.get("method") or "").upper() or None,
         }
 
     if command_type.startswith("Process") or command_type == "StreamFollow":

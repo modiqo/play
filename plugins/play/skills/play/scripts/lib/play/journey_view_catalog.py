@@ -46,6 +46,7 @@ def _workspace_activity(workspace_path: Path | None) -> tuple[float | None, bool
         rote_root / "workspace.db",
         rote_root / "workspace.db-wal",
         rote_root / "responses",
+        rote_root / "browser" / "ledger.json",
     )
     modified: list[float] = []
     for candidate in candidates:
@@ -175,6 +176,17 @@ def _workspace_capture(
         "workspace_path": str(workspace_path),
         **({"origin": origin} if origin is not None else {}),
     }
+
+
+def _workspace_capture_for_reference(reference: str) -> dict[str, Any] | None:
+    """Resolve one deterministic attached-workspace reference back to Rote."""
+
+    if not reference.startswith("workspace:"):
+        return None
+    for workspace_path in _rote_workspaces():
+        if _workspace_reference(workspace_path) == reference:
+            return _workspace_capture(workspace_path)
+    return None
 
 
 def _active_workspace_capture(

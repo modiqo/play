@@ -41,7 +41,7 @@ SCHEMA = "play.journey-viewport/v1"
 FULL_GRAPH_SCHEMA = "play.journey-graph/v1"
 EVENT_SCHEMA = "play.journey-source-event/v1"
 WORKER_SCHEMA = "play.journey-worker/v1"
-PROJECTION_VERSION = "rules-v7"
+PROJECTION_VERSION = "rules-v9"
 DATABASE_SCHEMA_VERSION = 1
 
 MAX_LABEL_CHARS = 120
@@ -427,6 +427,49 @@ def _response_metadata(workspace: Path, response_ids: Sequence[int]) -> dict[int
     return metadata
 
 
+def _browser_response_metadata(workspace: Path) -> dict[int, dict[str, str]]:
+    """Index Rote's typed browser ledger without copying page content."""
+
+    path = workspace / ".rote" / "browser" / "ledger.json"
+    try:
+        if path.stat().st_size > RESPONSE_METADATA_LIMIT:
+            return {}
+        ledger = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(ledger, Mapping):
+        return {}
+    indexed: dict[int, dict[str, str]] = {}
+    collections = (
+        ("assertions", "assertion", 0),
+        ("snapshots", "snapshot", 1),
+        ("waits", "wait", 2),
+        ("actions", "action", 3),
+        ("auth_restores", "authority", 4),
+        ("policy_gates", "authority", 4),
+        ("capture_failures", "blocker", 5),
+    )
+    priorities: dict[int, int] = {}
+    for collection, kind, priority in collections:
+        records = ledger.get(collection)
+        if not isinstance(records, list):
+            continue
+        for record in records:
+            if not isinstance(record, Mapping):
+                continue
+            response_id = record.get("response_id")
+            if not isinstance(response_id, int) or response_id < 1:
+                continue
+            current = indexed.setdefault(response_id, {})
+            if priority >= priorities.get(response_id, -1):
+                current["kind"] = kind
+                priorities[response_id] = priority
+            action_kind = record.get("action_kind")
+            if isinstance(action_kind, str) and action_kind:
+                current["action_kind"] = _safe_label(action_kind).lower()
+    return indexed
+
+
 def _workspace_response_ids(workspace: Path) -> list[int]:
     """Enumerate the complete typed response plane when the workspace changed."""
 
@@ -609,6 +652,22 @@ def _operation(entry: Mapping[str, Any], payload: Mapping[str, Any]) -> tuple[st
         provider = str(payload.get("adapter_id") or "data")
         operation = str(payload.get("tool_name") or "data query")
         ephemeral = f"{provider} {operation}"
+    elif command_type == "For":
+        adapter = adapter_invocation(payload)
+        if adapter is not None:
+            provider = str(adapter["adapter_id"])
+            operations = adapter.get("operations")
+            operations = operations if isinstance(operations, list) else []
+            if len(operations) == 1:
+                operation = str(operations[0])
+            elif operations:
+                operation = f"iterated batch ({len(operations)} operations)"
+            else:
+                operation = "iterate API request"
+        else:
+            method = _safe_label(payload.get("method"), fallback="request").upper()
+            operation = f"iterate {method} request"
+        ephemeral = operation
     elif command_type in {"QueryRead", "QueryExtract"}:
         operation = "query stored evidence"
         ephemeral = operation
@@ -660,11 +719,26 @@ def _classify(
             return "capability", None
         if operation == "adapter.auth.ensure":
             return "authority", None
+        record_kind = str(capability.get("record_kind") or "")
+        if family == "browser" and record_kind == "blocker":
+            return "blocker", "failed"
+        if family == "browser" and record_kind == "authority":
+            return "authority", None
+        if family == "browser" and primitive in {
+            "inventory",
+            "ledger",
+            "slice",
+            "lens",
+            "wait",
+        }:
+            return "evidence", "supporting"
         if family in {"adapter", "browser"} or command_type in {"DataQuery", "For"}:
             return "effect", posture
         return "effect", "unknown"
     if command_type in {"ProcessBackgroundStatus", "ProcessBackgroundWait"}:
         return "phase", "supporting"
+    if command_type == "ProcessBackgroundStart":
+        return "effect", posture
     if command_type == "ProcessBackgroundStop":
         return "effect", posture
     if command_type.startswith("Process"):
@@ -684,10 +758,12 @@ def normalize_entries(
     response_metadata: Mapping[int, Mapping[str, Any]] | None = None,
     manifest_resolver: Callable[[str], Mapping[str, Any] | None] | None = None,
     tool_resolver: Callable[[str, str], Mapping[str, Any] | None] | None = None,
+    browser_metadata: Mapping[int, Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Normalize Rote command rows without retaining request or response payloads."""
 
     metadata = response_metadata or {}
+    browser_records = browser_metadata or {}
     activities: list[dict[str, Any]] = []
     for raw in entries:
         sequence = raw.get("sequence")
@@ -697,12 +773,17 @@ def normalize_entries(
         payload = _command_payload(raw)
         response_ids = _response_ids(raw)
         operation, provider, _ephemeral = _operation(raw, payload)
+        browser_record = next(
+            (browser_records[item] for item in response_ids if item in browser_records),
+            None,
+        )
         capability = capability_descriptor(
             command_type,
             payload,
             operation,
             provider,
             manifest_resolver=manifest_resolver,
+            browser_record=browser_record,
         )
         response_meta = [metadata[item] for item in response_ids if item in metadata]
         effect_profile = classify_effect(
@@ -1553,6 +1634,7 @@ def _workspace_fingerprint(workspace: Path) -> str:
         Path(".rote/workspace.db"),
         Path(".rote/workspace.db-wal"),
         Path(".rote/workspace.marker"),
+        Path(".rote/browser/ledger.json"),
     ):
         path = workspace / relative
         try:
@@ -1917,10 +1999,12 @@ def refresh_capture(
             workspace,
             [*workspace_response_ids, *response_ids],
         )
+        browser_metadata = _browser_response_metadata(workspace)
         new_activities = normalize_entries(
             raw_entries,
             response_metadata=metadata,
             manifest_resolver=adapter_manifest_summary,
+            browser_metadata=browser_metadata,
         )
         attached_response_ids = {
             int(reference[1:])
@@ -1947,6 +2031,7 @@ def refresh_capture(
                 nested_entries,
                 response_metadata=metadata,
                 manifest_resolver=adapter_manifest_summary,
+                browser_metadata=browser_metadata,
             )
         )
         by_sequence = {int(item["sequence"]): item for item in activities}

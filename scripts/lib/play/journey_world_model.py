@@ -67,6 +67,8 @@ def lifecycle_phase(
         return "initialize"
     if operation == "adapter.auth.ensure" or "interactive_auth" in risk_tags:
         return "authorize"
+    if str(capability.get("family") or "") == "browser" and primitive == "authority":
+        return "authorize"
     if command_type in {
         "QueryRead",
         "QueryExtract",
@@ -76,6 +78,16 @@ def lifecycle_phase(
         "ProcessBackgroundWait",
     }:
         return "observe"
+    if str(capability.get("family") or "") == "browser" and primitive in {
+        "inventory",
+        "ledger",
+        "slice",
+        "lens",
+        "wait",
+    }:
+        return "observe"
+    if str(capability.get("family") or "") == "browser" and capability.get("action") == "close":
+        return "close"
     if command_type == "ProcessBackgroundStop":
         return "close"
     return "use"

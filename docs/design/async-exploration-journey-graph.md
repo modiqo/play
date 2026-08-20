@@ -417,7 +417,9 @@ Rules classify structural facts conservatively:
 | Adapter tool `readOnlyHint: false`, or HTTP `POST`/`PUT`/`PATCH`/`DELETE` | `effect` with `write` posture |
 | Process policy `risk_tags` containing both read and write scopes | `effect` with `mixed` posture |
 | Process policy `risk_tags` containing a write or privileged scope | `effect` with `write` posture and bounded policy attributes |
-| Browser ledger read primitive (`lease`, `ledger`, `slice`, `lens`, `wait`, `navigate`) | read posture; navigation also declares external-service scope |
+| Browser observation primitive (`inventory`, `ledger`, `slice`, `lens`, `wait`) | supporting `evidence` with read posture |
+| Browser navigation or page-lease mutation | external `effect`; navigation has read posture while an untyped lease mutation remains unknown |
+| Browser policy gate/auth restore or capture failure | `authority` or `blocker`, respectively |
 | Browser action without a typed effect receipt | unknown external effect |
 | Query/extraction/transformation | supporting `evidence` or phase work |
 | Assertion, comparison, smoke test | `evidence` with verification candidate |
@@ -433,14 +435,17 @@ safety from a program or operation name such as `curl`, `gh`, `get_user`, or `de
 The effect posture has a closed source precedence. Adapter calls use the exact nested operation to
 look up Rote's installed `tools.json` contract, preferring MCP tool hints and falling back only to
 the declared HTTP method. Process activity uses Rote's persisted process-policy `risk_tags`.
-Browser activity uses the typed ledger primitive. Workspace query/display records use their Rote
+Browser activity uses the typed ledger primitive and the allowlisted action on tab-management
+requests. Workspace query/display records use their Rote
 command type. Missing or contradictory evidence fails closed to `unknown`; network-bearing process
 records remain unknown unless Rote supplies a stronger typed contract.
 
-Free-text arguments, inline source, shell bodies, search needles, operation verbs, request payloads,
-and response content never influence read/write posture. A command or adapter operation containing
+Free-text arguments, inline source, shell bodies, search needles, operation verbs, arbitrary
+request payloads, and response content never influence read/write posture. A command or adapter
+operation containing
 words such as `get`, `list`, `delete`, `publish`, or `approve` therefore cannot manufacture safety or
-authority. Browser initialization is capability discovery; ledger/slice/lens records are reads;
+authority. Browser initialization is capability discovery; typed tab inventory and
+ledger/slice/lens/wait records are observations;
 unsafe or opaque browser actions remain unknown until a typed effect receipt exists.
 
 Supporting `QueryRead`/`QueryExtract` activity attaches to the semantic node that owns its declared

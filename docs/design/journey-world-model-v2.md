@@ -173,7 +173,11 @@ authority, or capability identity.
 | Adapter probe/protocol request | `initialize` | `capability` |
 | Browser lease/session initialization | `initialize` | `capability` |
 | `adapter.auth.ensure` | `authorize` | `authority` |
-| Adapter/browser operation | `use` | `effect` with typed posture |
+| Adapter operation | `use` | `effect` with typed posture |
+| Browser inventory/snapshot/wait/lens | `observe` | supporting `evidence` |
+| Browser navigation/action/page-lease mutation | `use` | `effect` with typed posture or explicit unknown |
+| Browser policy gate/auth restore | `authorize` | `authority` |
+| Browser capture failure | `observe` | `blocker` |
 | `DataQuery` | `use` | read `effect` |
 | `For` | `use` | external `effect`; never generic phase |
 | `DepsCheck` | `initialize` | `capability` |
