@@ -378,10 +378,15 @@ header {
 .height-mark { width: 12px; height: 10px; border-left: 1px solid #b2b8bb; border-bottom: 1px solid #b2b8bb; transform: skewY(-32deg); }
 .label-mark { width: 12px; height: 8px; border: 1px solid #b2b8bb; }
 
+.follow-instruments {
+  position: absolute; z-index: 15; top: 82px; left: 16px; width: min(430px, calc(100vw - 32px));
+  display: grid; justify-items: start; gap: 14px; pointer-events: none;
+}
 .journey-guide {
   top: 82px; left: 16px; width: 350px; padding: 14px 16px 15px;
   cursor: pointer; transition: border-color 180ms ease, transform 180ms ease;
 }
+.follow-instruments .journey-guide { position: relative; top: auto; left: auto; width: 100%; box-sizing: border-box; pointer-events: auto; }
 .journey-guide:hover { border-color: rgba(232,132,19,.62); transform: translateY(-1px); }
 .journey-guide.frozen { border-color: rgba(232,132,19,.72); background: rgba(9,11,13,.94); }
 .guide-kicker { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 8px; letter-spacing: .14em; }
@@ -412,6 +417,7 @@ header {
 .guide-progress { height: 2px; margin-top: 13px; background: var(--line); overflow: hidden; }
 .guide-progress i { display: block; height: 100%; background: var(--accent); box-shadow: 0 0 12px rgba(232,132,19,.55); transition: width 220ms linear; }
 .journey-guide.compact { width: 320px; padding: 10px 12px 11px; cursor: default; }
+.follow-instruments .journey-guide.compact { width: 320px; }
 .journey-guide.compact h1 { margin: 9px 0 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .journey-guide.compact .vantage-navigation { grid-template-columns: 1fr 1fr; margin-top: 10px; }
 .journey-guide.compact .vantage-navigation button { min-height: 34px; }
@@ -421,6 +427,10 @@ header {
   position: absolute; z-index: 14; top: 88px; left: 50%; width: min(430px, calc(100vw - 820px));
   min-width: 360px; color: var(--muted); transform: translateX(-50%); pointer-events: none;
   text-shadow: 0 2px 14px rgba(0,0,0,.94); filter: drop-shadow(0 12px 22px rgba(0,0,0,.72));
+}
+.follow-instruments .model-live-counter {
+  position: relative; z-index: auto; top: auto; left: auto; width: 100%; min-width: 0;
+  transform: none; pointer-events: none;
 }
 .model-counter-identity {
   display: flex; align-items: baseline; gap: 8px; padding: 0 2px 7px;

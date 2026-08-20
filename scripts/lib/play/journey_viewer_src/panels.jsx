@@ -35,12 +35,14 @@ const WHY = {
 }
 
 export function JourneyGuide({story, interactions, replay, playing, frozen, onOpen, onNavigate}) {
-  const [compact, setCompact] = useState(false)
-  if (!story?.chapters?.length) return null
-  const playbackIndex = Math.max(0, Math.min(story.chapters.length - 1, Math.ceil(replay * story.chapters.length) - 1))
-  const liveIndex = Math.max(0, story.chapters.findIndex((chapter) => chapter.id === story.current_chapter))
-  const restingIndex = story.state === 'active' ? liveIndex : story.chapters.length - 1
+  const [compact, setCompact] = useState(true)
+  const chapterCount = story?.chapters?.length || 0
+  const playbackIndex = Math.max(0, Math.min(Math.max(0, chapterCount - 1), Math.ceil(replay * chapterCount) - 1))
+  const liveIndex = Math.max(0, story?.chapters?.findIndex((chapter) => chapter.id === story.current_chapter) || 0)
+  const restingIndex = story?.state === 'active' ? liveIndex : Math.max(0, chapterCount - 1)
   const index = playing || replay < .999 ? playbackIndex : restingIndex
+  useEffect(() => { setCompact(true) }, [story?.journey_key, playing, index])
+  if (!chapterCount) return null
   const current = story.chapters[index]
   const next = story.chapters[index + 1]
   const records = interactions?.sites?.[current.id] || []
