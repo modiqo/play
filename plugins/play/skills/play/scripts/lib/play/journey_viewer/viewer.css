@@ -669,14 +669,44 @@ footer {
 footer > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .footer-message { justify-self: end; text-transform: uppercase; }
 .replay { display: grid; grid-template-columns: auto minmax(260px, 1fr) 126px; align-items: center; gap: 12px; min-width: 0; }
-.replay > button { padding: 7px 10px; border-color: rgba(232,132,19,.45); color: var(--ink); }
-.replay > button:hover, .replay > button.playing, .replay > button.frozen { border-color: var(--accent); background: var(--soft); }
-.replay > button.frozen { box-shadow: inset 0 0 0 1px rgba(232,132,19,.18), 0 0 18px rgba(232,132,19,.1); }
+.replay-controls { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.replay-controls > button { padding: 7px 10px; border-color: rgba(232,132,19,.45); color: var(--ink); }
+.replay-controls > button:hover, .replay-controls > button.playing, .replay-controls > button.frozen, .replay-controls > button.active { border-color: var(--accent); background: var(--soft); }
+.replay-controls > button.frozen { box-shadow: inset 0 0 0 1px rgba(232,132,19,.18), 0 0 18px rgba(232,132,19,.1); }
+.replay-controls > button.live-track { color: var(--muted); font-size: 7px; }
+.replay-controls > button.live-track.active { color: var(--accent); box-shadow: 0 0 18px rgba(232,132,19,.14); }
 .replay b, .replay em { color: var(--muted); font-size: 8px; font-style: normal; font-weight: 400; }
 .replay-position { display: flex; align-items: baseline; gap: 4px; min-width: 0; white-space: nowrap; }
 .replay-position b { color: var(--ink); font-size: 10px; }
 .replay-position span { overflow: hidden; color: var(--muted); text-overflow: ellipsis; }
 .replay-track { --progress: 0%; position: relative; height: 32px; display: grid; align-items: center; }
+.track-anchor {
+  position: absolute; z-index: 1; bottom: -1px; color: #707576; font-size: 5px;
+  letter-spacing: .13em; line-height: 1; pointer-events: none;
+}
+.track-anchor.start { left: 0; }
+.track-anchor.end { right: 0; }
+.track-anchor.end.live { color: var(--accent); animation: live-label-pulse 1300ms ease-in-out infinite; }
+.live-trace-point {
+  position: absolute; z-index: 5; top: 50%; right: -6px; width: 11px; height: 11px; min-width: 0; padding: 0;
+  border: 2px solid #f0a03a; border-radius: 50%; background: #151719;
+  transform: translate(50%, -50%); cursor: pointer;
+  box-shadow: 0 0 0 3px rgba(232,132,19,.14), 0 0 13px rgba(232,132,19,.72);
+  animation: live-trace-pulse 1300ms ease-in-out infinite;
+}
+.live-trace-point.active { background: var(--accent); box-shadow: 0 0 0 4px rgba(232,132,19,.2), 0 0 20px rgba(232,132,19,.9); }
+.live-trace-point::after {
+  content: attr(data-tooltip); position: absolute; right: 0; bottom: 16px; width: max-content;
+  padding: 6px 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: 7px; letter-spacing: .1em; opacity: 0; pointer-events: none; transform: translateY(3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.live-trace-point:hover::after, .live-trace-point:focus-visible::after { opacity: 1; transform: translateY(0); }
+@keyframes live-trace-pulse {
+  0%, 100% { opacity: .58; transform: translate(50%, -50%) scale(.82); }
+  50% { opacity: 1; transform: translate(50%, -50%) scale(1.12); }
+}
+@keyframes live-label-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 .replay input {
   position: relative; z-index: 2; width: 100%; height: 32px; margin: 0;
   appearance: none; -webkit-appearance: none; background: transparent; cursor: ew-resize;
@@ -703,6 +733,17 @@ footer > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
   transition: width 130ms ease, height 130ms ease, border-color 130ms ease, background 130ms ease, box-shadow 130ms ease;
 }
 .chapter-markers button.reached { border-color: #9a641f; background: #9a641f; }
+.replay-track.condensed .chapter-markers button { width: 5px; height: 5px; }
+.replay-track.condensed .chapter-markers button[data-kind="decision"],
+.replay-track.condensed .chapter-markers button[data-kind="blocker"],
+.replay-track.condensed .chapter-markers button[data-kind="recovery"] { border-radius: 0; transform: translate(-50%, -50%) rotate(45deg); }
+.replay-track.condensed .chapter-markers button[data-kind="capability"],
+.replay-track.condensed .chapter-markers button[data-kind="authority"] { width: 3px; height: 10px; border-radius: 1px; }
+.replay-track.condensed .chapter-markers button[data-kind="milestone"],
+.replay-track.condensed .chapter-markers button[data-kind="artifact"] { width: 8px; height: 8px; border-radius: 1px; }
+.replay-track.condensed .chapter-markers button.current,
+.replay-track.condensed .chapter-markers button:hover,
+.replay-track.condensed .chapter-markers button:focus-visible { width: 11px; height: 11px; border-radius: 50%; transform: translate(-50%, -50%); }
 .chapter-markers button.current {
   width: 11px; height: 11px; border: 2px solid #f0a03a; background: #151719;
   box-shadow: 0 0 0 3px rgba(232,132,19,.16), 0 0 14px rgba(232,132,19,.62);
@@ -757,5 +798,6 @@ footer > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .header-title.live i, .world-interaction-callout, .world-interaction-callout::before { animation: none !important; }
+  .header-title.live i, .live-trace-point, .track-anchor.end.live,
+  .world-interaction-callout, .world-interaction-callout::before { animation: none !important; }
 }

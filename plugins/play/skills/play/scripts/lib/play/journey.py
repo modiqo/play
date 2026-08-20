@@ -41,7 +41,7 @@ SCHEMA = "play.journey-viewport/v1"
 FULL_GRAPH_SCHEMA = "play.journey-graph/v1"
 EVENT_SCHEMA = "play.journey-source-event/v1"
 WORKER_SCHEMA = "play.journey-worker/v1"
-PROJECTION_VERSION = "rules-v9"
+PROJECTION_VERSION = "rules-v10"
 DATABASE_SCHEMA_VERSION = 1
 
 MAX_LABEL_CHARS = 120

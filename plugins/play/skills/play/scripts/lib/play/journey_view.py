@@ -9,6 +9,7 @@ import os
 import secrets
 import shlex
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -82,6 +83,7 @@ PROJECTION_START_TIMEOUT_SECONDS = 4.0
 DEFAULT_VIEWER_PORT = 52050
 VIEWER_STOP_TIMEOUT_SECONDS = 2.0
 VIEWER_KILL_SETTLE_SECONDS = 1.0
+VIEWER_PORT_SETTLE_SECONDS = 2.0
 WORKSPACE_SYNC_INTERVAL_SECONDS = 1.0
 
 
@@ -213,6 +215,26 @@ def _stop_journey_viewers(*, root: Path | None = None) -> list[int]:
         except OSError:
             continue
     return pids
+
+
+def _wait_for_viewer_port(
+    port: int, *, timeout_seconds: float = VIEWER_PORT_SETTLE_SECONDS
+) -> bool:
+    """Wait until the fixed loopback port can be rebound after singleton shutdown."""
+
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    while True:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            if time.monotonic() >= deadline:
+                return False
+        finally:
+            probe.close()
+        time.sleep(0.05)
 
 
 @contextmanager
@@ -623,6 +645,12 @@ def launch_viewer(
     selected_port = max(1, min(65535, int(port)))
     with _viewer_launch_lock(root=root):
         stopped = _stop_journey_viewers(root=root)
+        if not _wait_for_viewer_port(selected_port):
+            previous = f" after stopping {len(stopped)} older viewer{'s' if len(stopped) != 1 else ''}" if stopped else ""
+            raise JourneyViewError(
+                f"The local Journey viewer port 127.0.0.1:{selected_port} remained occupied{previous}; "
+                "stop the process holding that port or choose another port with --port"
+            )
         token = secrets.token_urlsafe(24)
         executable = Path(sys.argv[0]).resolve()
         environment = os.environ.copy()

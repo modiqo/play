@@ -30,6 +30,7 @@ _PROCESS_WRITE_TAGS = {
     "privilege_escalation",
 }
 _PROCESS_UNCERTAIN_TAGS = {"network", "unknown_side_effects"}
+_PROCESS_READ_ONLY_PROGRAMS = {"rg"}
 
 
 def _rote_home() -> Path:
@@ -206,7 +207,17 @@ def _process_profile(
         if isinstance(raw_tags, list)
         else set()
     )
-    has_read = "read_fs" in tags
+    invocation = payload.get("invocation")
+    invocation = invocation if isinstance(invocation, Mapping) else payload
+    program = Path(str(invocation.get("program") or "")).name.lower()
+    arguments = invocation.get("args")
+    arguments = arguments if isinstance(arguments, list) else []
+    invokes_preprocessor = any(
+        isinstance(value, str) and (value == "--pre" or value.startswith("--pre="))
+        for value in arguments
+    )
+    invocation_read = program in _PROCESS_READ_ONLY_PROGRAMS and not invokes_preprocessor
+    has_read = "read_fs" in tags or invocation_read
     has_write = bool(tags & _PROCESS_WRITE_TAGS)
     uncertain = bool(tags & _PROCESS_UNCERTAIN_TAGS)
     if uncertain:
@@ -230,10 +241,15 @@ def _process_profile(
         scopes.add("external_service")
     if tags & {"process_control", "background_process", "pty"}:
         scopes.add("process")
+    source = (
+        "process_invocation_contract"
+        if invocation_read and "read_fs" not in tags
+        else "process_policy" if policy else "process_policy_missing"
+    )
     return _profile(
         posture,
         scopes=tuple(scopes or {"process"}),
-        source="process_policy" if policy else "process_policy_missing",
+        source=source,
         confidence="deterministic" if posture != "unknown" else "unknown",
         destructive=True if "destructive" in tags else False if tags else None,
         risk_tags=tuple(tags),
