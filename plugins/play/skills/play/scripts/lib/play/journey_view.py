@@ -84,6 +84,7 @@ DEFAULT_VIEWER_PORT = 52050
 VIEWER_STOP_TIMEOUT_SECONDS = 2.0
 VIEWER_KILL_SETTLE_SECONDS = 1.0
 VIEWER_PORT_SETTLE_SECONDS = 2.0
+VIEWER_START_ATTEMPTS = 2
 WORKSPACE_SYNC_INTERVAL_SECONDS = 1.0
 
 
@@ -651,42 +652,58 @@ def launch_viewer(
                 f"The local Journey viewer port 127.0.0.1:{selected_port} remained occupied{previous}; "
                 "stop the process holding that port or choose another port with --port"
             )
-        token = secrets.token_urlsafe(24)
         executable = Path(sys.argv[0]).resolve()
         environment = os.environ.copy()
         if root is not None:
             environment["PLAY_JOURNEY_ROOT"] = str(root)
-        command = [
-            sys.executable,
-            str(executable),
-            "serve",
-            "--capture",
-            capture_ref,
-            "--viewer-token",
-            token,
-            "--port",
-            str(selected_port),
-        ]
         workspace_value = capture.get("workspace_path") if capture is not None else None
-        if isinstance(workspace_value, str) and workspace_value:
-            command.extend(["--workspace-path", workspace_value])
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=environment,
-            start_new_session=True,
-        )
-        deadline = time.monotonic() + 3.0
         state: dict[str, Any] | None = None
-        while time.monotonic() < deadline:
-            state = _existing_viewer(capture_ref, root=root)
+        for attempt in range(VIEWER_START_ATTEMPTS):
+            token = secrets.token_urlsafe(24)
+            command = [
+                sys.executable,
+                str(executable),
+                "serve",
+                "--capture",
+                capture_ref,
+                "--viewer-token",
+                token,
+                "--port",
+                str(selected_port),
+            ]
+            if isinstance(workspace_value, str) and workspace_value:
+                command.extend(["--workspace-path", workspace_value])
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=environment,
+                start_new_session=True,
+            )
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                state = _existing_viewer(capture_ref, root=root)
+                if state is not None and state.get("pid") == process.pid:
+                    break
+                if process.poll() is not None:
+                    break
+                time.sleep(0.05)
             if state is not None and state.get("pid") == process.pid:
                 break
-            if process.poll() is not None:
-                break
-            time.sleep(0.05)
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=1.0)
+            try:
+                _viewer_state_path(capture_ref, root=root).unlink()
+            except FileNotFoundError:
+                pass
+            if attempt + 1 < VIEWER_START_ATTEMPTS:
+                _wait_for_viewer_port(selected_port)
         if state is None or state.get("pid") != process.pid:
             previous = f" after stopping {len(stopped)} older viewer{'s' if len(stopped) != 1 else ''}" if stopped else ""
             raise JourneyViewError(
