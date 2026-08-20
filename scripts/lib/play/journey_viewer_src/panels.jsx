@@ -74,8 +74,15 @@ export function JourneyGuide({story, interactions, replay, playing, frozen, onOp
 }
 
 export function WorldModel({open, onToggle, highlightKind = '', tutorial = false}) {
+  useEffect(() => {
+    if (!open) return undefined
+    const close = (event) => { if (event.key === 'Escape') onToggle() }
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [onToggle, open])
   return <>
     <button className="world-model-toggle" onClick={onToggle} aria-expanded={open}>◇ WORLD MODEL</button>
+    <button className={`world-model-scrim${open ? ' open' : ''}`} onClick={onToggle} aria-label="Close the World Model and return" tabIndex={open ? 0 : -1} />
     <aside className={`world-model${open ? ' open' : ''}`}>
       <div className="panel-heading"><span>HOW TO READ THIS WORLD</span><button onClick={onToggle}>×</button></div>
       <p>The same spatial vocabulary repeats across every journey. Shape tells you what role a place has before you inspect its evidence.</p>
@@ -85,7 +92,7 @@ export function WorldModel({open, onToggle, highlightKind = '', tutorial = false
       </React.Fragment>)}</dl>
       <div className="world-modalities">{Object.entries(MODALITY_VOCABULARY).map(([modality, value]) => <div key={modality}><i className={`modality-mark ${modality}`} /><span><strong>{value.label}</strong><small>{value.note}</small></span></div>)}</div>
       <div className="world-model-note"><i className="route-mark" />The amber route is the agent’s path. Structures around a stop are recorded interactions; select one to inspect its redacted exchange.</div>
-      {tutorial && <button className="world-model-continue" onClick={onToggle}>CONTINUE TO ORIENTATION →</button>}
+      {tutorial && <button className="world-model-continue" onClick={onToggle}>RETURN →</button>}
     </aside>
   </>
 }

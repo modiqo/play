@@ -7,7 +7,6 @@ import {useJourneyRuntime} from './use-journey-runtime.js'
 import JourneyWorld from './world.jsx'
 
 export default function App() {
-  const [tutorialReferenceJourney, setTutorialReferenceJourney] = React.useState('')
   const {
     index, workspace, story, scene, interactions, tutorial, selected, setSelected, exchange,
     replay, playing, observing, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
@@ -28,18 +27,7 @@ export default function App() {
   const replayChapter = story ? Math.min(story.chapters.length - 1, Math.floor(replay * Math.max(1, story.chapters.length - 1) + .001)) : 0
   const currentReplayChapter = story?.chapters[replayChapter]
   const frozen = mode === 'follow' && observing && !playing
-  const tutorialReferencePending = Boolean(isTutorial && story?.journey_key && tutorialReferenceJourney !== story.journey_key)
-  const tutorialEntryModelActive = Boolean(isTutorial && (tutorialReferencePending || worldModelOpen))
-
-  React.useEffect(() => {
-    if (!isTutorial) {
-      setTutorialReferenceJourney('')
-      return
-    }
-    if (!tutorialReferencePending) return
-    setTutorialReferenceJourney(story.journey_key)
-    setWorldModelOpen(true)
-  }, [isTutorial, setWorldModelOpen, story?.journey_key, tutorialReferencePending])
+  const tutorialEntryModelActive = Boolean(isTutorial && worldModelOpen)
 
   const showEvidencePanel = chapter && (mode !== 'follow' || interaction)
   const changeMode = (nextMode) => {

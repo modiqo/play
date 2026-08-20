@@ -335,9 +335,11 @@ edge. Focus must never repaint the primitive as a solid orange object. The World
 opens at tutorial entry and remains one click away throughout the replay, with its current primitive
 highlighted.
 
-Tutorial entry is a serialized reveal, never overlapping glass panels: the world first dims behind
-the World Model while its primitive rows resolve in order; continuing closes that structure and
-reveals the manifesto/orientation card; entering the card begins the embodied replay.
+Tutorial entry begins on the manifesto/orientation card. From there, `Read the World Model` opens
+the structural reference over a softened world while its primitive rows resolve in order. Clicking
+the backdrop, pressing Escape or close, or choosing Return dismisses the reference back to Start
+Here. `Enter the Vantage` begins the embodied replay directly. The two glass surfaces are never
+shown together.
 
 A compact, dismissible glass caption names the shape, maps it back to the exact world-model
 primitive, and explains why the local operation towers sit in front of this vantage: they are
