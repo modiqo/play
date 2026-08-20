@@ -11,8 +11,8 @@ export default function App() {
     index, workspace, story, scene, interactions, selected, setSelected, exchange,
     replay, playing, observing, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
     mode, setMode, message, loadError, journeysOpen, setJourneysOpen,
-    telemetryOpen, setTelemetryOpen, worldModelOpen, setWorldModelOpen,
-    choose, togglePlayback, jumpToChapter, selectVantage, freezeAtProgress,
+    telemetryOpen, setTelemetryOpen, worldModelOpen, setWorldModelOpen, refreshing,
+    choose, refreshWorkspaces, togglePlayback, jumpToChapter, selectVantage, freezeAtProgress,
   } = useJourneyRuntime()
   const chapter = story?.chapters.find((item) => item.id === selected?.siteId)
   const interaction = selected?.sequence
@@ -21,7 +21,8 @@ export default function App() {
   const selectedWorkspace = index?.workspaces.find((item) => item.id === workspace)
   const liveCapture = selectedWorkspace?.capture_state === 'active'
   const liveActivity = Boolean(liveCapture && selectedWorkspace?.active_recently)
-  const status = liveActivity ? 'LIVE' : liveCapture ? 'IDLE' : 'HISTORY'
+  const recalled = story?.origin?.kind === 'recalled_play'
+  const status = recalled ? 'RECALLED PLAY' : liveActivity ? 'LIVE' : liveCapture ? 'IDLE' : 'HISTORY'
   const replayChapter = story ? Math.min(story.chapters.length - 1, Math.floor(replay * Math.max(1, story.chapters.length - 1) + .001)) : 0
   const currentReplayChapter = story?.chapters[replayChapter]
   const frozen = mode === 'follow' && observing && !playing
@@ -52,13 +53,14 @@ export default function App() {
       <button className="brand" onClick={() => setJourneysOpen((value) => !value)}><strong>PLAY CARTOGRAPHY</strong><small>{mode === 'follow' ? 'JOURNEY FOLLOW' : mode === 'audit' ? 'EVIDENCE AUDIT' : 'JOURNEY ATLAS'}</small></button>
       <div className={`header-title${liveActivity ? ' live' : ''}`}>
         <i />
-        <div className="header-state"><b>{status}</b>{liveActivity && <small>NEXT SNAPSHOT {String(snapshotCountdown).padStart(2, '0')}s</small>}</div>
-        <div className="header-identity" title={`${selectedWorkspace?.intent || story?.outcome || 'Captured exploration'}\n${selectedWorkspace?.workspace || workspace || ''}`}>
+        <div className="header-state"><b>{status}</b>{recalled ? <small>KNOWN ROUTE · DISCOVERY SKIPPED</small> : liveActivity && <small>NEXT SNAPSHOT {String(snapshotCountdown).padStart(2, '0')}s</small>}</div>
+        <div className="header-identity" title={`${selectedWorkspace?.intent || story?.outcome || 'Captured exploration'}\n${selectedWorkspace?.workspace_path || selectedWorkspace?.workspace || workspace || ''}`}>
           <span>{selectedWorkspace?.intent || story?.outcome || 'Captured exploration'}</span>
-          <code>{selectedWorkspace?.workspace || workspace || 'Workspace loading'}</code>
+          <code>{recalled && story?.origin?.exact_reference ? `${story.origin.exact_reference} · ` : ''}{selectedWorkspace?.workspace_path || selectedWorkspace?.workspace || workspace || 'Workspace loading'}</code>
         </div>
       </div>
       <div className="header-actions">
+        <button className={refreshing ? 'refreshing' : ''} disabled={refreshing} onClick={refreshWorkspaces} title="Rescan the current Rote workspace root and refresh its Play projections">{refreshing ? 'REFRESHING' : '↻ REFRESH'}</button>
         <button className={mode === 'follow' ? 'active' : ''} onClick={() => changeMode('follow')}>FOLLOW</button>
         <button className={mode === 'atlas' ? 'active' : ''} onClick={() => changeMode('atlas')}>ATLAS</button>
         <button className={mode === 'audit' ? 'active' : ''} onClick={() => changeMode('audit')}>AUDIT</button>
@@ -70,7 +72,7 @@ export default function App() {
       <div className="workspace-list">{index?.workspaces.map((item) => {
         const unavailable = !item.graph_ready && !item.projectable
         const stateLabel = workspace === item.id
-          ? item.active_recently ? 'VIEWING · LIVE' : item.capture_state === 'active' ? 'VIEWING · IDLE' : 'VIEWING'
+          ? recalled ? 'VIEWING · RECALLED' : item.active_recently ? 'VIEWING · LIVE' : item.capture_state === 'active' ? 'VIEWING · IDLE' : 'VIEWING'
           : item.graph_ready && item.active_recently
             ? 'LIVE'
             : item.graph_ready && item.capture_state === 'active'
@@ -79,8 +81,14 @@ export default function App() {
               ? 'RECORDED'
               : item.projectable
                 ? 'BUILD MAP'
-                : 'NO EVIDENCE'
-        const coverage = item.graph_ready ? `${item.nodes} sites · ${item.edges} routes` : item.projectable ? 'projection available' : 'workspace unavailable'
+                : item.workspace_available ? 'NO PLAY JOURNEY' : 'NO EVIDENCE'
+        const coverage = item.graph_ready
+          ? `${item.nodes} sites · ${item.edges} routes`
+          : item.projectable
+            ? 'projection available'
+            : item.workspace_available
+              ? 'Rote workspace · no Play capture'
+              : 'workspace unavailable'
         return <button key={item.id} disabled={unavailable} className={`workspace-card${workspace === item.id ? ' active' : ''}${item.active_recently ? ' live' : ''}`} onClick={() => choose(item)}>
         <i /><span>{item.intent}</span>
         <small><b>{stateLabel}</b><em>{coverage}</em></small>

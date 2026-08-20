@@ -153,12 +153,29 @@ def build_story(graph: Mapping[str, Any]) -> dict[str, Any]:
     )
     edge_values = graph.get("edges")
     edges = edge_values if isinstance(edge_values, list) else []
+    origin_value = graph.get("origin")
+    origin = dict(origin_value) if isinstance(origin_value, Mapping) else {}
+    route_value = graph.get("route")
+    route = dict(route_value) if isinstance(route_value, Mapping) else {
+        "mode": "exploration",
+        "exploration_skipped": False,
+        "label": "Exploration · route formed during the work",
+    }
+    benefit_value = graph.get("benefit")
+    benefit = dict(benefit_value) if isinstance(benefit_value, Mapping) else {
+        "workflow_discovery_avoided": False,
+        "capability_discovery_avoided": False,
+        "typed_provider_operations": 0,
+    }
     story = {
         "schema": SCHEMA,
         "journey_key": str(graph.get("journey_key") or ""),
         "graph_generation": int(graph.get("generation") or 1),
         "state": str(graph.get("state") or "active"),
         "outcome": str(intent.get("label") or "Captured exploration"),
+        "origin": origin,
+        "route": route,
+        "benefit": benefit,
         "chapters": chapters,
         "routes": routes,
         "current_chapter": str(graph.get("current_node") or chapters[-1]["id"]),

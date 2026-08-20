@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {updateMarkerAppearance} from './marker-appearance.mjs'
+import {plaqueIsVisible, updateMarkerAppearance} from './marker-appearance.mjs'
 
 test('updates current tower and edge materials', () => {
   const marker = {
@@ -23,4 +23,11 @@ test('does not require removed or optional marker attachments', () => {
 test('tolerates a partial marker during scene replacement', () => {
   assert.doesNotThrow(() => updateMarkerAppearance({tower: {}}, {proximity: false}))
   assert.doesNotThrow(() => updateMarkerAppearance(null))
+})
+
+test('reveals evidence plaques only at a settled vantage or explicit selection', () => {
+  assert.equal(plaqueIsVisible({isCurrent: true, playing: true}), false)
+  assert.equal(plaqueIsVisible({isCurrent: true, playing: false}), true)
+  assert.equal(plaqueIsVisible({isCurrent: true, playing: true, frozen: true}), true)
+  assert.equal(plaqueIsVisible({isCurrent: false, playing: true, selected: true}), true)
 })

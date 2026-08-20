@@ -7,7 +7,7 @@ The browser bundle has one composition root and six behavior boundaries:
 - `use-journey-runtime.js` owns workspace loading, live snapshots, evidence fetches, and replay state.
 - `semantics.js`, `format.js`, and `api.js` contain shared vocabulary and pure infrastructure.
 - `atlas-model.js` deterministically projects a journey into atlas geometry; `atlas.jsx` renders it with Deck.gl.
-- `temporal-corridor.mjs` is the renderer-independent spatial grammar for operation chronology: earlier is left, later is right, every `@N` remains visible on a frontage timeline, towers cluster immediately behind it, bounded distance is elapsed time, and depth lanes exist only for recorded concurrency.
+- `temporal-corridor.mjs` is the renderer-independent spatial grammar for operation chronology: earlier is left, later is right, towers cluster immediately behind the frontage, bounded distance is elapsed time, and depth lanes exist only for recorded concurrency. `interaction-plaques.mjs` losslessly compresses contiguous interactions from the same typed capability into floor-level evidence plaques; expanding a plaque reveals every canonical `@N` it represents.
 - `world-elements.js` builds semantic landmarks, the temporal spine, and callouts; `world-navigation.js` owns frozen-vantage input and camera math; `world.jsx` owns scene lifecycle and the Three.js render loop.
 - `panels.jsx` contains explanatory overlays and frozen-vantage controls.
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import tempfile
 import threading
@@ -28,7 +29,10 @@ from scripts.lib.play.journey_view import (
     _ensure_graph_ready,
     _exchange_projection,
     _interaction_projection,
+    _refresh_workspace_catalog,
     _workspace_activity,
+    _workspace_catalog,
+    _workspace_index,
     make_server,
 )
 from scripts.lib.play.private_store import atomic_write_json
@@ -131,6 +135,93 @@ class JourneySceneTest(unittest.TestCase):
 
         wal.write_bytes(b"new command")
         self.assertNotEqual(first, _workspace_fingerprint(workspace))
+
+    def test_workspace_refresh_aligns_archive_to_current_rote_root(self) -> None:
+        rote_home = Path(self.temporary.name) / "rote-home"
+        workspaces = rote_home / "rote" / "workspaces"
+        current = workspaces / "play-capture-current"
+        untracked = workspaces / "dag-hello"
+        internal = workspaces / ".rote-locks"
+        for workspace in (current, untracked, internal):
+            database = workspace / ".rote" / "workspace.db"
+            database.parent.mkdir(parents=True)
+            database.write_bytes(b"workspace")
+        stale = workspaces / "play-capture-backed-up"
+        current_capture = {
+            **self.capture,
+            "reference": "cap_current",
+            "workspace": current.name,
+            "workspace_path": str(current),
+        }
+        stale_capture = {
+            **self.capture,
+            "reference": "cap_stale",
+            "workspace": stale.name,
+            "workspace_path": str(stale),
+        }
+        standby = Path(self.temporary.name) / "standby-refresh.json"
+        atomic_write_json(
+            standby,
+            {"captures": [current_capture, stale_capture], "hooks": []},
+        )
+        current_graph = build_graph(
+            current_capture,
+            activities=self.activities,
+            dependencies=[],
+            stats={"commands": len(self.activities), "responses": len(self.activities)},
+        )
+        stale_graph = build_graph(
+            stale_capture,
+            activities=self.activities,
+            dependencies=[],
+            stats={"commands": len(self.activities), "responses": len(self.activities)},
+        )
+        for capture, graph in ((current_capture, current_graph), (stale_capture, stale_graph)):
+            _persist_graph_state(
+                capture["reference"],
+                fingerprint="d" * 64,
+                command_count=len(self.activities),
+                activities=self.activities,
+                dependencies=[],
+                graph=graph,
+                root=self.journeys,
+            )
+
+        environment = {
+            "ROTE_HOME": str(rote_home),
+            "PLAY_SIDEKICK_STANDBY_PATH": str(standby),
+        }
+        with patch.dict(os.environ, environment, clear=False):
+            summaries, lookup = _workspace_catalog("cap_stale", root=self.journeys)
+            index = _workspace_index("cap_stale", root=self.journeys)
+            with patch(
+                "scripts.lib.play.journey_view.schedule_worker", return_value=True
+            ) as schedule, patch(
+                "scripts.lib.play.journey_view._schedule_workspace_projection",
+                return_value=True,
+            ) as workspace_schedule:
+                refreshed = _refresh_workspace_catalog("cap_stale", root=self.journeys)
+
+        self.assertEqual(
+            {"play-capture-current", "dag-hello"},
+            {item["workspace"] for item in summaries},
+        )
+        self.assertNotIn("cap_stale", lookup.values())
+        self.assertNotIn(".rote-locks", {item["workspace"] for item in summaries})
+        current_summary = next(item for item in summaries if item["workspace"] == current.name)
+        untracked_summary = next(item for item in summaries if item["workspace"] == untracked.name)
+        self.assertTrue(current_summary["graph_ready"])
+        self.assertTrue(current_summary["projectable"])
+        self.assertEqual(str(current), current_summary["workspace_path"])
+        self.assertFalse(untracked_summary["graph_ready"])
+        self.assertTrue(untracked_summary["projectable"])
+        self.assertEqual("workspace", untracked_summary["capture_state"])
+        self.assertEqual(current_summary["id"], index["selected_id"])
+        self.assertEqual(1, refreshed["reconciliation"]["stale_captures_hidden"])
+        self.assertEqual(2, refreshed["reconciliation"]["current_workspaces"])
+        self.assertEqual(1, refreshed["reconciliation"]["mapped_captures"])
+        schedule.assert_called_once_with(current_capture)
+        workspace_schedule.assert_called_once()
 
     def test_legacy_interactions_receive_structured_capability_families(self) -> None:
         capture = {**self.capture, "reference": "cap_legacy-capabilities"}
@@ -317,6 +408,23 @@ class JourneySceneTest(unittest.TestCase):
                 )
                 with urllib.request.urlopen(project_request, timeout=2) as projected:
                     self.assertEqual("ready", json.loads(projected.read())["status"])
+                refresh_request = urllib.request.Request(
+                    f"{base}/api/refresh?token=viewer-secret",
+                    method="POST",
+                )
+                with patch(
+                    "scripts.lib.play.journey_view.schedule_worker", return_value=True
+                ), patch(
+                    "scripts.lib.play.journey_view._schedule_workspace_projection",
+                    return_value=True,
+                ):
+                    with urllib.request.urlopen(refresh_request, timeout=2) as refreshed:
+                        refreshed_index = json.loads(refreshed.read())
+                        self.assertEqual(
+                            "play.journey-workspace-index/v1",
+                            refreshed_index["schema"],
+                        )
+                        self.assertIn("reconciliation", refreshed_index)
             with self.assertRaises(urllib.error.HTTPError) as denied:
                 urllib.request.urlopen(f"{base}/api/scene", timeout=2)
             self.assertEqual(404, denied.exception.code)
@@ -354,6 +462,7 @@ class JourneySceneTest(unittest.TestCase):
                 self.assertIn(b"USING CAPABILITIES", viewer)
                 self.assertIn(b"SHELL ", viewer)
                 self.assertIn(b"NO SYSTEM EQUIPPED", viewer)
+                self.assertIn(b"REFRESH", viewer)
             with urllib.request.urlopen(
                 f"{base}/api/events?token=viewer-secret", timeout=2
             ) as response:

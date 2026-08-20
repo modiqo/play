@@ -53,6 +53,7 @@ export function JourneyGuide({story, interactions, replay, playing, frozen, onOp
     <div className="guide-kicker"><i />{playing ? 'TRAVERSING' : frozen ? 'FROZEN VANTAGE' : story.state === 'active' ? 'NOW' : 'RECORDED JOURNEY'}<span>{String(index + 1).padStart(2, '0')} / {String(story.chapters.length).padStart(2, '0')}</span><button className="guide-compact-toggle" onClick={(event) => { event.stopPropagation(); setCompact((value) => !value) }} aria-label={compact ? 'Expand vantage controls' : 'Minimize vantage controls'} title={compact ? 'Expand' : 'Minimize'}>{compact ? '+' : '−'}</button></div>
     <h1>{current.title}</h1>
     {!compact && <>
+    {story.route?.mode === 'known' && <div className="known-route"><strong>RECALLED PLAY</strong><span>{story.origin?.exact_reference || 'Verified reusable procedure'} · workflow and capability discovery were not repeated.</span></div>}
     <p><strong>{KIND_LABEL[current.kind] || current.kind} → {WORLD_ROLE[current.kind] || 'journey stage'}.</strong> {WORLD_STORY[current.kind] || WHY[current.kind] || 'Advance the requested outcome while preserving evidence.'}</p>
     {frozen && <div className="vantage-nudge"><strong>EXPLORE</strong><span>Drag or use arrow keys to look through 360°. Scroll to move forward or backward. Every illuminated callout opens that structure’s evidence.</span></div>}
     <dl>

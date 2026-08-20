@@ -291,6 +291,37 @@ class JourneyProjectionTest(unittest.TestCase):
         self.assertNotIn("stdout", metadata[1])
         self.assertNotIn("redactions", metadata[1]["process_policy"])
 
+    def test_response_metadata_retains_only_typed_request_identity(self) -> None:
+        responses = self.workspace / ".rote" / "responses"
+        (responses / "@1.json").write_text(
+            json.dumps(
+                {
+                    "request": {
+                        "url": "adapter/gmail",
+                        "method": "gmail.users.messages.list",
+                        "body": {"query": "private@example.com"},
+                        "headers": {"Authorization": "Bearer never-copy"},
+                    },
+                    "response": {"status": 200, "duration_ms": 11, "body": {}},
+                }
+            )
+        )
+
+        from scripts.lib.play.journey import _response_metadata
+
+        metadata = _response_metadata(self.workspace, [1])
+
+        self.assertEqual(
+            {
+                "endpoint": "adapter/gmail",
+                "method": "gmail.users.messages.list",
+            },
+            metadata[1]["request"],
+        )
+        self.assertNotIn("body", json.dumps(metadata))
+        self.assertNotIn("Authorization", json.dumps(metadata))
+        self.assertNotIn("private@example.com", json.dumps(metadata))
+
     def test_adapter_effects_use_tool_hints_and_fail_closed_without_them(self) -> None:
         rows = [
             adapter_command(1, "native.read", 1),
@@ -1005,6 +1036,95 @@ class JourneyProjectionTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(17, first["telemetry"]["duration_ms"])
         self.assertEqual(23, first["telemetry"]["payload_tokens"])
+
+    def test_recalled_play_projects_nested_adapter_calls_not_outer_executor(self) -> None:
+        self.capture.update(
+            {
+                "intent": "Retrieve recent emails",
+                "origin": {
+                    "kind": "recalled_play",
+                    "run_id": "run-recent-emails",
+                    "exact_reference": "modiqo/retrieve-recent-emails@0.1.6",
+                    "association_basis": "typed_workspace",
+                    "exploration_skipped": True,
+                },
+            }
+        )
+        rows = [
+            raw_command(
+                1,
+                command_type="ProcessExec",
+                response_id=1,
+                params={
+                    "invocation": {
+                        "program": "deno",
+                        "args": ["eval", "private source code"],
+                    }
+                },
+            )
+        ]
+        responses = self.workspace / ".rote" / "responses"
+        envelopes = {
+            1: {
+                "request": {"url": "process/local", "method": "ProcessExec"},
+                "response": {"status": 200, "duration_ms": 5, "body": {}},
+                "tokens": {"total_tokens": 10},
+            },
+            2: {
+                "request": {
+                    "url": "adapter/gmail",
+                    "method": "gmail.users.messages.list",
+                },
+                "response": {"status": 200, "duration_ms": 17, "body": {}},
+                "tokens": {"total_tokens": 20},
+            },
+            3: {
+                "request": {
+                    "url": "adapter/gmail",
+                    "method": "gmail.users.messages.get",
+                },
+                "response": {"status": 200, "duration_ms": 19, "body": {}},
+                "tokens": {"total_tokens": 30},
+            },
+        }
+        for response_id, envelope in envelopes.items():
+            (responses / f"@{response_id}.json").write_text(json.dumps(envelope))
+
+        def rote(_workspace: Path, arguments: list[str]):
+            if arguments == ["workspace", "stats", "--json"]:
+                return {"commands": 1, "responses": 3}
+            if "log" in arguments:
+                return rows
+            if "deps" in arguments:
+                return []
+            raise AssertionError(arguments)
+
+        with patch("scripts.lib.play.journey._run_rote_json", side_effect=rote):
+            snapshot = refresh_capture(self.capture, root=self.journeys, force=True)
+
+        self.assertIsNotNone(snapshot)
+        graph = load_graph(self.capture["reference"], root=self.journeys)
+        self.assertIsNotNone(graph)
+        assert graph is not None
+        self.assertEqual("known", graph["route"]["mode"])
+        self.assertTrue(graph["route"]["exploration_skipped"])
+        self.assertEqual(2, graph["benefit"]["typed_provider_operations"])
+        self.assertEqual(3, graph["source_cursor"]["rote_response_id"])
+        self.assertEqual(["@1"], graph["nodes"][0]["evidence"]["rote_responses"])
+        provider_nodes = [node for node in graph["nodes"] if node.get("provider") == "gmail"]
+        self.assertEqual(1, len(provider_nodes))
+        self.assertEqual(2, provider_nodes[0]["activity_count"])
+        self.assertEqual(
+            {"@2", "@3"},
+            {
+                reference
+                for node in provider_nodes
+                for reference in node["evidence"]["rote_responses"]
+            },
+        )
+        semantic_labels = {str(node.get("label") or "").lower() for node in graph["nodes"][1:]}
+        self.assertNotIn("deno eval", semantic_labels)
+        self.assertNotIn("private source code", json.dumps(graph))
 
     def test_projection_rule_upgrade_reclassifies_an_unchanged_workspace(self) -> None:
         rows = [adapter_command(1, "gmail_probe", 1)]

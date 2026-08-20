@@ -13,6 +13,7 @@ from scripts.lib.play.journal import (
     claim_exploration_pulse,
     observe_recall_transition,
     parse_trace,
+    recalled_play_origins,
     recall_summary,
     render_pulse,
     render_recall_summary,
@@ -177,6 +178,7 @@ class ExplorationJournalTest(unittest.TestCase):
             "inspection": {
                 "exact_reference": "modiqo/retrieve-recent-emails@0.2.0"
             },
+            "execution": {"workspace": "dag-retrieve-recent-emails-a1b2c3d4"},
         }
         transitions = (
             ("classify", "full_match", "use_inspect"),
@@ -202,6 +204,19 @@ class ExplorationJournalTest(unittest.TestCase):
         self.assertIn("Play recall journal", text)
         self.assertIn("matched → approved → ran → completed", text)
         self.assertNotIn("secret prompt text", self.recall_store.read_text())
+        self.assertEqual(
+            [
+                {
+                    "kind": "recalled_play",
+                    "run_id": "run-1",
+                    "exact_reference": "modiqo/retrieve-recent-emails@0.2.0",
+                    "workspace": "dag-retrieve-recent-emails-a1b2c3d4",
+                    "events": ["matched", "approved", "run_started", "completed"],
+                    "last_at": recalled_play_origins(self.recall_store)[0]["last_at"],
+                }
+            ],
+            recalled_play_origins(self.recall_store),
+        )
 
     def test_recall_event_is_deduplicated_by_run_and_stage(self) -> None:
         context = {

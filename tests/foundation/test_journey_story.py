@@ -30,6 +30,35 @@ def activity(sequence: int, kind: str, operation: str, *, effect: str | None = N
 
 
 class JourneyStoryTest(unittest.TestCase):
+    def test_story_preserves_recalled_play_route_and_benefit(self) -> None:
+        graph = build_graph(
+            {
+                "reference": "cap_recalled",
+                "intent": "Retrieve recent emails",
+                "status": "recorded",
+                "origin": {
+                    "kind": "recalled_play",
+                    "run_id": "run-recalled",
+                    "exact_reference": "modiqo/retrieve-recent-emails@0.1.6",
+                    "association_basis": "typed_workspace",
+                    "exploration_skipped": True,
+                },
+            },
+            activities=[],
+            dependencies=[],
+            stats={"commands": 0, "responses": 0},
+        )
+        story = build_story(graph)
+        schema = json.loads(
+            (Path(__file__).resolve().parents[2] / "references/explore/journey-story.schema.json").read_text()
+        )
+
+        Draft202012Validator(schema).validate(story)
+        self.assertEqual("recalled_play", story["origin"]["kind"])
+        self.assertEqual("known", story["route"]["mode"])
+        self.assertTrue(story["route"]["exploration_skipped"])
+        self.assertTrue(story["benefit"]["workflow_discovery_avoided"])
+
     def test_story_is_readable_deterministic_and_lossless_by_reference(self) -> None:
         graph = build_graph(
             {"reference": "cap_story", "intent": "Deploy and verify production", "status": "active"},

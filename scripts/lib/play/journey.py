@@ -40,7 +40,7 @@ SCHEMA = "play.journey-viewport/v1"
 FULL_GRAPH_SCHEMA = "play.journey-graph/v1"
 EVENT_SCHEMA = "play.journey-source-event/v1"
 WORKER_SCHEMA = "play.journey-worker/v1"
-PROJECTION_VERSION = "rules-v5"
+PROJECTION_VERSION = "rules-v6"
 DATABASE_SCHEMA_VERSION = 1
 
 MAX_LABEL_CHARS = 120
@@ -372,6 +372,8 @@ def _response_metadata(workspace: Path, response_ids: Sequence[int]) -> dict[int
             continue
         response = envelope.get("response")
         response = response if isinstance(response, Mapping) else {}
+        request = envelope.get("request")
+        request = request if isinstance(request, Mapping) else {}
         body = response.get("body")
         body = body if isinstance(body, Mapping) else {}
         status = response.get("status")
@@ -398,6 +400,13 @@ def _response_metadata(workspace: Path, response_ids: Sequence[int]) -> dict[int
             "duration_ms": int(duration) if isinstance(duration, int) else 0,
             "tokens": int(total_tokens) if isinstance(total_tokens, int) else 0,
         }
+        endpoint = request.get("url")
+        method = request.get("method")
+        if isinstance(endpoint, str) and isinstance(method, str):
+            item["request"] = {
+                "endpoint": _safe_label(endpoint, fallback="external"),
+                "method": _safe_label(method, fallback="request"),
+            }
         policy = body.get("policy")
         policy = policy if isinstance(policy, Mapping) else {}
         risk_tags = policy.get("risk_tags")
@@ -415,6 +424,90 @@ def _response_metadata(workspace: Path, response_ids: Sequence[int]) -> dict[int
             }
         metadata[response_id] = item
     return metadata
+
+
+def _workspace_response_ids(workspace: Path) -> list[int]:
+    """Enumerate the complete typed response plane when the workspace changed."""
+
+    responses = workspace / ".rote" / "responses"
+    try:
+        candidates = list(responses.glob("@*.json"))
+    except OSError:
+        return []
+    response_ids: list[int] = []
+    for path in candidates:
+        value = path.stem.removeprefix("@")
+        if value.isdigit() and int(value) > 0:
+            response_ids.append(int(value))
+    return sorted(set(response_ids))
+
+
+def _nested_response_entries(
+    metadata: Mapping[int, Mapping[str, Any]],
+    attached_response_ids: set[int],
+    *,
+    first_sequence: int,
+) -> list[dict[str, Any]]:
+    """Project adapter responses emitted inside a Play executor as typed calls.
+
+    Rote's command log intentionally records the outer Play process once. The
+    response plane still contains each adapter request. Reconstructing the
+    canonical adapter envelope from its typed endpoint and method preserves
+    those operations without copying parameters, response bodies, or secrets.
+    """
+
+    entries: list[dict[str, Any]] = []
+    sequence = first_sequence
+    for response_id in sorted(metadata):
+        if response_id in attached_response_ids:
+            continue
+        request = metadata[response_id].get("request")
+        request = request if isinstance(request, Mapping) else {}
+        endpoint = request.get("endpoint")
+        operation = request.get("method")
+        if (
+            not isinstance(endpoint, str)
+            or not endpoint.startswith("adapter/")
+            or not isinstance(operation, str)
+            or not operation
+        ):
+            continue
+        adapter_id = endpoint.removeprefix("adapter/")
+        if not adapter_id or "/" in adapter_id:
+            continue
+        wrapper = f"{adapter_id.replace('-', '_')}_call"
+        entries.append(
+            {
+                "sequence": sequence,
+                "command_type": "HttpRequest",
+                "params": json.dumps(
+                    {
+                        "command": "HttpRequest",
+                        "params": {
+                            "endpoint": endpoint,
+                            "body": {
+                                "method": "tools/call",
+                                "params": {
+                                    "name": wrapper,
+                                    "arguments": {
+                                        "tool_name": operation,
+                                        "arguments": {},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                "response_ids": json.dumps([response_id]),
+                "timestamp": None,
+                "skip_export": False,
+                "nested_response": True,
+            }
+        )
+        sequence += 1
+    return entries
 
 
 def _command_payload(entry: Mapping[str, Any]) -> dict[str, Any]:
@@ -652,6 +745,11 @@ def normalize_entries(
                 "tokens_saved": tokens_saved,
                 "signature": hashlib.sha256(signature.encode()).hexdigest()[:24],
                 "timestamp": raw.get("timestamp") if isinstance(raw.get("timestamp"), str) else None,
+                "source": (
+                    "typed_response"
+                    if raw.get("nested_response") is True
+                    else "command_log"
+                ),
             }
         )
     activities.sort(key=lambda item: item["sequence"])
@@ -874,6 +972,9 @@ def build_graph(
     """Build the complete semantic graph from safe metadata without pruning."""
 
     reference = str(capture.get("reference") or "")
+    origin_value = capture.get("origin")
+    origin = dict(origin_value) if isinstance(origin_value, Mapping) else {}
+    recalled = origin.get("kind") == "recalled_play"
     intent = _safe_label(capture.get("intent"), fallback="Captured exploration")[:MAX_INTENT_CHARS]
     root_status = "verified" if capture.get("trajectory_ref") else "active"
     intent_node = {
@@ -881,7 +982,7 @@ def build_graph(
         "kind": "intent",
         "label": intent,
         "status": root_status,
-        "confidence": "play_capture",
+        "confidence": "recalled_play" if recalled else "play_capture",
         "effect": None,
         "provider": None,
         "activity_count": 0,
@@ -896,6 +997,9 @@ def build_graph(
     response_to_node: dict[int, str] = {}
     failure_by_signature: dict[str, str] = {}
     current: dict[str, Any] | None = None
+    has_nested_provider_work = any(
+        activity.get("source") == "typed_response" for activity in activities
+    )
 
     for activity in activities:
         sequence = int(activity["sequence"])
@@ -903,7 +1007,19 @@ def build_graph(
         role = activity.get("role")
         signature = str(activity.get("signature") or "")
         assigned: dict[str, Any] | None = None
-        if kind == "blocker":
+        if (
+            recalled
+            and has_nested_provider_work
+            and activity.get("source") == "command_log"
+            and str(activity.get("command_type") or "").startswith("Process")
+        ):
+            # A recalled Play often runs through one local executor while Rote's
+            # typed response plane records the provider operations it performs.
+            # Keep the executor on the starting gate for audit and telemetry;
+            # do not misrepresent it as the user's semantic journey.
+            _append_activity(intent_node, activity)
+            assigned = intent_node
+        elif kind == "blocker":
             current = _new_node(activity, _activity_label(activity))
             nodes.append(current)
             nodes_by_id[current["id"]] = current
@@ -1101,7 +1217,27 @@ def build_graph(
         "material_generation": previous_material + (1 if material else 0),
         "projection_version": PROJECTION_VERSION,
         "state": str(capture.get("status") or "active"),
-        "intent": {"label": intent, "source": "play_capture"},
+        "intent": {
+            "label": intent,
+            "source": "recalled_play" if recalled else "play_capture",
+        },
+        "origin": origin,
+        "route": {
+            "mode": "known" if recalled else "exploration",
+            "exploration_skipped": recalled,
+            "label": (
+                "Known route · workflow discovery skipped"
+                if recalled
+                else "Exploration · route formed during the work"
+            ),
+        },
+        "benefit": {
+            "workflow_discovery_avoided": recalled,
+            "capability_discovery_avoided": recalled,
+            "typed_provider_operations": sum(
+                activity.get("source") == "typed_response" for activity in activities
+            ),
+        },
         "nodes": nodes,
         "edges": edges,
         "current_node": current_node,
@@ -1417,6 +1553,7 @@ def _load_source(capture_ref: str, *, root: Path | None = None) -> dict[str, Any
         return {
             "fingerprint": None,
             "command_count": 0,
+            "response_count": 0,
             "activities": [],
             "dependencies": [],
             "graph": None,
@@ -1443,6 +1580,7 @@ def _load_source(capture_ref: str, *, root: Path | None = None) -> dict[str, Any
         return {
             "fingerprint": meta.get("fingerprint"),
             "command_count": int(meta.get("command_count") or 0),
+            "response_count": int(meta.get("response_count") or 0),
             "activities": activities,
             "dependencies": dependencies,
             "graph": _graph_from_database(connection, meta),
@@ -1454,6 +1592,7 @@ def _persist_graph_state(
     *,
     fingerprint: str,
     command_count: int,
+    response_count: int = 0,
     activities: Sequence[Mapping[str, Any]],
     dependencies: Sequence[Mapping[str, Any]],
     graph: Mapping[str, Any],
@@ -1547,6 +1686,7 @@ def _persist_graph_state(
         meta = {
             "fingerprint": fingerprint,
             "command_count": command_count,
+            "response_count": response_count,
             "graph_header": header,
         }
         connection.executemany(
@@ -1604,14 +1744,23 @@ def refresh_capture(
         raise JourneyError("Rote workspace stats is not an object")
     command_count = stats_value.get("commands")
     command_count = int(command_count) if isinstance(command_count, int) else 0
+    response_count = stats_value.get("responses")
+    response_count = int(response_count) if isinstance(response_count, int) else 0
     prior_count = int(source.get("command_count") or 0)
+    prior_response_count = int(source.get("response_count") or 0)
     activities = [dict(item) for item in source.get("activities", []) if isinstance(item, Mapping)]
-    reset_sources = force or projection_changed or command_count < prior_count
+    reset_sources = (
+        force
+        or projection_changed
+        or command_count < prior_count
+        or response_count < prior_response_count
+    )
     if reset_sources:
         prior_count = 0
         activities = []
     delta = max(0, command_count - prior_count)
     new_activities: list[dict[str, Any]] = []
+    raw_entries: list[dict[str, Any]] = []
     if delta:
         log_arguments = ["workspace", "inspect", "log", "--json"]
         if prior_count:
@@ -1620,12 +1769,47 @@ def refresh_capture(
         if not isinstance(log_value, list):
             raise JourneyError("Rote workspace log is not an array")
         raw_entries = [dict(item) for item in log_value if isinstance(item, Mapping)]
-        response_ids = [response_id for item in raw_entries for response_id in _response_ids(item)]
-        metadata = _response_metadata(workspace, response_ids)
+
+    if delta or response_count != prior_response_count or reset_sources:
+        workspace_response_ids = _workspace_response_ids(workspace)
+        response_ids = [
+            response_id for item in raw_entries for response_id in _response_ids(item)
+        ]
+        metadata = _response_metadata(
+            workspace,
+            [*workspace_response_ids, *response_ids],
+        )
         new_activities = normalize_entries(
             raw_entries,
             response_metadata=metadata,
             manifest_resolver=adapter_manifest_summary,
+        )
+        attached_response_ids = {
+            int(reference[1:])
+            for activity in [*activities, *new_activities]
+            for reference in activity.get("response_refs", [])
+            if isinstance(reference, str)
+            and reference.startswith("@")
+            and reference[1:].isdigit()
+        }
+        first_nested_sequence = max(
+            [
+                0,
+                *[int(item.get("sequence") or 0) for item in activities],
+                *[int(item.get("sequence") or 0) for item in new_activities],
+            ]
+        ) + 1
+        nested_entries = _nested_response_entries(
+            metadata,
+            attached_response_ids,
+            first_sequence=first_nested_sequence,
+        )
+        new_activities.extend(
+            normalize_entries(
+                nested_entries,
+                response_metadata=metadata,
+                manifest_resolver=adapter_manifest_summary,
+            )
         )
         by_sequence = {int(item["sequence"]): item for item in activities}
         by_sequence.update({int(item["sequence"]): item for item in new_activities})
@@ -1655,6 +1839,7 @@ def refresh_capture(
         reference,
         fingerprint=fingerprint,
         command_count=command_count,
+        response_count=response_count,
         activities=activities if reset_sources else new_activities,
         dependencies=dependencies,
         graph=graph,

@@ -184,6 +184,26 @@ class UniversalPlayRunTest(unittest.TestCase):
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")
+    def test_success_reports_the_exact_workspace_changed_by_the_play_run(
+        self, run, _which
+    ) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="hello output\n", stderr=""
+        )
+        workspace = "dag-hello-1234abcd"
+        with patch(
+            "scripts.lib.play.play_run._play_workspace_state",
+            side_effect=[
+                {},
+                {workspace: (1, 2, 3, 4)},
+            ],
+        ):
+            result = execute(payload())
+
+        self.assertEqual(workspace, result["execution"]["workspace"])
+
+    @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
+    @patch("scripts.lib.play.play_run.subprocess.run")
     def test_non_uri_selection_uses_latest_registry_reference(self, run, _which) -> None:
         run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="result", stderr=""

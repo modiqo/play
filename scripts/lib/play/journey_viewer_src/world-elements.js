@@ -246,6 +246,57 @@ export function makeInteractionCallout(record, chapter, index, onActivate) {
   return {label, root, sequence: record.sequence}
 }
 
+export function makeInteractionPlaque(group, chapter, index, onActivate) {
+  const root = document.createElement('div')
+  root.className = 'world-interaction-callout world-interaction-plaque'
+  root.dataset.rank = String(index)
+  root.dataset.side = Number(group.x || 0) < 0 ? 'left' : 'right'
+  root.style.setProperty('--arrival-delay', `${index * 110}ms`)
+
+  const trigger = document.createElement('button')
+  trigger.type = 'button'
+  trigger.className = 'plaque-trigger'
+  trigger.setAttribute('aria-expanded', 'false')
+  trigger.setAttribute('aria-label', group.count > 1
+    ? `Open ${group.count} related interactions ${group.label}`
+    : `Inspect interaction ${group.sequences[0]}`)
+  trigger.innerHTML = `
+    <span>${escapeHtml(group.label)}</span>
+    <strong>${escapeHtml(group.system)}${group.count > 1 ? ` · ${group.count}` : ''}</strong>
+    <i>${escapeHtml(group.posture.toUpperCase())} · ${group.count > 1 ? 'OPEN GROUP' : 'OPEN EVIDENCE'}</i>`
+
+  const tray = document.createElement('div')
+  tray.className = 'plaque-tray'
+  group.records.forEach((record) => {
+    const item = document.createElement('button')
+    item.type = 'button'
+    item.innerHTML = `<span>@${String(record.sequence).padStart(2, '0')}</span><b>${escapeHtml(record.operation)}</b>`
+    item.addEventListener('click', (event) => {
+      event.stopPropagation()
+      onActivate({siteId: chapter.id, sequence: record.sequence})
+    })
+    tray.appendChild(item)
+  })
+
+  trigger.addEventListener('click', (event) => {
+    event.stopPropagation()
+    if (group.count === 1) {
+      onActivate({siteId: chapter.id, sequence: group.sequences[0]})
+      return
+    }
+    const spread = root.classList.toggle('spread')
+    trigger.setAttribute('aria-expanded', String(spread))
+  })
+  root.append(trigger, tray)
+
+  const anchor = document.createElement('div')
+  anchor.className = 'world-interaction-anchor world-interaction-plaque-anchor'
+  anchor.appendChild(root)
+  const label = new CSS2DObject(anchor)
+  label.center.set(.5, 0)
+  return {label, root, trigger, sequences: group.sequences, records: group.records}
+}
+
 export function clampVisibleCallouts(labelLayer, viewport) {
   const bounds = viewport.getBoundingClientRect()
   const horizontalInset = 16
@@ -269,9 +320,10 @@ export function clampVisibleCallouts(labelLayer, viewport) {
   callouts.forEach((callout) => {
     callout.style.marginLeft = '0px'
     callout.style.marginTop = '0px'
+    callout.classList.remove('layout-hidden')
   })
   callouts.sort((left, right) => {
-    const priority = (node) => node.classList.contains('selected') ? 0 : node.classList.contains('world-callout') ? 1 : 2
+    const priority = (node) => node.classList.contains('world-callout') ? 0 : node.classList.contains('selected') ? 1 : 2
     return priority(left) - priority(right) || Number(left.dataset.rank || 0) - Number(right.dataset.rank || 0)
   }).forEach((callout) => {
     const rect = callout.getBoundingClientRect()
@@ -285,7 +337,7 @@ export function clampVisibleCallouts(labelLayer, viewport) {
     for (let level = 1; level <= callouts.length; level += 1) {
       yOffsets.push(edgeY + verticalStep * level, edgeY - verticalStep * level)
     }
-    let chosen = translated(rect, edgeX, edgeY)
+    let chosen = null
     let chosenOffset = [edgeX, edgeY]
     search: for (const offsetX of xOffsets) {
       for (const offsetY of yOffsets) {
@@ -297,6 +349,10 @@ export function clampVisibleCallouts(labelLayer, viewport) {
         chosenOffset = [offsetX, offsetY]
         break search
       }
+    }
+    if (!chosen) {
+      if (callout.classList.contains('world-interaction-callout')) callout.classList.add('layout-hidden')
+      return
     }
     callout.style.marginLeft = `${Math.round(chosenOffset[0])}px`
     callout.style.marginTop = `${Math.round(chosenOffset[1])}px`

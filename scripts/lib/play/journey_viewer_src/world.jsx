@@ -1,11 +1,12 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react'
 import * as THREE from 'three'
 import {CSS2DRenderer} from 'three/addons/renderers/CSS2DRenderer.js'
-import {AMBER, GROUND, clampVisibleCallouts, glassTowerEdge, glassTowerMaterial, journeyPositions, landmarkFor, makeCallout, makeInteractionCallout, material} from './world-elements.js'
+import {AMBER, GROUND, clampVisibleCallouts, glassTowerEdge, glassTowerMaterial, journeyPositions, landmarkFor, makeCallout, makeInteractionPlaque, material} from './world-elements.js'
 import {createWorldNavigation} from './world-navigation.js'
 import {KIND_LABEL, WORLD_ROLE} from './semantics.js'
+import {groupInteractionPlaques} from './interaction-plaques.mjs'
 import {layoutTemporalCorridor} from './temporal-corridor.mjs'
-import {updateMarkerAppearance} from './marker-appearance.mjs'
+import {plaqueIsVisible, updateMarkerAppearance} from './marker-appearance.mjs'
 
 export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect}) {
   const host = useRef(null)
@@ -157,20 +158,15 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           tower.userData = {siteId: chapter.id, sequence: record.sequence}
           site.add(tower)
           interactionMeshes.push(tower)
-          const marker = makeInteractionCallout(record, chapter, recordIndex, (selection) => {
+          markers.push({tower, edge: towerEdge, temporal, sequence: record.sequence})
+        })
+        const plaques = groupInteractionPlaques(temporalCorridor.points).map((group, plaqueIndex) => {
+          const plaque = makeInteractionPlaque(group, chapter, plaqueIndex, (selection) => {
             onSelect(selectedRef.current?.sequence === selection.sequence ? null : selection)
           })
-          marker.hovered = false
-          marker.root.addEventListener('pointerenter', () => { marker.hovered = true })
-          marker.root.addEventListener('pointerleave', () => { marker.hovered = false })
-          marker.root.addEventListener('focus', () => { marker.hovered = true })
-          marker.root.addEventListener('blur', () => { marker.hovered = false })
-          marker.label.position.set(tower.position.x, height + .75, tower.position.z)
-          site.add(marker.label)
-          marker.tower = tower
-          marker.edge = towerEdge
-          marker.temporal = temporal
-          markers.push(marker)
+          plaque.label.position.set(group.x, .22, group.z + .18)
+          site.add(plaque.label)
+          return plaque
         })
         const {label, root} = makeCallout(chapter, records.length, story.chapters.length, (siteId) => {
           if (selectedRef.current?.siteId === siteId && !selectedRef.current?.sequence) {
@@ -185,7 +181,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         site.add(label)
         scene.add(site)
         sites.push({
-          chapter, group: site, label: root, markers, worldPosition: site.position.clone(),
+          chapter, group: site, label: root, markers, plaques, worldPosition: site.position.clone(),
           approachDistance: Math.max(12.5, landmarkSize.z * .5 + 8, landmarkSize.x * .38 + 8),
           eyeHeight: THREE.MathUtils.clamp(landmarkSize.y * .42, 2.5, 3.8),
         })
@@ -283,7 +279,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           const isCurrent = siteIndex === reached
           const isSelectedSite = selectedRef.current?.siteId === site.chapter.id
           const isSelected = isSelectedSite && !selectedRef.current?.sequence
-          const interactionEngaged = (isSelectedSite && Boolean(selectedRef.current?.sequence)) || site.markers.some((marker) => marker.hovered)
+          const interactionEngaged = (isSelectedSite && Boolean(selectedRef.current?.sequence)) || site.plaques.some((plaque) => plaque.root.classList.contains('spread'))
           site.label.classList.toggle('expanded', isSelected || (isCurrent && !selectedRef.current && !dismissed.current.has(site.chapter.id)))
           site.label.classList.toggle('behind-interaction', interactionEngaged)
           site.label.classList.toggle('current', isCurrent)
@@ -293,11 +289,6 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           site.markers.forEach((marker, markerIndex) => {
             const markerSelected = selectedRef.current?.sequence === marker.sequence
             const proximity = isCurrent || Boolean(markerSelected)
-            marker.label.visible = proximity
-            marker.root.classList.toggle('arrived', isCurrent)
-            marker.root.classList.toggle('proximity', proximity)
-            marker.root.classList.toggle('frozen', isCurrent && frozenRef.current)
-            marker.root.classList.toggle('selected', Boolean(markerSelected))
             const pulse = proximity
               ? frozenRef.current ? .88 : .42 + Math.max(0, Math.sin(elapsed * 2.3 - markerIndex * .72)) * .8
               : 0
@@ -307,6 +298,20 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
               pulse,
               frozen: frozenRef.current,
             })
+          })
+          site.plaques.forEach((plaque) => {
+            const plaqueSelected = plaque.sequences.includes(selectedRef.current?.sequence)
+            const proximity = plaqueIsVisible({
+              isCurrent,
+              selected: plaqueSelected,
+              playing: playingRef.current,
+              frozen: frozenRef.current,
+            })
+            plaque.label.visible = proximity
+            plaque.root.classList.toggle('arrived', isCurrent && !playingRef.current)
+            plaque.root.classList.toggle('proximity', proximity)
+            plaque.root.classList.toggle('frozen', isCurrent && frozenRef.current)
+            plaque.root.classList.toggle('selected', plaqueSelected)
           })
           })
           renderer.render(scene, camera)

@@ -11,6 +11,9 @@
     "projection_version",
     "state",
     "intent",
+    "origin",
+    "route",
+    "benefit",
     "nodes",
     "edges",
     "current_node",
@@ -32,7 +35,38 @@
       "required": ["label", "source"],
       "properties": {
         "label": {"type": "string", "minLength": 1, "maxLength": 400},
-        "source": {"const": "play_capture"}
+        "source": {"enum": ["play_capture", "recalled_play"]}
+      }
+    },
+    "origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const": "recalled_play"},
+        "run_id": {"type": ["string", "null"]},
+        "exact_reference": {"type": ["string", "null"]},
+        "association_basis": {"enum": ["typed_workspace", "rote_namespace_time"]},
+        "exploration_skipped": {"const": true}
+      }
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "exploration_skipped", "label"],
+      "properties": {
+        "mode": {"enum": ["known", "exploration"]},
+        "exploration_skipped": {"type": "boolean"},
+        "label": {"type": "string", "minLength": 1, "maxLength": 120}
+      }
+    },
+    "benefit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workflow_discovery_avoided", "capability_discovery_avoided", "typed_provider_operations"],
+      "properties": {
+        "workflow_discovery_avoided": {"type": "boolean"},
+        "capability_discovery_avoided": {"type": "boolean"},
+        "typed_provider_operations": {"type": "integer", "minimum": 0}
       }
     },
     "nodes": {
@@ -188,7 +222,7 @@
             "verified"
           ]
         },
-        "confidence": {"enum": ["deterministic", "typed_event", "play_capture"]},
+        "confidence": {"enum": ["deterministic", "typed_event", "play_capture", "recalled_play"]},
         "effect": {"type": ["string", "null"], "maxLength": 40},
         "provider": {"type": ["string", "null"], "maxLength": 120},
         "activity_count": {"type": "integer", "minimum": 0},

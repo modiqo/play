@@ -21,6 +21,7 @@ export function useJourneyRuntime() {
   const [journeysOpen, setJourneysOpen] = useState(false)
   const [telemetryOpen, setTelemetryOpen] = useState(false)
   const [worldModelOpen, setWorldModelOpen] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const playback = useRef(null)
   const materialGeneration = useRef(null)
 
@@ -31,11 +32,13 @@ export function useJourneyRuntime() {
     setLoadError('')
     setIndex(value)
     setWorkspace((current) => {
-      if (current) return current
-      const requested = value.workspaces.find((item) => item.id === workspaceFromLocation || item.workspace === workspaceFromLocation)
-      const selectedId = requested?.id || value.selected_id || value.workspaces[0]?.id || ''
+      const usable = (item) => item.graph_ready || item.projectable
+      if (current && value.workspaces.some((item) => item.id === current && usable(item))) return current
+      const requested = value.workspaces.find((item) => usable(item) && (item.id === workspaceFromLocation || item.workspace === workspaceFromLocation || item.workspace_path === workspaceFromLocation))
+      const firstUsable = value.workspaces.find((item) => item.graph_ready || item.projectable)
+      const selectedId = requested?.id || value.selected_id || firstUsable?.id || ''
       const selected = value.workspaces.find((item) => item.id === selectedId)
-      if (selectedId) trackWorkspaceLocation(selected?.workspace || selectedId)
+      if (selectedId) trackWorkspaceLocation(selected?.workspace_path || selected?.workspace || selectedId)
       return selectedId
     })
     return value
@@ -87,9 +90,66 @@ export function useJourneyRuntime() {
       }
       await loadJourney(item.id)
       setWorkspace(item.id)
-      trackWorkspaceLocation(item.workspace || item.id)
+      trackWorkspaceLocation(item.workspace_path || item.workspace || item.id)
       setJourneysOpen(false)
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)) }
+  }
+
+  async function refreshWorkspaces() {
+    if (refreshing) return
+    setRefreshing(true)
+    setMessage('Reconciling with the current Rote workspace root')
+    try {
+      const response = await fetch(api('/api/refresh'), {method: 'POST', cache: 'no-store'})
+      if (!response.ok) throw new Error(`Workspace refresh failed (${response.status})`)
+      let value = await response.json()
+      const reconciliation = value.reconciliation || {}
+      setIndex(value)
+      setLoadError('')
+      const pending = new Set(value.workspaces.filter((item) => item.projectable && !item.graph_ready).map((item) => item.id))
+      if (pending.size) {
+        const deadline = Date.now() + 4000
+        while (Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 240))
+          value = await loadIndex()
+          for (const item of value.workspaces) {
+            if (item.graph_ready) pending.delete(item.id)
+          }
+          if (!pending.size) break
+        }
+      }
+      const retained = value.workspaces.find((item) => item.id === workspace && (item.graph_ready || item.projectable))
+      const target = retained || value.workspaces.find((item) => item.id === value.selected_id) || value.workspaces.find((item) => item.graph_ready || item.projectable)
+      if (!target) {
+        setWorkspace('')
+        setStory(null)
+        setScene(null)
+        setInteractions(null)
+        setSelected(null)
+        setExchange(null)
+        setPlaying(false)
+        setObserving(false)
+        setMessage(`Workspace slate refreshed · ${value.workspaces.length} current workspaces · no captured journey yet`)
+        return
+      }
+      setWorkspace(target.id)
+      trackWorkspaceLocation(target.workspace_path || target.workspace || target.id)
+      if (target.graph_ready) {
+        await loadJourney(target.id, true)
+      } else {
+        setStory(null)
+        setScene(null)
+        setInteractions(null)
+        setExchange(null)
+        await choose(target)
+      }
+      const result = reconciliation
+      setMessage(`Workspace slate refreshed · ${result.current_workspaces ?? value.workspaces.length} current · ${result.stale_captures_hidden ?? 0} stale hidden`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   useEffect(() => {
@@ -254,7 +314,7 @@ export function useJourneyRuntime() {
     index, workspace, story, scene, interactions, selected, setSelected, exchange,
     replay, playing, observing, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
     mode, setMode, message, loadError, journeysOpen, setJourneysOpen,
-    telemetryOpen, setTelemetryOpen, worldModelOpen, setWorldModelOpen,
-    choose, togglePlayback, jumpToChapter, selectVantage, freezeAtProgress,
+    telemetryOpen, setTelemetryOpen, worldModelOpen, setWorldModelOpen, refreshing,
+    choose, refreshWorkspaces, togglePlayback, jumpToChapter, selectVantage, freezeAtProgress,
   }
 }

@@ -9,3 +9,8 @@ export function updateMarkerAppearance(marker, {selected = false, proximity = fa
   if (edgeMaterial) edgeMaterial.opacity = selected ? 1 : proximity ? .3 + pulse * .48 : .1
   if (marker?.tower?.scale) marker.tower.scale.y = proximity && !frozen ? 1 + Math.max(0, pulse) * .025 : 1
 }
+
+/** Plaques are evidence controls, so they reveal at rest rather than shimmer while the camera traverses. */
+export function plaqueIsVisible({isCurrent = false, selected = false, playing = false, frozen = false} = {}) {
+  return Boolean(selected || (isCurrent && (frozen || !playing)))
+}

@@ -681,7 +681,7 @@ actions:
       - Route non-authentication run failures to blocked with Rote's exact evidence, and present the structured action_blocked reason verbatim so terminal errors cannot disappear into an empty yield or standby exit.
       - Preserve both the beginning and terminal diagnostic of failed stdout/stderr, and keep Rote step progress enabled so the failed step and provider error are not replaced by a generic footer.
     events:
-      play_run_ready: [play.version, resolution.local_state, resolution.pull_performed, result_ref, response_refs, artifact_refs, effects, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
+      play_run_ready: [play.version, resolution.local_state, resolution.pull_performed, result_ref, response_refs, artifact_refs, effects, execution.workspace, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
       play_drifted: [reason, evidence_refs]
       play_authentication_required: [authentication.source, authentication.owner, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.evidence_refs]
 

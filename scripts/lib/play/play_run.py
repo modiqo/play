@@ -95,6 +95,7 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
     # mode so an inherited human-output preference cannot hide the typed
     # @@authentication section from this non-interactive controller boundary.
     environment["ROTE_OUTPUT_MODE"] = "structured"
+    workspace_before = _play_workspace_state(target, environment)
 
     # A user who already completed out-of-band static-token setup selects the
     # verification event, which returns directly to this exact approved run.
@@ -266,6 +267,10 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
         else:
             primary = _bounded_text(primary_value, primary_path, max_inline_bytes)
 
+    execution_workspace = _changed_play_workspace(
+        workspace_before,
+        _play_workspace_state(target, environment),
+    )
     version = exact_reference.rsplit("@", 1)[-1]
     local_change = inspection.get("local_change")
     manifest = {"response_refs": [], "artifact_refs": artifact_refs, "effects": []}
@@ -283,6 +288,7 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
         "response_refs": [],
         "artifact_refs": artifact_refs,
         "effects": [],
+        "execution": {"workspace": execution_workspace},
         "output": {
             "mode": "detailed",
             "detail": "full",
@@ -294,6 +300,71 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
             "full_output_ref": full_output_ref,
         },
     }
+
+
+def _rote_workspace_root(environment: Mapping[str, str]) -> Path:
+    rote_home = environment.get("ROTE_HOME")
+    return (Path(rote_home) if rote_home else Path.home() / ".rote") / "rote" / "workspaces"
+
+
+def _play_slug(reference: str) -> str | None:
+    """Return a registry Play slug without interpreting user-controlled prose."""
+
+    parsed = urlparse(reference)
+    value = parsed.path if parsed.scheme == "https" else reference
+    segments = [segment for segment in value.split("/") if segment]
+    if len(segments) < 2:
+        return None
+    slug = segments[-1].split("@", 1)[0]
+    allowed = "abcdefghijklmnopqrstuvwxyz0123456789-"
+    if not slug or any(character not in allowed for character in slug):
+        return None
+    return slug
+
+
+def _play_workspace_state(
+    reference: str,
+    environment: Mapping[str, str],
+) -> dict[str, tuple[int, int, int, int]]:
+    """Snapshot only workspaces in Rote's deterministic ``dag-<play>-`` namespace."""
+
+    slug = _play_slug(reference)
+    root = _rote_workspace_root(environment)
+    if slug is None or not root.is_dir():
+        return {}
+    state: dict[str, tuple[int, int, int, int]] = {}
+    try:
+        candidates = list(root.glob(f"dag-{slug}-*"))
+    except OSError:
+        return {}
+    for workspace in candidates:
+        database = workspace / ".rote" / "workspace.db"
+        responses = workspace / ".rote" / "responses"
+        try:
+            database_stat = database.stat()
+        except OSError:
+            continue
+        try:
+            responses_stat = responses.stat()
+        except OSError:
+            responses_stat = None
+        state[workspace.name] = (
+            database_stat.st_mtime_ns,
+            database_stat.st_size,
+            responses_stat.st_mtime_ns if responses_stat is not None else 0,
+            responses_stat.st_size if responses_stat is not None else 0,
+        )
+    return state
+
+
+def _changed_play_workspace(
+    before: Mapping[str, tuple[int, int, int, int]],
+    after: Mapping[str, tuple[int, int, int, int]],
+) -> str | None:
+    """Return an exact workspace only when one run-scoped candidate changed."""
+
+    changed = sorted(name for name, signature in after.items() if before.get(name) != signature)
+    return changed[0] if len(changed) == 1 else None
 
 
 def _invoke(

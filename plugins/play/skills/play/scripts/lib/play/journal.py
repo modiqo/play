@@ -583,6 +583,9 @@ def observe_recall_transition(
                 event_id = f"{run_id}:{kind}"
                 if event_id in existing_ids:
                     continue
+                execution = context.get("execution")
+                execution = execution if isinstance(execution, Mapping) else {}
+                workspace = execution.get("workspace")
                 events.append(
                     {
                         "schema": RECALL_EVENT_SCHEMA,
@@ -592,6 +595,11 @@ def observe_recall_transition(
                         "reference": reference,
                         "occurred_at": now.isoformat(timespec="seconds"),
                         "local_day": now.date().isoformat(),
+                        **(
+                            {"workspace": workspace}
+                            if isinstance(workspace, str) and workspace
+                            else {}
+                        ),
                     }
                 )
                 existing_ids.add(event_id)
@@ -676,6 +684,43 @@ def recall_summary(*, day: str | None = None, path: Path | None = None) -> dict[
         ),
         "runs": ordered,
     }
+
+
+def recalled_play_origins(path: Path | None = None) -> list[dict[str, Any]]:
+    """Return privacy-minimal completed recall provenance for local projections."""
+
+    store = _load_recall(path or _recall_path())
+    runs: dict[str, dict[str, Any]] = {}
+    for event in store["events"]:
+        if not isinstance(event, Mapping):
+            continue
+        run_id = event.get("run_id")
+        reference = event.get("reference")
+        if not isinstance(run_id, str) or not isinstance(reference, str):
+            continue
+        run = runs.setdefault(
+            run_id,
+            {
+                "kind": "recalled_play",
+                "run_id": run_id,
+                "exact_reference": reference,
+                "workspace": None,
+                "events": [],
+                "last_at": None,
+            },
+        )
+        if "@" in reference or "@" not in str(run.get("exact_reference") or ""):
+            run["exact_reference"] = reference
+        kind = event.get("kind")
+        if isinstance(kind, str) and kind not in run["events"]:
+            run["events"].append(kind)
+        workspace = event.get("workspace")
+        if isinstance(workspace, str) and workspace:
+            run["workspace"] = workspace
+        occurred_at = event.get("occurred_at")
+        if isinstance(occurred_at, str) and occurred_at > str(run.get("last_at") or ""):
+            run["last_at"] = occurred_at
+    return [run for run in runs.values() if "completed" in run["events"]]
 
 
 def render_recall_summary(summary: Mapping[str, Any]) -> str:
