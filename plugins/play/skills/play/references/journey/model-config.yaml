@@ -11,9 +11,21 @@ model:
 selection:
   prefer_workspace_model: true
 
+# Context occupancy cannot be reconstructed exactly from tool traffic alone.
+# Journey uses the catalog input limit and this threshold to render a clearly
+# marked estimate. Set window_tokens for a harness-specific override.
+context:
+  compaction_threshold: 0.90
+  window_tokens: null
+
 # Add an exact provider/model key here when a workspace needs richer identity.
 # The workspace still owns the observed provider and model; these entries only
-# supply family, effort, or a catalog alias that Rote does not currently store.
+# supply family, effort, catalog alias, or context limits Rote does not store.
+# Example:
+#   openai/gpt-5:
+#     effort: high
+#     context_window_tokens: 1000000
+#     compaction_threshold: 0.90
 overrides: {}
 
 catalog:

@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react'
 import {formatNumber} from './format.js'
-import {formatModelCost, summarizeModelRecords} from './model-telemetry.mjs'
+import {estimatedContextProgress, formatModelCost, playbackModelTelemetry, summarizeModelRecords} from './model-telemetry.mjs'
 import {KIND_LABEL, MAP_MEANING, MODALITY_VOCABULARY, WORLD_MODEL_KINDS, WORLD_ROLE, WORLD_STORY, worldSpec} from './semantics.js'
 
 export function Telemetry({story, open, onToggle}) {
@@ -74,34 +74,74 @@ export function JourneyGuide({story, interactions, replay, playing, frozen, onOp
   </aside>
 }
 
-function CounterRow({label, value}) {
+function CounterRow({label, value, ticking = false}) {
   return <div className="model-counter-row">
     <b>{label}</b>
-    <span><small>IN</small><strong>{formatNumber(value.input_tokens)}</strong></span>
-    <span><small>OUT</small><strong>{formatNumber(value.output_tokens)}</strong></span>
-    <span className="cost"><small>COST*</small><strong>{formatModelCost(value.cost_usd)}</strong></span>
+    <span><small>IN</small><strong className={ticking ? 'ticking' : ''}>{formatNumber(value.input_tokens)}</strong></span>
+    <span><small>OUT</small><strong className={ticking ? 'ticking' : ''}>{formatNumber(value.output_tokens)}</strong></span>
+    <span className="cost"><small>COST*</small><strong className={ticking ? 'ticking' : ''}>{formatModelCost(value.cost_usd)}</strong></span>
     <span><small>COUNT</small><strong>{formatNumber(value.count)}</strong></span>
     <span className="outcome success"><small>OK</small><strong>{formatNumber(value.success)}</strong></span>
     <span className={`outcome${value.error ? ' error' : ''}`}><small>ERR</small><strong>{formatNumber(value.error)}</strong></span>
   </div>
 }
 
-export function ModelLiveCounter({story, interactions, replay, live = false}) {
+function ContextMeter({limits, value, ticking}) {
+  const progress = estimatedContextProgress(value, limits)
+  if (!progress) return null
+  const windowLabel = formatNumber(limits.window_tokens)
+  const threshold = Math.round(Number(limits.compaction_threshold || 0) * 100)
+  const title = `Estimated from captured tool I/O. Catalog input limit ${windowLabel} tokens; estimated compaction threshold ${threshold}%. No harness compaction boundary was recorded.`
+  return <div className={`model-context-meter${ticking ? ' ticking' : ''}`} title={title}>
+    <b>CTX~</b>
+    <span className="context-used"><small>USED</small><strong>{progress.consumed_percent.toFixed(1)}%</strong></span>
+    <i><u style={{width: `${Math.max(.4, progress.consumed_percent)}%`}} /></i>
+    <span><small>TO COMPACT</small><strong>{progress.remaining_percent.toFixed(1)}%</strong></span>
+    <em>{formatNumber(progress.used_tokens)} / {formatNumber(limits.compaction_at_tokens)} tok{progress.estimated_compactions ? ` · ~${progress.estimated_compactions} reset${progress.estimated_compactions === 1 ? '' : 's'}` : ''}</em>
+  </div>
+}
+
+export function ModelLiveCounter({story, interactions, replay, playing = false, live = false}) {
   const telemetry = interactions?.model_telemetry
-  if (!story?.chapters?.length || !telemetry?.model) return null
-  const index = Math.max(0, Math.min(story.chapters.length - 1, Math.floor(replay * Math.max(1, story.chapters.length - 1) + .001)))
-  const chapter = story.chapters[index]
-  const site = summarizeModelRecords(interactions?.sites?.[chapter.id] || [])
-  const session = telemetry.session || summarizeModelRecords(Object.values(interactions?.sites || {}).flat())
+  const [reveal, setReveal] = useState({key: '', count: Number.MAX_SAFE_INTEGER})
+  const chapterCount = story?.chapters?.length || 0
+  const index = Math.max(0, Math.min(Math.max(0, chapterCount - 1), Math.floor(replay * Math.max(1, chapterCount - 1) + .001)))
+  const chapter = story?.chapters?.[index]
+  const recordCount = interactions?.sites?.[chapter?.id]?.length || 0
+  const revealKey = `${chapter?.id || ''}:${playing ? 'play' : 'rest'}`
+  const revealedRecords = reveal.key === revealKey ? reveal.count : playing ? 0 : recordCount
+  useEffect(() => {
+    if (!playing || recordCount === 0) {
+      setReveal({key: revealKey, count: recordCount})
+      return undefined
+    }
+    setReveal({key: revealKey, count: 0})
+    let frame = 0
+    let started = 0
+    const duration = Math.max(900, Math.min(2200, 620 + recordCount * 115))
+    const tick = (time) => {
+      if (!started) started = time
+      const elapsed = Math.min(1, (time - started) / duration)
+      setReveal({key: revealKey, count: Math.min(recordCount, Math.floor(elapsed * recordCount))})
+      if (elapsed < 1) frame = requestAnimationFrame(tick)
+      else setReveal({key: revealKey, count: recordCount})
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [chapter?.id, playing, recordCount, revealKey])
+  if (!chapterCount || !telemetry?.model) return null
+  const snapshot = playbackModelTelemetry(story.chapters, interactions?.sites, index, revealedRecords)
   const model = telemetry.model
   const provenance = telemetry.pricing
-    ? `Estimated lower bound from captured tool I/O using ${telemetry.pricing.key} rates. Excludes hidden reasoning and unrecorded dialogue.`
+    ? `Live playback of captured tool I/O using ${telemetry.pricing.key} rates. Journey is the reached prefix, not the final session. Excludes hidden reasoning and unrecorded dialogue.`
     : 'Captured tool I/O is exact; cost is unavailable because no matching model price was found.'
-  return <section className={`model-live-counter${live ? ' live' : ''}`} aria-label="Model trace counter" aria-live="polite" title={provenance}>
-    <div className="model-counter-identity"><i /><strong>{model.name}</strong><span>{model.family} · {model.effort} effort</span><em>CAPTURED I/O</em></div>
-    <CounterRow label="SITE" value={site} />
-    <CounterRow label="SESSION" value={session} />
-    <small className="model-counter-note">* ESTIMATED LOWER BOUND</small>
+  const ticking = playing && revealedRecords < recordCount
+  return <section className={`model-live-counter${live ? ' live' : ''}${ticking ? ' ticking' : ''}`} aria-label="Model trace counter" aria-live="polite" title={provenance}>
+    <div className="model-counter-identity"><i /><strong>{model.name}</strong><span>{model.family} · {model.effort} effort</span><em>{ticking ? 'COUNTING SITE' : 'CAPTURED I/O'}</em></div>
+    <CounterRow label="SITE" value={snapshot.site} ticking={ticking} />
+    <CounterRow label="JOURNEY" value={snapshot.journey} ticking={ticking} />
+    <ContextMeter limits={telemetry.context} value={snapshot.journey} ticking={ticking} />
+    <small className="model-counter-note">* COST LOWER BOUND · CTX~ ESTIMATED UNTIL OBSERVED COMPACTION</small>
   </section>
 }
 

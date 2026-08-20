@@ -8,6 +8,7 @@ from pathlib import Path
 
 from scripts.lib.play.journey_model_telemetry import (
     ensure_model_assets,
+    context_limits_for,
     interaction_cost,
     load_catalog,
     load_model_config,
@@ -57,6 +58,12 @@ class JourneyModelTelemetryTest(unittest.TestCase):
         self.assertIsNotNone(cost)
         assert cost is not None
         self.assertAlmostEqual(0.001125, cost)
+        limits = context_limits_for(model, load_catalog(config, home=self.home), config)
+        self.assertIsNotNone(limits)
+        assert limits is not None
+        self.assertEqual(272_000, limits["window_tokens"])
+        self.assertEqual(244_800, limits["compaction_at_tokens"])
+        self.assertEqual("estimated_from_captured_io", limits["kind"])
 
     def test_context_prices_each_record_and_summarizes_outcomes(self) -> None:
         records = [
@@ -66,6 +73,7 @@ class JourneyModelTelemetryTest(unittest.TestCase):
         context = telemetry_context(self.workspace, records, home=self.home)
         self.assertEqual("captured_tool_io", context["scope"])
         self.assertTrue(all(record["estimated_cost_usd"] > 0 for record in records))
+        self.assertEqual(272_000, context["context"]["window_tokens"])
         summary = summarize(records)
         self.assertEqual(
             {"input_tokens": 120, "output_tokens": 15, "count": 2, "success": 1, "error": 1},

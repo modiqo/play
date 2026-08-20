@@ -443,10 +443,23 @@ header {
 .model-counter-row span { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 4px; min-width: 0; }
 .model-counter-row small { color: var(--faint); font-size: 5px; letter-spacing: .09em; }
 .model-counter-row strong { color: var(--ink); font-size: 8px; font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+.model-counter-row strong.ticking { color: #ffd18b; text-shadow: 0 0 13px rgba(232,132,19,.72); }
 .model-counter-row .cost strong { color: #f0a03a; }
 .model-counter-row .outcome.success strong { color: #aeb7ae; }
 .model-counter-row .outcome.error strong { color: #e27b50; text-shadow: 0 0 10px rgba(226,123,80,.35); }
-.model-counter-note { display: block; padding-top: 4px; color: rgba(126,131,133,.46); font-size: 5px; letter-spacing: .12em; text-align: right; }
+.model-context-meter {
+  display: grid; grid-template-columns: 46px 58px minmax(70px, 1fr) 78px auto; align-items: center; gap: 7px;
+  padding: 7px 2px 5px; border-bottom: 1px solid rgba(126,131,133,.18); font-variant-numeric: tabular-nums;
+}
+.model-context-meter > b { color: var(--accent); font-size: 7px; font-weight: 500; letter-spacing: .14em; }
+.model-context-meter span { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 4px; }
+.model-context-meter small { color: var(--faint); font-size: 5px; letter-spacing: .08em; }
+.model-context-meter strong { color: var(--ink); font-size: 7px; font-weight: 500; text-align: right; }
+.model-context-meter > i { position: relative; height: 2px; overflow: hidden; background: rgba(126,131,133,.18); }
+.model-context-meter > i u { display: block; height: 100%; background: linear-gradient(90deg, #8b571e, #e88413, #ffc05b); box-shadow: 0 0 11px rgba(232,132,19,.6); transition: width 75ms linear; }
+.model-context-meter > em { color: var(--faint); font-size: 5px; font-style: normal; letter-spacing: .06em; white-space: nowrap; text-align: right; }
+.model-context-meter.ticking .context-used strong { color: #ffd18b; text-shadow: 0 0 13px rgba(232,132,19,.72); }
+.model-counter-note { display: block; padding-top: 4px; color: rgba(126,131,133,.46); font-size: 5px; letter-spacing: .1em; text-align: right; }
 
 .journey-drawer {
   top: 82px; bottom: 74px; left: 16px; width: 294px;

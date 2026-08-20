@@ -177,7 +177,7 @@ def select_model(workspace: Path, config: Mapping[str, Any]) -> dict[str, Any]:
         override.get("pricing_model"),
         name if recorded else _string(configured.get("pricing_model"), "gpt-5-codex"),
     )
-    return {
+    selected = {
         "provider": provider,
         "name": name,
         "family": family,
@@ -186,6 +186,13 @@ def select_model(workspace: Path, config: Mapping[str, Any]) -> dict[str, Any]:
         "source": source,
         "captured_at": recorded.get("captured_at") if recorded else None,
     }
+    context_window = override.get("context_window_tokens")
+    if isinstance(context_window, (int, float)) and context_window > 0:
+        selected["context_window_tokens"] = int(context_window)
+    compaction_threshold = override.get("compaction_threshold")
+    if isinstance(compaction_threshold, (int, float)) and 0 < compaction_threshold <= 1:
+        selected["compaction_threshold"] = float(compaction_threshold)
+    return selected
 
 
 @lru_cache(maxsize=4)
@@ -239,6 +246,66 @@ def pricing_for(model: Mapping[str, Any], catalog: Mapping[str, Any]) -> dict[st
     return None
 
 
+def context_limits_for(
+    model: Mapping[str, Any],
+    catalog: Mapping[str, Any],
+    config: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Resolve a catalog-backed context limit and an explicitly estimated trigger."""
+
+    context_config = config.get("context")
+    context_config = context_config if isinstance(context_config, Mapping) else {}
+    configured_window = context_config.get("window_tokens")
+    model_window = model.get("context_window_tokens")
+    window_tokens: int | None = None
+    source = "litellm_catalog"
+    key: str | None = None
+    if isinstance(model_window, (int, float)) and model_window > 0:
+        window_tokens = int(model_window)
+        source = "model_override"
+    elif isinstance(configured_window, (int, float)) and configured_window > 0:
+        window_tokens = int(configured_window)
+        source = "play_config"
+    else:
+        provider = _string(model.get("provider"), "")
+        candidates = [
+            _string(model.get("pricing_model"), ""),
+            f"{provider}/{_string(model.get('name'), '')}",
+            _string(model.get("name"), ""),
+        ]
+        for candidate in candidates:
+            value = catalog.get(candidate)
+            if not isinstance(value, Mapping):
+                continue
+            catalog_provider = value.get("litellm_provider")
+            if isinstance(catalog_provider, str) and provider and catalog_provider != provider:
+                continue
+            input_limit = value.get("max_input_tokens")
+            if isinstance(input_limit, (int, float)) and input_limit > 0:
+                window_tokens = int(input_limit)
+                key = candidate
+                break
+    if window_tokens is None:
+        return None
+    configured_threshold = model.get(
+        "compaction_threshold", context_config.get("compaction_threshold", 0.9)
+    )
+    threshold = (
+        float(configured_threshold)
+        if isinstance(configured_threshold, (int, float))
+        and 0 < configured_threshold <= 1
+        else 0.9
+    )
+    return {
+        "window_tokens": window_tokens,
+        "compaction_threshold": threshold,
+        "compaction_at_tokens": max(1, round(window_tokens * threshold)),
+        "source": source,
+        "key": key,
+        "kind": "estimated_from_captured_io",
+    }
+
+
 def interaction_cost(input_tokens: int, output_tokens: int, pricing: Mapping[str, Any] | None) -> float | None:
     if pricing is None:
         return None
@@ -267,7 +334,9 @@ def summarize(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 def telemetry_context(workspace: Path, records: list[dict[str, Any]], *, home: Path | None = None) -> dict[str, Any]:
     config = load_model_config(home=home)
     model = select_model(workspace, config)
-    pricing = pricing_for(model, load_catalog(config, home=home))
+    catalog = load_catalog(config, home=home)
+    pricing = pricing_for(model, catalog)
+    context = context_limits_for(model, catalog, config)
     for record in records:
         record["estimated_cost_usd"] = interaction_cost(
             int(record.get("input_tokens") or 0),
@@ -278,6 +347,7 @@ def telemetry_context(workspace: Path, records: list[dict[str, Any]], *, home: P
         "schema": TELEMETRY_SCHEMA,
         "model": model,
         "pricing": pricing,
+        "context": context,
         "scope": "captured_tool_io",
         "cost_kind": "estimated_lower_bound",
         "session": summarize(records),
