@@ -8,6 +8,7 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from contextlib import closing
 from http.cookiejar import CookieJar
 from pathlib import Path
 from unittest.mock import patch
@@ -195,9 +196,9 @@ class JourneySceneTest(unittest.TestCase):
             summaries, lookup = _workspace_catalog("cap_stale", root=self.journeys)
             index = _workspace_index("cap_stale", root=self.journeys)
             with patch(
-                "scripts.lib.play.journey_view.schedule_worker", return_value=True
+                "scripts.lib.play.journey_view_catalog.schedule_worker", return_value=True
             ) as schedule, patch(
-                "scripts.lib.play.journey_view._schedule_workspace_projection",
+                "scripts.lib.play.journey_view_catalog._schedule_workspace_projection",
                 return_value=True,
             ) as workspace_schedule:
                 refreshed = _refresh_workspace_catalog("cap_stale", root=self.journeys)
@@ -413,9 +414,9 @@ class JourneySceneTest(unittest.TestCase):
                     method="POST",
                 )
                 with patch(
-                    "scripts.lib.play.journey_view.schedule_worker", return_value=True
+                    "scripts.lib.play.journey_view_catalog.schedule_worker", return_value=True
                 ), patch(
-                    "scripts.lib.play.journey_view._schedule_workspace_projection",
+                    "scripts.lib.play.journey_view_catalog._schedule_workspace_projection",
                     return_value=True,
                 ):
                     with urllib.request.urlopen(refresh_request, timeout=2) as refreshed:
@@ -490,7 +491,7 @@ class JourneySceneTest(unittest.TestCase):
         response_root = workspace / ".rote" / "responses"
         response_root.mkdir(parents=True)
         database = workspace / ".rote" / "workspace.db"
-        with sqlite3.connect(database) as connection:
+        with closing(sqlite3.connect(database)) as connection:
             connection.execute(
                 "CREATE TABLE command_log (sequence INTEGER PRIMARY KEY, command_type TEXT, "
                 "params TEXT, response_ids TEXT, timestamp TEXT, skip_export INTEGER, command_json TEXT)"
@@ -507,6 +508,7 @@ class JourneySceneTest(unittest.TestCase):
                     None,
                 ),
             )
+            connection.commit()
         (response_root / "@1.json").write_text(
             json.dumps(
                 {
@@ -520,7 +522,7 @@ class JourneySceneTest(unittest.TestCase):
             )
         )
         capture = {**self.capture, "workspace_path": str(workspace)}
-        with patch("scripts.lib.play.journey_view._capture", return_value=capture):
+        with patch("scripts.lib.play.journey_view_evidence._capture", return_value=capture):
             exchange = _exchange_projection(
                 self.capture["reference"], 1, root=self.journeys
             )

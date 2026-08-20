@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1144,7 +1145,7 @@ class JourneyProjectionTest(unittest.TestCase):
             first = refresh_capture(self.capture, root=self.journeys)
             assert first is not None
             database = journey_directory(self.capture["reference"], root=self.journeys) / "journey.sqlite3"
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection:
                 encoded = connection.execute(
                     "SELECT value FROM meta WHERE key = 'graph_header'"
                 ).fetchone()[0]
@@ -1154,6 +1155,7 @@ class JourneyProjectionTest(unittest.TestCase):
                     "UPDATE meta SET value = ? WHERE key = 'graph_header'",
                     (json.dumps(header),),
                 )
+                connection.commit()
             second = refresh_capture(self.capture, root=self.journeys)
 
         assert second is not None
