@@ -1,6 +1,9 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react'
 import * as THREE from 'three'
 import {CSS2DRenderer} from 'three/addons/renderers/CSS2DRenderer.js'
+import {BokehPass} from 'three/addons/postprocessing/BokehPass.js'
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js'
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js'
 import {AMBER, GROUND, clampVisibleCallouts, glassTowerEdge, glassTowerMaterial, journeyPositions, landmarkFor, makeCallout, makeInteractionPlaque, makeTemporalCorridor, material} from './world-elements.js'
 import {createWorldNavigation} from './world-navigation.js'
 import {KIND_LABEL, WORLD_ROLE} from './semantics.js'
@@ -37,6 +40,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
     let disposed = false
     let frame = 0
     let renderer
+    let composer
+    let focusPass
     let labels
     let observer
     let navigation
@@ -47,6 +52,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       cancelAnimationFrame(frame)
       observer?.disconnect()
       navigation?.dispose()
+      focusPass?.dispose?.()
+      composer?.dispose?.()
       scene?.traverse((object) => {
         object.geometry?.dispose?.()
         if (Array.isArray(object.material)) object.material.forEach((item) => { item.map?.dispose?.(); item.dispose?.() })
@@ -65,6 +72,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         throw new Error('Journey route has no valid vantage points')
       }
       scene = new THREE.Scene()
+      const tutorialFocus = story.origin?.kind === 'tutorial'
       scene.background = new THREE.Color(GROUND)
       scene.fog = new THREE.FogExp2(GROUND, .015)
       const camera = new THREE.PerspectiveCamera(54, 1, .1, 260)
@@ -79,6 +87,12 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       renderer.toneMappingExposure = .82
       renderer.domElement.className = 'world-canvas'
       host.current.appendChild(renderer.domElement)
+      if (tutorialFocus) {
+        composer = new EffectComposer(renderer)
+        composer.addPass(new RenderPass(scene, camera))
+        focusPass = new BokehPass(scene, camera, {focus: 12, aperture: .00012, maxblur: .007})
+        composer.addPass(focusPass)
+      }
 
       labels = new CSS2DRenderer()
       labels.domElement.className = 'world-labels'
@@ -122,8 +136,6 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       const sites = []
       const interactionMeshes = []
       const semanticMeshes = []
-      const tutorialFocus = story.origin?.kind === 'tutorial'
-      const amberColor = new THREE.Color(AMBER)
       story.chapters.forEach((chapter, index) => {
         const site = new THREE.Group()
         site.position.copy(positions[index])
@@ -137,6 +149,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         const landmark = landmarkFor(chapter)
         const landmarkSize = new THREE.Box3().setFromObject(landmark).getSize(new THREE.Vector3())
         const landmarkMaterials = []
+        const focusEdges = []
         landmark.traverse((object) => {
           if (!object.isMesh) return
           object.userData = {siteId: chapter.id, sequence: null}
@@ -151,6 +164,13 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
               emissiveIntensity: Number(entry.emissiveIntensity || 0),
             })
           })
+          const edge = new THREE.LineSegments(
+            new THREE.EdgesGeometry(object.geometry, 28),
+            new THREE.LineBasicMaterial({color: AMBER, transparent: true, opacity: 0, depthTest: true}),
+          )
+          edge.renderOrder = 4
+          object.add(edge)
+          focusEdges.push(edge)
         })
         site.add(landmark)
         const records = interactions?.sites?.[chapter.id] || []
@@ -195,7 +215,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         site.add(label)
         scene.add(site)
         sites.push({
-          chapter, group: site, platform, landmark, landmarkMaterials, label: root, markers, plaques, worldPosition: site.position.clone(),
+          chapter, group: site, platform, landmark, landmarkMaterials, focusEdges, label: root, markers, plaques, worldPosition: site.position.clone(),
           approachDistance: Math.max(12.5, landmarkSize.z * .5 + 8, landmarkSize.x * .38 + 8),
           eyeHeight: THREE.MathUtils.clamp(landmarkSize.y * .42, 2.5, 3.8),
         })
@@ -225,6 +245,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         camera.aspect = width / Math.max(1, height)
         camera.updateProjectionMatrix()
         renderer.setSize(width, height, false)
+        composer?.setSize(width, height)
         labels.setSize(width, height)
       }
       observer = new ResizeObserver(resize)
@@ -295,16 +316,19 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             const isSelected = isSelectedSite && !selectedRef.current?.sequence
             const interactionEngaged = (isSelectedSite && Boolean(selectedRef.current?.sequence)) || site.plaques.some((plaque) => plaque.root.classList.contains('spread'))
             if (tutorialFocus) {
-              site.landmark.position.y = isCurrent ? .18 + Math.sin(elapsed * 1.8) * .025 : 0
-              site.platform.material.color.setHex(isCurrent ? 0x17130f : 0x050607)
+              site.landmark.position.y = isCurrent ? .08 + Math.sin(elapsed * 1.8) * .015 : 0
+              site.platform.material.color.setHex(isCurrent ? 0x111518 : 0x060809)
               site.landmarkMaterials.forEach((state) => {
                 state.material.color.copy(state.color)
-                if (isCurrent) state.material.color.lerp(amberColor, .24)
-                else state.material.color.multiplyScalar(.14)
+                if (!isCurrent) state.material.color.multiplyScalar(.22)
                 if (state.material.emissive && state.emissive) {
-                  state.material.emissive.copy(isCurrent ? amberColor : state.emissive)
-                  state.material.emissiveIntensity = isCurrent ? Math.max(.2, state.emissiveIntensity) : 0
+                  state.material.emissive.copy(state.emissive)
+                  state.material.emissiveIntensity = isCurrent ? state.emissiveIntensity : 0
                 }
+              })
+              site.focusEdges.forEach((edge) => {
+                edge.visible = isCurrent
+                edge.material.opacity = isCurrent ? .2 + Math.sin(elapsed * 1.9) * .045 : 0
               })
             }
             site.label.classList.toggle('expanded', isSelected || (isCurrent && !selectedRef.current && !dismissed.current.has(site.chapter.id)))
@@ -342,7 +366,13 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
               plaque.root.classList.toggle('selected', plaqueSelected)
             })
           })
-          renderer.render(scene, camera)
+          if (focusPass) {
+            const focusSite = sites[reached]
+            const focusPoint = focusSite.worldPosition.clone().setY(Math.max(1.4, focusSite.eyeHeight))
+            focusPass.uniforms.focus.value = camera.position.distanceTo(focusPoint)
+            focusPass.uniforms.aperture.value = playingRef.current ? .000075 : .00013
+            composer.render()
+          } else renderer.render(scene, camera)
           labels.render(scene, camera)
           const layoutNow = performance.now()
           if (host.current && (layoutNow - lastCalloutLayout >= 80 || previousReached !== reached)) {

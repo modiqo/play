@@ -28,6 +28,10 @@ export default function App() {
   const currentReplayChapter = story?.chapters[replayChapter]
   const frozen = mode === 'follow' && observing && !playing
 
+  React.useEffect(() => {
+    if (isTutorial && story?.journey_key) setWorldModelOpen(true)
+  }, [isTutorial, setWorldModelOpen, story?.journey_key])
+
   const showEvidencePanel = chapter && (mode !== 'follow' || interaction)
   const changeMode = (nextMode) => {
     if (nextMode === mode) {
@@ -147,9 +151,9 @@ export default function App() {
       </>}
     </aside>
     {mode === 'follow' && story && interactions && !isTutorial && <JourneyGuide story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} onOpen={selectVantage} onNavigate={jumpToChapter} />}
-    {mode === 'follow' && story && tutorial && <TutorialExperience key={story.journey_key} tutorial={tutorial} story={story} interactions={interactions} replay={replay} playing={playing} onBegin={() => { jumpToChapter(0); togglePlayback() }} onChooseWorkspace={() => setJourneysOpen(true)} />}
+    {mode === 'follow' && story && tutorial && <TutorialExperience key={story.journey_key} tutorial={tutorial} story={story} interactions={interactions} replay={replay} playing={playing} onBegin={() => { setWorldModelOpen(false); jumpToChapter(0); togglePlayback() }} onChooseWorkspace={() => setJourneysOpen(true)} onOpenWorldModel={() => setWorldModelOpen(true)} />}
     {mode === 'follow' && story && interactions && !isTutorial && !showEvidencePanel && <CapabilityRail story={story} interactions={interactions} replay={replay} onJump={jumpToChapter} />}
-    <WorldModel open={worldModelOpen} onToggle={() => setWorldModelOpen((value) => !value)} />
+    <WorldModel open={worldModelOpen} onToggle={() => setWorldModelOpen((value) => !value)} highlightKind={isTutorial ? currentReplayChapter?.kind : ''} />
     <Telemetry story={story} open={telemetryOpen} onToggle={() => setTelemetryOpen((value) => !value)} />
     <footer>
       <button onClick={() => setJourneysOpen((value) => !value)}>☷ JOURNEYS</button>

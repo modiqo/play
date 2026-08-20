@@ -329,12 +329,18 @@ Notion, decide among Notion MCP/CALL, notion-cli/SHELL, and browser/DRIVE, then 
 prepare, create, observe, verify, and deliver the page. Every world-model entry includes a small
 example drawn from that thread for readers who reason more easily from concrete cases.
 
-At each tutorial stop, surrounding landmarks and labels dim while the current landmark lifts and
-illuminates. A paired explanation names the shape, maps it back to the exact world-model primitive,
-and explains why the local operation towers sit in front of this vantage: they are inspectable
-evidence belonging to this semantic step, not additional stops on the global route. The guide
-always repeats the tower channels and tells the learner to pause and select an amber tower or
-`@sequence` plaque to inspect its redacted exchange.
+At each tutorial stop, surrounding landmarks and labels dim and soften while the current landmark
+retains its original glass/material treatment, lifts slightly, and receives only a restrained amber
+edge. Focus must never repaint the primitive as a solid orange object. The World Model reference
+opens at tutorial entry and remains one click away throughout the replay, with its current primitive
+highlighted.
+
+A compact, dismissible glass caption names the shape, maps it back to the exact world-model
+primitive, and explains why the local operation towers sit in front of this vantage: they are
+inspectable evidence belonging to this semantic step, not additional stops on the global route.
+The caption clears during travel so it does not become permanent HUD obstruction. It repeats the
+tower channels and tells the learner to pause and select an amber tower or `@sequence` plaque to
+inspect its redacted exchange.
 
 It is identified by a typed tutorial origin and is visually labeled `START HERE`. It is never
 included in capture counts, publication, crystallization, or owner-history claims.
