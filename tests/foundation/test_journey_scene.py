@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sqlite3
 import tempfile
 import threading
@@ -42,6 +43,7 @@ from scripts.lib.play.journey_view import (
     _journey_server_pids_from_process_list,
     _refresh_workspace_catalog,
     _viewer_state_path,
+    _wait_for_viewer_port,
     _workspace_activity,
     _workspace_catalog,
     _workspace_index,
@@ -209,6 +211,16 @@ class JourneySceneTest(unittest.TestCase):
         103 /usr/bin/python unrelated-server --viewer-token secret
         """
         self.assertEqual({101}, _journey_server_pids_from_process_list(processes))
+
+    def test_viewer_waits_for_the_singleton_port_to_be_released(self) -> None:
+        held = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        held.bind(("127.0.0.1", 0))
+        port = int(held.getsockname()[1])
+        try:
+            self.assertFalse(_wait_for_viewer_port(port, timeout_seconds=0.01))
+        finally:
+            held.close()
+        self.assertTrue(_wait_for_viewer_port(port, timeout_seconds=0.01))
 
     def test_journey_mode_distinguishes_growing_captures_from_recordings(self) -> None:
         self.assertEqual("live", _journey_mode("active"))
