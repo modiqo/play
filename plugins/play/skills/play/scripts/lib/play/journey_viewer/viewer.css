@@ -436,6 +436,13 @@ header {
   position: relative; z-index: auto; top: auto; left: auto; width: 100%; min-width: 0;
   transform: none; pointer-events: none;
 }
+.atlas-instruments {
+  position: absolute; z-index: 14; top: 94px; left: 22px; width: min(430px, calc(100vw - 390px));
+  min-width: 360px; pointer-events: none;
+}
+.atlas-instruments .model-live-counter {
+  position: relative; z-index: auto; inset: auto; width: 100%; min-width: 0; transform: none;
+}
 .model-counter-identity {
   display: flex; align-items: baseline; gap: 8px; padding: 0 2px 7px;
   border-bottom: 1px solid rgba(232,132,19,.38); font-size: 7px; letter-spacing: .12em; text-transform: uppercase;
