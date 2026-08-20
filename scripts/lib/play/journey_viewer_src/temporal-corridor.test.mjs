@@ -18,6 +18,7 @@ test('orders canonical indexes left to right on the frontage timeline', () => {
   assert.equal(layout.points[0].deltaLabel, 'START')
   assert.equal(layout.points[1].deltaLabel, '+300 ms')
   assert.deepEqual(layout.labels, {entrance: 'PAST', exit: 'PRESENT'})
+  assert.ok(layout.frontage.plaqueZ > layout.frontage.z)
 })
 
 test('uses duration for footprint without changing chronology', () => {
@@ -39,6 +40,7 @@ test('clusters towers behind the timeline and uses depth only for overlap', () =
   assert.equal(layout.points[0].z, layout.points[2].z)
   assert.ok(layout.points[1].z < layout.points[0].z)
   assert.ok(layout.points.every((point) => point.z < point.baseZ))
+  assert.ok(layout.frontage.plaqueZ > layout.points[0].baseZ)
 })
 
 test('falls back to stable sequence spacing when timestamps are unavailable', () => {

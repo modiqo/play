@@ -187,7 +187,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           const tower = new THREE.Mesh(towerGeometry, glassTowerMaterial())
           const towerEdge = glassTowerEdge(towerGeometry)
           tower.add(towerEdge)
-          tower.position.set(temporal.x, height / 2, temporal.z)
+          // Keep the closed base above the platform so the bottom edges remain legible.
+          tower.position.set(temporal.x, height / 2 + .08, temporal.z)
           tower.castShadow = true
           tower.userData = {siteId: chapter.id, sequence: record.sequence}
           site.add(tower)
@@ -198,7 +199,9 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           const plaque = makeInteractionPlaque(group, chapter, plaqueIndex, (selection) => {
             onSelect(selectedRef.current?.sequence === selection.sequence ? null : selection)
           })
-          plaque.label.position.set(group.x, .22, group.z + .18)
+          // Evidence controls occupy their own foreground rail; the timeline labels
+          // remain directly behind them and never share the same screen band.
+          plaque.label.position.set(group.x, .16, temporalCorridor.frontage.plaqueZ)
           site.add(plaque.label)
           return plaque
         })

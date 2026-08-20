@@ -2,8 +2,8 @@
 export function updateMarkerAppearance(marker, {selected = false, proximity = false, pulse = 0, frozen = false} = {}) {
   const towerMaterial = marker?.tower?.material
   if (towerMaterial) {
-    towerMaterial.emissiveIntensity = proximity ? .025 + pulse * .07 : .01
-    towerMaterial.opacity = selected ? .52 : proximity ? .4 : .26
+    towerMaterial.emissiveIntensity = proximity ? .018 + pulse * .035 : .008
+    towerMaterial.opacity = selected ? .56 : proximity ? .46 : .3
   }
   const edgeMaterial = marker?.edge?.material
   if (edgeMaterial) edgeMaterial.opacity = selected ? 1 : proximity ? .3 + pulse * .48 : .1

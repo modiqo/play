@@ -8,8 +8,8 @@ test('updates current tower and edge materials', () => {
     edge: {material: {}},
   }
   updateMarkerAppearance(marker, {selected: true, proximity: true, pulse: .8, frozen: false})
-  assert.equal(marker.tower.material.opacity, .52)
-  assert.ok(marker.tower.material.emissiveIntensity > .025)
+  assert.equal(marker.tower.material.opacity, .56)
+  assert.ok(marker.tower.material.emissiveIntensity > .018)
   assert.ok(marker.edge.material.opacity === 1)
   assert.ok(marker.tower.scale.y > 1)
 })

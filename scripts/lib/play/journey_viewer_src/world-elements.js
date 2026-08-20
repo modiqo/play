@@ -28,19 +28,20 @@ export function material(color = INK_SOFT, options = {}) {
 
 export function glassTowerMaterial() {
   return new THREE.MeshPhysicalMaterial({
-    color: 0x555d61,
-    roughness: .24,
-    metalness: .08,
-    transmission: .24,
-    thickness: .72,
-    ior: 1.38,
-    clearcoat: .72,
-    clearcoatRoughness: .2,
+    color: 0x748084,
+    roughness: .2,
+    metalness: .04,
+    transmission: .12,
+    thickness: .64,
+    ior: 1.34,
+    clearcoat: .86,
+    clearcoatRoughness: .16,
     transparent: true,
-    opacity: .34,
-    depthWrite: false,
-    emissive: AMBER,
-    emissiveIntensity: .015,
+    opacity: .4,
+    depthWrite: true,
+    side: THREE.DoubleSide,
+    emissive: 0x8e999d,
+    emissiveIntensity: .012,
   })
 }
 
