@@ -159,6 +159,9 @@ export default function App() {
       <JourneyGuide story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} onOpen={selectVantage} onNavigate={jumpToChapter} />
       {!showEvidencePanel && <ModelLiveCounter story={story} interactions={interactions} replay={replay} playing={playing} live={liveActivity || trackingLive} />}
     </div>}
+    {mode !== 'follow' && story && interactions && !isTutorial && (playing || selected?.siteId) && <div className="atlas-instruments">
+      <ModelLiveCounter story={story} interactions={interactions} replay={replay} playing={playing} live={liveActivity || trackingLive} siteId={playing ? '' : selected?.siteId} />
+    </div>}
     {mode === 'follow' && story && tutorial && <TutorialExperience key={story.journey_key} tutorial={tutorial} story={story} interactions={interactions} replay={replay} playing={playing} entryReferenceActive={tutorialEntryModelActive} onBegin={() => { setWorldModelOpen(false); jumpToChapter(0); togglePlayback() }} onChooseWorkspace={() => setJourneysOpen(true)} onOpenWorldModel={() => setWorldModelOpen(true)} />}
     {mode === 'follow' && story && interactions && !isTutorial && !showEvidencePanel && <CapabilityRail story={story} interactions={interactions} replay={replay} onJump={jumpToChapter} />}
     <WorldModel open={worldModelOpen} onToggle={() => setWorldModelOpen((value) => !value)} highlightKind={isTutorial ? currentReplayChapter?.kind : ''} tutorial={isTutorial} />

@@ -103,11 +103,13 @@ function ContextMeter({limits, value, ticking}) {
   </div>
 }
 
-export function ModelLiveCounter({story, interactions, replay, playing = false, live = false}) {
+export function ModelLiveCounter({story, interactions, replay, playing = false, live = false, siteId = ''}) {
   const telemetry = interactions?.model_telemetry
   const [reveal, setReveal] = useState({key: '', count: Number.MAX_SAFE_INTEGER})
   const chapterCount = story?.chapters?.length || 0
-  const index = Math.max(0, Math.min(Math.max(0, chapterCount - 1), Math.floor(replay * Math.max(1, chapterCount - 1) + .001)))
+  const selectedIndex = siteId ? story?.chapters?.findIndex((chapter) => chapter.id === siteId) : -1
+  const replayIndex = Math.floor(replay * Math.max(1, chapterCount - 1) + .001)
+  const index = Math.max(0, Math.min(Math.max(0, chapterCount - 1), selectedIndex >= 0 ? selectedIndex : replayIndex))
   const chapter = story?.chapters?.[index]
   const recordCount = interactions?.sites?.[chapter?.id]?.length || 0
   const revealKey = `${chapter?.id || ''}:${playing ? 'play' : 'rest'}`

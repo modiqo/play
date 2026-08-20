@@ -1,3 +1,7 @@
+import {interactionDurationArc, interactionRadius} from './interaction-metrics.mjs'
+import {journeyCoordinates} from './journey-layout.mjs'
+import {layoutTemporalCorridor} from './temporal-corridor.mjs'
+
 export const DARK = {
   ground: [12, 14, 16], district: [24, 27, 29], districtAlt: [19, 22, 24],
   street: [78, 84, 86, 145], streetCore: [17, 19, 21, 230],
@@ -62,41 +66,6 @@ function smoothPath(points, subdivisions = 8) {
   return [...result, points[points.length - 1]]
 }
 
-function roundedPath(points, subdivisions = 8) {
-  if (points.length < 3) return points
-  const result = [points[0]]
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const before = points[index - 1]
-    const corner = points[index]
-    const after = points[index + 1]
-    const incoming = Math.hypot(corner[0] - before[0], corner[1] - before[1])
-    const outgoing = Math.hypot(after[0] - corner[0], after[1] - corner[1])
-    const radius = Math.min(5.5, incoming * .18, outgoing * .18)
-    const entry = [
-      corner[0] + (before[0] - corner[0]) / Math.max(.001, incoming) * radius,
-      corner[1] + (before[1] - corner[1]) / Math.max(.001, incoming) * radius,
-      corner[2],
-    ]
-    const exit = [
-      corner[0] + (after[0] - corner[0]) / Math.max(.001, outgoing) * radius,
-      corner[1] + (after[1] - corner[1]) / Math.max(.001, outgoing) * radius,
-      corner[2],
-    ]
-    result.push(entry)
-    for (let step = 1; step <= subdivisions; step += 1) {
-      const amount = step / subdivisions
-      const inverse = 1 - amount
-      result.push([
-        inverse * inverse * entry[0] + 2 * inverse * amount * corner[0] + amount * amount * exit[0],
-        inverse * inverse * entry[1] + 2 * inverse * amount * corner[1] + amount * amount * exit[1],
-        corner[2],
-      ])
-    }
-  }
-  result.push(points[points.length - 1])
-  return result
-}
-
 export function interpolatePath(points, progress) {
   if (!points.length) return [0, 0, 0]
   if (points.length === 1) return points[0]
@@ -108,95 +77,106 @@ export function interpolatePath(points, progress) {
   return source.map((value, axis) => value + (target[axis] - value) * amount)
 }
 
-function offsetPath(points, distance) {
-  return points.map((point, index) => {
-    const before = points[Math.max(0, index - 1)]
-    const after = points[Math.min(points.length - 1, index + 1)]
-    const dx = after[0] - before[0]
-    const dy = after[1] - before[1]
-    const length = Math.max(.001, Math.hypot(dx, dy))
-    return [point[0] - dy / length * distance, point[1] + dx / length * distance, point[2]]
+function threadPath(source, target, direction = 1, subdivisions = 14) {
+  const dx = target[0] - source[0]
+  const dy = target[1] - source[1]
+  const length = Math.max(.001, Math.hypot(dx, dy))
+  const nx = -dy / length
+  const ny = dx / length
+  const bow = Math.min(.34, length * .1) * direction
+  const sag = Math.min(.2, length * .045)
+  return Array.from({length: subdivisions + 1}, (_, index) => {
+    if (index === 0) return [...source]
+    if (index === subdivisions) return [...target]
+    const amount = index / subdivisions
+    const curve = Math.sin(Math.PI * amount)
+    const irregularity = Math.sin(Math.PI * amount * 2) * .035
+    return [
+      source[0] + dx * amount + nx * (bow * curve + irregularity),
+      source[1] + dy * amount + ny * (bow * curve + irregularity),
+      source[2] + (target[2] - source[2]) * amount - sag * curve,
+    ]
+  })
+}
+
+function haloPath(center, radius, sweep, subdivisions = 28) {
+  return Array.from({length: subdivisions + 1}, (_, index) => {
+    const angle = -Math.PI / 2 + sweep * index / subdivisions
+    return [
+      center[0] + Math.cos(angle) * (radius + .105),
+      center[1] + Math.sin(angle) * (radius + .105),
+      center[2] + .025,
+    ]
   })
 }
 
 export function buildAtlas(story, scene, interactionProjection) {
-  const chapters = story.chapters
-  const count = chapters.length
-  const columns = Math.max(2, Math.ceil(Math.sqrt(count * 1.55)))
-  const xStep = 34
-  const yStep = 28
+  const chapters = story.chapters || []
+  const positions = journeyCoordinates(chapters)
   const centers = new Map()
   const sites = chapters.map((chapter, order) => {
-    const row = Math.floor(order / columns)
-    const cell = order % columns
-    const column = row % 2 === 0 ? cell : columns - 1 - cell
-    const semanticDrift = ((stableNumber(chapter.id) % 7) - 3) * .42
-    const center = [column * xStep, row * yStep + semanticDrift, .42]
+    const point = positions[order]
+    const center = [point.x, point.z, .42]
     centers.set(chapter.id, center)
     const interactions = interactionProjection?.sites?.[chapter.id] || []
-    return {...chapter, center, row, column, interactions}
+    return {...chapter, center, row: order, column: order % 2, interactions, width: 15, depth: 12}
   })
 
   const districts = []
   const contours = []
-  const buildings = []
+  const beads = []
+  const threads = []
+  const halos = []
   const streets = []
   for (const site of sites) {
     const [cx, cy] = site.center
-    const buildingColumns = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, site.interactions.length) * 1.25)))
-    const buildingRows = Math.max(1, Math.ceil(Math.max(1, site.interactions.length) / buildingColumns))
-    const width = Math.max(27, buildingColumns * 5.2 + 11)
-    const depth = Math.max(22, buildingRows * 5.2 + 11)
-    site.width = width
-    site.depth = depth
-    districts.push({id: `district-${site.id}`, site, polygon: rectangle(cx, cy, width, depth, 0)})
-    for (let ring = 1; ring <= 3; ring += 1) {
+    districts.push({id: `district-${site.id}`, site, polygon: rectangle(cx, cy, site.width, site.depth, 0)})
+    for (let ring = 1; ring <= 2; ring += 1) {
       contours.push({
         id: `contour-${site.id}-${ring}`, site,
-        path: rectangle(cx, cy, width + ring * 2.6, depth + ring * 2.6, .07),
+        path: rectangle(cx, cy, site.width + ring * 1.4, site.depth + ring * 1.4, .07),
         ring,
       })
     }
-    streets.push(
-      {id: `street-h-${site.id}`, path: [[cx - width / 2, cy, .15], [cx + width / 2, cy, .15]]},
-      {id: `street-v-${site.id}`, path: [[cx, cy - depth / 2, .15], [cx, cy + depth / 2, .15]]},
-      {id: `street-n-${site.id}`, path: [[cx - width / 2, cy - depth * .34, .15], [cx + width / 2, cy - depth * .34, .15]]},
-      {id: `street-e-${site.id}`, path: [[cx + width * .34, cy - depth / 2, .15], [cx + width * .34, cy + depth / 2, .15]]},
-    )
-
+    const temporalCorridor = layoutTemporalCorridor(site.interactions)
+    streets.push({
+      id: `timeline-${site.id}`,
+      site,
+      path: temporalCorridor.spine.map((point) => [cx + point.x, cy + point.z, .2]),
+    })
     const seed = stableNumber(site.id)
-    for (let index = 0; index < site.interactions.length; index += 1) {
-      const interaction = site.interactions[index]
-      const row = Math.floor(index / buildingColumns)
-      const rawColumn = index % buildingColumns
-      const column = row % 2 === 0 ? rawColumn : buildingColumns - 1 - rawColumn
-      const slot = [
-        (column - (buildingColumns - 1) / 2) * 5.1,
-        (row - (buildingRows - 1) / 2) * 5.1,
-      ]
-      const variance = ((seed >>> (index % 16)) & 15) / 15
-      const towerWidth = 3.0 + ((seed + index * 13) % 10) / 10
-      const towerDepth = 3.0 + ((seed + index * 19) % 8) / 10
-      const telemetryScale = Math.log2(interaction.duration_ms + interaction.tokens / 3 + 2)
-      const height = 2.5 + telemetryScale * (1.25 + variance * .62)
-      const center = [cx + slot[0], cy + slot[1], .24]
-      buildings.push({
-        id: `interaction-${interaction.sequence}`, site, interaction, center,
-        polygon: rectangle(center[0], center[1], towerWidth, towerDepth, .22),
-        height, tone: .08 + variance * .36,
+    const siteBeads = temporalCorridor.points.map((temporal, index) => {
+      const interaction = temporal.record
+      const radius = interactionRadius(interaction)
+      const elevation = .82 + radius + temporal.lane * .56 + (index % 2) * .12
+      const center = [cx + temporal.x, cy + temporal.z, elevation]
+      const bead = {
+        id: `interaction-${interaction.sequence}`, site, interaction, temporal, center, radius,
+        tone: .08 + (((seed >>> (index % 16)) & 15) / 15) * .36,
+      }
+      halos.push({
+        id: `halo-${interaction.sequence}`, bead,
+        path: haloPath(center, radius, interactionDurationArc(temporal)),
+      })
+      return bead
+    })
+    beads.push(...siteBeads)
+    for (let index = 1; index < siteBeads.length; index += 1) {
+      const source = siteBeads[index - 1]
+      const target = siteBeads[index]
+      threads.push({
+        id: `thread-${source.interaction.sequence}-${target.interaction.sequence}`,
+        site, source, target,
+        path: threadPath(source.center, target.center, index % 2 === 0 ? 1 : -1),
       })
     }
-    site.localPath = smoothPath(
-      buildings
-        .filter((building) => building.site.id === site.id)
-        .sort((a, b) => a.interaction.sequence - b.interaction.sequence)
-        .map((building) => building.center),
-      6,
-    )
+    site.localPath = siteBeads.length > 1
+      ? smoothPath(siteBeads.map((bead) => bead.center), 6)
+      : siteBeads.map((bead) => bead.center)
   }
 
-  const buildingBySequence = new Map(buildings.map((building) => [building.interaction.sequence, building]))
-  const semanticPath = roundedPath(sites.map((site) => site.center), 8)
+  const beadBySequence = new Map(beads.map((bead) => [bead.interaction.sequence, bead]))
+  const semanticPath = smoothPath(sites.map((site) => site.center), 10)
   const sceneEdges = Array.isArray(scene?.edges) ? scene.edges : []
   const auditRoutes = sceneEdges.flatMap((edge) => {
     if (edge.kind === 'derived_from' || edge.kind === 'decomposes_into') return []
@@ -217,7 +197,7 @@ export function buildAtlas(story, scene, interactionProjection) {
     gridLines.push({id: `grid-y-${y}`, path: [[minX, y, .01], [maxX, y, .01]]})
   }
   return {
-    sites, districts, contours, buildings, streets, gridLines, semanticPath, auditRoutes, buildingBySequence,
+    sites, districts, contours, beads, threads, halos, streets, gridLines, semanticPath, auditRoutes, beadBySequence,
     ground: rectangle((minX + maxX) / 2, (minY + maxY) / 2, maxX - minX + 22, maxY - minY + 22, -.1),
     bounds: {minX, maxX, minY, maxY},
   }
@@ -231,4 +211,3 @@ export function fitView(atlas) {
     rotationX: 55, zoom: Math.log2(760 / span) + .62, minZoom: -2, maxZoom: 6,
   }
 }
-

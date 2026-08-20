@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import {CSS2DObject} from 'three/addons/renderers/CSS2DRenderer.js'
 import {formatNumber} from './format.js'
+import {journeyCoordinates} from './journey-layout.mjs'
 import {KIND_LABEL, MAP_MEANING, WORLD_ROLE, WORLD_STORY, worldSpec} from './semantics.js'
 
 const INK_SOFT = 0x565c5f
@@ -13,10 +14,7 @@ function escapeHtml(value) {
 }
 
 export function journeyPositions(chapters) {
-  return chapters.map((chapter, index) => {
-    const x = Math.sin(index * .72) * 12 + Math.sin(index * .23) * 4
-    return new THREE.Vector3(x, 0, index * -21)
-  })
+  return journeyCoordinates(chapters).map(({x, y, z}) => new THREE.Vector3(x, y, z))
 }
 
 export function material(color = INK_SOFT, options = {}) {
