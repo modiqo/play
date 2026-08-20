@@ -807,7 +807,10 @@ The detailed conversational inspection commands are not part of the first implem
 - Selecting a workspace always begins at its first stage. Live-head tracking is opt-in and is
   released by replay, scrubbing, freezing, or evidence inspection.
 - Renderer refreshes preserve the camera, do not replace a graph during animated playback, and use
-  a bounded visible-site window for long explorations while retaining every tracker marker.
+  a bounded visible-site window for long explorations while retaining canonical tracker access.
+- Dense worlds materialize no more than 50 semantic stages per renderer page. The global replay
+  rail projects no more than 14 semantic landmarks, chosen from world-model transitions across
+  the complete time range, and exposes the active head as a separate pulsing live target.
 - Retained: `play.journey-scene/v1` as a deterministic diagnostic contract; it is no longer the
   primary presentation surface.
 - Keep renderer and any later enrichment failures isolated from the capture worker and Play machine.

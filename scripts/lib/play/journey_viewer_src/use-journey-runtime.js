@@ -34,6 +34,8 @@ export function useJourneyRuntime() {
   const playingRef = useRef(false)
   const trackingLiveRef = useRef(false)
   const wasPlayingRef = useRef(false)
+  const loadRequestRef = useRef(0)
+  const startingWorkspaceRef = useRef('')
   const setTrackingLive = useCallback((value) => {
     const next = Boolean(value)
     trackingLiveRef.current = next
@@ -60,12 +62,16 @@ export function useJourneyRuntime() {
         selectedId: value.selected_id,
       })
       if (selected?.id) trackWorkspaceLocation(selected.workspace_path || selected.workspace || selected.id)
+      if (selected?.id && selected.id !== current) startingWorkspaceRef.current = selected.id
       return selected?.id || ''
     })
     return value
   }, [])
 
   const loadJourney = useCallback(async (id, quiet = false) => {
+    const request = ++loadRequestRef.current
+    const startsWorkspace = !quiet || startingWorkspaceRef.current === id
+    if (startsWorkspace) setReplay(0)
     if (!quiet) setMessage('Loading journey map')
     const [storyResponse, sceneResponse, interactionResponse] = await Promise.all([
       fetch(api('/api/story', {workspace: id}), {cache: 'no-store'}),
@@ -74,17 +80,19 @@ export function useJourneyRuntime() {
     ])
     if (!storyResponse.ok || !sceneResponse.ok || !interactionResponse.ok) throw new Error('Journey map is unavailable')
     const [nextStory, nextScene, nextInteractions] = await Promise.all([storyResponse.json(), sceneResponse.json(), interactionResponse.json()])
+    if (request !== loadRequestRef.current) return false
     if (quiet && playingRef.current) return false
     const nextTutorial = nextStory.origin?.kind === 'tutorial'
       ? await fetch(api('/api/tutorial', {workspace: id}), {cache: 'no-store'}).then((response) => response.ok ? response.json() : null)
       : null
+    if (request !== loadRequestRef.current) return false
     const previousStory = storyRef.current
     setReplay((current) => reconcileJourneyPosition({
       previousStory,
       nextStory,
       replay: current,
       selected: selectedRef.current,
-      quiet,
+      quiet: quiet && !startsWorkspace,
       followHead: trackingLiveRef.current,
     }))
     if (nextStory.state !== 'active') setTrackingLive(false)
@@ -94,6 +102,7 @@ export function useJourneyRuntime() {
     setInteractions(nextInteractions)
     setTutorial(nextTutorial)
     setSelected((current) => nextStory.chapters.some((chapter) => chapter.id === current?.siteId) ? current : null)
+    if (startingWorkspaceRef.current === id) startingWorkspaceRef.current = ''
     if (!quiet) setObserving(false)
     if (!quiet) setMessage(nextStory.state === 'active' ? 'Live journey connected' : 'Recorded journey loaded')
     setLastSnapshotAt(Date.now())
@@ -102,6 +111,8 @@ export function useJourneyRuntime() {
 
   async function choose(item) {
     try {
+      startingWorkspaceRef.current = item.id
+      setReplay(0)
       setPlaying(false)
       setObserving(true)
       setTrackingLive(false)
@@ -128,6 +139,10 @@ export function useJourneyRuntime() {
       }
       await loadJourney(item.id)
       setWorkspace(item.id)
+      // Selection is an explicit request to enter this journey, so it wins over
+      // any quiet refresh or live-head position that completed concurrently.
+      setReplay(0)
+      setObserving(false)
       trackWorkspaceLocation(item.workspace_path || item.workspace || item.id)
       setJourneysOpen(false)
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)) }
@@ -159,6 +174,7 @@ export function useJourneyRuntime() {
       const retained = value.workspaces.find((item) => item.id === workspace && (item.graph_ready || item.projectable))
       const target = retained || value.workspaces.find((item) => item.id === value.selected_id) || value.workspaces.find((item) => item.graph_ready || item.projectable)
       if (!target) {
+        startingWorkspaceRef.current = ''
         setWorkspace('')
         setStory(null)
         setScene(null)
@@ -172,7 +188,11 @@ export function useJourneyRuntime() {
         setMessage(`Workspace slate refreshed · ${value.workspaces.length} current workspaces · no captured journey yet`)
         return
       }
-      if (target.id !== workspace) setTrackingLive(false)
+      if (target.id !== workspace) {
+        startingWorkspaceRef.current = target.id
+        setReplay(0)
+        setTrackingLive(false)
+      }
       setWorkspace(target.id)
       trackWorkspaceLocation(target.workspace_path || target.workspace || target.id)
       if (target.graph_ready) {

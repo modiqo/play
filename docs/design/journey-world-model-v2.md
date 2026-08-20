@@ -371,10 +371,20 @@ immediately. The viewer coalesces them into a calm snapshot cadence, never swaps
 animated playback, and catches up after playback stops. A rebuild preserves the camera pose so a
 new snapshot advances the world instead of teleporting the viewer.
 
-For long journeys, the tracker retains every canonical stage marker at a reduced density. The 3D
-world keeps the current stage, one future preview, and a bounded amount of recent history visible;
-older sites remain reachable through the tracker without crowding the current vantage. Canonical
-history is never pruned by this presentation window.
+For long journeys, the tracker projects at most 14 semantic landmarks while always retaining the
+endpoints and current playhead. Each region of global time contributes its strongest world-model
+transition, so the rail stays proportional without becoming an undifferentiated bead field. The
+continuous scrubber still reaches every canonical stage, and marker tooltips disclose compressed
+intermediate stages. The 3D world keeps the current stage, one future preview, and a bounded amount
+of recent history visible; older sites remain reachable by scrubbing without crowding the current
+vantage. Canonical history is never pruned by this presentation window.
+
+The 3D renderer materializes at most 50 semantic stages at once. It begins with stages 1–50 and
+loads the block containing the playhead only when the traveler crosses that boundary or explicitly
+lands at the live head. The replay rail reserves a labeled, blinking live trace point for the
+actual active head; selecting that point enters live tracking. A completed exploration labels the
+same terminal anchor `END`. Initial workspace selection is an authoritative stage-one reset, so
+overlapping snapshot requests cannot restore a position from the previously viewed workspace.
 
 ## Narration and music
 

@@ -56,3 +56,54 @@ export function journeyVisibilityWindow(siteCount, reached, {
     end: Math.min(Math.max(0, count - 1), current + preview),
   }
 }
+
+const TRACKER_LANDMARK_KINDS = new Set([
+  'intent', 'decision', 'capability', 'authority', 'blocker', 'recovery',
+  'evidence', 'milestone', 'artifact', 'play_candidate', 'play',
+])
+
+function trackerImportance(chapters, index) {
+  const kind = chapters[index]?.kind || ''
+  const previousKind = chapters[index - 1]?.kind || ''
+  const nextKind = chapters[index + 1]?.kind || ''
+  return (TRACKER_LANDMARK_KINDS.has(kind) ? 8 : 0)
+    + (kind !== previousKind ? 3 : 0)
+    + (kind !== nextKind ? 1 : 0)
+}
+
+/**
+ * Project a long journey onto a small number of semantic landmarks. The rail
+ * remains globally proportional; each time region contributes its most
+ * meaningful world-model transition instead of another indistinguishable dot.
+ */
+export function journeyTrackerIndexes(chaptersOrCount, currentIndex, maxMarkers = 14) {
+  const chapters = Array.isArray(chaptersOrCount)
+    ? chaptersOrCount
+    : Array.from({length: Math.max(0, Math.floor(Number(chaptersOrCount) || 0))}, () => ({}))
+  const count = chapters.length
+  if (!count) return []
+  const current = Math.max(0, Math.min(count - 1, Math.floor(Number(currentIndex) || 0)))
+  const limit = Math.max(3, Math.floor(Number(maxMarkers) || 14))
+  if (count <= limit) return Array.from({length: count}, (_, index) => index)
+
+  const selected = new Set([0, count - 1, current])
+  const availableSlots = limit - selected.size
+  const interiorCount = Math.max(0, count - 2)
+  for (let slot = 0; slot < availableSlots; slot += 1) {
+    const start = 1 + Math.floor(slot / availableSlots * interiorCount)
+    const end = Math.min(count - 2, Math.floor((slot + 1) / availableSlots * interiorCount))
+    const center = (start + end) / 2
+    let best = -1
+    for (let index = start; index <= end; index += 1) {
+      if (selected.has(index)) continue
+      if (best < 0
+        || trackerImportance(chapters, index) > trackerImportance(chapters, best)
+        || (trackerImportance(chapters, index) === trackerImportance(chapters, best)
+          && Math.abs(index - center) < Math.abs(best - center))) {
+        best = index
+      }
+    }
+    if (best >= 0) selected.add(best)
+  }
+  return [...selected].sort((left, right) => left - right)
+}

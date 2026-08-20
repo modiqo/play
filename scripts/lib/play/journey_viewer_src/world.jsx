@@ -15,6 +15,7 @@ import {journeyVisibilityWindow} from './journey-position.mjs'
 
 const THREAD_STEEL = 0x717c7f
 const THREAD_PREVIOUS = 0xaeb8ba
+const WORLD_STAGE_PAGE = 50
 
 function makeTemporalThreads(markers) {
   return markers.slice(1).map((marker, index) => {
@@ -99,6 +100,10 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
     ? Math.max(0, Math.min(story.chapters.length - 1, Math.floor(THREE.MathUtils.clamp(replayValue, 0, 1) * Math.max(1, story.chapters.length - 1) + .001)))
     : 0
   const vantage = story.chapters[vantageIndex]
+  const pageStart = story.chapters.length > WORLD_STAGE_PAGE
+    ? Math.floor(vantageIndex / WORLD_STAGE_PAGE) * WORLD_STAGE_PAGE
+    : 0
+  const pageEnd = Math.min(story.chapters.length, pageStart + WORLD_STAGE_PAGE)
 
   useEffect(() => { replayRef.current = replay }, [replay])
   useEffect(() => { selectedRef.current = selected }, [selected])
@@ -216,10 +221,11 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       )
       scene.add(route)
 
-      const sites = []
+      const sites = new Array(story.chapters.length)
       const interactionMeshes = []
       const semanticMeshes = []
-      story.chapters.forEach((chapter, index) => {
+      story.chapters.slice(pageStart, pageEnd).forEach((chapter, localIndex) => {
+        const index = pageStart + localIndex
         const site = new THREE.Group()
         const siteSemanticMeshes = []
         site.position.copy(positions[index])
@@ -312,12 +318,12 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         label.position.y = Math.max(4.9, landmarkSize.y + 1.2, maximumMarkerElevation + 1.7)
         site.add(label)
         scene.add(site)
-        sites.push({
+        sites[index] = {
           chapter, group: site, platform, landmark, landmarkMaterials, focusEdges, label: root,
           timeLabels: temporalStructure.userData.timeLabels || [], markers, threads, plaques, semanticMeshes: siteSemanticMeshes, worldPosition: site.position.clone(),
           approachDistance: Math.max(12.5, landmarkSize.z * .5 + 8, landmarkSize.x * .38 + 8),
           eyeHeight: THREE.MathUtils.clamp(landmarkSize.y * .42, 2.5, 3.8),
-        })
+        }
       })
 
       const traveler = new THREE.Mesh(
@@ -379,7 +385,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           if (direction.lengthSq() < .01) direction.set(0, 0, -1)
 
           const focus = selectedRef.current?.sequence ? selectedRef.current.siteId : null
-          const focusSite = sites.find((site) => site.chapter.id === focus)
+          const focusSite = sites.find((site) => site?.chapter.id === focus)
           if (focusSite) {
             desiredCamera.copy(focusSite.worldPosition).add(new THREE.Vector3(focusSite.chapter.order % 2 === 0 ? -10 : 10, 5.2, 9.5))
             desiredLook.copy(focusSite.worldPosition).setY(2.3)
@@ -539,7 +545,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       cleanup()
       return undefined
     }
-  }, [interactions, onSelect, positions, story])
+  }, [interactions, onSelect, pageEnd, pageStart, positions, story])
 
   useEffect(() => {
     const close = (event) => { if (event.key === 'Escape') onSelect(null) }

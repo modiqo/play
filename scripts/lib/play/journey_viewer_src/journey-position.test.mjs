@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {journeyVisibilityWindow, reconcileJourneyPosition} from './journey-position.mjs'
+import {journeyTrackerIndexes, journeyVisibilityWindow, reconcileJourneyPosition} from './journey-position.mjs'
 
 const story = (state, ids) => ({state, chapters: ids.map((id) => ({id}))})
 
@@ -41,4 +41,16 @@ test('a frozen unselected position keeps its absolute journey stage', () => {
 test('long journeys retain only nearby history and one future preview', () => {
   assert.deepEqual(journeyVisibilityWindow(47, 32), {start: 28, end: 33})
   assert.deepEqual(journeyVisibilityWindow(12, 8), {start: 0, end: 9})
+})
+
+test('dense trackers become bounded semantic landmarks while retaining endpoints and the playhead', () => {
+  const chapters = Array.from({length: 97}, (_, index) => ({
+    kind: index === 0 ? 'intent' : index === 44 ? 'authority' : index === 96 ? 'artifact' : 'phase',
+  }))
+  const indexes = journeyTrackerIndexes(chapters, 6)
+  assert.equal(indexes.length, 14)
+  assert.equal(indexes[0], 0)
+  assert.equal(indexes.at(-1), 96)
+  assert.ok(indexes.includes(6))
+  assert.ok(indexes.includes(44))
 })

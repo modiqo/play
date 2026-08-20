@@ -3,6 +3,7 @@ import Cartography from './atlas.jsx'
 import {formatNumber} from './format.js'
 import {CapabilityRail, JourneyGuide, Telemetry, TutorialExperience, WorldModel} from './panels.jsx'
 import {KIND_LABEL, MAP_MEANING} from './semantics.js'
+import {journeyTrackerIndexes} from './journey-position.mjs'
 import {useJourneyRuntime} from './use-journey-runtime.js'
 import JourneyWorld from './world.jsx'
 
@@ -27,6 +28,7 @@ export default function App() {
   const status = isTutorial ? 'START HERE' : recalled ? 'RECALLED PLAY' : trackingLive ? 'LIVE · TRACKING' : liveActivity ? 'LIVE · UPDATING' : liveCapture ? 'LIVE · QUIET' : 'RECORDED'
   const replayChapter = story ? Math.min(story.chapters.length - 1, Math.floor(replay * Math.max(1, story.chapters.length - 1) + .001)) : 0
   const currentReplayChapter = story?.chapters[replayChapter]
+  const trackerIndexes = journeyTrackerIndexes(story?.chapters || [], replayChapter)
   const frozen = mode === 'follow' && observing && !playing
   const tutorialEntryModelActive = Boolean(isTutorial && worldModelOpen)
 
@@ -164,22 +166,33 @@ export default function App() {
           <button className={playing ? 'playing' : frozen ? 'frozen' : ''} onClick={togglePlayback}>{playing ? 'Ⅱ FREEZE' : frozen ? '▶ RESUME' : '▶ PLAY'}</button>
           {liveCapture && <button className={`live-track${trackingLive ? ' active' : ''}`} disabled={story?.state !== 'active'} onClick={toggleLiveTracking} title="Follow new call sites as calm snapshots arrive">{trackingLive ? '● LIVE HEAD' : '○ TRACK LIVE'}</button>}
         </div>
-        <div className={`replay-track${(story?.chapters.length || 0) > 36 ? ' dense' : ''}`} style={{'--progress': `${replay * 100}%`}}>
+        <div className={`replay-track${(story?.chapters.length || 0) > 14 ? ' condensed' : ''}`} style={{'--progress': `${replay * 100}%`}}>
+          <span className="track-anchor start">START</span>
+          <span className={`track-anchor end${story?.state === 'active' ? ' live' : ''}`}>{story?.state === 'active' ? 'LIVE' : 'END'}</span>
           <input aria-label="Journey replay" type="range" min="0" max="1" step="0.002" value={replay} onChange={(event) => { freezeAtProgress(Number(event.target.value)) }} />
           <div className="chapter-markers">
-            {story?.chapters.map((item, itemIndex) => {
+            {trackerIndexes.map((itemIndex, markerIndex) => {
+              const item = story.chapters[itemIndex]
               const number = String(itemIndex + 1).padStart(2, '0')
               const kind = (KIND_LABEL[item.kind] || item.kind || 'stage').toUpperCase()
+              const hiddenUntilNext = Math.max(0, (trackerIndexes[markerIndex + 1] ?? itemIndex + 1) - itemIndex - 1)
               return <button
                 key={item.id}
                 className={itemIndex === replayChapter ? 'current' : itemIndex < replayChapter ? 'reached' : ''}
                 style={{left: `${itemIndex / Math.max(1, story.chapters.length - 1) * 100}%`}}
                 onClick={() => jumpToChapter(itemIndex)}
                 aria-label={`Freeze at stage ${number}: ${kind}, ${item.title}`}
-                data-tooltip={`${number} · ${kind} · ${item.title}`}
+                data-kind={item.kind || 'phase'}
+                data-tooltip={`${number} · ${kind} · ${item.title}${hiddenUntilNext ? ` · ${hiddenUntilNext} intermediate stage${hiddenUntilNext === 1 ? '' : 's'}` : ''}`}
               />
             })}
           </div>
+          {liveCapture && story?.state === 'active' && <button
+            className={`live-trace-point${trackingLive ? ' active' : ''}`}
+            onClick={toggleLiveTracking}
+            aria-label={`Track live at stage ${story.chapters.length}`}
+            data-tooltip={`LIVE HEAD · ${String(story.chapters.length).padStart(2, '0')} · CLICK TO WATCH`}
+          />}
         </div>
         <em className="replay-position">
           {story

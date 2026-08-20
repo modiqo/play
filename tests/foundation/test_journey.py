@@ -205,10 +205,11 @@ class JourneyProjectionTest(unittest.TestCase):
 
         self.assertEqual(("phase", "unknown"), (activities[0]["kind"], activities[0]["role"]))
         self.assertEqual(
-            ("phase", "unknown"),
+            ("phase", "inspection"),
             (activities[1]["kind"], activities[1]["role"]),
         )
-        self.assertTrue(all(item["effect_profile"]["source"] == "process_policy_missing" for item in activities))
+        self.assertEqual("process_policy_missing", activities[0]["effect_profile"]["source"])
+        self.assertEqual("process_invocation_contract", activities[1]["effect_profile"]["source"])
 
     def test_process_effects_use_typed_policy_risk_tags(self) -> None:
         rows = [
@@ -256,6 +257,27 @@ class JourneyProjectionTest(unittest.TestCase):
             [item["effect_profile"]["posture"] for item in activities],
         )
         self.assertEqual("process_policy", activities[0]["effect_profile"]["source"])
+
+    def test_rg_uses_its_typed_read_only_invocation_contract(self) -> None:
+        activities = normalize_entries(
+            [
+                raw_command(
+                    1,
+                    command_type="ProcessExec",
+                    response_id=1,
+                    params={"invocation": {"program": "rg", "args": ["needle", "."]}},
+                ),
+            ],
+            response_metadata={1: self.metadata(risk_tags=["env_secret"])},
+        )
+
+        self.assertEqual(("phase", "inspection"), (activities[0]["kind"], activities[0]["role"]))
+        self.assertEqual("read", activities[0]["effect_profile"]["posture"])
+        self.assertEqual(["local_fs"], activities[0]["effect_profile"]["scopes"])
+        self.assertEqual(
+            "process_invocation_contract",
+            activities[0]["effect_profile"]["source"],
+        )
 
     def test_world_model_classifies_modalities_lifecycle_and_primitive_gaps(self) -> None:
         rows = [
