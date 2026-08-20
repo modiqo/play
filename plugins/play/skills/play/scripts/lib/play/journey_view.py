@@ -658,6 +658,7 @@ def launch_viewer(
             environment["PLAY_JOURNEY_ROOT"] = str(root)
         workspace_value = capture.get("workspace_path") if capture is not None else None
         state: dict[str, Any] | None = None
+        process: subprocess.Popen[bytes] | None = None
         for attempt in range(VIEWER_START_ATTEMPTS):
             token = secrets.token_urlsafe(24)
             command = [
@@ -704,7 +705,7 @@ def launch_viewer(
                 pass
             if attempt + 1 < VIEWER_START_ATTEMPTS:
                 _wait_for_viewer_port(selected_port)
-        if state is None or state.get("pid") != process.pid:
+        if process is None or state is None or state.get("pid") != process.pid:
             previous = f" after stopping {len(stopped)} older viewer{'s' if len(stopped) != 1 else ''}" if stopped else ""
             raise JourneyViewError(
                 f"The local Journey viewer could not bind 127.0.0.1:{selected_port}{previous}; "

@@ -1,7 +1,7 @@
 import React from 'react'
 import Cartography from './atlas.jsx'
 import {formatNumber} from './format.js'
-import {CapabilityRail, JourneyGuide, Telemetry, TutorialExperience, WorldModel} from './panels.jsx'
+import {CapabilityRail, JourneyGuide, ModelLiveCounter, Telemetry, TutorialExperience, WorldModel} from './panels.jsx'
 import {KIND_LABEL, MAP_MEANING} from './semantics.js'
 import {journeyTrackerIndexes} from './journey-position.mjs'
 import {useJourneyRuntime} from './use-journey-runtime.js'
@@ -118,6 +118,8 @@ export default function App() {
             <dt>SCOPE</dt><dd>{interaction.effect_profile?.scopes?.join(' · ') || 'not declared'}</dd>
             <dt>BASIS</dt><dd>{interaction.effect_profile?.source?.replaceAll('_', ' ') || 'legacy projection'}</dd>
             <dt>LATENCY</dt><dd>{formatNumber(interaction.duration_ms)} ms</dd><dt>TOKENS</dt><dd>{formatNumber(interaction.tokens)}</dd>
+            <dt>INPUT</dt><dd>{formatNumber(interaction.input_tokens)}</dd><dt>OUTPUT</dt><dd>{formatNumber(interaction.output_tokens)}</dd>
+            <dt>COST*</dt><dd>{Number.isFinite(interaction.estimated_cost_usd) ? `$${interaction.estimated_cost_usd.toFixed(6)}` : 'not priced'}</dd>
             <dt>AVOIDED</dt><dd>{formatNumber(interaction.tokens_saved)}</dd>
             {interaction.provider && <><dt>PROVIDER</dt><dd>{interaction.provider}</dd></>}
             {interaction.capability && <>
@@ -154,6 +156,7 @@ export default function App() {
       </>}
     </aside>
     {mode === 'follow' && story && interactions && !isTutorial && <JourneyGuide story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} onOpen={selectVantage} onNavigate={jumpToChapter} />}
+    {mode === 'follow' && story && interactions && !isTutorial && !showEvidencePanel && <ModelLiveCounter story={story} interactions={interactions} replay={replay} live={liveActivity || trackingLive} />}
     {mode === 'follow' && story && tutorial && <TutorialExperience key={story.journey_key} tutorial={tutorial} story={story} interactions={interactions} replay={replay} playing={playing} entryReferenceActive={tutorialEntryModelActive} onBegin={() => { setWorldModelOpen(false); jumpToChapter(0); togglePlayback() }} onChooseWorkspace={() => setJourneysOpen(true)} onOpenWorldModel={() => setWorldModelOpen(true)} />}
     {mode === 'follow' && story && interactions && !isTutorial && !showEvidencePanel && <CapabilityRail story={story} interactions={interactions} replay={replay} onJump={jumpToChapter} />}
     <WorldModel open={worldModelOpen} onToggle={() => setWorldModelOpen((value) => !value)} highlightKind={isTutorial ? currentReplayChapter?.kind : ''} tutorial={isTutorial} />

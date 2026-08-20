@@ -11,11 +11,12 @@ from typing import Any
 
 from .journey import _capture, _load_source
 from .journey_capabilities import capability_descriptor
+from .journey_model_telemetry import telemetry_context
 from .journey_world_model import enrich_operation
 from .journey_view_catalog import _workspace_capture_for_reference
 
 
-INTERACTIONS_SCHEMA = "play.journey-interactions/v1"
+INTERACTIONS_SCHEMA = "play.journey-interactions/v2"
 EXCHANGE_SCHEMA = "play.journey-exchange/v1"
 MAX_EXCHANGE_CHARS = 24_000
 MAX_COLLECTION_ITEMS = 80
@@ -94,6 +95,7 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
         if isinstance(item, Mapping) and isinstance(item.get("sequence"), int)
     }
     sites: dict[str, list[dict[str, Any]]] = {}
+    projected: list[dict[str, Any]] = []
     assigned: set[int] = set()
     for node in graph.get("nodes", []):
         if not isinstance(node, Mapping) or not isinstance(node.get("id"), str):
@@ -133,8 +135,7 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
             operation_context = dict(activity)
             operation_context["capability"] = capability
             enrich_operation(operation_context)
-            interactions.append(
-                {
+            item = {
                     "sequence": sequence,
                     "command_type": command_type,
                     "operation": operation,
@@ -171,6 +172,8 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
                     "status": str(activity.get("status") or "unknown"),
                     "duration_ms": int(activity.get("duration_ms") or 0),
                     "tokens": int(activity.get("tokens") or 0),
+                    "input_tokens": int(activity.get("input_tokens") or 0),
+                    "output_tokens": int(activity.get("output_tokens") or 0),
                     "tokens_saved": int(activity.get("tokens_saved") or 0),
                     "response_refs": [
                         ref
@@ -181,13 +184,24 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
                     if isinstance(activity.get("timestamp"), str)
                     else None,
                 }
-            )
+            interactions.append(item)
+            projected.append(item)
         sites[str(node["id"])] = sorted(interactions, key=lambda item: item["sequence"])
+    capture = _capture(capture_ref)
+    if capture is None:
+        capture = _workspace_capture_for_reference(capture_ref)
+    workspace_value = capture.get("workspace_path") if isinstance(capture, Mapping) else None
+    model_telemetry = (
+        telemetry_context(Path(workspace_value), projected)
+        if isinstance(workspace_value, str)
+        else None
+    )
     return {
         "schema": INTERACTIONS_SCHEMA,
         "journey_key": str(graph.get("journey_key") or ""),
         "sites": sites,
         "total": len(assigned),
+        "model_telemetry": model_telemetry,
     }
 
 

@@ -41,7 +41,7 @@ SCHEMA = "play.journey-viewport/v1"
 FULL_GRAPH_SCHEMA = "play.journey-graph/v1"
 EVENT_SCHEMA = "play.journey-source-event/v1"
 WORKER_SCHEMA = "play.journey-worker/v1"
-PROJECTION_VERSION = "rules-v10"
+PROJECTION_VERSION = "rules-v11"
 DATABASE_SCHEMA_VERSION = 1
 
 MAX_LABEL_CHARS = 120
@@ -395,11 +395,18 @@ def _response_metadata(workspace: Path, response_ids: Sequence[int]) -> dict[int
             ok = False
         tokens = envelope.get("tokens")
         tokens = tokens if isinstance(tokens, Mapping) else {}
+        request_tokens = tokens.get("request_tokens")
+        response_tokens = tokens.get("response_tokens")
         total_tokens = tokens.get("total_tokens")
         item: dict[str, Any] = {
             "ok": bool(ok),
             "duration_ms": int(duration) if isinstance(duration, int) else 0,
             "tokens": int(total_tokens) if isinstance(total_tokens, int) else 0,
+            # Rote names these from the capability transport's perspective.
+            # Journey embodies the agent, so a capability response enters the
+            # agent while its request leaves the agent.
+            "input_tokens": int(response_tokens) if isinstance(response_tokens, int) else 0,
+            "output_tokens": int(request_tokens) if isinstance(request_tokens, int) else 0,
         }
         endpoint = request.get("url")
         method = request.get("method")
@@ -799,6 +806,8 @@ def normalize_entries(
             ok = not bool(raw.get("skip_export"))
         duration_ms = sum(int(item.get("duration_ms") or 0) for item in response_meta)
         tokens = sum(int(item.get("tokens") or 0) for item in response_meta)
+        input_tokens = sum(int(item.get("input_tokens") or 0) for item in response_meta)
+        output_tokens = sum(int(item.get("output_tokens") or 0) for item in response_meta)
         source_tokens = payload.get("source_response_tokens")
         result_tokens = payload.get("result_tokens")
         source_response = payload.get("source_response")
@@ -827,6 +836,8 @@ def normalize_entries(
                 "status": "failed" if not ok else "succeeded",
                 "duration_ms": duration_ms,
                 "tokens": tokens,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
                 "tokens_saved": tokens_saved,
                 "signature": hashlib.sha256(signature.encode()).hexdigest()[:24],
                 "timestamp": raw.get("timestamp") if isinstance(raw.get("timestamp"), str) else None,

@@ -1,0 +1,21 @@
+schema: play.model-config/v1
+
+# Used only when the attached Rote workspace has no confirmed model identity.
+model:
+  provider: openai
+  name: codex
+  family: codex
+  effort: medium
+  pricing_model: gpt-5-codex
+
+selection:
+  prefer_workspace_model: true
+
+# Add an exact provider/model key here when a workspace needs richer identity.
+# The workspace still owns the observed provider and model; these entries only
+# supply family, effort, or a catalog alias that Rote does not currently store.
+overrides: {}
+
+catalog:
+  source: https://raw.githubusercontent.com/BerriAI/litellm/refs/heads/main/model_prices_and_context_window.json
+  cache: cache/model_prices_and_context_window.json

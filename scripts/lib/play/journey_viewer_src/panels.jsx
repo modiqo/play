@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react'
 import {formatNumber} from './format.js'
+import {formatModelCost, summarizeModelRecords} from './model-telemetry.mjs'
 import {KIND_LABEL, MAP_MEANING, MODALITY_VOCABULARY, WORLD_MODEL_KINDS, WORLD_ROLE, WORLD_STORY, worldSpec} from './semantics.js'
 
 export function Telemetry({story, open, onToggle}) {
@@ -71,6 +72,37 @@ export function JourneyGuide({story, interactions, replay, playing, frozen, onOp
     </nav>}
     <div className="guide-progress"><i style={{width: `${Math.max(2, (index + 1) / story.chapters.length * 100)}%`}} /></div>
   </aside>
+}
+
+function CounterRow({label, value}) {
+  return <div className="model-counter-row">
+    <b>{label}</b>
+    <span><small>IN</small><strong>{formatNumber(value.input_tokens)}</strong></span>
+    <span><small>OUT</small><strong>{formatNumber(value.output_tokens)}</strong></span>
+    <span className="cost"><small>COST*</small><strong>{formatModelCost(value.cost_usd)}</strong></span>
+    <span><small>COUNT</small><strong>{formatNumber(value.count)}</strong></span>
+    <span className="outcome success"><small>OK</small><strong>{formatNumber(value.success)}</strong></span>
+    <span className={`outcome${value.error ? ' error' : ''}`}><small>ERR</small><strong>{formatNumber(value.error)}</strong></span>
+  </div>
+}
+
+export function ModelLiveCounter({story, interactions, replay, live = false}) {
+  const telemetry = interactions?.model_telemetry
+  if (!story?.chapters?.length || !telemetry?.model) return null
+  const index = Math.max(0, Math.min(story.chapters.length - 1, Math.floor(replay * Math.max(1, story.chapters.length - 1) + .001)))
+  const chapter = story.chapters[index]
+  const site = summarizeModelRecords(interactions?.sites?.[chapter.id] || [])
+  const session = telemetry.session || summarizeModelRecords(Object.values(interactions?.sites || {}).flat())
+  const model = telemetry.model
+  const provenance = telemetry.pricing
+    ? `Estimated lower bound from captured tool I/O using ${telemetry.pricing.key} rates. Excludes hidden reasoning and unrecorded dialogue.`
+    : 'Captured tool I/O is exact; cost is unavailable because no matching model price was found.'
+  return <section className={`model-live-counter${live ? ' live' : ''}`} aria-label="Model trace counter" aria-live="polite" title={provenance}>
+    <div className="model-counter-identity"><i /><strong>{model.name}</strong><span>{model.family} · {model.effort} effort</span><em>CAPTURED I/O</em></div>
+    <CounterRow label="SITE" value={site} />
+    <CounterRow label="SESSION" value={session} />
+    <small className="model-counter-note">* ESTIMATED LOWER BOUND</small>
+  </section>
 }
 
 export function WorldModel({open, onToggle, highlightKind = '', tutorial = false}) {

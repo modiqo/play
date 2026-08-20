@@ -872,6 +872,59 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
+def install_journey_model_assets(source: Path, *, home: Path | None = None) -> Step:
+    """Seed the owner model config once and refresh the derived price cache."""
+
+    owner_root = (
+        home.expanduser()
+        if home is not None
+        else Path(os.environ.get("PLAY_HOME", _home() / ".play")).expanduser()
+    )
+    bundled = source / "references" / "journey"
+    source_config = bundled / "model-config.yaml"
+    source_catalog = bundled / "model_prices_and_context_window.json"
+    if not source_config.is_file() or not source_catalog.is_file():
+        raise BootstrapError("bundled Journey model telemetry assets are missing")
+    try:
+        catalog = json.loads(source_catalog.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise BootstrapError(f"bundled LiteLLM catalog is invalid: {error}") from error
+    if not isinstance(catalog, dict) or "gpt-5" not in catalog:
+        raise BootstrapError("bundled LiteLLM catalog is incomplete")
+
+    owner_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    owner_root.chmod(0o700)
+    config_target = owner_root / "model-config.yaml"
+    cache_target = owner_root / "cache" / source_catalog.name
+    cache_target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    cache_target.parent.chmod(0o700)
+
+    def copy_atomic(source_path: Path, target: Path) -> None:
+        temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+        try:
+            shutil.copyfile(source_path, temporary)
+            temporary.chmod(0o600)
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    created = not config_target.exists()
+    if created:
+        copy_atomic(source_config, config_target)
+    copy_atomic(source_catalog, cache_target)
+    return Step(
+        "install_journey_model_assets",
+        "completed",
+        (
+            f"Created {config_target} and refreshed {cache_target}"
+            if created
+            else f"Preserved {config_target} and refreshed {cache_target}"
+        ),
+        changed=True,
+        evidence=str(config_target),
+    )
+
+
 def _activation_profile_state_path() -> Path:
     override = os.environ.get("PLAY_PROFILE_STATE")
     if override:
@@ -3316,6 +3369,19 @@ def apply(
     steps.append(_result_step("install_play", install_result, install_command))
     if install_result.returncode != 0:
         return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
+
+    try:
+        steps.append(
+            active_progress.call(
+                "Installing Journey model telemetry",
+                lambda: install_journey_model_assets(source),
+            )
+        )
+    except (BootstrapError, OSError) as error:
+        steps.append(Step("install_journey_model_assets", "failed", str(error)))
+        return _finish_report(
+            plan, run_id, started, steps, status="blocked", runner=runner
+        )
 
     installed_source = Path(os.environ.get("PLAY_INSTALL_HOME", source)).expanduser()
     if os.environ.get("PLAY_INSTALL_HOME"):

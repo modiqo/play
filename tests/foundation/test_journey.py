@@ -412,7 +412,12 @@ class JourneyProjectionTest(unittest.TestCase):
                             },
                             "stdout": "private command output",
                         },
-                    }
+                    },
+                    "tokens": {
+                        "request_tokens": 17,
+                        "response_tokens": 83,
+                        "total_tokens": 100,
+                    },
                 }
             )
         )
@@ -431,6 +436,9 @@ class JourneyProjectionTest(unittest.TestCase):
         )
         self.assertNotIn("stdout", metadata[1])
         self.assertNotIn("redactions", metadata[1]["process_policy"])
+        self.assertEqual(83, metadata[1]["input_tokens"])
+        self.assertEqual(17, metadata[1]["output_tokens"])
+        self.assertEqual(100, metadata[1]["tokens"])
 
     def test_response_metadata_retains_only_typed_request_identity(self) -> None:
         responses = self.workspace / ".rote" / "responses"

@@ -35,6 +35,7 @@ from scripts.lib.play.bootstrap import (
     codex_play_enablement_step,
     converge_play_marketplace,
     install_hooks,
+    install_journey_model_assets,
     list_play_backups,
     prune_play_backups,
     remove_portable_play_hooks,
@@ -66,6 +67,20 @@ class BootstrapTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.environment_patch.stop()
         self.temporary.cleanup()
+
+    def test_journey_model_assets_seed_config_and_refresh_catalog(self) -> None:
+        owner = self.home / ".play"
+        first = install_journey_model_assets(ROOT, home=owner)
+        config = owner / "model-config.yaml"
+        catalog = owner / "cache" / "model_prices_and_context_window.json"
+        self.assertEqual("completed", first.status)
+        self.assertIn("name: codex", config.read_text(encoding="utf-8"))
+        self.assertIn("gpt-5", json.loads(catalog.read_text(encoding="utf-8")))
+        config.write_text("schema: play.model-config/v1\ncustom: retained\n", encoding="utf-8")
+
+        install_journey_model_assets(ROOT, home=owner)
+
+        self.assertIn("custom: retained", config.read_text(encoding="utf-8"))
 
     def test_rote_skill_targets_cover_added_harnesses(self) -> None:
         self.assertEqual(
