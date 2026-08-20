@@ -85,14 +85,8 @@ def _rote_workspaces() -> list[Path]:
         return []
 
     def recency(path: Path) -> tuple[int, str]:
-        database = path / ".rote" / "workspace.db"
-        try:
-            modified = database.stat().st_mtime_ns
-        except OSError:
-            try:
-                modified = path.stat().st_mtime_ns
-            except OSError:
-                modified = 0
+        activity_epoch, _active_recently = _workspace_activity(path)
+        modified = int(activity_epoch * 1_000_000_000) if activity_epoch is not None else 0
         return modified, path.name
 
     return sorted(candidates, key=recency, reverse=True)
@@ -169,16 +163,63 @@ def _workspace_recall_origin(workspace_path: Path) -> dict[str, Any] | None:
     }
 
 
-def _workspace_capture(workspace_path: Path) -> dict[str, Any]:
+def _workspace_capture(
+    workspace_path: Path, *, status: str = "recorded"
+) -> dict[str, Any]:
     origin = _workspace_recall_origin(workspace_path)
     return {
         "reference": _workspace_reference(workspace_path),
         "intent": _workspace_intent(workspace_path),
-        "status": "recorded",
+        "status": status,
         "workspace": workspace_path.name,
         "workspace_path": str(workspace_path),
         **({"origin": origin} if origin is not None else {}),
     }
+
+
+def _active_workspace_capture(
+    *, standby_path: Path | None = None, cwd: Path | None = None
+) -> dict[str, Any] | None:
+    """Resolve the current Rote workspace, overlaying matching Play metadata."""
+
+    workspaces = _rote_workspaces()
+    if not workspaces:
+        return None
+    current = cwd
+    if current is None:
+        try:
+            current = Path.cwd()
+        except OSError:
+            current = None
+    selected = None
+    if current is not None:
+        canonical_current = Path(_canonical_path(current))
+        for workspace in workspaces:
+            try:
+                canonical_current.relative_to(Path(_canonical_path(workspace)))
+            except ValueError:
+                continue
+            selected = workspace
+            break
+    selected = selected or workspaces[0]
+
+    try:
+        store = load_json(_standby_path(standby_path))
+    except (OSError, ValueError):
+        store = {}
+    captures = store.get("captures") if isinstance(store, Mapping) else None
+    if isinstance(captures, list):
+        selected_path = _canonical_path(selected)
+        for capture in reversed(captures):
+            workspace_value = capture.get("workspace_path") if isinstance(capture, Mapping) else None
+            if (
+                isinstance(workspace_value, str)
+                and _canonical_path(Path(workspace_value)) == selected_path
+                and capture.get("status") == "active"
+                and isinstance(capture.get("reference"), str)
+            ):
+                return dict(capture)
+    return _workspace_capture(selected, status="active")
 
 
 _workspace_projection_guard = threading.Lock()
@@ -282,6 +323,7 @@ def _workspace_catalog(
         if capture is None:
             workspace_capture = _workspace_capture(workspace_path)
             reference = str(workspace_capture["reference"])
+            attached = reference == selected_ref
             workspace_id = _journey_key(reference)
             lookup[workspace_id] = reference
             graph = load_graph(reference, root=root) if evidence_available else None
@@ -293,8 +335,8 @@ def _workspace_catalog(
                     "workspace": workspace_path.name,
                     "workspace_path": str(workspace_path),
                     "created_at": None,
-                    "capture_state": "workspace",
-                    "journey_mode": "workspace",
+                    "capture_state": "active" if attached else "workspace",
+                    "journey_mode": "live" if attached else "workspace",
                     "live": False,
                     "activity_epoch": activity_epoch,
                     "active_recently": active_recently,

@@ -47,7 +47,7 @@ from scripts.lib.play.journey_view import (
     _workspace_index,
     make_server,
 )
-from scripts.lib.play.journey_view_catalog import _journey_mode
+from scripts.lib.play.journey_view_catalog import _active_workspace_capture, _journey_mode
 from scripts.lib.play.private_store import atomic_write_json
 
 
@@ -232,6 +232,67 @@ class JourneySceneTest(unittest.TestCase):
             },
         )
         self.assertEqual("cap-present", active_capture_reference(standby_path=standby))
+
+    def test_active_workspace_sync_prefers_cwd_then_latest_rote_workspace(self) -> None:
+        rote_home = Path(self.temporary.name) / "rote-active-home"
+        workspaces = rote_home / "rote" / "workspaces"
+        captured = workspaces / "play-capture-existing"
+        latest = workspaces / "independent-exploration"
+        for modified, workspace in ((100.0, captured), (50.0, latest)):
+            database = workspace / ".rote" / "workspace.db"
+            database.parent.mkdir(parents=True)
+            database.write_bytes(b"workspace")
+            os.utime(database, (modified, modified))
+        latest_wal = latest / ".rote" / "workspace.db-wal"
+        latest_wal.write_bytes(b"active command")
+        os.utime(latest_wal, (200.0, 200.0))
+        standby = Path(self.temporary.name) / "standby-sync.json"
+        registered = {
+            "reference": "cap-existing",
+            "intent": "Existing capture",
+            "status": "active",
+            "workspace": captured.name,
+            "workspace_path": str(captured),
+        }
+        atomic_write_json(standby, {"captures": [registered], "hooks": []})
+        environment = {
+            "ROTE_HOME": str(rote_home),
+            "PLAY_SIDEKICK_STANDBY_PATH": str(standby),
+        }
+        with patch.dict(os.environ, environment, clear=False):
+            attached = _active_workspace_capture(cwd=Path(self.temporary.name))
+            from_cwd = _active_workspace_capture(cwd=captured / "nested")
+            assert attached is not None
+            summaries, _lookup = _workspace_catalog(
+                str(attached["reference"]), root=self.journeys
+            )
+
+        self.assertEqual(latest.name, attached["workspace"])
+        self.assertEqual("active", attached["status"])
+        self.assertTrue(str(attached["reference"]).startswith("workspace:"))
+        self.assertEqual(registered, from_cwd)
+        latest_summary = next(item for item in summaries if item["workspace"] == latest.name)
+        self.assertEqual("live", latest_summary["journey_mode"])
+
+    def test_attached_workspace_is_synchronized_before_viewer_launch(self) -> None:
+        capture = {
+            **self.capture,
+            "workspace_path": str(Path(self.temporary.name) / "attached"),
+        }
+        graph = self.graph(self.activities)
+        with patch(
+            "scripts.lib.play.journey_view.refresh_capture", return_value={"generation": 1}
+        ) as refresh, patch(
+            "scripts.lib.play.journey_view.load_graph", return_value=graph
+        ):
+            _ensure_graph_ready(
+                self.capture["reference"],
+                capture=capture,
+                root=self.journeys,
+                timeout_seconds=0.5,
+            )
+
+        refresh.assert_called_once_with(capture, root=self.journeys)
 
     def test_workspace_refresh_aligns_archive_to_current_rote_root(self) -> None:
         rote_home = Path(self.temporary.name) / "rote-home"

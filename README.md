@@ -334,8 +334,12 @@ $play journey live
 play-journey view --active
 ```
 
-The command starts a missed background projector when necessary, stops older Journey HTTP servers,
-then starts one owner-private loopback viewer on the stable default `127.0.0.1:52050`. Override that
+The command synchronizes with the current Rote workspace first (the workspace containing the current
+directory when applicable, otherwise Rote's most recently updated workspace), overlays matching
+active Play capture metadata when available, stops older Journey HTTP servers, then starts one
+owner-private loopback viewer on the stable default `127.0.0.1:52050`. The viewer continues polling
+that workspace's bounded fingerprint and projects new commands automatically, so Play registry drift
+cannot strand a live Rote exploration. Override that
 single port with `--port <n>` or `PLAY_JOURNEY_PORT=<n>`; repeated launches replace the singleton
 instead of accumulating listeners. Every Play capture registered in
 `~/.rote-play/standby.json` appears in the Journey rail; the rail is not a raw directory listing of

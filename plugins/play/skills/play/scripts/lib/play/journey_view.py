@@ -11,6 +11,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 import webbrowser
@@ -23,12 +24,14 @@ from pathlib import Path
 from typing import Any
 
 from .journey import (
+    JourneyError,
     _capture,
     _snapshot_path,
     journey_directory,
     journey_root,
     load_graph,
     load_snapshot,
+    refresh_capture,
     schedule_worker,
 )
 from .journey_scene import JourneySceneError, build_scene
@@ -78,6 +81,7 @@ MAX_LIFETIME_SECONDS = 8 * 60 * 60
 PROJECTION_START_TIMEOUT_SECONDS = 4.0
 DEFAULT_VIEWER_PORT = 52050
 VIEWER_STOP_TIMEOUT_SECONDS = 2.0
+WORKSPACE_SYNC_INTERVAL_SECONDS = 1.0
 
 
 class JourneyViewError(RuntimeError):
@@ -88,11 +92,17 @@ class JourneyViewError(RuntimeError):
 def _ensure_graph_ready(
     capture_ref: str,
     *,
+    capture: Mapping[str, Any] | None = None,
     root: Path | None = None,
     timeout_seconds: float = PROJECTION_START_TIMEOUT_SECONDS,
 ) -> None:
     """Start a missed projector and wait briefly for its first generation."""
 
+    if capture is not None:
+        try:
+            refresh_capture(capture, root=root)
+        except JourneyError as error:
+            raise JourneyViewError(f"The Rote workspace could not be synchronized: {error}") from error
     if load_graph(capture_ref, root=root) is not None:
         return
     capture = _capture(capture_ref)
@@ -502,6 +512,19 @@ class JourneyThreadingHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
 
+def _sync_workspace(
+    capture: Mapping[str, Any], stop: threading.Event, *, root: Path | None = None
+) -> None:
+    """Continuously reconcile one attached Rote workspace into the Journey graph."""
+
+    while not stop.is_set():
+        try:
+            refresh_capture(capture, root=root)
+        except JourneyError:
+            pass
+        stop.wait(WORKSPACE_SYNC_INTERVAL_SECONDS)
+
+
 def make_server(
     capture_ref: str,
     token: str,
@@ -525,8 +548,29 @@ def serve_viewer(
     root: Path | None = None,
     port: int = DEFAULT_VIEWER_PORT,
     lifetime_seconds: int = MAX_LIFETIME_SECONDS,
+    workspace_path: str | None = None,
 ) -> int:
     server = make_server(capture_ref, token, root=root, port=port)
+    sync_stop = threading.Event()
+    sync_thread: threading.Thread | None = None
+    if workspace_path:
+        registered = _capture(capture_ref)
+        sync_capture = (
+            registered
+            if registered is not None
+            else {
+                **_workspace_capture(Path(workspace_path), status="active"),
+                "reference": capture_ref,
+            }
+        )
+        sync_thread = threading.Thread(
+            target=_sync_workspace,
+            args=(sync_capture, sync_stop),
+            kwargs={"root": root},
+            name="play-journey-workspace-sync",
+            daemon=True,
+        )
+        sync_thread.start()
     server.timeout = 1.0
     actual_port = int(server.server_address[1])
     url = f"http://127.0.0.1:{actual_port}/?token={urllib.parse.quote(token)}"
@@ -548,6 +592,9 @@ def serve_viewer(
         while time.monotonic() - started < max(1, lifetime_seconds):
             server.handle_request()
     finally:
+        sync_stop.set()
+        if sync_thread is not None:
+            sync_thread.join(timeout=2.0)
         server.server_close()
         try:
             state = load_json(_viewer_state_path(capture_ref, root=root))
@@ -561,13 +608,14 @@ def serve_viewer(
 def launch_viewer(
     capture_ref: str,
     *,
+    capture: Mapping[str, Any] | None = None,
     root: Path | None = None,
     open_browser: bool = True,
     port: int = DEFAULT_VIEWER_PORT,
 ) -> dict[str, Any]:
     """Replace every detached Journey server with one singleton fixed-port server."""
 
-    _ensure_graph_ready(capture_ref, root=root)
+    _ensure_graph_ready(capture_ref, capture=capture, root=root)
     selected_port = max(1, min(65535, int(port)))
     with _viewer_launch_lock(root=root):
         stopped = _stop_journey_viewers(root=root)
@@ -587,6 +635,9 @@ def launch_viewer(
             "--port",
             str(selected_port),
         ]
+        workspace_value = capture.get("workspace_path") if capture is not None else None
+        if isinstance(workspace_value, str) and workspace_value:
+            command.extend(["--workspace-path", workspace_value])
         process = subprocess.Popen(
             command,
             stdin=subprocess.DEVNULL,

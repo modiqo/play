@@ -2369,13 +2369,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     serve.add_argument("--viewer-token", required=True)
     serve.add_argument("--port", type=int, default=0)
     serve.add_argument("--lifetime-seconds", type=int, default=8 * 60 * 60)
+    serve.add_argument("--workspace-path")
     arguments = parser.parse_args(argv)
     capture_value = getattr(arguments, "capture", None)
     capture_ref = str(capture_value) if isinstance(capture_value, str) else ""
+    active_capture: Mapping[str, Any] | None = None
     if arguments.command == "view" and bool(arguments.active):
-        capture_ref = active_capture_reference() or ""
-        if not capture_ref:
-            parser.error("there is no active captured exploration")
+        from .journey_view_catalog import _active_workspace_capture
+
+        active_capture = _active_workspace_capture()
+        capture_ref = str(active_capture.get("reference") or "") if active_capture else ""
+        if not capture_ref or active_capture is None:
+            parser.error("there is no current Rote workspace to visualize")
     if arguments.command == "serve":
         from .journey_view import serve_viewer
 
@@ -2384,6 +2389,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             str(arguments.viewer_token),
             port=max(0, int(arguments.port)),
             lifetime_seconds=max(1, int(arguments.lifetime_seconds)),
+            workspace_path=str(arguments.workspace_path) if arguments.workspace_path else None,
         )
     if arguments.command == "view":
         from .journey_view import DEFAULT_VIEWER_PORT, JourneyViewError, launch_viewer
@@ -2401,6 +2407,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise JourneyViewError("Journey viewer port must be between 1 and 65535")
             payload = launch_viewer(
                 capture_ref,
+                capture=active_capture,
                 open_browser=not bool(arguments.no_open),
                 port=configured_port,
             )

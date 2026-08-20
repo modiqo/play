@@ -46,8 +46,9 @@ it never searches the registry or stores prompt text or credentials.
 
 If the unchanged request is `play journey live`, `$play journey live`, `/play journey live`, or
 asks to open the active exploration's live Journey map, do not enter the state machine or run
-preflight. Run the bundled `scripts/bin/play-journey view --active`. It resolves the active capture
-owner-privately, starts a missed background projector when necessary, replaces older Journey HTTP
+preflight. Run the bundled `scripts/bin/play-journey view --active`. It resolves the current Rote
+workspace owner-privately, overlays its matching active capture when available, continuously syncs
+new workspace commands, and replaces older Journey HTTP
 servers with one token-protected read-only singleton on `127.0.0.1:52050`, opens the
 deterministic isometric map, prints its local URL, and returns immediately. It must never start a
 capture, invoke Rote, expose the capture reference, or authorize an effect. If no active Journey is
