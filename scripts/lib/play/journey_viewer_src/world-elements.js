@@ -373,7 +373,7 @@ export function clampVisibleCallouts(labelLayer, viewport) {
   const bottomInset = 66
   const gap = 9
   const callouts = [...labelLayer.querySelectorAll(
-    '.world-callout.expanded, .world-callout.current, .world-callout.frozen, .world-interaction-callout.proximity, .world-interaction-callout.selected',
+    '.world-callout.expanded:not(.in-transit), .world-callout.current:not(.in-transit), .world-callout.frozen:not(.in-transit), .world-interaction-callout.proximity, .world-interaction-callout.selected',
   )]
   const shell = viewport.closest('main') || viewport.parentElement
   const obstacles = shell ? [...shell.querySelectorAll('.journey-guide, .landmark-panel.visible, .capability-rail')]

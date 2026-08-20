@@ -12,6 +12,7 @@ import {layoutTemporalCorridor} from './temporal-corridor.mjs'
 import {plaqueIsVisible, temporalNeighborhood, updateMarkerAppearance} from './marker-appearance.mjs'
 import {interactionDurationArc, interactionRadius} from './interaction-metrics.mjs'
 import {journeyVisibilityWindow} from './journey-position.mjs'
+import {calloutIsInTransit} from './world-callout-transition.mjs'
 
 const THREAD_STEEL = 0x717c7f
 const THREAD_PREVIOUS = 0xaeb8ba
@@ -363,6 +364,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       const desiredCamera = new THREE.Vector3()
       const desiredLook = new THREE.Vector3()
       let previousReached = -1
+      let reachedAt = performance.now()
       let lastCalloutLayout = 0
       const render = () => {
         if (disposed) return
@@ -415,11 +417,17 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             dismissed.current.delete(sites[reached]?.chapter.id)
             navigation.reset()
             previousReached = reached
+            reachedAt = performance.now()
           }
           focusRing.position.copy(positions[reached]).setY(.16)
           const ringPulse = 1 + Math.sin(elapsed * 2.2) * .045
           focusRing.scale.set(ringPulse, ringPulse, ringPulse)
           const interactionFocus = selectedSequence !== undefined && selectedSequence !== null
+          const calloutInTransit = calloutIsInTransit({
+            playing: playingRef.current,
+            travelAmount: amount,
+            settleElapsedMs: performance.now() - reachedAt,
+          })
           const visibleWindow = journeyVisibilityWindow(sites.length, reached)
           route.material.opacity = interactionFocus ? .1 : 1
           traveler.visible = !interactionFocus
@@ -456,6 +464,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             site.label.classList.toggle('expanded', isSelected || (isCurrent && !selectedRef.current && !dismissed.current.has(site.chapter.id)))
             site.label.classList.toggle('behind-interaction', interactionEngaged)
             site.label.classList.toggle('current', isCurrent)
+            site.label.classList.toggle('in-transit', isCurrent && calloutInTransit)
             site.label.classList.toggle('frozen', isCurrent && frozenRef.current)
             site.label.classList.toggle('complete', siteIndex < reached)
             site.label.classList.toggle('next', siteIndex === reached + 1)

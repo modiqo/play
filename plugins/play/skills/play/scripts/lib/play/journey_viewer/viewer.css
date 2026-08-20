@@ -75,7 +75,8 @@ main {
   box-shadow: 0 12px 40px rgba(0, 0, 0, .28);
   backdrop-filter: blur(12px) saturate(.65);
   pointer-events: auto; cursor: pointer; text-align: left;
-  transform-origin: 50% 100%; transition: width 180ms ease, border-color 180ms ease, background 180ms ease, opacity 180ms ease;
+  transform-origin: 50% 100%;
+  transition: width 240ms ease, border-color 240ms ease, background 240ms ease, opacity 900ms cubic-bezier(.22,.61,.36,1), filter 900ms cubic-bezier(.22,.61,.36,1);
 }
 .world-callout::before, .world-callout::after {
   content: ""; position: absolute; bottom: -15px; width: 1px; height: 15px;
@@ -88,6 +89,9 @@ main {
 .world-callout.frozen {
   --callout-line: rgba(240, 160, 58, .96);
   box-shadow: 0 0 0 1px rgba(232,132,19,.12), 0 18px 70px rgba(0,0,0,.5), 0 0 34px rgba(232,132,19,.12);
+}
+.world-callout.in-transit {
+  opacity: 0 !important; filter: blur(2px); pointer-events: none;
 }
 .world-callout.complete:not(.expanded) { opacity: .6; }
 .world-callout.next:not(.expanded) { opacity: .34; }
