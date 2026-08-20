@@ -330,6 +330,24 @@ def verify_play_runtime(source: Path) -> None:
         raise InstallError(f"cannot read Play runtime launcher {launcher}: {error}") from error
     if str(expected) not in content:
         raise InstallError(f"Play runtime launcher does not point at the installed skill: {launcher}")
+    journey_launcher = Path(
+        os.environ.get("PLAY_JOURNEY_LAUNCHER", _home() / ".local" / "bin" / "play-journey")
+    ).expanduser().resolve()
+    if not journey_launcher.is_file() or not os.access(journey_launcher, os.X_OK):
+        raise InstallError(
+            f"Play Journey launcher is missing or not executable: {journey_launcher}"
+        )
+    expected_journey = source / "scripts" / "bin" / "play-journey"
+    try:
+        journey_content = journey_launcher.read_text(encoding="utf-8")
+    except OSError as error:
+        raise InstallError(
+            f"cannot read Play Journey launcher {journey_launcher}: {error}"
+        ) from error
+    if str(expected_journey) not in journey_content:
+        raise InstallError(
+            f"Play Journey launcher does not point at the installed skill: {journey_launcher}"
+        )
     if importlib.util.find_spec("statemachine") is None and shutil.which("uv") is None:
         raise InstallError(
             "Play needs uv or an environment containing its pinned Python dependencies"
@@ -337,6 +355,7 @@ def verify_play_runtime(source: Path) -> None:
     print(
         f"  runtime: {launcher} (Python launcher; {len(REQUIRED_PLAY_EXECUTABLES)} bundled entrypoints verified)"
     )
+    print(f"  journey: {journey_launcher}")
 
 
 def opencode_command_path() -> Path:

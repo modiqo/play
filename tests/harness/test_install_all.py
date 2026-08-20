@@ -181,6 +181,13 @@ class InstallAllTest(unittest.TestCase):
             str(ROOT / "scripts" / "bin" / "play-routing"),
             routing_launcher.read_text(),
         )
+        journey_launcher = self.home / ".local" / "bin" / "play-journey"
+        self.assertTrue(journey_launcher.is_file())
+        self.assertTrue(os.access(journey_launcher, os.X_OK))
+        self.assertIn(
+            str(ROOT / "scripts" / "bin" / "play-journey"),
+            journey_launcher.read_text(),
+        )
         routing = self.home / ".rote-play" / "routing.yaml"
         self.assertTrue(routing.is_file())
         self.assertEqual(
@@ -200,6 +207,7 @@ class InstallAllTest(unittest.TestCase):
         self.uninstall(ROOT)
         self.assertFalse(launcher.exists())
         self.assertFalse(routing_launcher.exists())
+        self.assertFalse(journey_launcher.exists())
 
     def test_targets_exposes_multi_select_vendor_choices(self) -> None:
         result = self.run_installer("targets", "--json")

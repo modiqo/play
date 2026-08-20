@@ -22,6 +22,7 @@ class ActivationProfileTest(unittest.TestCase):
         self.state = base / "state" / "profile.json"
         self.launcher = base / "bin" / "play-machine"
         self.routing_launcher = base / "bin" / "play-routing"
+        self.journey_launcher = base / "bin" / "play-journey"
         self.originals: dict[Path, bytes] = {}
 
         for index, root in enumerate(self.roots):
@@ -50,6 +51,7 @@ class ActivationProfileTest(unittest.TestCase):
         environment["PLAY_PROFILE_STATE"] = str(self.state)
         environment["PLAY_MACHINE_LAUNCHER"] = str(self.launcher)
         environment["PLAY_ROUTING_LAUNCHER"] = str(self.routing_launcher)
+        environment["PLAY_JOURNEY_LAUNCHER"] = str(self.journey_launcher)
         if hasattr(self, "source"):
             environment["PLAY_PROFILE_SOURCE"] = str(self.source)
         result = subprocess.run(
@@ -73,6 +75,8 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertTrue(os.access(self.launcher, os.X_OK))
         self.assertTrue(self.routing_launcher.is_file())
         self.assertTrue(os.access(self.routing_launcher, os.X_OK))
+        self.assertTrue(self.journey_launcher.is_file())
+        self.assertTrue(os.access(self.journey_launcher, os.X_OK))
 
         for skill in (self.roots[0] / "rote", self.roots[1] / "rote-shell"):
             self.assertIn(
@@ -91,6 +95,7 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertFalse(self.state.exists())
         self.assertFalse(self.launcher.exists())
         self.assertFalse(self.routing_launcher.exists())
+        self.assertFalse(self.journey_launcher.exists())
         for root in self.roots:
             self.assertFalse((root / "play").exists())
         for path, content in self.originals.items():

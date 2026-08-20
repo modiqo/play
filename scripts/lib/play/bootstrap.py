@@ -913,6 +913,11 @@ def _play_state_candidates(
                 "PLAY_ROUTING_LAUNCHER", home / ".local" / "bin" / "play-routing"
             )
         ).expanduser(),
+        Path(
+            os.environ.get(
+                "PLAY_JOURNEY_LAUNCHER", home / ".local" / "bin" / "play-journey"
+            )
+        ).expanduser(),
     ]
     hooks = _hook_paths()
     for harness in selected:
