@@ -43,6 +43,10 @@ export function glassBeadMaterial() {
   })
 }
 
+export function glassBeadGeometry(radius = 1) {
+  return new THREE.IcosahedronGeometry(radius, 2)
+}
+
 export function eventHaloMaterial() {
   return new THREE.MeshBasicMaterial({color: AMBER, transparent: true, opacity: .14, depthTest: true})
 }

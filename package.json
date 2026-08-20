@@ -8,9 +8,7 @@
   "dependencies": {
     "@deck.gl/core": "9.3.10",
     "@deck.gl/layers": "9.3.10",
-    "@deck.gl/mesh-layers": "9.3.10",
     "@deck.gl/react": "9.3.10",
-    "@luma.gl/engine": "9.3.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "three": "0.185.1"

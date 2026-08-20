@@ -704,6 +704,30 @@ header {
 .journey-key span { display: flex; align-items: center; gap: 5px; }
 .journey-key i { width: 6px; height: 6px; background: var(--kind); transform: rotate(45deg); }
 
+/* Atlas keeps DeckGL for terrain and picking, then projects Follow's exact
+   Three.js physical-glass beads onto the same OrbitView camera. */
+.atlas-physical-beads {
+  position: absolute; z-index: 3; inset: 0; overflow: hidden; pointer-events: none;
+}
+.atlas-physical-bead-canvas {
+  position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; pointer-events: none;
+}
+.atlas-bead-labels {
+  position: absolute; z-index: 1; inset: 0; pointer-events: none;
+}
+.atlas-bead-labels button {
+  position: absolute; min-width: 34px; padding: 6px 8px;
+  transform: translate(-50%, -50%); border: 1px solid rgba(232,132,19,.72);
+  background: rgba(7,9,10,.88); box-shadow: 0 0 0 1px rgba(4,5,6,.75), 0 6px 20px rgba(0,0,0,.42);
+  color: #e9a13f; font: inherit; font-size: 8px; letter-spacing: .08em;
+  cursor: pointer; pointer-events: auto; transition: border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+.atlas-bead-labels button:hover,
+.atlas-bead-labels button.selected {
+  border-color: #ff9d20; color: #ffc36e;
+  box-shadow: 0 0 0 1px rgba(255,157,32,.28), 0 0 22px rgba(232,132,19,.32), 0 8px 24px rgba(0,0,0,.52);
+}
+
 .map-compass {
   position: absolute; z-index: 4; top: 86px; left: 50%; transform: translateX(-50%);
   display: grid; justify-items: center; gap: 3px; color: var(--muted); font-size: 8px; pointer-events: none;

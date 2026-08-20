@@ -1,10 +1,9 @@
-import React, {useEffect, useMemo, useRef, useState} from 'react'
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import DeckGL from '@deck.gl/react'
 import {AmbientLight, COORDINATE_SYSTEM, DirectionalLight, LightingEffect, LinearInterpolator, OrbitView} from '@deck.gl/core'
-import {ColumnLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer} from '@deck.gl/layers'
-import {SimpleMeshLayer} from '@deck.gl/mesh-layers'
-import {IcoSphereGeometry} from '@luma.gl/engine'
+import {ColumnLayer, PathLayer, PolygonLayer, ScatterplotLayer} from '@deck.gl/layers'
 import {DARK, NAV_BLUE, NAV_BLUE_BRIGHT, buildAtlas, fitView, interpolatePath, rgba} from './atlas-model.js'
+import PhysicalBeadOverlay from './physical-bead-overlay.jsx'
 import {KIND_LABEL} from './semantics.js'
 
 function useMotion(active) {
@@ -24,6 +23,38 @@ function useMotion(active) {
     return () => cancelAnimationFrame(frame)
   }, [active])
   return phase
+}
+
+function useArrivalBloom(active, siteId) {
+  const [amount, setAmount] = useState(0)
+  useEffect(() => {
+    if (!active || !siteId) {
+      setAmount(0)
+      return undefined
+    }
+    let frame = 0
+    let started = 0
+    const tick = (time) => {
+      if (!started) started = time
+      const elapsed = time - started
+      const next = elapsed < 380
+        ? elapsed / 380
+        : elapsed < 1950
+          ? 1
+          : elapsed < 2700 ? 1 - (elapsed - 1950) / 750 : 0
+      setAmount(next * next * (3 - 2 * next))
+      if (elapsed < 2700) frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [active, siteId])
+  return amount
+}
+
+function sampledBeads(beads, maximum = 9) {
+  if (beads.length <= maximum) return beads
+  const indexes = new Set(Array.from({length: maximum}, (_, index) => Math.round(index * (beads.length - 1) / (maximum - 1))))
+  return beads.filter((_bead, index) => indexes.has(index))
 }
 
 export default function Cartography({story, scene, interactions, replay, playing, audit, selected, onSelect, fitSignal}) {
@@ -74,6 +105,24 @@ export default function Cartography({story, scene, interactions, replay, playing
     ? replaySite
     : (atlas.sites.find((site) => site.id === story.current_chapter) || replaySite)
   const focusSite = selectedSite || currentSite
+  const arrivalBloom = useArrivalBloom(playing, currentSite?.id)
+  const bundleBloom = selectedSite ? .78 : arrivalBloom
+  const bloomSiteId = selectedSite?.id || (playing ? currentSite?.id : '')
+  const bundleScale = 1 + bundleBloom * 1.55
+  const transformPoint = useCallback((site, point) => {
+    if (!site || site.id !== bloomSiteId || bundleBloom <= .001) return point
+    return [
+      site.center[0] + (point[0] - site.center[0]) * bundleScale,
+      site.center[1] + (point[1] - site.center[1]) * bundleScale,
+      site.center[2] + (point[2] - site.center[2]) * bundleScale,
+    ]
+  }, [bloomSiteId, bundleBloom, bundleScale])
+  const beadPosition = useCallback((bead) => transformPoint(bead.site, bead.center), [transformPoint])
+  const beadEdge = useCallback((bead) => transformPoint(bead.site, [
+    bead.center[0] + bead.radius,
+    bead.center[1],
+    bead.center[2],
+  ]), [transformPoint])
   const phaseBeads = semanticZoom === 'journey'
     ? atlas.beads
     : atlas.beads.filter((bead) => bead.site.id === focusSite?.id)
@@ -90,7 +139,11 @@ export default function Cartography({story, scene, interactions, replay, playing
   const adjacentSequences = new Set(selectedBeadIndex < 0 ? [] : focusBeads
     .slice(Math.max(0, selectedBeadIndex - 1), selectedBeadIndex + 2)
     .map((bead) => bead.interaction.sequence))
-  const focusDistricts = focusSite ? atlas.districts.filter((district) => district.site.id === focusSite.id) : []
+  const labelBeads = selected?.sequence
+    ? focusBeads.filter((bead) => adjacentSequences.has(bead.interaction.sequence))
+    : selectedSite || (playing && arrivalBloom > .08)
+      ? sampledBeads(focusBeads)
+      : []
   const focusContours = focusSite ? atlas.contours.filter((contour) => contour.site.id === focusSite.id) : []
   const focusStreets = focusSite ? atlas.streets.filter((street) => street.id.includes(focusSite.id)) : []
   useEffect(() => {
@@ -107,9 +160,8 @@ export default function Cartography({story, scene, interactions, replay, playing
   const ambient = useMemo(() => new AmbientLight({color: [255, 255, 255], intensity: 1.15}), [])
   const sun = useMemo(() => new DirectionalLight({color: [255, 255, 255], intensity: 2.15, direction: [-3, -7, -10]}), [])
   const effects = useMemo(() => [new LightingEffect({ambient, sun})], [ambient, sun])
-  const beadMesh = useMemo(() => new IcoSphereGeometry({id: 'atlas-event-bead', radius: 1, iterations: 3}), [])
   const coordinateSystem = COORDINATE_SYSTEM.CARTESIAN
-  const terrainDistricts = semanticZoom === 'journey' ? atlas.districts : focusDistricts
+  const terrainDistricts = atlas.districts
   const beadAlpha = (bead, base = 1) => {
     if (selected?.sequence) {
       if (selected.sequence === bead.interaction.sequence) return Math.round(245 * base)
@@ -129,7 +181,7 @@ export default function Cartography({story, scene, interactions, replay, playing
       id: 'semantic-districts', data: terrainDistricts, coordinateSystem, getPolygon: (item) => item.polygon,
       getFillColor: (item) => [17, 21, 24, item.site.id === focusSite?.id ? 176 : reachedSites.has(item.site.id) ? 112 : 52],
       filled: true, stroked: true,
-      getLineColor: (item) => item.site.id === focusSite?.id ? [...NAV_BLUE, 150] : [...colors.street, reachedSites.has(item.site.id) ? 74 : 28],
+      getLineColor: (item) => item.site.id === focusSite?.id ? [...NAV_BLUE, 174] : [...colors.street, reachedSites.has(item.site.id) ? 88 : 48],
       getLineWidth: (item) => item.site.id === focusSite?.id ? 1.5 : .65,
       lineWidthUnits: 'pixels', extruded: false, pickable: true,
       onClick: ({object}) => object && onSelect({siteId: object.site.id, sequence: null}),
@@ -154,12 +206,12 @@ export default function Cartography({story, scene, interactions, replay, playing
       widthUnits: 'pixels', jointRounded: true, capRounded: true,
     }),
     new PathLayer({
-      id: 'event-thread-shadow', data: phaseThreads, coordinateSystem, getPath: (item) => item.path,
+      id: 'event-thread-shadow', data: phaseThreads, coordinateSystem, getPath: (item) => item.path.map((point) => transformPoint(item.site, point)),
       getColor: [3, 5, 6, 210], getWidth: semanticZoom === 'journey' ? 2.6 : 4.2,
       widthUnits: 'pixels', jointRounded: true, capRounded: true,
     }),
     new PathLayer({
-      id: 'event-threads', data: phaseThreads, coordinateSystem, getPath: (item) => item.path,
+      id: 'event-threads', data: phaseThreads, coordinateSystem, getPath: (item) => item.path.map((point) => transformPoint(item.site, point)),
       getColor: (item) => {
         const selectedThread = selected?.sequence && (
           adjacentSequences.has(item.source.interaction.sequence) && adjacentSequences.has(item.target.interaction.sequence)
@@ -181,39 +233,21 @@ export default function Cartography({story, scene, interactions, replay, playing
       getLineWidth: (item) => item.id === currentSite?.id ? 2 : 1, lineWidthUnits: 'pixels',
       pickable: true, onClick: ({object}) => object && onSelect({siteId: object.id, sequence: null}),
     }),
-    new SimpleMeshLayer({
-      id: 'event-beads', data: phaseBeads, coordinateSystem, getPosition: (item) => item.center,
-      mesh: beadMesh, sizeScale: semanticZoom === 'journey' ? 2.1 : 1.35,
-      getScale: (item) => [item.radius, item.radius, item.radius],
-      getColor: (item) => {
-        const shade = Math.round(item.tone * 26)
-        return [72 + shade, 82 + shade, 86 + shade, beadAlpha(item)]
-      },
-      material: {ambient: .28, diffuse: .72, shininess: 108, specularColor: [232, 240, 241]},
-      pickable: true,
+    new ScatterplotLayer({
+      id: 'event-bead-hit-targets', data: phaseBeads, coordinateSystem,
+      getPosition: beadPosition, getRadius: (item) => item.radius * (item.site.id === bloomSiteId ? bundleScale : 1),
+      radiusUnits: 'common', radiusMinPixels: semanticZoom === 'journey' ? 5 : 8,
+      filled: true, stroked: false, getFillColor: [0, 0, 0, 1], pickable: true,
       onClick: ({object}) => object && onSelect({siteId: object.site.id, sequence: object.interaction.sequence}),
     }),
-    new SimpleMeshLayer({
-      id: 'event-bead-glints', data: phaseBeads, coordinateSystem,
-      mesh: beadMesh, sizeScale: semanticZoom === 'journey' ? 2.1 : 1.35,
-      getPosition: (item) => [
-        item.center[0] - item.radius * .34,
-        item.center[1] - item.radius * .12,
-        item.center[2] + item.radius * .58,
-      ],
-      getScale: (item) => [item.radius * .105, item.radius * .105, item.radius * .105],
-      getColor: (item) => [244, 249, 249, beadAlpha(item, .9)],
-      material: {ambient: .88, diffuse: .12, shininess: 128, specularColor: [255, 255, 255]},
-      pickable: false,
-    }),
     new PathLayer({
-      id: 'event-latency-halos', data: phaseHalos, coordinateSystem, getPath: (item) => item.path,
+      id: 'event-latency-halos', data: phaseHalos, coordinateSystem, getPath: (item) => item.path.map((point) => transformPoint(item.bead.site, point)),
       getColor: (item) => [...NAV_BLUE_BRIGHT, beadAlpha(item.bead, selected?.sequence === item.bead.interaction.sequence ? .9 : .54)],
       getWidth: selected?.sequence ? 1.5 : 1, widthUnits: 'pixels', jointRounded: true, capRounded: true,
     }),
     new ScatterplotLayer({
       id: 'selected-bead-ring', data: selected?.sequence ? [atlas.beadBySequence.get(selected.sequence)].filter(Boolean) : [], coordinateSystem,
-      getPosition: (item) => item.center, getRadius: (item) => item.radius + .24,
+      getPosition: beadPosition, getRadius: (item) => (item.radius + .24) * (item.site.id === bloomSiteId ? bundleScale : 1),
       radiusUnits: 'common', filled: false, stroked: true, getLineColor: [...NAV_BLUE_BRIGHT, 255],
       getLineWidth: 2.2, lineWidthUnits: 'pixels',
     }),
@@ -229,17 +263,6 @@ export default function Cartography({story, scene, interactions, replay, playing
       extruded: true, getElevation: 1.5, getFillColor: [232, 132, 19, 255],
       stroked: true, getLineColor: [247, 200, 137, 255], getLineWidth: 1, lineWidthUnits: 'pixels',
     }),
-    new TextLayer({
-      id: 'bead-numbers', data: selected?.sequence ? phaseBeads.filter((item) => adjacentSequences.has(item.interaction.sequence)) : [], coordinateSystem,
-      getPosition: (item) => [item.center[0], item.center[1] - item.radius * .08, item.center[2] + item.radius * .08],
-      getText: (item) => `@${item.interaction.sequence}`,
-      getColor: (item) => selected?.sequence === item.interaction.sequence ? [...NAV_BLUE_BRIGHT, 255] : [...colors.ink, 205],
-      getSize: 9, sizeUnits: 'pixels', getTextAnchor: 'middle', getAlignmentBaseline: 'center', billboard: true,
-      background: true, getBackgroundColor: [13, 15, 17, 226], backgroundPadding: [4, 3, 4, 3],
-      outlineWidth: 0,
-      fontFamily: 'Departure Mono, SFMono-Regular, Menlo, monospace', pickable: true,
-      onClick: ({object}) => object && onSelect({siteId: object.site.id, sequence: object.interaction.sequence}),
-    }),
   ].filter(Boolean)
 
   return <DeckGL
@@ -249,6 +272,19 @@ export default function Cartography({story, scene, interactions, replay, playing
     getCursor={({isDragging, isHovering}) => isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'}
     onClick={({object}) => { if (!object) onSelect(null) }}
   >
+    <PhysicalBeadOverlay
+      beads={phaseBeads}
+      viewState={viewState}
+      semanticZoom={semanticZoom}
+      currentSiteId={bloomSiteId || currentSite?.id}
+      selectedSequence={selected?.sequence}
+      adjacentSequences={[...adjacentSequences]}
+      reachedSiteIds={[...reachedSites]}
+      positionFor={beadPosition}
+      edgeFor={beadEdge}
+      labelBeads={labelBeads}
+      onSelect={onSelect}
+    />
     <div className="map-compass"><span>N</span><i /></div>
     <div className="map-scale">{semanticZoom.toUpperCase()} SCALE · {semanticZoom === 'journey' ? 'COMPACT SPATIO-TEMPORAL TERRAIN' : semanticZoom === 'phase' ? 'EVENT BEADS FOLLOW TIME LEFT TO RIGHT' : 'SELECT A GLASS BEAD TO INSPECT EVIDENCE'}</div>
     {selectedSite && <div className="selection-beacon">{String(selectedSite.order + 1).padStart(2, '0')} · {selected?.sequence ? `INTERACTION @${selected.sequence}` : KIND_LABEL[selectedSite.kind]}</div>}

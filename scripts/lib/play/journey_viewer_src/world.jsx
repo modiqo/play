@@ -4,7 +4,7 @@ import {CSS2DRenderer} from 'three/addons/renderers/CSS2DRenderer.js'
 import {BokehPass} from 'three/addons/postprocessing/BokehPass.js'
 import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js'
 import {RenderPass} from 'three/addons/postprocessing/RenderPass.js'
-import {AMBER, GROUND, clampVisibleCallouts, eventHaloMaterial, glassBeadMaterial, journeyPositions, landmarkFor, makeCallout, makeInteractionIndex, makeInteractionPlaque, makeTemporalCorridor, material} from './world-elements.js'
+import {AMBER, GROUND, clampVisibleCallouts, eventHaloMaterial, glassBeadGeometry, glassBeadMaterial, journeyPositions, landmarkFor, makeCallout, makeInteractionIndex, makeInteractionPlaque, makeTemporalCorridor, material} from './world-elements.js'
 import {applyInteractionFocusView, createWorldNavigation} from './world-navigation.js'
 import {KIND_LABEL, WORLD_ROLE} from './semantics.js'
 import {groupInteractionPlaques} from './interaction-plaques.mjs'
@@ -277,7 +277,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           const radius = interactionRadius(record)
           const baseY = .82 + radius + temporal.lane * .56 + (recordIndex % 2) * .12
           maximumMarkerElevation = Math.max(maximumMarkerElevation, baseY + radius)
-          const bead = new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 2), glassBeadMaterial())
+          const bead = new THREE.Mesh(glassBeadGeometry(radius), glassBeadMaterial())
           const halo = new THREE.Mesh(
             new THREE.TorusGeometry(radius + .105, .018, 6, 34, interactionDurationArc(temporal)),
             eventHaloMaterial(),
