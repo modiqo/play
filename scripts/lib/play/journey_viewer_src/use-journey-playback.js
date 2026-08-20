@@ -11,6 +11,7 @@ export function useJourneyPlayback({
   setSelected,
   setFitSignal,
   setMessage,
+  setTrackingLive,
 }) {
   useEffect(() => {
     if (!playing || !story) return undefined
@@ -50,6 +51,7 @@ export function useJourneyPlayback({
   }, [playback, playing, setMessage, setObserving, setPlaying, setReplay, story])
 
   function togglePlayback() {
+    setTrackingLive(false)
     if (playing) {
       playback.current = null
       setPlaying(false)
@@ -68,6 +70,7 @@ export function useJourneyPlayback({
   }
 
   function jumpToChapter(index) {
+    setTrackingLive(false)
     setPlaying(false)
     setObserving(true)
     playback.current = null
@@ -79,6 +82,7 @@ export function useJourneyPlayback({
 
   const selectVantage = useCallback((value) => {
     if (value) {
+      setTrackingLive(false)
       playback.current = null
       setPlaying(false)
       setObserving(true)
@@ -89,9 +93,10 @@ export function useJourneyPlayback({
       setMessage(value.sequence ? `Inspecting interaction @${value.sequence}` : 'Situational awareness opened')
     }
     setSelected(value)
-  }, [playback, setMessage, setObserving, setPlaying, setReplay, setSelected, story])
+  }, [playback, setMessage, setObserving, setPlaying, setReplay, setSelected, setTrackingLive, story])
 
   function freezeAtProgress(value) {
+    setTrackingLive(false)
     playback.current = null
     setPlaying(false)
     setObserving(true)

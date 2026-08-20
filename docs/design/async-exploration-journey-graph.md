@@ -802,8 +802,12 @@ The detailed conversational inspection commands are not part of the first implem
   mutating or pruning the canonical graph.
 - Implemented: serve the compiled React Three Fiber/Three.js viewer through a detached,
   token-protected `127.0.0.1` process; the installed viewer has no Node runtime dependency.
-- Implemented: workspace selection, light/dark themes, live generation following, pan, zoom, fit,
-  journey replay, telemetry, and evidence-reference inspection.
+- Implemented: workspace selection, light/dark themes, explicit live-head tracking, calm coalesced
+  snapshot refresh, pan, zoom, fit, journey replay, telemetry, and evidence-reference inspection.
+- Selecting a workspace always begins at its first stage. Live-head tracking is opt-in and is
+  released by replay, scrubbing, freezing, or evidence inspection.
+- Renderer refreshes preserve the camera, do not replace a graph during animated playback, and use
+  a bounded visible-site window for long explorations while retaining every tracker marker.
 - Retained: `play.journey-scene/v1` as a deterministic diagnostic contract; it is no longer the
   primary presentation surface.
 - Keep renderer and any later enrichment failures isolated from the capture worker and Play machine.

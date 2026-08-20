@@ -359,6 +359,23 @@ The first implementation is a recorded replay because it is deterministic and av
 credentials. A later `WATCH LIVE` option attaches the same traveler and vocabulary to the current
 workspace.
 
+## Long-running exploration playback
+
+Workspace selection and live observation are separate decisions. Selecting any recorded or active
+workspace loads its latest coherent snapshot but places the traveler at the first stage, ready to
+play. An active workspace exposes an explicit `Track live` control. Only that mode follows newly
+projected call sites; playing, scrubbing, freezing, or selecting evidence releases the live head.
+
+Live graph events are hints that newer evidence exists, not instructions to rebuild the world
+immediately. The viewer coalesces them into a calm snapshot cadence, never swaps the graph during
+animated playback, and catches up after playback stops. A rebuild preserves the camera pose so a
+new snapshot advances the world instead of teleporting the viewer.
+
+For long journeys, the tracker retains every canonical stage marker at a reduced density. The 3D
+world keeps the current stage, one future preview, and a bounded amount of recent history visible;
+older sites remain reachable through the tracker without crowding the current vantage. Canonical
+history is never pruned by this presentation window.
+
 ## Narration and music
 
 Narration is an optional presentation layer, not semantic evidence and not a runtime dependency on

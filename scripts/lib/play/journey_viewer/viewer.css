@@ -669,9 +669,12 @@ footer {
 footer > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .footer-message { justify-self: end; text-transform: uppercase; }
 .replay { display: grid; grid-template-columns: auto minmax(260px, 1fr) 126px; align-items: center; gap: 12px; min-width: 0; }
-.replay > button { padding: 7px 10px; border-color: rgba(232,132,19,.45); color: var(--ink); }
-.replay > button:hover, .replay > button.playing, .replay > button.frozen { border-color: var(--accent); background: var(--soft); }
-.replay > button.frozen { box-shadow: inset 0 0 0 1px rgba(232,132,19,.18), 0 0 18px rgba(232,132,19,.1); }
+.replay-controls { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.replay-controls > button { padding: 7px 10px; border-color: rgba(232,132,19,.45); color: var(--ink); }
+.replay-controls > button:hover, .replay-controls > button.playing, .replay-controls > button.frozen, .replay-controls > button.active { border-color: var(--accent); background: var(--soft); }
+.replay-controls > button.frozen { box-shadow: inset 0 0 0 1px rgba(232,132,19,.18), 0 0 18px rgba(232,132,19,.1); }
+.replay-controls > button.live-track { color: var(--muted); font-size: 7px; }
+.replay-controls > button.live-track.active { color: var(--accent); box-shadow: 0 0 18px rgba(232,132,19,.14); }
 .replay b, .replay em { color: var(--muted); font-size: 8px; font-style: normal; font-weight: 400; }
 .replay-position { display: flex; align-items: baseline; gap: 4px; min-width: 0; white-space: nowrap; }
 .replay-position b { color: var(--ink); font-size: 10px; }
@@ -703,6 +706,10 @@ footer > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
   transition: width 130ms ease, height 130ms ease, border-color 130ms ease, background 130ms ease, box-shadow 130ms ease;
 }
 .chapter-markers button.reached { border-color: #9a641f; background: #9a641f; }
+.replay-track.dense .chapter-markers button { width: 4px; height: 4px; border-width: 1px; }
+.replay-track.dense .chapter-markers button.current,
+.replay-track.dense .chapter-markers button:hover,
+.replay-track.dense .chapter-markers button:focus-visible { width: 9px; height: 9px; }
 .chapter-markers button.current {
   width: 11px; height: 11px; border: 2px solid #f0a03a; background: #151719;
   box-shadow: 0 0 0 3px rgba(232,132,19,.16), 0 0 14px rgba(232,132,19,.62);

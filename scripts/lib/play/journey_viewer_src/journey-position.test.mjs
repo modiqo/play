@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {reconcileJourneyPosition} from './journey-position.mjs'
+import {journeyVisibilityWindow, reconcileJourneyPosition} from './journey-position.mjs'
 
 const story = (state, ids) => ({state, chapters: ids.map((id) => ({id}))})
 
-test('initial active journeys start at the live head while recordings start at the beginning', () => {
-  assert.equal(reconcileJourneyPosition({nextStory: story('active', ['a', 'b'])}), 1)
+test('every selected journey starts at the beginning', () => {
+  assert.equal(reconcileJourneyPosition({nextStory: story('active', ['a', 'b'])}), 0)
   assert.equal(reconcileJourneyPosition({nextStory: story('recorded', ['a', 'b'])}), 0)
 })
 
-test('a quiet refresh advances an unpinned live head to the newest call site', () => {
+test('an explicit live-head refresh advances from any unpinned position', () => {
   assert.equal(reconcileJourneyPosition({
     previousStory: story('active', ['a', 'b']),
     nextStory: story('active', ['a', 'b', 'c']),
-    replay: 1,
+    replay: 0,
     quiet: true,
     followHead: true,
   }), 1)
@@ -36,4 +36,9 @@ test('a frozen unselected position keeps its absolute journey stage', () => {
     replay: .5,
     quiet: true,
   }), 1 / 3)
+})
+
+test('long journeys retain only nearby history and one future preview', () => {
+  assert.deepEqual(journeyVisibilityWindow(47, 32), {start: 28, end: 33})
+  assert.deepEqual(journeyVisibilityWindow(12, 8), {start: 0, end: 9})
 })

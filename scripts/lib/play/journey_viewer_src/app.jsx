@@ -9,10 +9,10 @@ import JourneyWorld from './world.jsx'
 export default function App() {
   const {
     index, workspace, story, scene, interactions, tutorial, selected, setSelected, exchange,
-    replay, playing, observing, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
+    replay, playing, observing, trackingLive, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
     mode, setMode, message, loadError, journeysOpen, setJourneysOpen,
     telemetryOpen, setTelemetryOpen, worldModelOpen, setWorldModelOpen, refreshing,
-    choose, refreshWorkspaces, togglePlayback, jumpToChapter, selectVantage, freezeAtProgress,
+    choose, refreshWorkspaces, togglePlayback, toggleLiveTracking, jumpToChapter, selectVantage, freezeAtProgress,
   } = useJourneyRuntime()
   const chapter = story?.chapters.find((item) => item.id === selected?.siteId)
   const interaction = selected?.sequence
@@ -24,7 +24,7 @@ export default function App() {
   const liveActivity = Boolean(liveCapture && selectedWorkspace?.active_recently)
   const recalled = story?.origin?.kind === 'recalled_play'
   const isTutorial = story?.origin?.kind === 'tutorial'
-  const status = isTutorial ? 'START HERE' : recalled ? 'RECALLED PLAY' : liveActivity ? 'LIVE · UPDATING' : liveCapture ? 'LIVE · QUIET' : 'RECORDED'
+  const status = isTutorial ? 'START HERE' : recalled ? 'RECALLED PLAY' : trackingLive ? 'LIVE · TRACKING' : liveActivity ? 'LIVE · UPDATING' : liveCapture ? 'LIVE · QUIET' : 'RECORDED'
   const replayChapter = story ? Math.min(story.chapters.length - 1, Math.floor(replay * Math.max(1, story.chapters.length - 1) + .001)) : 0
   const currentReplayChapter = story?.chapters[replayChapter]
   const frozen = mode === 'follow' && observing && !playing
@@ -42,7 +42,7 @@ export default function App() {
     if (nextMode !== 'follow') setFitSignal((value) => value + 1)
   }
 
-  return <main className={`dark mode-${mode}${frozen ? ' is-frozen' : ''}${isTutorial ? ' tutorial-guided' : ''}${tutorialEntryModelActive ? ' world-model-active' : ''}`}>
+  return <main className={`dark mode-${mode}${frozen ? ' is-frozen' : ''}${trackingLive ? ' is-live-tracking' : ''}${isTutorial ? ' tutorial-guided' : ''}${tutorialEntryModelActive ? ' world-model-active' : ''}`}>
     <section className="atlas-stage">
       {story && scene && interactions
         ? mode === 'follow'
@@ -160,8 +160,11 @@ export default function App() {
       <button onClick={() => setJourneysOpen((value) => !value)}>☷ JOURNEYS</button>
       <span>{story ? `${story.audit.canonical_nodes} STAGES · ${interactions?.total || 0} INTERACTIONS · GEN ${story.graph_generation}` : 'WAITING FOR GRAPH'}</span>
       <div className="replay">
-        <button className={playing ? 'playing' : frozen ? 'frozen' : ''} onClick={togglePlayback}>{playing ? 'Ⅱ FREEZE' : frozen ? '▶ RESUME' : '▶ PLAY'}</button>
-        <div className="replay-track" style={{'--progress': `${replay * 100}%`}}>
+        <div className="replay-controls">
+          <button className={playing ? 'playing' : frozen ? 'frozen' : ''} onClick={togglePlayback}>{playing ? 'Ⅱ FREEZE' : frozen ? '▶ RESUME' : '▶ PLAY'}</button>
+          {liveCapture && <button className={`live-track${trackingLive ? ' active' : ''}`} disabled={story?.state !== 'active'} onClick={toggleLiveTracking} title="Follow new call sites as calm snapshots arrive">{trackingLive ? '● LIVE HEAD' : '○ TRACK LIVE'}</button>}
+        </div>
+        <div className={`replay-track${(story?.chapters.length || 0) > 36 ? ' dense' : ''}`} style={{'--progress': `${replay * 100}%`}}>
           <input aria-label="Journey replay" type="range" min="0" max="1" step="0.002" value={replay} onChange={(event) => { freezeAtProgress(Number(event.target.value)) }} />
           <div className="chapter-markers">
             {story?.chapters.map((item, itemIndex) => {
@@ -184,7 +187,7 @@ export default function App() {
             : '00 / 00'}
         </em>
       </div>
-      <span className="footer-message">{playing ? `PLAYING · ${message}` : frozen ? `FROZEN VANTAGE · ${message}` : lastSnapshotAt && liveCapture ? `READY TO PLAY · SNAPSHOT ${new Date(lastSnapshotAt).toLocaleTimeString()} · ${message}` : `READY TO PLAY · ${message}`}</span>
+      <span className="footer-message">{trackingLive ? `TRACKING LIVE HEAD · NEXT SNAPSHOT ${String(snapshotCountdown).padStart(2, '0')}s` : playing ? `PLAYING SNAPSHOT · ${message}` : frozen ? `FROZEN VANTAGE · ${message}` : lastSnapshotAt && liveCapture ? `READY TO PLAY FROM HERE · SNAPSHOT ${new Date(lastSnapshotAt).toLocaleTimeString()} · ${message}` : `READY TO PLAY · ${message}`}</span>
     </footer>
   </main>
 }

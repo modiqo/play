@@ -11,6 +11,7 @@ import {groupInteractionPlaques} from './interaction-plaques.mjs'
 import {layoutTemporalCorridor} from './temporal-corridor.mjs'
 import {plaqueIsVisible, temporalNeighborhood, updateMarkerAppearance} from './marker-appearance.mjs'
 import {interactionDurationArc, interactionRadius} from './interaction-metrics.mjs'
+import {journeyVisibilityWindow} from './journey-position.mjs'
 
 const THREAD_STEEL = 0x717c7f
 const THREAD_PREVIOUS = 0xaeb8ba
@@ -90,6 +91,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
   const playingRef = useRef(playing)
   const frozenRef = useRef(frozen)
   const dismissed = useRef(new Set())
+  const viewState = useRef(null)
   const [error, setError] = useState('')
   const positions = useMemo(() => journeyPositions(story.chapters), [story])
   const replayValue = Number(replay)
@@ -116,8 +118,16 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
     let observer
     let navigation
     let scene
+    let camera
+    let cameraTarget
     const cleanup = () => {
       if (disposed) return
+      if (camera && cameraTarget) {
+        viewState.current = {
+          camera: camera.position.toArray(),
+          target: cameraTarget.toArray(),
+        }
+      }
       disposed = true
       cancelAnimationFrame(frame)
       observer?.disconnect()
@@ -145,8 +155,9 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       const tutorialFocus = story.origin?.kind === 'tutorial'
       scene.background = new THREE.Color(GROUND)
       scene.fog = new THREE.FogExp2(GROUND, .015)
-      const camera = new THREE.PerspectiveCamera(54, 1, .1, 260)
+      camera = new THREE.PerspectiveCamera(54, 1, .1, 260)
       camera.position.set(0, 3.3, 6)
+      if (viewState.current?.camera) camera.position.fromArray(viewState.current.camera)
 
       renderer = new THREE.WebGLRenderer({antialias: true, powerPreference: 'high-performance'})
       renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1))
@@ -210,12 +221,14 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       const semanticMeshes = []
       story.chapters.forEach((chapter, index) => {
         const site = new THREE.Group()
+        const siteSemanticMeshes = []
         site.position.copy(positions[index])
         const platform = new THREE.Mesh(new THREE.BoxGeometry(15, .24, 12), material(0x111518))
         platform.position.y = .08
         platform.receiveShadow = true
         platform.userData = {siteId: chapter.id, sequence: null}
         semanticMeshes.push(platform)
+        siteSemanticMeshes.push(platform)
         site.add(platform)
 
         const landmark = landmarkFor(chapter)
@@ -226,6 +239,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           if (!object.isMesh) return
           object.userData = {siteId: chapter.id, sequence: null}
           semanticMeshes.push(object)
+          siteSemanticMeshes.push(object)
           const materials = Array.isArray(object.material) ? object.material : [object.material]
           materials.forEach((entry) => {
             if (!entry?.color) return
@@ -300,7 +314,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         scene.add(site)
         sites.push({
           chapter, group: site, platform, landmark, landmarkMaterials, focusEdges, label: root,
-          timeLabels: temporalStructure.userData.timeLabels || [], markers, threads, plaques, worldPosition: site.position.clone(),
+          timeLabels: temporalStructure.userData.timeLabels || [], markers, threads, plaques, semanticMeshes: siteSemanticMeshes, worldPosition: site.position.clone(),
           approachDistance: Math.max(12.5, landmarkSize.z * .5 + 8, landmarkSize.x * .38 + 8),
           eyeHeight: THREE.MathUtils.clamp(landmarkSize.y * .42, 2.5, 3.8),
         })
@@ -338,7 +352,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       resize()
 
       runtime.current = {sites, camera, traveler}
-      const cameraTarget = new THREE.Vector3()
+      cameraTarget = new THREE.Vector3()
+      if (viewState.current?.target) cameraTarget.fromArray(viewState.current.target)
       const desiredCamera = new THREE.Vector3()
       const desiredLook = new THREE.Vector3()
       let previousReached = -1
@@ -396,13 +411,20 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           focusRing.scale.set(ringPulse, ringPulse, ringPulse)
           const selectedSequence = selectedRef.current?.sequence
           const interactionFocus = selectedSequence !== undefined && selectedSequence !== null
+          const visibleWindow = journeyVisibilityWindow(sites.length, reached)
           route.material.opacity = interactionFocus ? .1 : 1
           traveler.visible = !interactionFocus
           focusRing.material.opacity = interactionFocus ? .06 : .42
           sites.forEach((site, siteIndex) => {
-            site.group.visible = siteIndex <= reached + 1
+            const visible = siteIndex >= visibleWindow.start && siteIndex <= visibleWindow.end
+            site.group.visible = visible
             const isCurrent = siteIndex === reached
             const isFuture = siteIndex > reached
+            site.semanticMeshes.forEach((mesh) => { mesh.userData.actionable = visible && isCurrent })
+            if (!visible) {
+              site.markers.forEach((marker) => { marker.bead.userData.actionable = false })
+              return
+            }
             const isSelectedSite = selectedRef.current?.siteId === site.chapter.id
             const isSelected = isSelectedSite && !interactionFocus
             const interactionEngaged = (isSelectedSite && interactionFocus) || site.plaques.some((plaque) => plaque.root.classList.contains('spread'))

@@ -13,9 +13,10 @@ export function useJourneyRuntime() {
   const [tutorial, setTutorial] = useState(null)
   const [selected, setSelected] = useState(null)
   const [exchange, setExchange] = useState(null)
-  const [replay, setReplay] = useState(1)
+  const [replay, setReplay] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [observing, setObserving] = useState(false)
+  const [trackingLive, setTrackingLiveState] = useState(false)
   const [snapshotCountdown, setSnapshotCountdown] = useState(10)
   const [lastSnapshotAt, setLastSnapshotAt] = useState(null)
   const [fitSignal, setFitSignal] = useState(0)
@@ -30,15 +31,20 @@ export function useJourneyRuntime() {
   const materialGeneration = useRef(null)
   const storyRef = useRef(null)
   const selectedRef = useRef(null)
-  const observingRef = useRef(false)
   const playingRef = useRef(false)
+  const trackingLiveRef = useRef(false)
+  const wasPlayingRef = useRef(false)
+  const setTrackingLive = useCallback((value) => {
+    const next = Boolean(value)
+    trackingLiveRef.current = next
+    setTrackingLiveState(next)
+  }, [])
   const {togglePlayback, jumpToChapter, selectVantage, freezeAtProgress} = useJourneyPlayback({
     story, replay, setReplay, playing, setPlaying, setObserving, playback,
-    setSelected, setFitSignal, setMessage,
+    setSelected, setFitSignal, setMessage, setTrackingLive,
   })
 
   useEffect(() => { selectedRef.current = selected }, [selected])
-  useEffect(() => { observingRef.current = observing }, [observing])
   useEffect(() => { playingRef.current = playing }, [playing])
 
   const loadIndex = useCallback(async () => {
@@ -68,6 +74,7 @@ export function useJourneyRuntime() {
     ])
     if (!storyResponse.ok || !sceneResponse.ok || !interactionResponse.ok) throw new Error('Journey map is unavailable')
     const [nextStory, nextScene, nextInteractions] = await Promise.all([storyResponse.json(), sceneResponse.json(), interactionResponse.json()])
+    if (quiet && playingRef.current) return false
     const nextTutorial = nextStory.origin?.kind === 'tutorial'
       ? await fetch(api('/api/tutorial', {workspace: id}), {cache: 'no-store'}).then((response) => response.ok ? response.json() : null)
       : null
@@ -78,8 +85,9 @@ export function useJourneyRuntime() {
       replay: current,
       selected: selectedRef.current,
       quiet,
-      followHead: !observingRef.current && !playingRef.current,
+      followHead: trackingLiveRef.current,
     }))
+    if (nextStory.state !== 'active') setTrackingLive(false)
     storyRef.current = nextStory
     setStory(nextStory)
     setScene(nextScene)
@@ -89,12 +97,14 @@ export function useJourneyRuntime() {
     if (!quiet) setObserving(false)
     if (!quiet) setMessage(nextStory.state === 'active' ? 'Live journey connected' : 'Recorded journey loaded')
     setLastSnapshotAt(Date.now())
-  }, [])
+    return true
+  }, [setTrackingLive])
 
   async function choose(item) {
     try {
       setPlaying(false)
       setObserving(true)
+      setTrackingLive(false)
       playback.current = null
       setSelected(null)
       setMode('follow')
@@ -158,9 +168,11 @@ export function useJourneyRuntime() {
         setExchange(null)
         setPlaying(false)
         setObserving(false)
+        setTrackingLive(false)
         setMessage(`Workspace slate refreshed · ${value.workspaces.length} current workspaces · no captured journey yet`)
         return
       }
+      if (target.id !== workspace) setTrackingLive(false)
       setWorkspace(target.id)
       trackWorkspaceLocation(target.workspace_path || target.workspace || target.id)
       if (target.graph_ready) {
@@ -196,17 +208,20 @@ export function useJourneyRuntime() {
       let generation = null
       try { generation = JSON.parse(event.data)?.material_generation ?? null } catch {}
       if (generation !== null && generation === materialGeneration.current) {
-        setSnapshotCountdown(10)
         return
       }
       materialGeneration.current = generation
-      loadJourney(workspace, true).catch(() => {})
-      loadIndex().catch(() => {})
-      setSnapshotCountdown(10)
     })
     events.onerror = () => setMessage('Reconnecting to live journey')
     return () => events.close()
   }, [loadIndex, loadJourney, workspace])
+
+  useEffect(() => {
+    if (wasPlayingRef.current && !playing && workspace) {
+      loadJourney(workspace, true).catch(() => {})
+    }
+    wasPlayingRef.current = playing
+  }, [loadJourney, playing, workspace])
 
   useEffect(() => {
     if (!workspace) return undefined
@@ -254,12 +269,33 @@ export function useJourneyRuntime() {
     setWorldModelOpen(false)
   }, [selected?.sequence])
 
+  const toggleLiveTracking = useCallback(() => {
+    if (!workspace || storyRef.current?.state !== 'active') {
+      setMessage('Live tracking is available only while this exploration is active')
+      return
+    }
+    if (trackingLiveRef.current) {
+      setTrackingLive(false)
+      setObserving(true)
+      setMessage('Live head released · current vantage frozen')
+      return
+    }
+    playback.current = null
+    setPlaying(false)
+    setObserving(false)
+    setSelected(null)
+    setTrackingLive(true)
+    setReplay(1)
+    setMessage('Tracking the live head · snapshots advance on a calm cadence')
+    loadJourney(workspace, true).catch(() => {})
+  }, [loadJourney, setTrackingLive, workspace])
+
 
   return {
     index, workspace, story, scene, interactions, tutorial, selected, setSelected, exchange,
-    replay, playing, observing, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
+    replay, playing, observing, trackingLive, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
     mode, setMode, message, loadError, journeysOpen, setJourneysOpen,
     telemetryOpen, setTelemetryOpen, worldModelOpen, setWorldModelOpen, refreshing,
-    choose, refreshWorkspaces, togglePlayback, jumpToChapter, selectVantage, freezeAtProgress,
+    choose, refreshWorkspaces, togglePlayback, toggleLiveTracking, jumpToChapter, selectVantage, freezeAtProgress,
   }
 }
