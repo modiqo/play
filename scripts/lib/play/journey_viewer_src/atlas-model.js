@@ -1,5 +1,4 @@
 import {interactionDurationArc, interactionRadius} from './interaction-metrics.mjs'
-import {journeyCoordinates} from './journey-layout.mjs'
 import {layoutTemporalCorridor} from './temporal-corridor.mjs'
 
 export const DARK = {
@@ -104,22 +103,28 @@ function haloPath(center, radius, sweep, subdivisions = 28) {
     const angle = -Math.PI / 2 + sweep * index / subdivisions
     return [
       center[0] + Math.cos(angle) * (radius + .105),
-      center[1] + Math.sin(angle) * (radius + .105),
-      center[2] + .025,
+      center[1] - .025,
+      center[2] + Math.sin(angle) * (radius + .105),
     ]
   })
 }
 
 export function buildAtlas(story, scene, interactionProjection) {
   const chapters = story.chapters || []
-  const positions = journeyCoordinates(chapters)
+  const count = chapters.length
+  const columns = Math.max(2, Math.ceil(Math.sqrt(count * 1.55)))
+  const xStep = 34
+  const yStep = 28
   const centers = new Map()
   const sites = chapters.map((chapter, order) => {
-    const point = positions[order]
-    const center = [point.x, point.z, .42]
+    const row = Math.floor(order / columns)
+    const cell = order % columns
+    const column = row % 2 === 0 ? cell : columns - 1 - cell
+    const semanticDrift = ((stableNumber(chapter.id) % 7) - 3) * .42
+    const center = [column * xStep, row * yStep + semanticDrift, .42]
     centers.set(chapter.id, center)
     const interactions = interactionProjection?.sites?.[chapter.id] || []
-    return {...chapter, center, row: order, column: order % 2, interactions, width: 15, depth: 12}
+    return {...chapter, center, row, column, interactions, width: 15, depth: 12}
   })
 
   const districts = []

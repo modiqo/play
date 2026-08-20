@@ -2,6 +2,8 @@ import React, {useEffect, useMemo, useRef, useState} from 'react'
 import DeckGL from '@deck.gl/react'
 import {AmbientLight, COORDINATE_SYSTEM, DirectionalLight, LightingEffect, LinearInterpolator, OrbitView} from '@deck.gl/core'
 import {ColumnLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer} from '@deck.gl/layers'
+import {SimpleMeshLayer} from '@deck.gl/mesh-layers'
+import {IcoSphereGeometry} from '@luma.gl/engine'
 import {DARK, NAV_BLUE, NAV_BLUE_BRIGHT, buildAtlas, fitView, interpolatePath, rgba} from './atlas-model.js'
 import {KIND_LABEL} from './semantics.js'
 
@@ -49,7 +51,7 @@ export default function Cartography({story, scene, interactions, replay, playing
     setViewState((current) => ({
       ...current,
       target: [center[0], center[1], bead ? center[2] : 0],
-      zoom: bead ? Math.max(4.5, fittedView.zoom + 2.8) : Math.max(3.2, fittedView.zoom + 1.4),
+      zoom: bead ? Math.max(5.2, fittedView.zoom + 3.1) : Math.max(4.2, fittedView.zoom + 2.1),
       rotationX: bead ? 66 : 60,
       rotationOrbit: 0,
       transitionDuration: 850,
@@ -91,23 +93,6 @@ export default function Cartography({story, scene, interactions, replay, playing
   const focusDistricts = focusSite ? atlas.districts.filter((district) => district.site.id === focusSite.id) : []
   const focusContours = focusSite ? atlas.contours.filter((contour) => contour.site.id === focusSite.id) : []
   const focusStreets = focusSite ? atlas.streets.filter((street) => street.id.includes(focusSite.id)) : []
-  const landmarkKinds = new Set(['intent', 'blocker', 'recovery', 'milestone', 'artifact', 'play_candidate', 'play'])
-  const calloutSites = semanticZoom === 'journey'
-    ? atlas.sites.filter((site) => site.id === currentSite?.id || site.id === selectedSite?.id || site.order === 0 || site.order === atlas.sites.length - 1 || (!playing && landmarkKinds.has(site.kind)))
-    : (focusSite ? [focusSite] : [])
-  const callouts = calloutSites.map((site) => {
-    const tallest = Math.max(3.5, ...site.interactions.map((interaction) => {
-      const bead = atlas.beadBySequence.get(interaction.sequence)
-      return bead ? bead.center[2] + bead.radius : 0
-    }))
-    const side = (site.row + site.column) % 2 === 0 ? 1 : -1
-    const verticalOffset = site.row % 2 === 0 ? -3.8 : 3.8
-    const position = [site.center[0] + side * 4.6, site.center[1] + verticalOffset, tallest + 3.5]
-    const currentOrder = currentSite?.order || 0
-    const role = site.order === 0 ? 'START' : site.id === currentSite?.id ? (story.state === 'active' ? 'NOW' : 'FINISH') : site.order < currentOrder ? 'DONE' : 'NEXT'
-    return {site, position, anchor: [site.center[0], site.center[1], .55], role}
-  })
-
   useEffect(() => {
     if (!playing) return
     setViewState((current) => ({
@@ -122,6 +107,7 @@ export default function Cartography({story, scene, interactions, replay, playing
   const ambient = useMemo(() => new AmbientLight({color: [255, 255, 255], intensity: 1.15}), [])
   const sun = useMemo(() => new DirectionalLight({color: [255, 255, 255], intensity: 2.15, direction: [-3, -7, -10]}), [])
   const effects = useMemo(() => [new LightingEffect({ambient, sun})], [ambient, sun])
+  const beadMesh = useMemo(() => new IcoSphereGeometry({id: 'atlas-event-bead', radius: 1, iterations: 3}), [])
   const coordinateSystem = COORDINATE_SYSTEM.CARTESIAN
   const terrainDistricts = semanticZoom === 'journey' ? atlas.districts : focusDistricts
   const beadAlpha = (bead, base = 1) => {
@@ -195,33 +181,30 @@ export default function Cartography({story, scene, interactions, replay, playing
       getLineWidth: (item) => item.id === currentSite?.id ? 2 : 1, lineWidthUnits: 'pixels',
       pickable: true, onClick: ({object}) => object && onSelect({siteId: object.id, sequence: null}),
     }),
-    new ScatterplotLayer({
-      id: 'event-bead-aura', data: phaseBeads, coordinateSystem, getPosition: (item) => item.center,
-      getRadius: (item) => semanticZoom === 'journey' ? 3.2 + item.radius * 3.5 : item.radius * 1.55,
-      radiusUnits: semanticZoom === 'journey' ? 'pixels' : 'common', filled: true, stroked: false,
-      getFillColor: (item) => [...NAV_BLUE, beadAlpha(item, .18)],
-    }),
-    new ScatterplotLayer({
+    new SimpleMeshLayer({
       id: 'event-beads', data: phaseBeads, coordinateSystem, getPosition: (item) => item.center,
-      getRadius: (item) => semanticZoom === 'journey' ? 2.2 + item.radius * 2.8 : item.radius,
-      radiusUnits: semanticZoom === 'journey' ? 'pixels' : 'common', filled: true, stroked: true,
-      getFillColor: (item) => {
+      mesh: beadMesh, sizeScale: semanticZoom === 'journey' ? 2.1 : 1.35,
+      getScale: (item) => [item.radius, item.radius, item.radius],
+      getColor: (item) => {
         const shade = Math.round(item.tone * 26)
         return [72 + shade, 82 + shade, 86 + shade, beadAlpha(item)]
       },
-      getLineColor: (item) => selected?.sequence === item.interaction.sequence
-        ? [...NAV_BLUE_BRIGHT, 255]
-        : [168, 179, 182, beadAlpha(item, .72)],
-      getLineWidth: (item) => selected?.sequence === item.interaction.sequence ? 2.1 : .8,
-      lineWidthUnits: 'pixels', pickable: true,
+      material: {ambient: .28, diffuse: .72, shininess: 108, specularColor: [232, 240, 241]},
+      pickable: true,
       onClick: ({object}) => object && onSelect({siteId: object.site.id, sequence: object.interaction.sequence}),
     }),
-    new ScatterplotLayer({
+    new SimpleMeshLayer({
       id: 'event-bead-glints', data: phaseBeads, coordinateSystem,
-      getPosition: (item) => [item.center[0] - item.radius * .22, item.center[1] + item.radius * .16, item.center[2] + .04],
-      getRadius: (item) => semanticZoom === 'journey' ? .7 : Math.max(.055, item.radius * .12),
-      radiusUnits: semanticZoom === 'journey' ? 'pixels' : 'common', filled: true, stroked: false,
-      getFillColor: (item) => [238, 244, 244, beadAlpha(item, .86)], pickable: false,
+      mesh: beadMesh, sizeScale: semanticZoom === 'journey' ? 2.1 : 1.35,
+      getPosition: (item) => [
+        item.center[0] - item.radius * .34,
+        item.center[1] - item.radius * .12,
+        item.center[2] + item.radius * .58,
+      ],
+      getScale: (item) => [item.radius * .105, item.radius * .105, item.radius * .105],
+      getColor: (item) => [244, 249, 249, beadAlpha(item, .9)],
+      material: {ambient: .88, diffuse: .12, shininess: 128, specularColor: [255, 255, 255]},
+      pickable: false,
     }),
     new PathLayer({
       id: 'event-latency-halos', data: phaseHalos, coordinateSystem, getPath: (item) => item.path,
@@ -246,37 +229,12 @@ export default function Cartography({story, scene, interactions, replay, playing
       extruded: true, getElevation: 1.5, getFillColor: [232, 132, 19, 255],
       stroked: true, getLineColor: [247, 200, 137, 255], getLineWidth: 1, lineWidthUnits: 'pixels',
     }),
-    new PathLayer({
-      id: 'callout-stems', data: callouts, coordinateSystem,
-      getPath: (item) => [item.anchor, item.position], getColor: [152, 158, 160, 150],
-      getWidth: 1, widthUnits: 'pixels', capRounded: true,
-    }),
     new TextLayer({
-      id: 'journey-callouts', data: callouts, coordinateSystem,
-      getPosition: (item) => item.position,
-      getText: (item) => {
-        const heading = `${item.role}  ${String(item.site.order + 1).padStart(2, '0')}/${String(atlas.sites.length).padStart(2, '0')}  ·  ${(KIND_LABEL[item.site.kind] || item.site.kind).toUpperCase()}`
-        const title = item.site.title.toUpperCase()
-        return `${heading}\n${title}`
-      },
-      getColor: (item) => item.site.id === currentSite?.id || item.site.id === selectedSite?.id ? [240, 160, 58, 255] : [190, 125, 50, 225],
-      getSize: (item) => item.site.id === currentSite?.id || item.site.id === selectedSite?.id ? 10 : 8.3, sizeUnits: 'pixels',
-      getTextAnchor: 'middle', getAlignmentBaseline: 'bottom', billboard: true,
-      maxWidth: 165, wordBreak: 'break-word', lineHeight: 1.24,
-      background: true, getBackgroundColor: (item) => item.site.id === currentSite?.id || item.site.id === selectedSite?.id ? [13, 15, 17, 248] : [13, 15, 17, 222],
-      getBorderColor: (item) => item.site.id === currentSite?.id || item.site.order === 0 ? [232, 132, 19, 230] : [95, 101, 104, 190],
-      getBorderWidth: (item) => item.site.id === currentSite?.id || item.site.order === 0 ? 1.5 : .75,
-      backgroundPadding: [7, 5, 7, 5],
-      outlineWidth: 0,
-      fontFamily: 'Departure Mono, SFMono-Regular, Menlo, monospace', pickable: true,
-      onClick: ({object}) => object && onSelect({siteId: object.site.id, sequence: null}),
-    }),
-    new TextLayer({
-      id: 'bead-numbers', data: semanticZoom === 'evidence' ? phaseBeads : [], coordinateSystem,
-      getPosition: (item) => [item.center[0], item.center[1], item.center[2] + item.radius + .18],
+      id: 'bead-numbers', data: selected?.sequence ? phaseBeads.filter((item) => adjacentSequences.has(item.interaction.sequence)) : [], coordinateSystem,
+      getPosition: (item) => [item.center[0], item.center[1] - item.radius * .08, item.center[2] + item.radius * .08],
       getText: (item) => `@${item.interaction.sequence}`,
       getColor: (item) => selected?.sequence === item.interaction.sequence ? [...NAV_BLUE_BRIGHT, 255] : [...colors.ink, 205],
-      getSize: 10, sizeUnits: 'pixels', getTextAnchor: 'middle', getAlignmentBaseline: 'bottom', billboard: true,
+      getSize: 9, sizeUnits: 'pixels', getTextAnchor: 'middle', getAlignmentBaseline: 'center', billboard: true,
       background: true, getBackgroundColor: [13, 15, 17, 226], backgroundPadding: [4, 3, 4, 3],
       outlineWidth: 0,
       fontFamily: 'Departure Mono, SFMono-Regular, Menlo, monospace', pickable: true,
@@ -292,7 +250,7 @@ export default function Cartography({story, scene, interactions, replay, playing
     onClick={({object}) => { if (!object) onSelect(null) }}
   >
     <div className="map-compass"><span>N</span><i /></div>
-    <div className="map-scale">{semanticZoom.toUpperCase()} SCALE · {semanticZoom === 'journey' ? 'FOLLOW THE SHARED JOURNEY TERRAIN' : semanticZoom === 'phase' ? 'EVENT BEADS FOLLOW TIME LEFT TO RIGHT' : 'SELECT A GLASS BEAD TO INSPECT EVIDENCE'}</div>
+    <div className="map-scale">{semanticZoom.toUpperCase()} SCALE · {semanticZoom === 'journey' ? 'COMPACT SPATIO-TEMPORAL TERRAIN' : semanticZoom === 'phase' ? 'EVENT BEADS FOLLOW TIME LEFT TO RIGHT' : 'SELECT A GLASS BEAD TO INSPECT EVIDENCE'}</div>
     {selectedSite && <div className="selection-beacon">{String(selectedSite.order + 1).padStart(2, '0')} · {selected?.sequence ? `INTERACTION @${selected.sequence}` : KIND_LABEL[selectedSite.kind]}</div>}
   </DeckGL>
 }

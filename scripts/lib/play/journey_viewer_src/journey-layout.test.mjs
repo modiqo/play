@@ -9,13 +9,22 @@ const chapters = [
   {id: 'evidence', order: 2, kind: 'evidence', title: 'Evidence'},
 ]
 
-test('Atlas uses the same canonical vantage coordinates as Follow', () => {
-  const expected = journeyCoordinates(chapters)
-  const atlas = buildAtlas({chapters}, {edges: []}, {sites: {}})
-  assert.deepEqual(
-    atlas.sites.map((site) => site.center),
-    expected.map((point) => [point.x, point.z, .42]),
-  )
+test('Follow coordinates preserve one ordered embodied route', () => {
+  const coordinates = journeyCoordinates(chapters)
+  assert.equal(Math.abs(coordinates[0].z), 0)
+  assert.equal(coordinates[1].z, -21)
+  assert.equal(coordinates[2].z, -42)
+})
+
+test('Atlas compacts long journeys into a serpentine terrain without reordering sites', () => {
+  const denseChapters = Array.from({length: 24}, (_, order) => ({
+    id: `site-${order}`, order, kind: 'phase', title: `Site ${order}`,
+  }))
+  const atlas = buildAtlas({chapters: denseChapters}, {edges: []}, {sites: {}})
+  assert.equal(atlas.sites.length, denseChapters.length)
+  assert.ok(new Set(atlas.sites.map((site) => site.row)).size > 1)
+  assert.deepEqual(atlas.sites.map((site) => site.id), denseChapters.map((site) => site.id))
+  assert.ok(atlas.bounds.maxY - atlas.bounds.minY < 200)
 })
 
 test('Atlas projects operations as chronological beads and natural thread segments', () => {
