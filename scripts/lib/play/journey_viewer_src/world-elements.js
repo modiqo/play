@@ -328,6 +328,7 @@ export function makeInteractionPlaque(group, chapter, index, onActivate) {
 
 export function makeTemporalCorridor(site, corridor) {
   const group = new THREE.Group()
+  const timeLabels = []
   const [start, end] = corridor.spine
   beamBetween(
     group,
@@ -349,8 +350,9 @@ export function makeTemporalCorridor(site, corridor) {
     const label = new CSS2DObject(root)
     label.position.set(position.x, .08, position.z + .34)
     group.add(label)
+    timeLabels.push(root)
   }
-  group.userData = {siteId: site.id, temporalCorridor: true}
+  group.userData = {siteId: site.id, temporalCorridor: true, timeLabels}
   return group
 }
 

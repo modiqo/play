@@ -91,6 +91,10 @@ main {
 }
 .world-callout.complete:not(.expanded) { opacity: .6; }
 .world-callout.next:not(.expanded) { opacity: .34; }
+.world-callout.future-dimmed {
+  opacity: .018 !important; filter: blur(4px); pointer-events: none;
+  transform: translateY(-6px) scale(.97);
+}
 .world-callout.behind-interaction {
   opacity: .1; filter: blur(1px); pointer-events: none;
   transform: translateY(-10px) scale(.97);
@@ -118,6 +122,8 @@ main {
   font-size: 6px; letter-spacing: .18em; pointer-events: none;
 }
 .world-time-label.present { border-color: rgba(232,132,19,.75); color: #f0a03a; }
+.world-time-label.future-dimmed { opacity: .025; filter: blur(3px); }
+.world-time-label.focus-muted { opacity: .04; filter: blur(2px); }
 .tutorial-narration {
   position: absolute; z-index: 8; right: 22px; bottom: 80px; box-sizing: border-box; width: min(420px, calc(100vw - 44px));
   padding: 12px 13px; border: 1px solid rgba(232,132,19,.44); background: rgba(8,10,12,.64);
@@ -226,6 +232,10 @@ main {
   width: 174px;
   border-color: rgba(240, 160, 58, 1); background: rgba(13, 15, 17, .98);
   opacity: 1; transform: translateY(2px) scale(1.02); box-shadow: 0 0 34px rgba(232, 132, 19, .23);
+}
+.world-interaction-callout.focus-muted {
+  opacity: .025 !important; filter: blur(2px); pointer-events: none;
+  transform: translateY(4px) scale(.96); animation: none !important;
 }
 .world-interaction-callout.spread { width: 254px; overflow: visible; z-index: 8; }
 .world-interaction-callout.spread .plaque-tray { display: block; }

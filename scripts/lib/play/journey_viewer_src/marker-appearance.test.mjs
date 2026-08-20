@@ -8,10 +8,25 @@ test('updates current tower and edge materials', () => {
     edge: {material: {}},
   }
   updateMarkerAppearance(marker, {selected: true, proximity: true, pulse: .8, frozen: false})
-  assert.equal(marker.tower.material.opacity, .56)
+  assert.equal(marker.tower.material.opacity, .64)
   assert.ok(marker.tower.material.emissiveIntensity > .018)
   assert.ok(marker.edge.material.opacity === 1)
   assert.ok(marker.tower.scale.y > 1)
+})
+
+test('keeps the selected tower legible while suppressing future and unselected towers', () => {
+  const selected = {tower: {material: {}, scale: {y: 1}}, edge: {material: {}}}
+  const muted = {tower: {material: {}, scale: {y: 1}}, edge: {material: {}}}
+  const future = {tower: {material: {}, scale: {y: 1}}, edge: {material: {}}}
+  updateMarkerAppearance(selected, {selected: true, muted: true})
+  updateMarkerAppearance(muted, {proximity: true, muted: true})
+  updateMarkerAppearance(future, {future: true})
+  assert.equal(selected.tower.material.opacity, .64)
+  assert.equal(selected.edge.material.opacity, 1)
+  assert.equal(muted.tower.material.opacity, .06)
+  assert.equal(muted.edge.material.opacity, .02)
+  assert.equal(future.tower.material.opacity, .045)
+  assert.equal(future.edge.material.opacity, .012)
 })
 
 test('does not require removed or optional marker attachments', () => {

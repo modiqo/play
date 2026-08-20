@@ -87,12 +87,14 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       renderer.toneMappingExposure = .82
       renderer.domElement.className = 'world-canvas'
       host.current.appendChild(renderer.domElement)
-      if (tutorialFocus) {
-        composer = new EffectComposer(renderer)
-        composer.addPass(new RenderPass(scene, camera))
-        focusPass = new BokehPass(scene, camera, {focus: 12, aperture: .00012, maxblur: .007})
-        composer.addPass(focusPass)
-      }
+      composer = new EffectComposer(renderer)
+      composer.addPass(new RenderPass(scene, camera))
+      focusPass = new BokehPass(scene, camera, {
+        focus: 12,
+        aperture: tutorialFocus ? .00012 : .00009,
+        maxblur: tutorialFocus ? .007 : .0055,
+      })
+      composer.addPass(focusPass)
 
       labels = new CSS2DRenderer()
       labels.domElement.className = 'world-labels'
@@ -129,7 +131,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       const routeCurve = new THREE.CatmullRomCurve3(routePoints, false, 'centripetal', .42)
       const route = new THREE.Mesh(
         new THREE.TubeGeometry(routeCurve, Math.max(48, positions.length * 18), .045, 7, false),
-        new THREE.MeshStandardMaterial({color: AMBER, emissive: AMBER, emissiveIntensity: 1.5, roughness: .4}),
+        new THREE.MeshStandardMaterial({color: AMBER, emissive: AMBER, emissiveIntensity: 1.5, roughness: .4, transparent: true, opacity: 1}),
       )
       scene.add(route)
 
@@ -175,7 +177,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         site.add(landmark)
         const records = interactions?.sites?.[chapter.id] || []
         const temporalCorridor = layoutTemporalCorridor(records)
-        site.add(makeTemporalCorridor(chapter, temporalCorridor))
+        const temporalStructure = makeTemporalCorridor(chapter, temporalCorridor)
+        site.add(temporalStructure)
         const towerFootprint = THREE.MathUtils.clamp(6.3 / Math.max(1, temporalCorridor.points.length), .24, .55)
         const markers = []
         let maximumTowerHeight = 0
@@ -218,7 +221,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         site.add(label)
         scene.add(site)
         sites.push({
-          chapter, group: site, platform, landmark, landmarkMaterials, focusEdges, label: root, markers, plaques, worldPosition: site.position.clone(),
+          chapter, group: site, platform, landmark, landmarkMaterials, focusEdges, label: root,
+          timeLabels: temporalStructure.userData.timeLabels || [], markers, plaques, worldPosition: site.position.clone(),
           approachDistance: Math.max(12.5, landmarkSize.z * .5 + 8, landmarkSize.x * .38 + 8),
           eyeHeight: THREE.MathUtils.clamp(landmarkSize.y * .42, 2.5, 3.8),
         })
@@ -312,28 +316,34 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           focusRing.position.copy(positions[reached]).setY(.16)
           const ringPulse = 1 + Math.sin(elapsed * 2.2) * .045
           focusRing.scale.set(ringPulse, ringPulse, ringPulse)
+          const selectedSequence = selectedRef.current?.sequence
+          const interactionFocus = selectedSequence !== undefined && selectedSequence !== null
+          route.material.opacity = interactionFocus ? .1 : 1
+          traveler.visible = !interactionFocus
+          focusRing.material.opacity = interactionFocus ? .06 : .42
           sites.forEach((site, siteIndex) => {
             site.group.visible = siteIndex <= reached + 1
             const isCurrent = siteIndex === reached
+            const isFuture = siteIndex > reached
             const isSelectedSite = selectedRef.current?.siteId === site.chapter.id
-            const isSelected = isSelectedSite && !selectedRef.current?.sequence
-            const interactionEngaged = (isSelectedSite && Boolean(selectedRef.current?.sequence)) || site.plaques.some((plaque) => plaque.root.classList.contains('spread'))
-            if (tutorialFocus) {
-              site.landmark.position.y = isCurrent ? .08 + Math.sin(elapsed * 1.8) * .015 : 0
-              site.platform.material.color.setHex(isCurrent ? 0x111518 : 0x060809)
-              site.landmarkMaterials.forEach((state) => {
-                state.material.color.copy(state.color)
-                if (!isCurrent) state.material.color.multiplyScalar(.22)
-                if (state.material.emissive && state.emissive) {
-                  state.material.emissive.copy(state.emissive)
-                  state.material.emissiveIntensity = isCurrent ? state.emissiveIntensity : 0
-                }
-              })
-              site.focusEdges.forEach((edge) => {
-                edge.visible = isCurrent
-                edge.material.opacity = isCurrent ? .2 + Math.sin(elapsed * 1.9) * .045 : 0
-              })
-            }
+            const isSelected = isSelectedSite && !interactionFocus
+            const interactionEngaged = (isSelectedSite && interactionFocus) || site.plaques.some((plaque) => plaque.root.classList.contains('spread'))
+            site.landmark.position.y = tutorialFocus && isCurrent && !interactionFocus ? .08 + Math.sin(elapsed * 1.8) * .015 : 0
+            site.platform.material.color.setHex(isCurrent && !interactionFocus ? 0x111518 : 0x060809)
+            site.landmarkMaterials.forEach((state) => {
+              state.material.color.copy(state.color)
+              if (interactionFocus) state.material.color.multiplyScalar(.07)
+              else if (isFuture) state.material.color.multiplyScalar(.06)
+              else if (tutorialFocus && !isCurrent) state.material.color.multiplyScalar(.22)
+              if (state.material.emissive && state.emissive) {
+                state.material.emissive.copy(state.emissive)
+                state.material.emissiveIntensity = isCurrent && !interactionFocus ? state.emissiveIntensity : 0
+              }
+            })
+            site.focusEdges.forEach((edge) => {
+              edge.visible = tutorialFocus && isCurrent && !interactionFocus
+              edge.material.opacity = edge.visible ? .2 + Math.sin(elapsed * 1.9) * .045 : 0
+            })
             site.label.classList.toggle('expanded', isSelected || (isCurrent && !selectedRef.current && !dismissed.current.has(site.chapter.id)))
             site.label.classList.toggle('behind-interaction', interactionEngaged)
             site.label.classList.toggle('current', isCurrent)
@@ -341,8 +351,13 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             site.label.classList.toggle('complete', siteIndex < reached)
             site.label.classList.toggle('next', siteIndex === reached + 1)
             site.label.classList.toggle('tutorial-dimmed', tutorialFocus && !isCurrent)
+            site.label.classList.toggle('future-dimmed', isFuture)
+            site.timeLabels.forEach((timeLabel) => {
+              timeLabel.classList.toggle('future-dimmed', isFuture)
+              timeLabel.classList.toggle('focus-muted', interactionFocus)
+            })
             site.markers.forEach((marker, markerIndex) => {
-              const markerSelected = selectedRef.current?.sequence === marker.sequence
+              const markerSelected = selectedSequence === marker.sequence && isSelectedSite
               const proximity = isCurrent || Boolean(markerSelected)
               const pulse = proximity
                 ? frozenRef.current ? .88 : .42 + Math.max(0, Math.sin(elapsed * 2.3 - markerIndex * .72)) * .8
@@ -352,10 +367,12 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
                 proximity,
                 pulse,
                 frozen: frozenRef.current,
+                future: isFuture,
+                muted: interactionFocus && !markerSelected,
               })
             })
             site.plaques.forEach((plaque) => {
-              const plaqueSelected = plaque.sequences.includes(selectedRef.current?.sequence)
+              const plaqueSelected = isSelectedSite && plaque.sequences.includes(selectedSequence)
               const proximity = plaqueIsVisible({
                 isCurrent,
                 selected: plaqueSelected,
@@ -367,13 +384,18 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
               plaque.root.classList.toggle('proximity', proximity)
               plaque.root.classList.toggle('frozen', isCurrent && frozenRef.current)
               plaque.root.classList.toggle('selected', plaqueSelected)
+              plaque.root.classList.toggle('focus-muted', interactionFocus && !plaqueSelected)
             })
           })
           if (focusPass) {
-            const focusSite = sites[reached]
-            const focusPoint = focusSite.worldPosition.clone().setY(Math.max(1.4, focusSite.eyeHeight))
+            const selectedSite = interactionFocus ? sites.find((site) => site.chapter.id === selectedRef.current?.siteId) : null
+            const selectedMarker = selectedSite?.markers.find((marker) => marker.sequence === selectedSequence)
+            const focusSite = selectedSite || sites[reached]
+            const focusPoint = selectedMarker
+              ? selectedMarker.tower.getWorldPosition(new THREE.Vector3())
+              : focusSite.worldPosition.clone().setY(Math.max(1.4, focusSite.eyeHeight))
             focusPass.uniforms.focus.value = camera.position.distanceTo(focusPoint)
-            focusPass.uniforms.aperture.value = playingRef.current ? .000075 : .00013
+            focusPass.uniforms.aperture.value = interactionFocus ? .00017 : playingRef.current ? .000065 : tutorialFocus ? .00013 : .0001
             composer.render()
           } else renderer.render(scene, camera)
           labels.render(scene, camera)
