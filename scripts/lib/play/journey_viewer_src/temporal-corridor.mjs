@@ -3,7 +3,7 @@ const DEFAULTS = Object.freeze({
   pointPitch: 1.05,
   maximumSpan: 9.6,
   timelineZ: 4.35,
-  towerInset: .72,
+  markerInset: .72,
   plaqueOffset: 1.28,
   lanePitch: .72,
   minimumStep: 1,
@@ -49,8 +49,8 @@ function chronological(records) {
  * Spatial grammar:
  * - chronology is the familiar left-to-right axis directly in front of the vantage;
  * - every canonical sequence remains visible as an @N index on that axis;
- * - towers cluster immediately behind their index instead of orbiting the landmark;
- * - only proven interval overlap creates a deeper tower lane;
+ * - event beads float immediately behind their index instead of masquerading as landmarks;
+ * - only proven interval overlap creates a deeper bead lane;
  * - elapsed time stretches horizontal distance with a bounded logarithmic scale;
  * - height and appearance remain renderer-owned signals.
  *
@@ -106,7 +106,7 @@ export function layoutTemporalCorridor(records = [], options = {}) {
       tangentX: 1,
       tangentZ: 0,
       x: baseX,
-      z: baseZ - settings.towerInset - entry.lane * settings.lanePitch,
+      z: baseZ - settings.markerInset - entry.lane * settings.lanePitch,
       tickRotation: 0,
       deltaLabel: formatDelta(entry.deltaMs, index === 0),
       durationWidth: durationFootprint(entry.durationMs),
@@ -120,7 +120,7 @@ export function layoutTemporalCorridor(records = [], options = {}) {
     orientation: 'frontage-timeline',
     frontage: {
       z: settings.timelineZ,
-      towerInset: settings.towerInset,
+      markerInset: settings.markerInset,
       plaqueZ: settings.timelineZ + settings.plaqueOffset,
     },
     entrance: {x: startX - .38, z: settings.timelineZ, tangentX: 1, tangentZ: 0},

@@ -124,6 +124,22 @@ main {
 .world-time-label.present { border-color: rgba(232,132,19,.75); color: #f0a03a; }
 .world-time-label.future-dimmed { opacity: .025; filter: blur(3px); }
 .world-time-label.focus-muted { opacity: .04; filter: blur(2px); }
+.world-interaction-index {
+  display: grid; place-items: center; box-sizing: border-box; min-width: 30px; height: 21px; padding: 0 5px;
+  border: 1px solid rgba(232,132,19,.46); background: rgba(8,10,12,.58); color: #d79950;
+  box-shadow: 0 0 16px rgba(232,132,19,.08); backdrop-filter: blur(8px); pointer-events: auto;
+  font: inherit; font-size: 7px; letter-spacing: .08em; cursor: pointer;
+  transition: opacity 180ms ease, filter 180ms ease, transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+.world-interaction-index:hover, .world-interaction-index:focus-visible {
+  border-color: rgba(240,160,58,.94); color: #f0a03a; outline: none; box-shadow: 0 0 24px rgba(232,132,19,.22);
+}
+.world-interaction-index.selected {
+  border-color: #f0a03a; color: #ffd08d; transform: scale(1.12); box-shadow: 0 0 30px rgba(232,132,19,.34);
+}
+.world-interaction-index.muted, .world-interaction-index.future {
+  opacity: .025; filter: blur(2px); pointer-events: none;
+}
 .tutorial-narration {
   position: absolute; z-index: 8; right: 22px; bottom: 80px; box-sizing: border-box; width: min(420px, calc(100vw - 44px));
   padding: 12px 13px; border: 1px solid rgba(232,132,19,.44); background: rgba(8,10,12,.64);

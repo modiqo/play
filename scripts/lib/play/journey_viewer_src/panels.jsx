@@ -128,10 +128,10 @@ export function TutorialNarration({tutorial, story, interactions, replay, journe
     <p className="tutorial-site-story">{cue.text}</p>
     <div className="tutorial-vantage-meaning">
       <p><strong>WORLD MODEL</strong><b>{spec.role} → {spec.label}</b><span>{spec.meaning}</span></p>
-      <p><strong>LOCAL TOWERS</strong><b>{records.length} operation{records.length === 1 ? '' : 's'} at this vantage</b><span>They sit here because their evidence belongs to this step. Left→right is time; width is latency; height is tokens; depth is overlap.</span></p>
+      <p><strong>EVENT BEADS</strong><b>{records.length} operation{records.length === 1 ? '' : 's'} at this vantage</b><span>They float here because their evidence belongs to this step. Left→right is time; bead volume is tokens; halo sweep is latency; depth is overlap.</span></p>
     </div>
     <nav><button onClick={onOpenWorldModel}>◇ OPEN WORLD MODEL</button>{source && <><button onClick={toggle}>{voicePlaying ? 'Ⅱ PAUSE VOICE' : '▶ PLAY VOICE'}</button><button onClick={() => { if (audio.current) audio.current.muted = !muted; setMuted(!muted) }}>{muted ? 'UNMUTE' : 'MUTE'}</button></>}</nav>
-    <small>{journeyPlaying ? 'FOLLOWING · THE CARD CLEARS DURING TRAVEL' : 'FROZEN · SELECT AN AMBER TOWER OR @ NUMBER FOR REDACTED EVIDENCE'}</small>
+    <small>{journeyPlaying ? 'FOLLOWING · THE CARD CLEARS DURING TRAVEL' : 'FROZEN · SELECT A GLASS EVENT BEAD OR ITS @ NUMBER FOR REDACTED EVIDENCE'}</small>
     {source && <audio ref={audio} src={source} onEnded={() => setVoicePlaying(false)} />}
   </aside>
 }

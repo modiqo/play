@@ -30,7 +30,7 @@ test('uses duration for footprint without changing chronology', () => {
   assert.ok(layout.points.every((point) => point.durationWidth >= .24 && point.durationWidth <= .86))
 })
 
-test('clusters towers behind the timeline and uses depth only for overlap', () => {
+test('clusters event beads behind the timeline and uses depth only for overlap', () => {
   const layout = layoutTemporalCorridor([
     {sequence: 1, timestamp: at(0), duration_ms: 500},
     {sequence: 2, timestamp: at(100), duration_ms: 100},

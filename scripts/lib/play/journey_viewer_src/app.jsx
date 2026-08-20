@@ -138,7 +138,7 @@ export default function App() {
           </section>
         </> : <>
           <dl>
-            <dt>STATE</dt><dd>{chapter.status}</dd><dt>TOWERS</dt><dd>{interactions?.sites?.[chapter.id]?.length || 0}</dd>
+            <dt>STATE</dt><dd>{chapter.status}</dd><dt>EVENTS</dt><dd>{interactions?.sites?.[chapter.id]?.length || 0}</dd>
             <dt>LATENCY</dt><dd>{formatNumber(chapter.telemetry.duration_ms)} ms</dd><dt>TOKENS</dt><dd>{formatNumber(chapter.telemetry.payload_tokens)}</dd>
             <dt>AVOIDED</dt><dd>{formatNumber(chapter.telemetry.tokens_saved)}</dd>
             {chapter.provider && <><dt>PROVIDER</dt><dd>{chapter.provider}</dd></>}

@@ -4,13 +4,13 @@ import {CSS2DRenderer} from 'three/addons/renderers/CSS2DRenderer.js'
 import {BokehPass} from 'three/addons/postprocessing/BokehPass.js'
 import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js'
 import {RenderPass} from 'three/addons/postprocessing/RenderPass.js'
-import {AMBER, GROUND, clampVisibleCallouts, glassTowerEdge, glassTowerMaterial, journeyPositions, landmarkFor, makeCallout, makeInteractionPlaque, makeTemporalCorridor, material} from './world-elements.js'
+import {AMBER, GROUND, clampVisibleCallouts, eventHaloMaterial, glassBeadMaterial, journeyPositions, landmarkFor, makeCallout, makeInteractionIndex, makeInteractionPlaque, makeTemporalCorridor, material} from './world-elements.js'
 import {createWorldNavigation} from './world-navigation.js'
 import {KIND_LABEL, WORLD_ROLE} from './semantics.js'
 import {groupInteractionPlaques} from './interaction-plaques.mjs'
 import {layoutTemporalCorridor} from './temporal-corridor.mjs'
 import {plaqueIsVisible, updateMarkerAppearance} from './marker-appearance.mjs'
-import {towerHeight, towerWidth} from './tower-metrics.mjs'
+import {interactionDurationArc, interactionRadius} from './interaction-metrics.mjs'
 
 export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect}) {
   const host = useRef(null)
@@ -179,24 +179,30 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         const temporalCorridor = layoutTemporalCorridor(records)
         const temporalStructure = makeTemporalCorridor(chapter, temporalCorridor)
         site.add(temporalStructure)
-        const towerFootprint = THREE.MathUtils.clamp(6.3 / Math.max(1, temporalCorridor.points.length), .24, .55)
         const markers = []
-        let maximumTowerHeight = 0
+        let maximumMarkerElevation = 0
         temporalCorridor.points.forEach((temporal, recordIndex) => {
-          const record = {...temporal.record, temporal}
-          const height = towerHeight(record)
-          maximumTowerHeight = Math.max(maximumTowerHeight, height)
-          const towerGeometry = new THREE.BoxGeometry(towerWidth(temporal, towerFootprint), height, towerFootprint)
-          const tower = new THREE.Mesh(towerGeometry, glassTowerMaterial())
-          const towerEdge = glassTowerEdge(towerGeometry)
-          tower.add(towerEdge)
-          // Keep the closed base above the platform so the bottom edges remain legible.
-          tower.position.set(temporal.x, height / 2 + .08, temporal.z)
-          tower.castShadow = true
-          tower.userData = {siteId: chapter.id, sequence: record.sequence}
-          site.add(tower)
-          interactionMeshes.push(tower)
-          markers.push({tower, edge: towerEdge, temporal, sequence: record.sequence})
+          const record = {...temporal.record, temporal, siteId: chapter.id}
+          const radius = interactionRadius(record)
+          const baseY = .82 + radius + temporal.lane * .56 + (recordIndex % 2) * .12
+          maximumMarkerElevation = Math.max(maximumMarkerElevation, baseY + radius)
+          const bead = new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 2), glassBeadMaterial())
+          const halo = new THREE.Mesh(
+            new THREE.TorusGeometry(radius + .105, .018, 6, 34, interactionDurationArc(temporal)),
+            eventHaloMaterial(),
+          )
+          halo.rotation.z = -Math.PI / 2
+          bead.position.set(temporal.x, baseY, temporal.z)
+          halo.position.copy(bead.position)
+          bead.castShadow = true
+          bead.userData = {siteId: chapter.id, sequence: record.sequence}
+          const indexLabel = makeInteractionIndex(record, (selection) => {
+            onSelect(selectedRef.current?.sequence === selection.sequence ? null : selection)
+          })
+          bead.add(indexLabel.label)
+          site.add(bead, halo)
+          interactionMeshes.push(bead)
+          markers.push({bead, halo, indexRoot: indexLabel.root, temporal, sequence: record.sequence, baseY})
         })
         const plaques = groupInteractionPlaques(temporalCorridor.points).map((group, plaqueIndex) => {
           const plaque = makeInteractionPlaque(group, chapter, plaqueIndex, (selection) => {
@@ -217,7 +223,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             onSelect({siteId, sequence: null})
           }
         })
-        label.position.y = Math.max(4.9, landmarkSize.y + 1.2, maximumTowerHeight + 2.15)
+        label.position.y = Math.max(4.9, landmarkSize.y + 1.2, maximumMarkerElevation + 1.7)
         site.add(label)
         scene.add(site)
         sites.push({
@@ -359,9 +365,13 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             site.markers.forEach((marker, markerIndex) => {
               const markerSelected = selectedSequence === marker.sequence && isSelectedSite
               const proximity = isCurrent || Boolean(markerSelected)
+              marker.bead.userData.actionable = isCurrent || markerSelected
               const pulse = proximity
                 ? frozenRef.current ? .88 : .42 + Math.max(0, Math.sin(elapsed * 2.3 - markerIndex * .72)) * .8
                 : 0
+              const float = isCurrent && !playingRef.current ? Math.sin(elapsed * 1.7 + markerIndex * .84) * .035 : 0
+              marker.bead.position.y = marker.baseY + float
+              marker.halo.position.y = marker.baseY + float
               updateMarkerAppearance(marker, {
                 selected: markerSelected,
                 proximity,
@@ -392,7 +402,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             const selectedMarker = selectedSite?.markers.find((marker) => marker.sequence === selectedSequence)
             const focusSite = selectedSite || sites[reached]
             const focusPoint = selectedMarker
-              ? selectedMarker.tower.getWorldPosition(new THREE.Vector3())
+              ? selectedMarker.bead.getWorldPosition(new THREE.Vector3())
               : focusSite.worldPosition.clone().setY(Math.max(1.4, focusSite.eyeHeight))
             focusPass.uniforms.focus.value = camera.position.distanceTo(focusPoint)
             focusPass.uniforms.aperture.value = interactionFocus ? .00017 : playingRef.current ? .000065 : tutorialFocus ? .00013 : .0001

@@ -22,6 +22,10 @@ export function createWorldNavigation({canvas, camera, frozenRef, interactionMes
     return true
   }
 
+  const firstActionableHit = (objects) => raycaster
+    .intersectObjects(objects, false)
+    .find((intersection) => intersection.object.userData.actionable !== false)
+
   const onPointerDown = (event) => {
     if (!frozenRef.current || event.button !== 0) return
     pointerDown = true
@@ -35,7 +39,7 @@ export function createWorldNavigation({canvas, camera, frozenRef, interactionMes
   const onPointerMove = (event) => {
     if (!pointerDown) {
       if (!pointRaycaster(event)) return
-      const actionable = raycaster.intersectObjects(actionableMeshes, false)[0]
+      const actionable = firstActionableHit(actionableMeshes)
       canvas.classList.toggle('vantage-hover', Boolean(actionable))
       return
     }
@@ -73,12 +77,12 @@ export function createWorldNavigation({canvas, camera, frozenRef, interactionMes
       return
     }
     if (!pointRaycaster(event)) return
-    const interactionHit = raycaster.intersectObjects(interactionMeshes, false)[0]
+    const interactionHit = firstActionableHit(interactionMeshes)
     if (interactionHit) {
       onSelect(interactionHit.object.userData)
       return
     }
-    const semanticHit = raycaster.intersectObjects(semanticMeshes, false)[0]
+    const semanticHit = firstActionableHit(semanticMeshes)
     if (semanticHit) {
       onSelect(semanticHit.object.userData)
       return

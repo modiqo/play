@@ -8,17 +8,22 @@ export function updateMarkerAppearance(marker, {
   muted = false,
 } = {}) {
   const subdued = future || muted
-  const towerMaterial = marker?.tower?.material
-  if (towerMaterial) {
-    towerMaterial.emissiveIntensity = selected ? .05 : subdued ? .002 : proximity ? .018 + pulse * .035 : .008
-    towerMaterial.opacity = selected ? .64 : subdued ? (future ? .045 : .06) : proximity ? .46 : .3
+  const beadMaterial = marker?.bead?.material
+  if (beadMaterial) {
+    beadMaterial.emissiveIntensity = selected ? .12 : subdued ? .002 : proximity ? .018 + pulse * .035 : .008
+    beadMaterial.opacity = selected ? .72 : subdued ? (future ? .035 : .05) : proximity ? .46 : .3
   }
-  const edgeMaterial = marker?.edge?.material
-  if (edgeMaterial) edgeMaterial.opacity = selected ? 1 : subdued ? (future ? .012 : .02) : proximity ? .3 + pulse * .48 : .1
-  if (marker?.tower?.scale) marker.tower.scale.y = proximity && !frozen && !subdued ? 1 + Math.max(0, pulse) * .025 : 1
+  const haloMaterial = marker?.halo?.material
+  if (haloMaterial) haloMaterial.opacity = selected ? 1 : subdued ? (future ? .008 : .015) : proximity ? .24 + pulse * .34 : .07
+  const scale = selected ? 1.16 : proximity && !frozen && !subdued ? 1 + Math.max(0, pulse) * .035 : 1
+  marker?.bead?.scale?.setScalar?.(scale)
+  marker?.halo?.scale?.setScalar?.(selected ? 1.08 : 1)
+  marker?.indexRoot?.classList?.toggle?.('selected', selected)
+  marker?.indexRoot?.classList?.toggle?.('muted', muted)
+  marker?.indexRoot?.classList?.toggle?.('future', future)
 }
 
-/** Plaques are evidence controls, so they reveal at rest rather than shimmer while the camera traverses. */
-export function plaqueIsVisible({isCurrent = false, selected = false, playing = false, frozen = false} = {}) {
-  return Boolean(selected || (isCurrent && (frozen || !playing)))
+/** The bead is the resting evidence control; its expanded plaque appears only after selection. */
+export function plaqueIsVisible({selected = false} = {}) {
+  return Boolean(selected)
 }

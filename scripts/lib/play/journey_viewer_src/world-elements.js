@@ -26,7 +26,7 @@ export function material(color = INK_SOFT, options = {}) {
   })
 }
 
-export function glassTowerMaterial() {
+export function glassBeadMaterial() {
   return new THREE.MeshPhysicalMaterial({
     color: 0x748084,
     roughness: .2,
@@ -45,13 +45,23 @@ export function glassTowerMaterial() {
   })
 }
 
-export function glassTowerEdge(geometry) {
-  const edge = new THREE.LineSegments(
-    new THREE.EdgesGeometry(geometry, 24),
-    new THREE.LineBasicMaterial({color: AMBER, transparent: true, opacity: .14}),
-  )
-  edge.renderOrder = 3
-  return edge
+export function eventHaloMaterial() {
+  return new THREE.MeshBasicMaterial({color: AMBER, transparent: true, opacity: .14, depthTest: true})
+}
+
+export function makeInteractionIndex(record, onActivate) {
+  const root = document.createElement('button')
+  root.type = 'button'
+  root.className = 'world-interaction-index'
+  root.textContent = `@${String(record.sequence).padStart(2, '0')}`
+  root.setAttribute('aria-label', `Inspect interaction ${record.sequence}: ${record.operation}`)
+  root.addEventListener('click', (event) => {
+    event.stopPropagation()
+    onActivate({siteId: record.siteId, sequence: record.sequence})
+  })
+  const label = new CSS2DObject(root)
+  label.center.set(.5, .5)
+  return {label, root}
 }
 
 function box(group, size, position, color = INK_SOFT) {

@@ -20,11 +20,11 @@ The first page-creation attempt reaches a barricade because the parent database 
 
 A second station equips notion-cli through SHELL for local validation. A third equips a browser lease through DRIVE to open the created page and verify it from the outside.
 
-Recorded operations form a frontage timeline. Read left to right from past to present. Horizontal gaps show elapsed time, footprint shows operation duration, height shows token volume, and depth shows proven overlap.
+Recorded operations become floating glass beads on a frontage timeline. Landmarks are places; beads are events. Read left to right from past to present. Horizontal gaps show elapsed time, bead volume shows token volume, halo sweep shows operation duration, and depth shows proven overlap.
 
 The browser station equips DRIVE: a leased page session with its own evidence ledger.
 
-Browser actions and observations remain operations. Their towers do not become capabilities merely because they use one.
+Browser actions and observations remain operations. Their beads do not become capabilities merely because they use one.
 
 At the destination, verified evidence becomes an artifact the user can keep or use.
 
