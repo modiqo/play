@@ -81,7 +81,7 @@ export function WorldModel({open, onToggle}) {
       <p>The same spatial vocabulary repeats across every journey. Shape tells you what role a place has before you inspect its evidence.</p>
       <dl>{WORLD_MODEL_KINDS.map((kind) => <React.Fragment key={kind}>
         <dt><i className={`world-glyph ${worldSpec(kind).glyph}`} />{KIND_LABEL[kind]}</dt>
-        <dd><strong>{WORLD_ROLE[kind]}</strong><span>{WORLD_STORY[kind]}</span></dd>
+        <dd><strong>{WORLD_ROLE[kind]}</strong><span>{WORLD_STORY[kind]}</span><em>EXAMPLE · {worldSpec(kind).example}</em></dd>
       </React.Fragment>)}</dl>
       <div className="world-modalities">{Object.entries(MODALITY_VOCABULARY).map(([modality, value]) => <div key={modality}><i className={`modality-mark ${modality}`} /><span><strong>{value.label}</strong><small>{value.note}</small></span></div>)}</div>
       <div className="world-model-note"><i className="route-mark" />The amber route is the agent’s path. Structures around a stop are recorded interactions; select one to inspect its redacted exchange.</div>
@@ -89,12 +89,16 @@ export function WorldModel({open, onToggle}) {
   </>
 }
 
-export function TutorialNarration({tutorial, replay, chapterCount}) {
+export function TutorialNarration({tutorial, story, interactions, replay}) {
   const audio = useRef(null)
   const [playing, setPlaying] = useState(false)
   const [muted, setMuted] = useState(false)
+  const chapterCount = story?.chapters?.length || 0
   const index = Math.max(0, Math.min(Math.max(0, chapterCount - 1), Math.floor(replay * Math.max(1, chapterCount - 1) + .001)))
+  const chapter = story?.chapters?.[index]
   const cue = tutorial?.cues?.find((item) => item.chapter === index) || tutorial?.cues?.[0]
+  const spec = worldSpec(chapter?.kind)
+  const records = interactions?.sites?.[chapter?.id] || []
   const source = tutorial?.audio?.voice
   useEffect(() => {
     if (!audio.current || !source || !cue) return
@@ -108,7 +112,13 @@ export function TutorialNarration({tutorial, replay, chapterCount}) {
   }
   return <aside className="tutorial-narration" aria-live="polite">
     <div><strong>{escapeTutorialLabel(cue.landmark)} · {escapeTutorialLabel(cue.primitive)}</strong><span>{String(index + 1).padStart(2, '0')} / {String(chapterCount).padStart(2, '0')}</span></div>
-    <p>{cue.text}</p>
+    <p className="tutorial-site-story">{cue.text}</p>
+    <div className="tutorial-site-pair">
+      <section><strong>SHAPE → WORLD MODEL</strong><p><b>{spec.role}</b> maps to the <b>{spec.label}</b> primitive. {spec.meaning} The landmark makes that role recognizable when it repeats in a real workspace.</p></section>
+      <section><strong>TOWERS → OPERATIONS AT THIS VANTAGE</strong><p><b>{records.length} recorded operation{records.length === 1 ? '' : 's'}</b> {records.length === 1 ? 'is' : 'are'} situated in front because this is the point from which the agent can inspect the evidence that belongs to this semantic step—not another stop on the global route.</p></section>
+    </div>
+    <div className="tutorial-tower-key"><span><i className="axis" />LEFT → RIGHT<b>earlier → later</b></span><span><i className="width" />WIDTH<b>latency</b></span><span><i className="height" />HEIGHT<b>tokens</b></span><span><i className="depth" />DEPTH<b>overlap</b></span></div>
+    <div className="tutorial-inspect"><strong>TRY IT</strong><span>Pause at this vantage, then click a tower’s amber outline or <b>@ number</b> to open its redacted request and response evidence.</span></div>
     {source
       ? <nav><button onClick={toggle}>{playing ? 'Ⅱ PAUSE VOICE' : '▶ PLAY VOICE'}</button><button onClick={() => { if (audio.current) audio.current.muted = !muted; setMuted(!muted) }}>{muted ? 'UNMUTE' : 'MUTE'}</button></nav>
       : <small>CAPTIONED EDITION · VOICE + MUSIC PRODUCTION PENDING</small>}
@@ -131,7 +141,7 @@ function BionicText({children}) {
   })
 }
 
-export function TutorialExperience({tutorial, replay, chapterCount, playing, onBegin, onChooseWorkspace}) {
+export function TutorialExperience({tutorial, story, interactions, replay, playing, onBegin, onChooseWorkspace}) {
   const [entered, setEntered] = useState(false)
   if (!tutorial) return null
   if (!entered) return <aside className="tutorial-intro">
@@ -140,13 +150,15 @@ export function TutorialExperience({tutorial, replay, chapterCount, playing, onB
     <p><BionicText>Most interfaces describe an agent from the outside, as if it were a person. This world does the opposite: it places you at the agent’s vantage point, inside the situation where it is operating.</BionicText></p>
     <p><BionicText>The world model begins with exact primitives, then paraphrases them as a spatial narrative you can experience.</BionicText></p>
     <p><BionicText>It turns an agent trace into a spatio-temporal experience: an homage to Doom, Wolfenstein 3D, and Halo, games that taught us a world through movement, landmarks, and time. We borrow that legibility, not their visual style.</BionicText></p>
+    <p><BionicText>One example carries through the whole lesson: create a page in Notion, then use CALL, SHELL, and DRIVE to prepare it, create it, and verify it.</BionicText></p>
     <dl>
-      <dt>INTENT</dt><dd><BionicText>The destination fixed before a route is chosen.</BionicText></dd>
-      <dt>CAPABILITY</dt><dd><BionicText>An equipped system, initialized before it is used.</BionicText></dd>
-      <dt>MODALITY</dt><dd><BionicText>CALL for adapters, SHELL for proc, DRIVE for browser.</BionicText></dd>
-      <dt>OPERATION</dt><dd><BionicText>An action performed through the equipped system.</BionicText></dd>
-      <dt>AUTHORITY</dt><dd><BionicText>Permission satisfied when the route requires it.</BionicText></dd>
-      <dt>OUTCOME</dt><dd><BionicText>Effect, evidence, blocker, recovery, milestone, or artifact.</BionicText></dd>
+      <dt>INTENT</dt><dd><BionicText>Create a page in Notion and verify it.</BionicText></dd>
+      <dt>DECISION</dt><dd><BionicText>Choose Notion MCP, the browser, notion-cli, or a mixed route.</BionicText></dd>
+      <dt>CAPABILITY</dt><dd><BionicText>Initialize each equipped system before using it.</BionicText></dd>
+      <dt>MODALITY</dt><dd><BionicText>CALL queries and creates; SHELL validates; DRIVE opens and observes.</BionicText></dd>
+      <dt>OPERATION</dt><dd><BionicText>Each tower is an action performed through one of those systems.</BionicText></dd>
+      <dt>AUTHORITY</dt><dd><BionicText>Authorize the Notion workspace before page creation.</BionicText></dd>
+      <dt>OUTCOME</dt><dd><BionicText>Deliver the verified Notion page as an artifact.</BionicText></dd>
     </dl>
     <button onClick={() => { setEntered(true); onBegin() }}>ENTER THE VANTAGE · PLAY JOURNEY →</button>
   </aside>
@@ -156,7 +168,7 @@ export function TutorialExperience({tutorial, replay, chapterCount, playing, onB
     <p><BionicText>Choose a live or recorded Rote workspace. The same primitives, landmarks, capability lifecycle, and time grammar will repeat there.</BionicText></p>
     <button onClick={onChooseWorkspace}>CHOOSE A WORKSPACE →</button>
   </aside>
-  return <TutorialNarration tutorial={tutorial} replay={replay} chapterCount={chapterCount} />
+  return <TutorialNarration tutorial={tutorial} story={story} interactions={interactions} replay={replay} />
 }
 
 const CAPABILITY_FAMILIES = {

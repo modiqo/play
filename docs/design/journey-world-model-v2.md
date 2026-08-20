@@ -304,6 +304,10 @@ the situation where it operates. The card states the exact primitives in plain E
 shows how the spatial narrative paraphrases them. Replay begins only after this orientation, and
 completion ends with a direct `Choose a workspace` handoff.
 
+On a first launch with no explicit `?workspace=...` deep link, the viewer selects Start Here even
+when a live capture exists. An explicit workspace URL and an in-session user selection always win
+over that default.
+
 The experience turns an agent trace into a spatio-temporal world as an homage to Doom,
 Wolfenstein 3D, and Halo: games that made their worlds legible through movement, landmarks, and
 time. This is a design lineage, not an imitation of their visual assets or trade dress.
@@ -319,6 +323,18 @@ The tutorial route demonstrates:
 7. evidence verification;
 8. blocker and recovery;
 9. artifact delivery.
+
+One continuous example carries the learner through the reference and replay: create a page in
+Notion, decide among Notion MCP/CALL, notion-cli/SHELL, and browser/DRIVE, then use all three to
+prepare, create, observe, verify, and deliver the page. Every world-model entry includes a small
+example drawn from that thread for readers who reason more easily from concrete cases.
+
+At each tutorial stop, surrounding landmarks and labels dim while the current landmark lifts and
+illuminates. A paired explanation names the shape, maps it back to the exact world-model primitive,
+and explains why the local operation towers sit in front of this vantage: they are inspectable
+evidence belonging to this semantic step, not additional stops on the global route. The guide
+always repeats the tower channels and tells the learner to pause and select an amber tower or
+`@sequence` plaque to inspect its redacted exchange.
 
 It is identified by a typed tutorial origin and is visually labeled `START HERE`. It is never
 included in capture counts, publication, crystallization, or owner-history claims.

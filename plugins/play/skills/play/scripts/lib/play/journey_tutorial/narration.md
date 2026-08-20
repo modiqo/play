@@ -6,15 +6,19 @@ Most interfaces anthropomorphize an agent from the outside, as if it were a pers
 
 We turn an agent trace into a spatio-temporal experience as an homage to Doom, Wolfenstein 3D, and Halo: games that taught us a world through movement, landmarks, and time. We borrow that legibility, not their visual style.
 
-Begin at the gate. Intent fixes the destination before the agent chooses a route.
+Begin at the gate. Our example intent is: create a page in Notion and verify it. Intent fixes that destination before the agent chooses a route.
 
-A station is an equipped capability instance. This one uses CALL, the adapter modality. The station exists before its operations and persists across them.
+At the fork, the agent chooses among Notion MCP through CALL, notion-cli through SHELL, and the Notion website through DRIVE. This mixed-modality tutorial uses all three so their responsibilities remain visible.
+
+A station is an equipped capability instance. The first station initializes the Notion adapter through CALL. The station exists before its operations and persists across them.
 
 The checkpoint is authority. When access is required, the route cannot honestly continue until it is satisfied.
 
-The worksite is an operation performed through that capability. The effect is distinct from the station that enabled it.
+The first worksite queries the target Notion database. The effect is an operation performed through the capability, distinct from the station that enabled it.
 
-A second station equips SHELL, Rote's proc modality, for local command execution.
+The first page-creation attempt reaches a barricade because the parent database is not shared. Once access is corrected, a bridge preserves the successful retry as recovery rather than erasing the failure.
+
+A second station equips notion-cli through SHELL for local validation. A third equips a browser lease through DRIVE to open the created page and verify it from the outside.
 
 Recorded operations form a frontage timeline. Read left to right from past to present. Horizontal gaps show elapsed time, footprint shows operation duration, height shows token volume, and depth shows proven overlap.
 

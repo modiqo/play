@@ -40,7 +40,7 @@ export default function App() {
     if (nextMode !== 'follow') setFitSignal((value) => value + 1)
   }
 
-  return <main className={`dark mode-${mode}${frozen ? ' is-frozen' : ''}`}>
+  return <main className={`dark mode-${mode}${frozen ? ' is-frozen' : ''}${isTutorial ? ' tutorial-guided' : ''}`}>
     <section className="atlas-stage">
       {story && scene && interactions
         ? mode === 'follow'
@@ -146,9 +146,9 @@ export default function App() {
         </>}
       </>}
     </aside>
-    {mode === 'follow' && story && interactions && <JourneyGuide story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} onOpen={selectVantage} onNavigate={jumpToChapter} />}
-    {mode === 'follow' && story && tutorial && <TutorialExperience key={story.journey_key} tutorial={tutorial} replay={replay} chapterCount={story.chapters.length} playing={playing} onBegin={() => { jumpToChapter(0); togglePlayback() }} onChooseWorkspace={() => setJourneysOpen(true)} />}
-    {mode === 'follow' && story && interactions && !showEvidencePanel && <CapabilityRail story={story} interactions={interactions} replay={replay} onJump={jumpToChapter} />}
+    {mode === 'follow' && story && interactions && !isTutorial && <JourneyGuide story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} onOpen={selectVantage} onNavigate={jumpToChapter} />}
+    {mode === 'follow' && story && tutorial && <TutorialExperience key={story.journey_key} tutorial={tutorial} story={story} interactions={interactions} replay={replay} playing={playing} onBegin={() => { jumpToChapter(0); togglePlayback() }} onChooseWorkspace={() => setJourneysOpen(true)} />}
+    {mode === 'follow' && story && interactions && !isTutorial && !showEvidencePanel && <CapabilityRail story={story} interactions={interactions} replay={replay} onJump={jumpToChapter} />}
     <WorldModel open={worldModelOpen} onToggle={() => setWorldModelOpen((value) => !value)} />
     <Telemetry story={story} open={telemetryOpen} onToggle={() => setTelemetryOpen((value) => !value)} />
     <footer>

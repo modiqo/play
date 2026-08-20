@@ -64,7 +64,7 @@ def _title(node: Mapping[str, Any], *, effect_seen: bool) -> str:
     if kind == "milestone":
         return label
     if kind == "artifact":
-        return f"Produce {label}"
+        return label if lower.startswith("produce ") else f"Produce {label}"
     if kind == "play_candidate":
         return "Shape a reusable Play"
     if kind == "play":

@@ -124,12 +124,19 @@ class JourneySceneTest(unittest.TestCase):
         )
         self.assertLess(shell_station, shell_operation)
         self.assertEqual(TUTORIAL_WORKSPACE_ID, index["selected_id"])
-        self.assertEqual("start-here-v2", tutorial_payload()["version"])
+        tutorial = tutorial_payload()
+        self.assertEqual("start-here-v3", tutorial["version"])
+        self.assertEqual(
+            list(range(len(story["chapters"]))),
+            [cue["chapter"] for cue in tutorial["cues"]],
+        )
+        decision = next(item for item in story["chapters"] if item["kind"] == "decision")
+        self.assertEqual("Choose Notion access route", decision["title"])
         exchange = tutorial_exchange(2)
         self.assertIsNotNone(exchange)
         assert exchange is not None
         self.assertEqual(2, exchange["sequence"])
-        failed_exchange = tutorial_exchange(4)
+        failed_exchange = tutorial_exchange(5)
         assert failed_exchange is not None
         self.assertFalse(failed_exchange["response"]["ok"])
         for filename, value in (

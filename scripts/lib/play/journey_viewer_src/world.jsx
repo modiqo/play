@@ -122,6 +122,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       const sites = []
       const interactionMeshes = []
       const semanticMeshes = []
+      const tutorialFocus = story.origin?.kind === 'tutorial'
+      const amberColor = new THREE.Color(AMBER)
       story.chapters.forEach((chapter, index) => {
         const site = new THREE.Group()
         site.position.copy(positions[index])
@@ -134,10 +136,21 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
 
         const landmark = landmarkFor(chapter)
         const landmarkSize = new THREE.Box3().setFromObject(landmark).getSize(new THREE.Vector3())
+        const landmarkMaterials = []
         landmark.traverse((object) => {
           if (!object.isMesh) return
           object.userData = {siteId: chapter.id, sequence: null}
           semanticMeshes.push(object)
+          const materials = Array.isArray(object.material) ? object.material : [object.material]
+          materials.forEach((entry) => {
+            if (!entry?.color) return
+            landmarkMaterials.push({
+              material: entry,
+              color: entry.color.clone(),
+              emissive: entry.emissive?.clone?.() || null,
+              emissiveIntensity: Number(entry.emissiveIntensity || 0),
+            })
+          })
         })
         site.add(landmark)
         const records = interactions?.sites?.[chapter.id] || []
@@ -182,7 +195,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         site.add(label)
         scene.add(site)
         sites.push({
-          chapter, group: site, label: root, markers, plaques, worldPosition: site.position.clone(),
+          chapter, group: site, platform, landmark, landmarkMaterials, label: root, markers, plaques, worldPosition: site.position.clone(),
           approachDistance: Math.max(12.5, landmarkSize.z * .5 + 8, landmarkSize.x * .38 + 8),
           eyeHeight: THREE.MathUtils.clamp(landmarkSize.y * .42, 2.5, 3.8),
         })
@@ -276,44 +289,58 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           const ringPulse = 1 + Math.sin(elapsed * 2.2) * .045
           focusRing.scale.set(ringPulse, ringPulse, ringPulse)
           sites.forEach((site, siteIndex) => {
-          site.group.visible = siteIndex <= reached + 1
-          const isCurrent = siteIndex === reached
-          const isSelectedSite = selectedRef.current?.siteId === site.chapter.id
-          const isSelected = isSelectedSite && !selectedRef.current?.sequence
-          const interactionEngaged = (isSelectedSite && Boolean(selectedRef.current?.sequence)) || site.plaques.some((plaque) => plaque.root.classList.contains('spread'))
-          site.label.classList.toggle('expanded', isSelected || (isCurrent && !selectedRef.current && !dismissed.current.has(site.chapter.id)))
-          site.label.classList.toggle('behind-interaction', interactionEngaged)
-          site.label.classList.toggle('current', isCurrent)
-          site.label.classList.toggle('frozen', isCurrent && frozenRef.current)
-          site.label.classList.toggle('complete', siteIndex < reached)
-          site.label.classList.toggle('next', siteIndex === reached + 1)
-          site.markers.forEach((marker, markerIndex) => {
-            const markerSelected = selectedRef.current?.sequence === marker.sequence
-            const proximity = isCurrent || Boolean(markerSelected)
-            const pulse = proximity
-              ? frozenRef.current ? .88 : .42 + Math.max(0, Math.sin(elapsed * 2.3 - markerIndex * .72)) * .8
-              : 0
-            updateMarkerAppearance(marker, {
-              selected: markerSelected,
-              proximity,
-              pulse,
-              frozen: frozenRef.current,
+            site.group.visible = siteIndex <= reached + 1
+            const isCurrent = siteIndex === reached
+            const isSelectedSite = selectedRef.current?.siteId === site.chapter.id
+            const isSelected = isSelectedSite && !selectedRef.current?.sequence
+            const interactionEngaged = (isSelectedSite && Boolean(selectedRef.current?.sequence)) || site.plaques.some((plaque) => plaque.root.classList.contains('spread'))
+            if (tutorialFocus) {
+              site.landmark.position.y = isCurrent ? .18 + Math.sin(elapsed * 1.8) * .025 : 0
+              site.platform.material.color.setHex(isCurrent ? 0x17130f : 0x050607)
+              site.landmarkMaterials.forEach((state) => {
+                state.material.color.copy(state.color)
+                if (isCurrent) state.material.color.lerp(amberColor, .24)
+                else state.material.color.multiplyScalar(.14)
+                if (state.material.emissive && state.emissive) {
+                  state.material.emissive.copy(isCurrent ? amberColor : state.emissive)
+                  state.material.emissiveIntensity = isCurrent ? Math.max(.2, state.emissiveIntensity) : 0
+                }
+              })
+            }
+            site.label.classList.toggle('expanded', isSelected || (isCurrent && !selectedRef.current && !dismissed.current.has(site.chapter.id)))
+            site.label.classList.toggle('behind-interaction', interactionEngaged)
+            site.label.classList.toggle('current', isCurrent)
+            site.label.classList.toggle('frozen', isCurrent && frozenRef.current)
+            site.label.classList.toggle('complete', siteIndex < reached)
+            site.label.classList.toggle('next', siteIndex === reached + 1)
+            site.label.classList.toggle('tutorial-dimmed', tutorialFocus && !isCurrent)
+            site.markers.forEach((marker, markerIndex) => {
+              const markerSelected = selectedRef.current?.sequence === marker.sequence
+              const proximity = isCurrent || Boolean(markerSelected)
+              const pulse = proximity
+                ? frozenRef.current ? .88 : .42 + Math.max(0, Math.sin(elapsed * 2.3 - markerIndex * .72)) * .8
+                : 0
+              updateMarkerAppearance(marker, {
+                selected: markerSelected,
+                proximity,
+                pulse,
+                frozen: frozenRef.current,
+              })
             })
-          })
-          site.plaques.forEach((plaque) => {
-            const plaqueSelected = plaque.sequences.includes(selectedRef.current?.sequence)
-            const proximity = plaqueIsVisible({
-              isCurrent,
-              selected: plaqueSelected,
-              playing: playingRef.current,
-              frozen: frozenRef.current,
+            site.plaques.forEach((plaque) => {
+              const plaqueSelected = plaque.sequences.includes(selectedRef.current?.sequence)
+              const proximity = plaqueIsVisible({
+                isCurrent,
+                selected: plaqueSelected,
+                playing: playingRef.current,
+                frozen: frozenRef.current,
+              })
+              plaque.label.visible = proximity
+              plaque.root.classList.toggle('arrived', isCurrent && !playingRef.current)
+              plaque.root.classList.toggle('proximity', proximity)
+              plaque.root.classList.toggle('frozen', isCurrent && frozenRef.current)
+              plaque.root.classList.toggle('selected', plaqueSelected)
             })
-            plaque.label.visible = proximity
-            plaque.root.classList.toggle('arrived', isCurrent && !playingRef.current)
-            plaque.root.classList.toggle('proximity', proximity)
-            plaque.root.classList.toggle('frozen', isCurrent && frozenRef.current)
-            plaque.root.classList.toggle('selected', plaqueSelected)
-          })
           })
           renderer.render(scene, camera)
           labels.render(scene, camera)

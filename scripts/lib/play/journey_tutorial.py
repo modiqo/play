@@ -21,7 +21,7 @@ from .private_store import atomic_write_json
 
 TUTORIAL_REFERENCE = "tutorial:start-here-v1"
 TUTORIAL_WORKSPACE_ID = _journey_key(TUTORIAL_REFERENCE)
-TUTORIAL_VERSION = "start-here-v2"
+TUTORIAL_VERSION = "start-here-v3"
 TUTORIAL_ASSET_ROOT = Path(__file__).with_name("journey_tutorial")
 
 
@@ -38,16 +38,17 @@ def _row(sequence: int, command_type: str, params: Mapping[str, Any]) -> dict[st
 
 def _entries() -> list[dict[str, Any]]:
     return [
-        _row(1, "InitSession", {"endpoint": "adapter/example"}),
+        _row(1, "SetVariable", {"name": "route", "value": "notion-adapter"}),
+        _row(2, "InitSession", {"endpoint": "adapter/notion"}),
         _row(
-            2,
+            3,
             "HttpRequest",
             {
-                "endpoint": "adapter/example",
+                "endpoint": "adapter/notion",
                 "body": {
                     "method": "tools/call",
                     "params": {
-                        "name": "example_call",
+                        "name": "notion_call",
                         "arguments": {
                             "tool_name": "adapter.auth.ensure",
                             "arguments": {},
@@ -57,29 +58,15 @@ def _entries() -> list[dict[str, Any]]:
             },
         ),
         _row(
-            3,
-            "HttpRequest",
-            {
-                "endpoint": "adapter/example",
-                "body": {
-                    "method": "tools/call",
-                    "params": {
-                        "name": "example_call",
-                        "arguments": {"tool_name": "records.list", "arguments": {}},
-                    },
-                },
-            },
-        ),
-        _row(
             4,
             "HttpRequest",
             {
-                "endpoint": "adapter/example",
+                "endpoint": "adapter/notion",
                 "body": {
                     "method": "tools/call",
                     "params": {
-                        "name": "example_call",
-                        "arguments": {"tool_name": "records.update", "arguments": {}},
+                        "name": "notion_call",
+                        "arguments": {"tool_name": "databases.query", "arguments": {}},
                     },
                 },
             },
@@ -88,53 +75,67 @@ def _entries() -> list[dict[str, Any]]:
             5,
             "HttpRequest",
             {
-                "endpoint": "adapter/example",
+                "endpoint": "adapter/notion",
                 "body": {
                     "method": "tools/call",
                     "params": {
-                        "name": "example_call",
-                        "arguments": {"tool_name": "records.update", "arguments": {}},
+                        "name": "notion_call",
+                        "arguments": {"tool_name": "pages.create", "arguments": {}},
                     },
                 },
             },
         ),
         _row(
             6,
-            "ProcessExec",
-            {"invocation": {"program": "rg", "args": ["--files"]}},
+            "HttpRequest",
+            {
+                "endpoint": "adapter/notion",
+                "body": {
+                    "method": "tools/call",
+                    "params": {
+                        "name": "notion_call",
+                        "arguments": {"tool_name": "pages.create", "arguments": {}},
+                    },
+                },
+            },
         ),
-        _row(7, "InitSession", {"endpoint": "stdio:/browser"}),
         _row(
-            8,
+            7,
+            "ProcessExec",
+            {"invocation": {"program": "notion-cli", "args": ["validate"]}},
+        ),
+        _row(8, "InitSession", {"endpoint": "stdio:/browser"}),
+        _row(
+            9,
             "HttpRequest",
             {
                 "endpoint": "stdio:/browser",
                 "body": {"method": "tools/call", "params": {"name": "browser_navigate"}},
             },
         ),
-        _row(9, "QueryExtract", {"source_response": 8, "query": ".title"}),
-        _row(10, "ComposeEmail", {"source_response": 9}),
+        _row(10, "QueryExtract", {"source_response": 9, "query": ".title"}),
+        _row(11, "ComposeEmail", {"source_response": 10}),
     ]
 
 
 def _tool_contract(_adapter_id: str, operation: str) -> Mapping[str, Any] | None:
     if operation == "adapter.auth.ensure":
         return {"method": "POST", "hints": {"readOnlyHint": False}}
-    if operation == "records.list":
+    if operation == "databases.query":
         return {"method": "GET", "hints": {"readOnlyHint": True}}
-    if operation == "records.update":
+    if operation == "pages.create":
         return {"method": "POST", "hints": {"readOnlyHint": False, "destructiveHint": False}}
     return None
 
 
 def _metadata(sequence: int) -> dict[str, Any]:
     process_policy = (
-        {"risk_tags": ["read_fs"]} if sequence == 6 else None
+        {"risk_tags": ["read_fs"]} if sequence == 7 else None
     )
     value: dict[str, Any] = {
-        "ok": sequence != 4,
-        "duration_ms": (80, 240, 760, 430, 520, 110, 90, 1250, 35, 180)[sequence - 1],
-        "tokens": (0, 40, 920, 360, 440, 150, 0, 680, 120, 410)[sequence - 1],
+        "ok": sequence != 5,
+        "duration_ms": (30, 80, 240, 760, 430, 520, 110, 90, 1250, 35, 180)[sequence - 1],
+        "tokens": (20, 0, 40, 920, 360, 440, 150, 0, 680, 120, 410)[sequence - 1],
     }
     if process_policy is not None:
         value["process_policy"] = process_policy
@@ -157,16 +158,28 @@ def ensure_tutorial(*, root: Path | None = None) -> dict[str, Any]:
     entries = _entries()
     activities = normalize_entries(
         entries,
-        response_metadata={sequence: _metadata(sequence) for sequence in range(1, 11)},
+        response_metadata={sequence: _metadata(sequence) for sequence in range(1, 12)},
         manifest_resolver=lambda adapter_id: {
-            "name": "Example service" if adapter_id == "example" else adapter_id,
+            "name": "Notion" if adapter_id == "notion" else adapter_id,
             "transport": "http",
         },
         tool_resolver=_tool_contract,
     )
+    for activity in activities:
+        if activity.get("command_type") == "SetVariable":
+            activity["operation"] = "Choose Notion access route"
+        if activity.get("command_type") == "InitSession":
+            capability = activity.get("capability")
+            capability = capability if isinstance(capability, Mapping) else {}
+            if capability.get("family") == "adapter":
+                activity["provider"] = "notion"
+                activity["operation"] = "Initialize Notion adapter"
+            elif capability.get("family") == "browser":
+                activity["provider"] = "browser"
+                activity["operation"] = "Initialize browser session"
     capture = {
         "reference": TUTORIAL_REFERENCE,
-        "intent": "Learn how an agent journey becomes a world",
+        "intent": "Create a page in Notion and verify it",
         "status": "recorded",
         "origin": {
             "kind": "tutorial",
@@ -208,16 +221,17 @@ def ensure_tutorial(*, root: Path | None = None) -> dict[str, Any]:
 
 def tutorial_exchange(sequence: int) -> dict[str, Any] | None:
     labels = {
-        1: ("Initialize an adapter session", "Example service is equipped and ready."),
-        2: ("Ensure authorization", "Required authority is satisfied before use."),
-        3: ("Read records through the adapter", "Typed service evidence is returned."),
-        4: ("Attempt a typed update", "The typed operation fails and becomes a visible blocker."),
-        5: ("Retry the corrected update", "The corrected operation succeeds and bridges the route."),
-        6: ("Inspect local files through proc", "The shell capability returns file evidence."),
-        7: ("Initialize a browser lease", "A page session is equipped and ready."),
-        8: ("Navigate through the browser", "The page ledger records the observed destination."),
-        9: ("Extract from stored browser evidence", "A browser lens reads the cached title."),
-        10: ("Compose a durable artifact", "Verified evidence becomes a user-facing result."),
+        1: ("Choose a Notion access route", "The mixed-modality route will use CALL, SHELL, and DRIVE."),
+        2: ("Initialize the Notion adapter", "The Notion CALL capability is equipped and ready."),
+        3: ("Ensure Notion authorization", "Required Notion authority is satisfied before use."),
+        4: ("Query the target database", "Typed Notion database evidence is returned."),
+        5: ("Attempt to create the page", "Missing database access becomes a visible blocker."),
+        6: ("Retry page creation", "The corrected Notion operation succeeds and bridges the route."),
+        7: ("Validate content with notion-cli", "The SHELL capability returns local validation evidence."),
+        8: ("Initialize a browser lease", "The DRIVE page session is equipped and ready."),
+        9: ("Open the new Notion page", "The browser ledger records the observed destination."),
+        10: ("Read stored browser evidence", "A browser lens verifies the Notion page title."),
+        11: ("Compose the delivery artifact", "The verified Notion page becomes a user-facing result."),
     }
     pair = labels.get(sequence)
     if pair is None:
@@ -226,7 +240,7 @@ def tutorial_exchange(sequence: int) -> dict[str, Any] | None:
         "schema": "play.journey-exchange/v1",
         "sequence": sequence,
         "request": {"tutorial_step": pair[0], "payload": "[DEMONSTRATION ONLY]"},
-        "response": {"summary": pair[1], "ok": sequence != 4},
+        "response": {"summary": pair[1], "ok": sequence != 5},
         "truncated": False,
     }
 

@@ -793,7 +793,7 @@ def _activity_label(activity: Mapping[str, Any]) -> str:
     if kind == "artifact":
         return f"Produce {operation}"
     if kind == "decision":
-        return "Record an exploration decision"
+        return operation if operation and operation != "SetVariable" else "Record an exploration decision"
     if kind == "evidence" and activity.get("role") == "verification":
         return "Verify the result"
     if kind == "phase" and activity.get("role") == "inspection":

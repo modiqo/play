@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from 'react'
 import {api, trackWorkspaceLocation, workspaceFromLocation} from './api.js'
 import {useJourneyPlayback} from './use-journey-playback.js'
+import {chooseWorkspace} from './workspace-choice.mjs'
 
 export function useJourneyRuntime() {
   const [index, setIndex] = useState(null)
@@ -38,14 +39,13 @@ export function useJourneyRuntime() {
     setLoadError('')
     setIndex(value)
     setWorkspace((current) => {
-      const usable = (item) => item.graph_ready || item.projectable
-      if (current && value.workspaces.some((item) => item.id === current && usable(item))) return current
-      const requested = value.workspaces.find((item) => usable(item) && (item.id === workspaceFromLocation || item.workspace === workspaceFromLocation || item.workspace_path === workspaceFromLocation))
-      const firstUsable = value.workspaces.find((item) => item.graph_ready || item.projectable)
-      const selectedId = requested?.id || value.selected_id || firstUsable?.id || ''
-      const selected = value.workspaces.find((item) => item.id === selectedId)
-      if (selectedId) trackWorkspaceLocation(selected?.workspace_path || selected?.workspace || selectedId)
-      return selectedId
+      const selected = chooseWorkspace(value.workspaces, {
+        current,
+        requested: workspaceFromLocation,
+        selectedId: value.selected_id,
+      })
+      if (selected?.id) trackWorkspaceLocation(selected.workspace_path || selected.workspace || selected.id)
+      return selected?.id || ''
     })
     return value
   }, [])
