@@ -335,6 +335,10 @@ edge. Focus must never repaint the primitive as a solid orange object. The World
 opens at tutorial entry and remains one click away throughout the replay, with its current primitive
 highlighted.
 
+Tutorial entry is a serialized reveal, never overlapping glass panels: the world first dims behind
+the World Model while its primitive rows resolve in order; continuing closes that structure and
+reveals the manifesto/orientation card; entering the card begins the embodied replay.
+
 A compact, dismissible glass caption names the shape, maps it back to the exact world-model
 primitive, and explains why the local operation towers sit in front of this vantage: they are
 inspectable evidence belonging to this semantic step, not additional stops on the global route.

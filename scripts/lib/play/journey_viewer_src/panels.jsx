@@ -73,18 +73,19 @@ export function JourneyGuide({story, interactions, replay, playing, frozen, onOp
   </aside>
 }
 
-export function WorldModel({open, onToggle, highlightKind = ''}) {
+export function WorldModel({open, onToggle, highlightKind = '', tutorial = false}) {
   return <>
     <button className="world-model-toggle" onClick={onToggle} aria-expanded={open}>◇ WORLD MODEL</button>
     <aside className={`world-model${open ? ' open' : ''}`}>
       <div className="panel-heading"><span>HOW TO READ THIS WORLD</span><button onClick={onToggle}>×</button></div>
       <p>The same spatial vocabulary repeats across every journey. Shape tells you what role a place has before you inspect its evidence.</p>
-      <dl>{WORLD_MODEL_KINDS.map((kind) => <React.Fragment key={kind}>
-        <dt className={kind === highlightKind ? 'world-model-current' : ''}><i className={`world-glyph ${worldSpec(kind).glyph}`} />{KIND_LABEL[kind]}</dt>
-        <dd className={kind === highlightKind ? 'world-model-current' : ''}><strong>{WORLD_ROLE[kind]}</strong><span>{WORLD_STORY[kind]}</span><em>EXAMPLE · {worldSpec(kind).example}</em></dd>
+      <dl>{WORLD_MODEL_KINDS.map((kind, index) => <React.Fragment key={kind}>
+        <dt style={{'--world-index': index}} className={kind === highlightKind ? 'world-model-current' : ''}><i className={`world-glyph ${worldSpec(kind).glyph}`} />{KIND_LABEL[kind]}</dt>
+        <dd style={{'--world-index': index}} className={kind === highlightKind ? 'world-model-current' : ''}><strong>{WORLD_ROLE[kind]}</strong><span>{WORLD_STORY[kind]}</span><em>EXAMPLE · {worldSpec(kind).example}</em></dd>
       </React.Fragment>)}</dl>
       <div className="world-modalities">{Object.entries(MODALITY_VOCABULARY).map(([modality, value]) => <div key={modality}><i className={`modality-mark ${modality}`} /><span><strong>{value.label}</strong><small>{value.note}</small></span></div>)}</div>
       <div className="world-model-note"><i className="route-mark" />The amber route is the agent’s path. Structures around a stop are recorded interactions; select one to inspect its redacted exchange.</div>
+      {tutorial && <button className="world-model-continue" onClick={onToggle}>CONTINUE TO ORIENTATION →</button>}
     </aside>
   </>
 }
@@ -143,9 +144,10 @@ function BionicText({children}) {
   })
 }
 
-export function TutorialExperience({tutorial, story, interactions, replay, playing, onBegin, onChooseWorkspace, onOpenWorldModel}) {
+export function TutorialExperience({tutorial, story, interactions, replay, playing, entryReferenceActive, onBegin, onChooseWorkspace, onOpenWorldModel}) {
   const [entered, setEntered] = useState(false)
   if (!tutorial) return null
+  if (!entered && entryReferenceActive) return null
   if (!entered) return <aside className="tutorial-intro">
     <span>START HERE · BEFORE YOU PRESS PLAY</span>
     <h1><BionicText>We do not anthropomorphize the agent. We embody it.</BionicText></h1>

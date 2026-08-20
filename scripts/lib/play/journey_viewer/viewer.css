@@ -148,6 +148,11 @@ main {
   padding: 28px 30px; overflow: auto; border: 1px solid rgba(232,132,19,.54); background: rgba(7,9,11,.78);
   box-shadow: 0 34px 120px rgba(0,0,0,.68); backdrop-filter: blur(26px) saturate(.76); transform: translate(-50%,-50%); pointer-events: auto;
 }
+.tutorial-intro { animation: tutorial-orientation-reveal 320ms ease-out both; }
+@keyframes tutorial-orientation-reveal {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)) scale(.985); }
+  to { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+}
 .tutorial-intro > span, .tutorial-complete > span { color: #f0a03a; font-size: 7px; letter-spacing: .2em; }
 .tutorial-intro h1, .tutorial-complete h1 { margin: 13px 0 12px; color: #c7cac9; font-size: 22px; line-height: 1.25; font-weight: 300; }
 .tutorial-intro p, .tutorial-complete p { max-width: 620px; margin: 8px 0; color: #9ca1a2; font-size: 10px; line-height: 1.7; }
@@ -528,6 +533,8 @@ header {
   transition: opacity 180ms ease, transform 180ms ease;
 }
 .world-model.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.world-model-active .atlas-stage { filter: blur(5px) brightness(.38) saturate(.62); }
+.world-model-active .atlas-stage, .atlas-stage { transition: filter 260ms ease; }
 .world-model > p { margin: 0; padding: 12px 14px; border-bottom: 1px solid var(--line); color: #8f9495; font-size: 8px; line-height: 1.55; }
 .world-model > dl { display: grid; grid-template-columns: 170px 1fr; gap: 0; margin: 0; }
 .world-model dt, .world-model dd { min-height: 68px; padding: 11px 14px; border-bottom: 1px solid rgba(232,132,19,.12); }
@@ -536,6 +543,14 @@ header {
 .world-model dd strong { color: var(--ink); font-size: 7px; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
 .world-model dd span { color: #858a8b; font-size: 7px; line-height: 1.45; }
 .world-model dd em { color: #b9864d; font-size: 6px; line-height: 1.45; font-style: normal; }
+.world-model.open dt, .world-model.open dd {
+  animation: world-structure-reveal 300ms ease-out both;
+  animation-delay: calc(45ms + var(--world-index) * 28ms);
+}
+@keyframes world-structure-reveal {
+  from { opacity: 0; filter: blur(4px); transform: translateX(-9px); }
+  to { opacity: 1; filter: blur(0); transform: translateX(0); }
+}
 .world-model dt.world-model-current, .world-model dd.world-model-current { background: rgba(232,132,19,.075); }
 .world-model dt.world-model-current { color: #f0a03a; box-shadow: inset 2px 0 #e88413; }
 .world-model dd.world-model-current strong { color: #f0a03a; }
@@ -570,6 +585,11 @@ header {
 .modality-mark.drive { border-radius: 50%; box-shadow: inset 0 0 0 3px #101315; }
 .world-model-note { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; color: #858a8b; font-size: 7px; line-height: 1.5; }
 .world-model-note i { margin-top: 4px; flex: 0 0 auto; }
+.world-model-continue {
+  display: block; margin: 0 14px 14px auto; padding: 9px 11px; border: 1px solid rgba(232,132,19,.56);
+  background: rgba(232,132,19,.08); color: #e3a055; font: inherit; font-size: 7px; letter-spacing: .12em; cursor: pointer;
+}
+.world-model-continue:hover { border-color: #e88413; color: #f0a03a; }
 
 .journey-key {
   position: absolute; z-index: 10; left: 18px; bottom: 74px;
