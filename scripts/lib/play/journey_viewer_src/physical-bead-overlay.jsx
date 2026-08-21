@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useRef, useState} from 'react'
 import {OrbitViewport} from '@deck.gl/core'
 import * as THREE from 'three'
 import {glassBeadGeometry, glassBeadMaterial} from './world-elements.js'
+import {adaptiveRenderPixelRatio} from './render-quality.mjs'
 
 function viewportFor(viewState, width, height) {
   if (!(width > 0 && height > 0)) return null
@@ -59,7 +60,11 @@ export default function PhysicalBeadOverlay({
     camera.position.z = 1200
     const renderer = new THREE.WebGLRenderer({alpha: true, antialias: true, powerPreference: 'high-performance'})
     renderer.setClearColor(0x000000, 0)
-    renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1))
+    renderer.setPixelRatio(adaptiveRenderPixelRatio(
+      window.devicePixelRatio,
+      host.current.clientWidth,
+      host.current.clientHeight,
+    ))
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = .82
@@ -87,6 +92,7 @@ export default function PhysicalBeadOverlay({
     const observer = new ResizeObserver(([entry]) => {
       const width = Math.max(1, Math.round(entry.contentRect.width))
       const height = Math.max(1, Math.round(entry.contentRect.height))
+      renderer.setPixelRatio(adaptiveRenderPixelRatio(window.devicePixelRatio, width, height))
       renderer.setSize(width, height, false)
       camera.left = -width / 2
       camera.right = width / 2

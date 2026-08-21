@@ -3,7 +3,9 @@ import * as THREE from 'three'
 import {CSS2DRenderer} from 'three/addons/renderers/CSS2DRenderer.js'
 import {BokehPass} from 'three/addons/postprocessing/BokehPass.js'
 import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js'
+import {OutputPass} from 'three/addons/postprocessing/OutputPass.js'
 import {RenderPass} from 'three/addons/postprocessing/RenderPass.js'
+import {SMAAPass} from 'three/addons/postprocessing/SMAAPass.js'
 import {AMBER, GROUND, clampVisibleCallouts, eventHaloMaterial, glassBeadGeometry, glassBeadMaterial, journeyPositions, landmarkFor, makeCallout, makeInteractionIndex, makeInteractionPlaque, makeTemporalCorridor, material} from './world-elements.js'
 import {applyInteractionFocusView, createWorldNavigation} from './world-navigation.js'
 import {KIND_LABEL, WORLD_ROLE} from './semantics.js'
@@ -14,6 +16,7 @@ import {interactionDurationArc, interactionRadius} from './interaction-metrics.m
 import {journeyVisibilityWindow} from './journey-position.mjs'
 import {calloutIsInTransit} from './world-callout-transition.mjs'
 import {vantageSignal} from './vantage-signal.mjs'
+import {adaptiveRenderPixelRatio, COMPOSER_SAMPLES} from './render-quality.mjs'
 
 const THREAD_STEEL = 0x717c7f
 const THREAD_PREVIOUS = 0xaeb8ba
@@ -122,6 +125,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
     let renderer
     let composer
     let focusPass
+    let smaaPass
     let labels
     let observer
     let navigation
@@ -141,6 +145,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       observer?.disconnect()
       navigation?.dispose()
       focusPass?.dispose?.()
+      smaaPass?.dispose?.()
       composer?.dispose?.()
       scene?.traverse((object) => {
         object.geometry?.dispose?.()
@@ -168,7 +173,11 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       if (viewState.current?.camera) camera.position.fromArray(viewState.current.camera)
 
       renderer = new THREE.WebGLRenderer({antialias: true, powerPreference: 'high-performance'})
-      renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1))
+      renderer.setPixelRatio(adaptiveRenderPixelRatio(
+        window.devicePixelRatio,
+        host.current.clientWidth,
+        host.current.clientHeight,
+      ))
       renderer.shadowMap.enabled = true
       renderer.shadowMap.type = THREE.PCFShadowMap
       renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -176,7 +185,11 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       renderer.toneMappingExposure = 1.08
       renderer.domElement.className = 'world-canvas'
       host.current.appendChild(renderer.domElement)
-      composer = new EffectComposer(renderer)
+      const composerTarget = new THREE.WebGLRenderTarget(1, 1, {
+        type: THREE.HalfFloatType,
+        samples: COMPOSER_SAMPLES,
+      })
+      composer = new EffectComposer(renderer, composerTarget)
       composer.addPass(new RenderPass(scene, camera))
       focusPass = new BokehPass(scene, camera, {
         focus: 12,
@@ -184,6 +197,9 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         maxblur: tutorialFocus ? .007 : .0055,
       })
       composer.addPass(focusPass)
+      smaaPass = new SMAAPass()
+      composer.addPass(smaaPass)
+      composer.addPass(new OutputPass())
 
       labels = new CSS2DRenderer()
       labels.domElement.className = 'world-labels'
@@ -351,8 +367,13 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         if (!host.current) return
         const width = host.current.clientWidth
         const height = host.current.clientHeight
+        const pixelRatio = adaptiveRenderPixelRatio(window.devicePixelRatio, width, height)
         camera.aspect = width / Math.max(1, height)
         camera.updateProjectionMatrix()
+        if (Math.abs(renderer.getPixelRatio() - pixelRatio) > .001) {
+          renderer.setPixelRatio(pixelRatio)
+          composer?.setPixelRatio(pixelRatio)
+        }
         renderer.setSize(width, height, false)
         composer?.setSize(width, height)
         labels.setSize(width, height)

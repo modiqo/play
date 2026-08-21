@@ -46,7 +46,7 @@ export function glassBeadMaterial() {
 }
 
 export function glassBeadGeometry(radius = 1) {
-  return new THREE.IcosahedronGeometry(radius, 2)
+  return new THREE.IcosahedronGeometry(radius, 3)
 }
 
 export function eventHaloMaterial() {
