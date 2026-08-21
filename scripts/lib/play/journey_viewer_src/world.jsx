@@ -16,6 +16,7 @@ import {calloutIsInTransit} from './world-callout-transition.mjs'
 
 const THREAD_STEEL = 0x717c7f
 const THREAD_PREVIOUS = 0xaeb8ba
+const WORLD_SKY = 0x0b0e10
 const WORLD_STAGE_PAGE = 50
 
 function makeTemporalThreads(markers) {
@@ -159,8 +160,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       }
       scene = new THREE.Scene()
       const tutorialFocus = story.origin?.kind === 'tutorial'
-      scene.background = new THREE.Color(GROUND)
-      scene.fog = new THREE.FogExp2(GROUND, .015)
+      scene.background = new THREE.Color(WORLD_SKY)
+      scene.fog = new THREE.FogExp2(WORLD_SKY, .012)
       camera = new THREE.PerspectiveCamera(54, 1, .1, 260)
       camera.position.set(0, 3.3, 6)
       if (viewState.current?.camera) camera.position.fromArray(viewState.current.camera)
@@ -171,7 +172,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       renderer.shadowMap.type = THREE.PCFShadowMap
       renderer.outputColorSpace = THREE.SRGBColorSpace
       renderer.toneMapping = THREE.ACESFilmicToneMapping
-      renderer.toneMappingExposure = .82
+      renderer.toneMappingExposure = .96
       renderer.domElement.className = 'world-canvas'
       host.current.appendChild(renderer.domElement)
       composer = new EffectComposer(renderer)
@@ -187,7 +188,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       labels.domElement.className = 'world-labels'
       host.current.appendChild(labels.domElement)
 
-      scene.add(new THREE.HemisphereLight(0xdfe3e4, 0x08090a, 1.45))
+      scene.add(new THREE.HemisphereLight(0xe3e7e7, 0x252a2c, 1.72))
+      scene.add(new THREE.AmbientLight(0xaeb7b9, .58))
       const key = new THREE.DirectionalLight(0xffffff, 2.7)
       key.position.set(-18, 34, 12)
       key.castShadow = true
