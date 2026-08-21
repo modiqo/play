@@ -253,6 +253,7 @@ def _hub_entries(local_names: set[str]) -> list[dict[str, Any]]:
                 "name": name,
                 "description": description,
                 "scope": "hub",
+                "catalog_tier": item.get("catalog_tier"),
                 "name_tokens": sorted(
                     _tokens(name.replace("-", " "))
                     | _tokens(" ".join([*labels, *tags, *adapters]))
@@ -451,7 +452,13 @@ def intercept_prompt(
     if direct_route is not None:
         return _direct_bypass_context(direct_route)
     entries = load_index()
-    hub_entries = _hub_entries(set())
+    unpublished_names = {
+        entry["name"]
+        for entry in entries
+        if isinstance(entry.get("name"), str)
+        and "/" not in str(entry.get("reference") or "")
+    }
+    hub_entries = _hub_entries(unpublished_names)
     # The refreshed authorized catalog is the canonical publication namespace.
     # Do not let a stale locally pulled copy under a retired organization shadow
     # the current hub reference merely because both share the same Play name.

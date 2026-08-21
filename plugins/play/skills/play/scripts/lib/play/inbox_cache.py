@@ -2,8 +2,8 @@
 
 The cache is written by a background refresh (stale-while-revalidate at session
 start, or any scheduler) and read instantly without network or model work. It
-stores two tiers: a precomputed one-line summary safe to inject into a session
-banner, and the full digest payload plus rendered markdown for detail recall.
+stores a precomputed one-line summary safe to inject into a session banner,
+the full digest payload, and a tiered authorized/public discovery catalog.
 The interactive awareness lane owns the acknowledgment checkpoint; the refresh
 reads that checkpoint without advancing it, so the line goes quiet only after
 the user actually views the digest.
@@ -29,13 +29,19 @@ from .digest_state import (
     scope_key,
 )
 from .private_store import atomic_write_json, load_json
-from .registry import Organization, load_authorized_index_flows, load_organizations
+from .registry import (
+    Organization,
+    load_authorized_index_flows,
+    load_organizations,
+    load_public_organization_flows,
+)
 from .render import json_text
 from .state_home import state_path
 
 
 CACHE_SCHEMA = "play.inbox-cache/v1"
 DEFAULT_WINDOW_DAYS = 7
+PUBLIC_BASELINE_ORGANIZATIONS = ("modiqo",)
 
 
 def _default_cache_path() -> Path:
@@ -98,7 +104,9 @@ def _string_list(value: object) -> list[str]:
     )
 
 
-def _public_catalog_entry(slug: str, flow: Mapping[str, Any]) -> dict[str, Any] | None:
+def _public_catalog_entry(
+    slug: str, flow: Mapping[str, Any], *, catalog_tier: str
+) -> dict[str, Any] | None:
     if flow.get("visibility") != "public" or flow.get("deleted_at"):
         return None
     status = flow.get("status")
@@ -130,6 +138,7 @@ def _public_catalog_entry(slug: str, flow: Mapping[str, Any]) -> dict[str, Any] 
         "name": name,
         "description": str(flow.get("description") or "")[:240],
         "visibility": "public",
+        "catalog_tier": catalog_tier,
         "version": version if isinstance(version, str) and version else None,
         "status": status if isinstance(status, str) and status else None,
         "created_at": (
@@ -158,6 +167,16 @@ def _snapshot_sha(payload: object) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
+def _authority_sha(organizations: list[Organization]) -> str:
+    """Fingerprint the authorized registry scope without storing user credentials."""
+
+    scope = [
+        {"id": org.id, "slug": org.slug}
+        for org in sorted(organizations, key=lambda item: item.slug.casefold())
+    ]
+    return _snapshot_sha(scope)
+
+
 def refresh_cache(
     *,
     days: int = DEFAULT_WINDOW_DAYS,
@@ -166,28 +185,37 @@ def refresh_cache(
     if_older_than_hours: float | None = None,
     collect: Callable[..., dict[str, Any]] | None = None,
     load_flows: Callable[[set[str]], dict[str, list[dict[str, Any]]]] | None = None,
+    load_public_flows: Callable[[str], list[dict[str, Any]]] | None = None,
     organizations: list[Organization] | None = None,
     require_complete_catalog: bool = False,
 ) -> dict[str, Any]:
     """Fetch the digest and persist both cache tiers; the background-job body."""
 
     target = cache_path or _default_cache_path()
+    resolved_organizations = (
+        organizations if organizations is not None else load_organizations()
+    )
+    authority_sha256 = _authority_sha(resolved_organizations)
     if if_older_than_hours is not None:
         existing = read_cache(cache_path=target)
         if existing is not None:
             fetched_at = existing.get("fetched_at")
             try:
                 age = (_utc_now() - datetime.fromisoformat(str(fetched_at))).total_seconds()
-                if age < if_older_than_hours * 3600 and supports_play_discovery(
-                    existing.get("digest")
+                complete = (
+                    existing.get("catalog_complete") is True
+                    and isinstance(existing.get("catalog"), list)
+                    and isinstance(existing.get("catalog_sha256"), str)
+                )
+                if (
+                    age < if_older_than_hours * 3600
+                    and existing.get("authority_sha256") == authority_sha256
+                    and (complete or not require_complete_catalog)
+                    and supports_play_discovery(existing.get("digest"))
                 ):
                     return {**existing, "refreshed": False}
             except ValueError:
                 pass
-
-    resolved_organizations = (
-        organizations if organizations is not None else load_organizations()
-    )
     since: str | None = None
     # Mirror the interactive digest's default scope so the cache honors the
     # same acknowledgment checkpoint the awareness lane advances.
@@ -204,9 +232,20 @@ def refresh_cache(
         since = entry["checkpoint"]["last_seen_at"]
 
     flows_loader = load_flows or load_authorized_index_flows
+    public_loader = load_public_flows or load_public_organization_flows
     catalog_complete = True
     try:
         grouped = flows_loader({org.slug for org in resolved_organizations})
+        baseline_grouped: dict[str, list[dict[str, Any]]] = {}
+        for slug in PUBLIC_BASELINE_ORGANIZATIONS:
+            if slug in grouped:
+                baseline_grouped[slug] = [
+                    flow
+                    for flow in grouped[slug]
+                    if isinstance(flow, dict) and flow.get("visibility") == "public"
+                ]
+            else:
+                baseline_grouped[slug] = public_loader(slug)
     except Exception:  # noqa: BLE001 - retain a prior verified snapshot on maintenance failure
         if require_complete_catalog:
             raise
@@ -224,56 +263,89 @@ def refresh_cache(
     catalog: list[dict[str, Any]] = []
     public_catalog: list[dict[str, Any]] = []
     seen_references: set[str] = set()
-    for slug in sorted(grouped):
-        flows = grouped[slug]
-        if not isinstance(flows, list):
-            continue
-        for flow in flows:
-            if not isinstance(flow, Mapping):
+
+    def append_group(source: Mapping[str, list[dict[str, Any]]], *, baseline: bool) -> None:
+        for slug in sorted(source):
+            flows = source[slug]
+            if not isinstance(flows, list):
                 continue
-            name = flow.get("name")
-            if not isinstance(name, str) or not name:
-                continue
-            reference = flow.get("base_reference") or flow.get("reference")
-            if not isinstance(reference, str) or not reference:
-                reference = f"{slug}/{name}"
-            reference = reference.partition("@")[0]
-            if reference in seen_references:
-                continue
-            seen_references.add(reference)
-            catalog_entry = {
-                "reference": reference,
-                "name": name,
-                "description": str(flow.get("description") or "")[:240],
-                "visibility": flow.get("visibility"),
-                "version": (
-                    flow.get("version")
-                    if isinstance(flow.get("version"), str)
-                    else None
-                ),
-                "status": (
-                    flow.get("status")
-                    if isinstance(flow.get("status"), str)
-                    else None
-                ),
-                "labels": _string_list(flow.get("labels")),
-                "tags": _string_list(flow.get("tags")),
-                "adapters": _string_list(flow.get("adapters")),
-            }
-            for source_field, cache_field in (("id", "skill_id"), ("owner_id", "owner_id")):
-                value = flow.get(source_field)
-                if isinstance(value, str) and value:
-                    catalog_entry[cache_field] = value
-            catalog.append(catalog_entry)
-            public_entry = _public_catalog_entry(slug, flow)
-            if public_entry is not None:
-                public_catalog.append(public_entry)
-    catalog.sort(key=lambda item: str(item["reference"]).casefold())
+            for flow in flows:
+                if not isinstance(flow, Mapping):
+                    continue
+                name = flow.get("name")
+                if not isinstance(name, str) or not name:
+                    continue
+                reference = flow.get("base_reference") or flow.get("reference")
+                if not isinstance(reference, str) or not reference:
+                    reference = f"{slug}/{name}"
+                reference = reference.partition("@")[0]
+                if reference in seen_references:
+                    continue
+                seen_references.add(reference)
+                visibility = flow.get("visibility")
+                tier = (
+                    "public_baseline"
+                    if baseline
+                    else "authorized_public"
+                    if visibility == "public"
+                    else "authorized_private"
+                )
+                catalog_entry = {
+                    "reference": reference,
+                    "owner": slug,
+                    "name": name,
+                    "description": str(flow.get("description") or "")[:240],
+                    "visibility": visibility,
+                    "catalog_tier": tier,
+                    "version": (
+                        flow.get("version")
+                        if isinstance(flow.get("version"), str)
+                        else None
+                    ),
+                    "status": (
+                        flow.get("status")
+                        if isinstance(flow.get("status"), str)
+                        else None
+                    ),
+                    "labels": _string_list(flow.get("labels")),
+                    "tags": _string_list(flow.get("tags")),
+                    "adapters": _string_list(flow.get("adapters")),
+                }
+                for source_field, cache_field in (
+                    ("id", "skill_id"),
+                    ("owner_id", "owner_id"),
+                ):
+                    value = flow.get(source_field)
+                    if isinstance(value, str) and value:
+                        catalog_entry[cache_field] = value
+                catalog.append(catalog_entry)
+                public_entry = _public_catalog_entry(
+                    slug, flow, catalog_tier=tier
+                )
+                if public_entry is not None:
+                    public_catalog.append(public_entry)
+
+    append_group(grouped, baseline=False)
+    append_group(baseline_grouped, baseline=True)
+    tier_order = {
+        "authorized_private": 0,
+        "authorized_public": 1,
+        "public_baseline": 2,
+    }
+    catalog.sort(
+        key=lambda item: (
+            tier_order.get(str(item.get("catalog_tier")), 3),
+            str(item["reference"]).casefold(),
+        )
+    )
     public_catalog.sort(
         key=lambda item: (str(item["reference"]).casefold(), str(item["exact_reference"]))
     )
     organization_scope = sorted({org.slug for org in resolved_organizations})
+    baseline_scope = sorted(baseline_grouped)
     catalog_snapshot = {
+        "authority_sha256": authority_sha256,
+        "baseline_scope": baseline_scope,
         "organization_scope": organization_scope,
         "plays": catalog,
     }
@@ -292,6 +364,8 @@ def refresh_cache(
             "public": len(public_catalog),
         },
         "catalog_complete": catalog_complete,
+        "authority_sha256": authority_sha256,
+        "baseline_scope": baseline_scope,
         "organization_scope": organization_scope,
         "catalog_sha256": _snapshot_sha(catalog_snapshot),
         "digest": digest,

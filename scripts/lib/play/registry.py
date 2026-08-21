@@ -94,6 +94,13 @@ def load_authorized_flows(authorized_slugs: set[str]) -> dict[str, list[dict]]:
     return dict(loaded)
 
 
+def load_public_organization_flows(slug: str) -> list[dict]:
+    """Enumerate runnable public Plays from one public baseline organization."""
+
+    _, flows = _load_organization_flows(slug)
+    return [flow for flow in flows if flow.get("visibility") == "public"]
+
+
 def _default_parameters(parameters: object) -> dict[str, Any]:
     if not isinstance(parameters, list):
         return {}

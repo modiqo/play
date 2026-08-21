@@ -119,6 +119,7 @@ class InboxCacheTest(unittest.TestCase):
                     }
                 ]
             },
+            load_public_flows=lambda _: [],
             organizations=[Organization("acme", "acme")],
             **kwargs,
         )
@@ -140,9 +141,11 @@ class InboxCacheTest(unittest.TestCase):
                 {
                     "adapters": [],
                     "reference": "acme/ship-and-tell",
+                    "owner": "acme",
                     "name": "ship-and-tell",
                     "description": "Deploy, smoke, and post a summary.",
                     "visibility": "private",
+                    "catalog_tier": "authorized_private",
                     "version": None,
                     "status": None,
                     "labels": [],
@@ -276,6 +279,7 @@ class InboxCacheTest(unittest.TestCase):
             state_path=self.state_path,
             collect=lambda **_: _digest(0, 0),
             load_flows=lambda _: {"acme": list(flows)},
+            load_public_flows=lambda _: [],
             organizations=[Organization("acme", "Acme")],
             require_complete_catalog=True,
         )
@@ -285,6 +289,7 @@ class InboxCacheTest(unittest.TestCase):
             state_path=self.state_path,
             collect=lambda **_: _digest(0, 0),
             load_flows=lambda _: {"acme": list(reversed(flows))},
+            load_public_flows=lambda _: [],
             organizations=[Organization("acme", "Acme")],
             require_complete_catalog=True,
         )
@@ -302,6 +307,71 @@ class InboxCacheTest(unittest.TestCase):
         self.assertEqual(
             ["github", "release"], first["public_catalog"][1]["tags"]
         )
+
+    def test_cache_merges_public_baseline_after_authorized_tiers(self) -> None:
+        cache = refresh_cache(
+            cache_path=self.cache_path,
+            state_path=self.state_path,
+            collect=lambda **_: _digest(0, 0),
+            load_flows=lambda _: {
+                "acme": [
+                    {
+                        "name": "private-report",
+                        "visibility": "private",
+                    },
+                    {
+                        "name": "public-report",
+                        "visibility": "public",
+                        "status": "released",
+                    },
+                ]
+            },
+            load_public_flows=lambda slug: [
+                {
+                    "name": "starter",
+                    "visibility": "public",
+                    "status": "released",
+                }
+            ] if slug == "modiqo" else [],
+            organizations=[Organization("acme", "Acme", "org-acme")],
+            require_complete_catalog=True,
+        )
+
+        self.assertEqual(["modiqo"], cache["baseline_scope"])
+        self.assertRegex(cache["authority_sha256"], r"^sha256:[0-9a-f]{64}$")
+        self.assertEqual(
+            ["authorized_private", "authorized_public", "public_baseline"],
+            [item["catalog_tier"] for item in cache["catalog"]],
+        )
+
+    def test_fresh_cache_is_refreshed_when_authority_scope_changes(self) -> None:
+        calls = 0
+
+        def load_flows(slugs):
+            nonlocal calls
+            calls += 1
+            return {slug: [] for slug in slugs}
+
+        common = {
+            "cache_path": self.cache_path,
+            "state_path": self.state_path,
+            "collect": lambda **_: _digest(0, 0),
+            "load_flows": load_flows,
+            "load_public_flows": lambda _: [],
+            "if_older_than_hours": 6,
+        }
+        refresh_cache(
+            **common,
+            organizations=[Organization("acme", "Acme", "org-acme")],
+        )
+        refreshed = refresh_cache(
+            **common,
+            organizations=[Organization("beta", "Beta", "org-beta")],
+        )
+
+        self.assertTrue(refreshed["refreshed"])
+        self.assertEqual(2, calls)
+        self.assertEqual(["beta"], refreshed["organization_scope"])
 
     def test_required_complete_catalog_failure_preserves_last_snapshot(self) -> None:
         self._refresh(_digest(1, 0))

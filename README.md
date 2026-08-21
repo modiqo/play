@@ -704,8 +704,12 @@ claude plugin install play@play-skills
 
 The public marketplace source is `modiqo/play`, so `.` can be replaced with that GitHub
 `owner/repository` from outside this checkout. The guided installer converges the separately trusted
-Rote skill distribution before reinstalling Play; every harness still uses the same runtime
-preflight because plugin metadata alone cannot prove CLI installation or login state.
+Rote skill distribution before inspecting Play. It reuses a healthy installation only when its
+version and byte-level plugin payload both match; otherwise it refreshes the marketplace and
+reinstalls. The owner-editable model configuration is preserved, the large model catalog is copied
+only when its content changes, and a complete discovery cache younger than six hours is reused.
+Every harness still uses the same runtime preflight because plugin metadata alone cannot prove CLI
+installation or login state.
 
 ### Skill-directory harnesses
 
@@ -1048,9 +1052,11 @@ credentials are stored.
 
 ### The zero-token inbox and structural hooks
 
-The inbox also has a proactive, zero-token surface. A background refresh caches both tiers —
-a precomputed one-line summary and the full digest with rendered markdown — plus the authorized
-hub catalog, under `~/.rote-play/inbox-cache.json`:
+The inbox also has a proactive, zero-token surface. A background refresh caches a precomputed
+one-line summary, the full digest with rendered markdown, and a tiered discovery catalog under
+`~/.rote-play/inbox-cache.json`. Discovery precedence is local installed/unpublished Plays,
+authorized private Plays, authorized public Plays, then the curated public Modiqo baseline.
+The local index is queried and merged even while the verified registry catalog is fresh:
 
 ```bash
 play-inbox refresh --if-older-than 6   # background-job body; skips when fresh
@@ -1140,12 +1146,13 @@ harness is an interception candidate in every other, and nudges never double-fir
 resolution is specificity ordered (`session` over `project` over `global`); a non-global entry must
 carry its exact scope key and cannot silently widen to other sessions or projects.
 
-Cache lifecycle: setup synchronously builds a complete, canonically ordered public catalog after
-identity verification and records its stable SHA-256 fingerprint in the bootstrap receipt. **What’s
-New** therefore has a zero-network first read when the harness starts. Session start refreshes only
-when the cache is older than six hours — no cron or manual sync — and keeps the last verified
-snapshot if a maintenance refresh cannot reach the registry. The cache stores exact references,
-release metadata, labels, and tags when the registry exposes them; digest acknowledgment remains a
+Cache lifecycle: setup synchronously builds a complete, canonically ordered catalog after identity
+verification and records both its stable SHA-256 fingerprint and its authorized-organization
+fingerprint in the bootstrap receipt. **What’s New** therefore has a zero-network first read when
+the harness starts. Session start refreshes only when the cache is older than six hours or the
+authorized scope changes — no cron or manual sync — and keeps the last verified snapshot if a
+maintenance refresh cannot reach the registry. The cache stores exact references, release metadata,
+labels, tags, and each entry's tier when the registry exposes them; digest acknowledgment remains a
 separate state so refreshing never marks an item as viewed.
 
 Recurring delivery is optional and must be explicitly requested. Its host-neutral two-phase

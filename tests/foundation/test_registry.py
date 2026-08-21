@@ -20,6 +20,7 @@ from play.registry import (
     load_authorized_index_flows,
     load_organizations,
     load_play_inspection,
+    load_public_organization_flows,
     load_registry_flow_info,
 )
 
@@ -60,6 +61,17 @@ class RegistryTest(unittest.TestCase):
         self.assertTrue(
             all(call.args[:3] == ("registry", "play", "list") for call in run_json.call_args_list)
         )
+
+    @patch("play.registry.run_rote_json")
+    def test_public_baseline_filters_private_organization_plays(self, run_json) -> None:
+        run_json.return_value = [
+            {"name": "starter", "visibility": "public"},
+            {"name": "internal", "visibility": "private"},
+        ]
+
+        flows = load_public_organization_flows("modiqo")
+
+        self.assertEqual(["starter"], [flow["name"] for flow in flows])
 
     @patch("play.registry.run_rote_json")
     def test_play_inspect_normalizes_metrics_and_parameter_defaults(self, run_json) -> None:

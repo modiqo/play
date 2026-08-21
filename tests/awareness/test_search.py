@@ -425,8 +425,14 @@ class SearchTest(unittest.TestCase):
         self.assertEqual("modiqo/retrieve-rideshare-receipts", results[0]["reference"])
         self.assertEqual("full", results[0]["match_classification"])
         self.assertEqual("complete", local["source_health"]["catalog_cache"])
-        self.assertEqual("cached", local["source_health"]["mode"])
-        self.assertEqual([], local["source_health"]["live_errors"])
+        self.assertEqual("cached_with_local", local["source_health"]["mode"])
+        self.assertTrue(local["source_health"]["live_errors"])
+        self.assertTrue(
+            all(
+                error["source"] == "local"
+                for error in local["source_health"]["live_errors"]
+            )
+        )
 
     def test_cached_feed_returns_only_the_adequate_landing_page_match(self):
         import json as json_module
@@ -467,7 +473,9 @@ class SearchTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            with mock.patch.object(PLAY_SEARCH, "run_json") as live_search, \
+            with mock.patch.object(
+                    PLAY_SEARCH, "run_json", return_value={"flows": []}
+            ) as live_search, \
                     mock.patch.dict(
                         os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
                     ):
@@ -475,7 +483,13 @@ class SearchTest(unittest.TestCase):
                     "find an available landing page readiness play", 5
                 )
 
-        live_search.assert_not_called()
+        self.assertEqual(2, live_search.call_count)
+        self.assertTrue(
+            all(
+                call.args[0][1:3] == ["play", "search"]
+                for call in live_search.call_args_list
+            )
+        )
         results = PLAY_SEARCH.merge_results(
             local,
             registry,
@@ -488,6 +502,46 @@ class SearchTest(unittest.TestCase):
             [result["reference"] for result in results],
         )
         self.assertEqual("full", results[0]["match_classification"])
+
+    def test_complete_catalog_still_merges_local_installed_plays(self):
+        import json as json_module
+        import tempfile
+
+        flow_root = pathlib.Path("/tmp/example-flows")
+        with tempfile.TemporaryDirectory() as temporary:
+            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
+            cache_path.write_text(
+                json_module.dumps(
+                    {
+                        "schema": "play.inbox-cache/v1",
+                        "catalog_complete": True,
+                        "catalog": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            local_result = {
+                "flows": [
+                    {
+                        "name": "local-report",
+                        "path": str(flow_root / "acme" / "local-report" / "main.ts"),
+                        "description": "Create a local report",
+                        "score": 1.0,
+                    }
+                ]
+            }
+            with mock.patch.object(
+                PLAY_SEARCH, "run_json", return_value=local_result
+            ), mock.patch.dict(
+                os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
+            ):
+                local, registry = PLAY_SEARCH.search_both("local report", 5)
+
+        results = PLAY_SEARCH.merge_results(
+            local, registry, flow_root, 5, "local report"
+        )
+        self.assertEqual(["acme/local-report"], [item["reference"] for item in results])
+        self.assertEqual("local", results[0]["primary_scope"])
 
     def test_cached_adapter_associations_find_latest_unique_plays(self):
         catalog = [
@@ -624,7 +678,7 @@ class SearchTest(unittest.TestCase):
             ),
         )
 
-    def test_scope_priority_is_local_then_private_then_public(self):
+    def test_scope_priority_is_local_then_private_then_public_then_baseline(self):
         flow_root = pathlib.Path("/tmp/example-flows")
         description = "Retrieve rideshare receipts"
         local = {
@@ -656,12 +710,22 @@ class SearchTest(unittest.TestCase):
                 "visibility": "private",
                 "storage_path": "organization_123/private-receipts/1.0.0/flow",
             },
+            {
+                "owner_slug": "modiqo",
+                "skill_name": "baseline-receipts",
+                "skill_description": description,
+                "version": "3.0.0",
+                "rank": 20.0,
+                "status": "approved",
+                "visibility": "public",
+                "catalog_tier": "public_baseline",
+            },
         ]
         results = PLAY_SEARCH.merge_results(
             local, registry, flow_root, 10, "rideshare receipts"
         )
         self.assertEqual(
-            ["local", "remote_private", "remote_public"],
+            ["local", "remote_private", "remote_public", "remote_baseline"],
             [result["primary_scope"] for result in results],
         )
 

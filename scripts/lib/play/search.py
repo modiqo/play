@@ -81,24 +81,16 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
     fetch_limit = max(50, limit * 10)
     queries = discovery_queries(query)
     catalog_items, catalog_complete = _catalog_snapshot()
-    if catalog_complete:
-        return {
-            "flows": [],
-            "source_health": {
-                "catalog_cache": "complete",
-                "mode": "cached",
-                "live_errors": [],
-            },
-        }, reconcile_registry_items([], catalog_items)
     commands = {}
     for index, candidate in enumerate(queries):
         commands[("local", index)] = [
             "rote", "play", "search", candidate, "--limit", str(fetch_limit), "--json"
         ]
-        commands[("registry", index)] = [
-            "rote", "registry", "play", "search", candidate,
-            "--limit", str(fetch_limit), "--json",
-        ]
+        if not catalog_complete:
+            commands[("registry", index)] = [
+                "rote", "registry", "play", "search", candidate,
+                "--limit", str(fetch_limit), "--json",
+            ]
     with ThreadPoolExecutor(max_workers=len(commands)) as executor:
         pending = {
             key: executor.submit(run_json, command, error_type=SearchError)
@@ -151,7 +143,7 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
         "flows": local_flows,
         "source_health": {
             "catalog_cache": "complete" if catalog_complete else "unavailable",
-            "mode": "live_fallback",
+            "mode": "cached_with_local" if catalog_complete else "live_fallback",
             "live_errors": [
                 {
                     "source": source,
@@ -211,7 +203,14 @@ def reconcile_registry_items(live_items: list, catalog_items: list[dict]) -> lis
             covered_catalog.add(id(catalog_item))
             # Organization enumeration is authoritative for mutable ownership and
             # visibility. Live search still supplies version, rank, and status.
-            for field in ("owner_slug", "skill_name", "skill_id", "owner_id", "visibility"):
+            for field in (
+                "owner_slug",
+                "skill_name",
+                "skill_id",
+                "owner_id",
+                "visibility",
+                "catalog_tier",
+            ):
                 value = catalog_item.get(field)
                 if value is not None:
                     item[field] = value
@@ -258,6 +257,7 @@ def _catalog_snapshot() -> tuple[list[dict], bool]:
                 "skill_name": name,
                 "skill_description": entry.get("description") or "",
                 "visibility": entry.get("visibility"),
+                "catalog_tier": entry.get("catalog_tier"),
                 "skill_id": entry.get("skill_id"),
                 "owner_id": entry.get("owner_id"),
                 "version": entry.get("version"),
@@ -281,6 +281,8 @@ def _catalog_items() -> list[dict]:
 
 
 def registry_scope(item: dict) -> str:
+    if item.get("catalog_tier") == "public_baseline":
+        return "remote_baseline"
     if item.get("visibility") == "public":
         return "remote_public"
     # Search responses can omit visibility. Never infer it from an internal
@@ -505,7 +507,8 @@ def merge_results(
         hit["primary_scope"] = (
             "local" if "local" in hit["sources"]
             else "remote_private" if "remote_private" in hit["sources"]
-            else "remote_public"
+            else "remote_public" if "remote_public" in hit["sources"]
+            else "remote_baseline"
         )
     lexical_full = any(hit["match_classification"] == "full" for hit in hits)
     adapter_matches = [hit for hit in hits if hit["matched_adapters"]]
@@ -519,7 +522,12 @@ def merge_results(
         hits = [hit for hit in hits if hit["match_classification"] == best_class]
 
     class_priority = {"full": 0, "partial": 1, "uncertain": 2}
-    scope_priority = {"local": 0, "remote_private": 1, "remote_public": 2}
+    scope_priority = {
+        "local": 0,
+        "remote_private": 1,
+        "remote_public": 2,
+        "remote_baseline": 3,
+    }
     hits.sort(key=lambda hit: (
         class_priority[hit["match_classification"]],
         scope_priority[hit["primary_scope"]],
@@ -612,8 +620,9 @@ def render_markdown(
     source_health: dict | None = None,
 ) -> str:
     source_label = (
-        "cached authorized Play feed"
-        if isinstance(source_health, dict) and source_health.get("mode") == "cached"
+        "local index + cached authorized Play feed"
+        if isinstance(source_health, dict)
+        and source_health.get("mode") == "cached_with_local"
         else "local + authorized registry"
     )
     lines = [f"Search: `{normalized}`", "", f"Sources: {source_label}"]
@@ -696,7 +705,12 @@ def main() -> int:
         "query": original,
         "normalized_query": normalized,
         "complete": True,
-        "sources": ["local", "remote_private", "remote_public"],
+        "sources": [
+            "local",
+            "remote_private",
+            "remote_public",
+            "remote_baseline",
+        ],
         "result_refs": [result["reference"] for result in results if result["reference"]],
         "results": results,
         "play_choices": build_play_choices(results),

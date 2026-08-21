@@ -383,6 +383,31 @@ class InterceptTest(unittest.TestCase):
         self.assertIn("inspects first", line)
         self.assertIn("never pull plays or adapters manually", line)
 
+    def test_unpublished_local_play_precedes_same_named_catalog_play(self) -> None:
+        from play.private_store import atomic_write_json
+
+        atomic_write_json(
+            Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
+            {
+                "schema": "play.inbox-cache/v1",
+                "catalog": [
+                    {
+                        "reference": "modiqo/pr-status-check",
+                        "name": "pr-status-check",
+                        "description": "Remote PR status checker.",
+                        "visibility": "public",
+                        "catalog_tier": "public_baseline",
+                    }
+                ],
+            },
+        )
+
+        line = intercept_prompt("check status on PR 1701")
+
+        assert line is not None
+        self.assertIn("saved Play `pr-status-check`", line)
+        self.assertNotIn("available in your hub", line)
+
     def test_followup_adverb_does_not_silence_cached_rideshare_match(self) -> None:
         from play.private_store import atomic_write_json
 

@@ -2087,6 +2087,8 @@ def _warm_public_play_cache(
     counts = payload.get("counts") if isinstance(payload, dict) else None
     public_count = counts.get("public") if isinstance(counts, dict) else None
     organization_scope = payload.get("organization_scope") if isinstance(payload, dict) else None
+    baseline_scope = payload.get("baseline_scope") if isinstance(payload, dict) else None
+    authority = payload.get("authority_sha256") if isinstance(payload, dict) else None
     snapshot = payload.get("catalog_sha256") if isinstance(payload, dict) else None
     valid = (
         isinstance(payload, dict)
@@ -2097,6 +2099,10 @@ def _warm_public_play_cache(
         and public_count >= 0
         and isinstance(organization_scope, list)
         and all(isinstance(slug, str) and slug for slug in organization_scope)
+        and isinstance(baseline_scope, list)
+        and "modiqo" in baseline_scope
+        and isinstance(authority, str)
+        and re.fullmatch(r"sha256:[0-9a-f]{64}", authority) is not None
         and isinstance(snapshot, str)
         and re.fullmatch(r"sha256:[0-9a-f]{64}", snapshot) is not None
     )
@@ -2120,6 +2126,8 @@ def _warm_public_play_cache(
             "schema": payload["schema"],
             "catalog_complete": True,
             "catalog_sha256": snapshot,
+            "authority_sha256": authority,
+            "baseline_scope": baseline_scope,
             "organization_scope": organization_scope,
             "public_play_count": public_count,
         },

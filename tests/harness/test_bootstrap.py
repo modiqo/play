@@ -1049,6 +1049,8 @@ class BootstrapTest(unittest.TestCase):
                         "refreshed": True,
                         "catalog_complete": True,
                         "catalog_sha256": "sha256:" + "a" * 64,
+                        "authority_sha256": "sha256:" + "b" * 64,
+                        "baseline_scope": ["modiqo"],
                         "organization_scope": ["modiqo"],
                         "counts": {"public": 47},
                     }
@@ -1256,6 +1258,8 @@ class BootstrapTest(unittest.TestCase):
                         "refreshed": True,
                         "catalog_complete": True,
                         "catalog_sha256": "sha256:" + "a" * 64,
+                        "authority_sha256": "sha256:" + "b" * 64,
+                        "baseline_scope": ["modiqo"],
                         "organization_scope": ["modiqo"],
                         "counts": {"public": 47},
                     }
