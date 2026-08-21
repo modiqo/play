@@ -5,8 +5,13 @@ import {formatNumber} from './format.js'
 import {journeyCoordinates} from './journey-layout.mjs'
 import {KIND_LABEL, MAP_MEANING, WORLD_ROLE, WORLD_STORY, worldSpec} from './semantics.js'
 
-const INK_SOFT = 0x929b9e
-const INK_DARK = 0x596164
+export const STRUCTURE_COLORS = Object.freeze({
+  pale: 0x40555c,
+  soft: 0x30444b,
+  dark: 0x203137,
+})
+const INK_SOFT = STRUCTURE_COLORS.soft
+const INK_DARK = STRUCTURE_COLORS.dark
 export const GROUND = 0x1b2225
 export const AMBER = 0xe88413
 
@@ -20,9 +25,10 @@ export function journeyPositions(chapters) {
 
 export function material(color = INK_SOFT, options = {}) {
   return new THREE.MeshStandardMaterial({
-    color, roughness: options.roughness ?? .82, metalness: options.metalness ?? .08,
-    emissive: options.emissive ?? color, emissiveIntensity: options.emissiveIntensity ?? .09,
+    color, roughness: options.roughness ?? .88, metalness: options.metalness ?? .035,
+    emissive: options.emissive ?? color, emissiveIntensity: options.emissiveIntensity ?? .045,
     transparent: options.opacity !== undefined, opacity: options.opacity ?? 1,
+    dithering: true,
   })
 }
 
@@ -154,7 +160,7 @@ function effectCrater(group) {
 
 export function landmarkFor(chapter) {
   const group = new THREE.Group()
-  const pale = 0x767c7e
+  const pale = STRUCTURE_COLORS.pale
   const gray = INK_SOFT
   const dark = INK_DARK
   const landmark = worldSpec(chapter.kind).landmark
