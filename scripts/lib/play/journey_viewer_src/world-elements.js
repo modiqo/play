@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import {CSS2DObject} from 'three/addons/renderers/CSS2DRenderer.js'
+import {horizontalCalloutOffsets} from './callout-layout.mjs'
 import {formatNumber} from './format.js'
 import {journeyCoordinates} from './journey-layout.mjs'
 import {KIND_LABEL, MAP_MEANING, WORLD_ROLE, WORLD_STORY, worldSpec} from './semantics.js'
@@ -379,7 +380,7 @@ export function clampVisibleCallouts(labelLayer, viewport) {
     '.world-callout.expanded:not(.in-transit), .world-callout.current:not(.in-transit), .world-callout.frozen:not(.in-transit), .world-interaction-callout.proximity, .world-interaction-callout.selected',
   )]
   const shell = viewport.closest('main') || viewport.parentElement
-  const obstacles = shell ? [...shell.querySelectorAll('.journey-guide, .landmark-panel.visible, .capability-rail')]
+  const obstacles = shell ? [...shell.querySelectorAll('.follow-instruments, .journey-guide, .landmark-panel.visible, .capability-rail')]
     .filter((node) => node.offsetWidth > 0 && node.offsetHeight > 0)
     .map((node) => node.getBoundingClientRect()) : []
   const intersects = (left, right) => !(
@@ -403,7 +404,12 @@ export function clampVisibleCallouts(labelLayer, viewport) {
     const edgeX = Math.max(bounds.left + horizontalInset - rect.left, Math.min(0, bounds.right - horizontalInset - rect.right))
     const edgeY = Math.max(bounds.top + topInset - rect.top, Math.min(0, bounds.bottom - bottomInset - rect.bottom))
     const direction = callout.dataset.side === 'right' ? 1 : -1
-    const xOffsets = callout.classList.contains('world-callout') ? [edgeX] : [edgeX, edgeX + direction * 38, edgeX - direction * 38, edgeX + direction * 78]
+    const xOffsets = horizontalCalloutOffsets({
+      edgeX,
+      width: rect.width,
+      worldCallout: callout.classList.contains('world-callout'),
+      direction,
+    })
     const verticalStep = rect.height + gap
     const yOffsets = [edgeY]
     for (let level = 1; level <= callouts.length; level += 1) {
@@ -411,8 +417,13 @@ export function clampVisibleCallouts(labelLayer, viewport) {
     }
     let chosen = null
     let chosenOffset = [edgeX, edgeY]
-    search: for (const offsetX of xOffsets) {
-      for (const offsetY of yOffsets) {
+    const worldCallout = callout.classList.contains('world-callout')
+    const primaryOffsets = worldCallout ? yOffsets : xOffsets
+    const secondaryOffsets = worldCallout ? xOffsets : yOffsets
+    search: for (const primary of primaryOffsets) {
+      for (const secondary of secondaryOffsets) {
+        const offsetX = worldCallout ? secondary : primary
+        const offsetY = worldCallout ? primary : secondary
         const candidate = translated(rect, offsetX, offsetY)
         if (!inside(candidate)) continue
         if (obstacles.some((obstacle) => intersects(candidate, obstacle))) continue
