@@ -180,8 +180,11 @@ main {
   background: rgba(8,10,12,.58); color: #bd8a4e; backdrop-filter: blur(18px); font: inherit; font-size: calc(6px * var(--experience-scale)); letter-spacing: .12em; cursor: pointer;
   transition: opacity 180ms ease, transform 180ms ease;
 }
+.tutorial-overlay-layer {
+  position: absolute; z-index: 12; inset: 0; pointer-events: auto;
+}
 .tutorial-intro, .tutorial-complete {
-  position: absolute; z-index: 12; left: 50%; top: 50%; box-sizing: border-box; width: min(720px, calc(100vw - 42px)); max-height: calc(100vh - 130px);
+  position: absolute; left: 50%; top: 50%; box-sizing: border-box; width: min(720px, calc(100vw - 42px)); max-height: calc(100vh - 130px);
   padding: 28px 30px; overflow: auto; border: 1px solid rgba(232,132,19,.54); background: rgba(7,9,11,.93);
   box-shadow: 0 34px 120px rgba(0,0,0,.68); backdrop-filter: blur(26px) saturate(.76); transform: translate(-50%,-50%); pointer-events: auto;
 }

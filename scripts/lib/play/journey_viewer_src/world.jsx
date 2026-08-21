@@ -423,6 +423,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           traveler.material.color.lerp(signalTarget, .09)
           traveler.material.emissive.lerp(signalTarget, .09)
           focusRing.material.color.lerp(signalTarget, .09)
+          route.material.color.lerp(signalTarget, .09)
+          route.material.emissive.lerp(signalTarget, .09)
           if (reached !== previousReached) {
             dismissed.current.delete(sites[reached]?.chapter.id)
             navigation.reset()
@@ -439,7 +441,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             settleElapsedMs: performance.now() - reachedAt,
           })
           const visibleWindow = journeyVisibilityWindow(sites.length, reached)
-          route.material.opacity = interactionFocus ? .1 : 1
+          route.material.opacity = interactionFocus ? .34 : 1
           traveler.visible = !interactionFocus
           focusRing.material.opacity = interactionFocus ? .06 : .42
           sites.forEach((site, siteIndex) => {
@@ -456,10 +458,10 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             const isSelected = isSelectedSite && !interactionFocus
             const interactionEngaged = (isSelectedSite && interactionFocus) || site.plaques.some((plaque) => plaque.root.classList.contains('spread'))
             site.landmark.position.y = tutorialFocus && isCurrent && !interactionFocus ? .08 + Math.sin(elapsed * 1.8) * .015 : 0
-            site.platform.material.color.setHex(isCurrent && !interactionFocus ? 0x252d30 : 0x101518)
+            site.platform.material.color.setHex(isCurrent ? (interactionFocus ? 0x1b2225 : 0x252d30) : 0x101518)
             site.landmarkMaterials.forEach((state) => {
               state.material.color.copy(state.color)
-              if (interactionFocus) state.material.color.multiplyScalar(.07)
+              if (interactionFocus) state.material.color.multiplyScalar(.28)
               else if (isFuture) state.material.color.multiplyScalar(.06)
               else if (tutorialFocus && !isCurrent) state.material.color.multiplyScalar(.22)
               if (state.material.emissive && state.emissive) {
