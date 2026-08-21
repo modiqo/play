@@ -43,6 +43,7 @@ export default function PhysicalBeadOverlay({
   positionFor,
   edgeFor,
   labelBeads,
+  markerScale = 1,
   onSelect,
 }) {
   const host = useRef(null)
@@ -139,7 +140,7 @@ export default function PhysicalBeadOverlay({
         const overviewFloor = semanticZoom === 'journey'
           ? bead.site.id === currentSiteId ? 3.8 : 1.25
           : 2.2
-        const screenRadius = Math.max(overviewFloor, radius)
+        const screenRadius = Math.max(overviewFloor * markerScale, radius)
         dummy.position.set(
           projected[0] - size.width / 2,
           size.height / 2 - projected[1],
@@ -153,7 +154,7 @@ export default function PhysicalBeadOverlay({
       value.beadGroup.add(mesh)
     }
     value.renderer.render(value.scene, value.camera)
-  }, [adjacent, beads, currentSiteId, edgeFor, positionFor, reached, selectedSequence, semanticZoom, size, viewState])
+  }, [adjacent, beads, currentSiteId, edgeFor, markerScale, positionFor, reached, selectedSequence, semanticZoom, size, viewState])
 
   const viewport = viewportFor(viewState, size.width, size.height)
   const labels = viewport ? labelBeads.map((bead) => {

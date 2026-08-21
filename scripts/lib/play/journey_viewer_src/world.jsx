@@ -85,7 +85,7 @@ function updateTemporalThreadAppearance(thread, {
     : current && !interactionFocus ? .018 : .004
 }
 
-export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect}) {
+export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect, markerScale = 1}) {
   const host = useRef(null)
   const runtime = useRef(null)
   const replayRef = useRef(replay)
@@ -274,7 +274,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         let maximumMarkerElevation = 0
         temporalCorridor.points.forEach((temporal, recordIndex) => {
           const record = {...temporal.record, temporal, siteId: chapter.id}
-          const radius = interactionRadius(record)
+          const radius = interactionRadius(record) * markerScale
           const baseY = .82 + radius + temporal.lane * .56 + (recordIndex % 2) * .12
           maximumMarkerElevation = Math.max(maximumMarkerElevation, baseY + radius)
           const bead = new THREE.Mesh(glassBeadGeometry(radius), glassBeadMaterial())
@@ -557,7 +557,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       cleanup()
       return undefined
     }
-  }, [interactions, onSelect, pageEnd, pageStart, positions, story])
+  }, [interactions, markerScale, onSelect, pageEnd, pageStart, positions, story])
 
   useEffect(() => {
     const close = (event) => { if (event.key === 'Escape') onSelect(null) }

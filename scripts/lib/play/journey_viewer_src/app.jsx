@@ -4,10 +4,29 @@ import {formatNumber} from './format.js'
 import {CapabilityRail, JourneyGuide, ModelLiveCounter, Telemetry, TutorialExperience, WorldModel} from './panels.jsx'
 import {KIND_LABEL, MAP_MEANING} from './semantics.js'
 import {journeyTrackerIndexes} from './journey-position.mjs'
+import {EXPERIENCE_SCALES, adjacentExperienceScale, defaultExperienceScale, markerScaleForExperience, storedExperienceScale} from './experience-scale.mjs'
 import {useJourneyRuntime} from './use-journey-runtime.js'
 import JourneyWorld from './world.jsx'
 
 export default function App() {
+  const [viewport, setViewport] = React.useState(() => ({width: window.innerWidth, height: window.innerHeight}))
+  const [experienceScale, setExperienceScale] = React.useState(() => {
+    try {
+      const stored = storedExperienceScale(window.localStorage.getItem('play-journey:experience-scale:v1'))
+      if (stored) return stored
+    } catch {}
+    return defaultExperienceScale(window.innerWidth, window.innerHeight)
+  })
+  React.useEffect(() => {
+    const update = () => setViewport({width: window.innerWidth, height: window.innerHeight})
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  React.useEffect(() => {
+    try { window.localStorage.setItem('play-journey:experience-scale:v1', String(experienceScale)) } catch {}
+  }, [experienceScale])
+  const markerScale = markerScaleForExperience(experienceScale, viewport.width, viewport.height)
+  const panelScale = 1 + (experienceScale - 1) * .48
   const {
     index, workspace, story, interactions, tutorial, selected, setSelected, exchange,
     replay, playing, observing, trackingLive, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
@@ -44,12 +63,15 @@ export default function App() {
     if (nextMode !== 'follow') setFitSignal((value) => value + 1)
   }
 
-  return <main className={`dark mode-${mode}${frozen ? ' is-frozen' : ''}${trackingLive ? ' is-live-tracking' : ''}${isTutorial ? ' tutorial-guided' : ''}${tutorialEntryModelActive ? ' world-model-active' : ''}`}>
+  return <main
+    className={`dark mode-${mode}${frozen ? ' is-frozen' : ''}${trackingLive ? ' is-live-tracking' : ''}${isTutorial ? ' tutorial-guided' : ''}${tutorialEntryModelActive ? ' world-model-active' : ''}`}
+    style={{'--experience-scale': experienceScale, '--experience-panel-scale': panelScale, '--experience-marker-scale': markerScale}}
+  >
     <section className="atlas-stage">
       {story && interactions
         ? mode === 'follow'
-          ? <JourneyWorld key={`follow:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} selected={selected} onSelect={selectVantage} />
-          : <Cartography key={`${mode}:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} selected={selected} onSelect={setSelected} fitSignal={fitSignal} />
+          ? <JourneyWorld key={`follow:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} selected={selected} onSelect={selectVantage} markerScale={markerScale} />
+          : <Cartography key={`${mode}:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} selected={selected} onSelect={setSelected} fitSignal={fitSignal} markerScale={markerScale} />
         : loadError
           ? <div className="loading failed"><strong>JOURNEY CONNECTION LOST</strong><span>{loadError}</span><code>play-journey view --active</code></div>
           : <div className="loading"><i />CONSTRUCTING JOURNEY ATLAS</div>}
@@ -69,6 +91,26 @@ export default function App() {
         <button className={mode === 'follow' ? 'active' : ''} onClick={() => changeMode('follow')}>FOLLOW</button>
         <button className={mode === 'atlas' ? 'active' : ''} onClick={() => changeMode('atlas')}>ATLAS</button>
         {mode !== 'follow' && <button onClick={() => setFitSignal((value) => value + 1)}>FIT</button>}
+        <div className="experience-scale-control" aria-label="Experience scale">
+          <button
+            disabled={experienceScale === EXPERIENCE_SCALES[0]}
+            onClick={() => setExperienceScale((value) => adjacentExperienceScale(value, -1))}
+            title="Decrease text, cards, callouts, and glass bead size"
+            aria-label="Decrease experience scale"
+          >A−</button>
+          <button
+            className="experience-scale-value"
+            onClick={() => setExperienceScale(1)}
+            title="Reset experience scale"
+            aria-label={`Experience scale ${Math.round(experienceScale * 100)} percent; reset to standard`}
+          >{Math.round(experienceScale * 100)}%</button>
+          <button
+            disabled={experienceScale === EXPERIENCE_SCALES.at(-1)}
+            onClick={() => setExperienceScale((value) => adjacentExperienceScale(value, 1))}
+            title="Increase text, cards, callouts, and glass bead size"
+            aria-label="Increase experience scale"
+          >A+</button>
+        </div>
       </div>
     </header>
     <aside className={`journey-drawer${journeysOpen ? ' open' : ''}`}>

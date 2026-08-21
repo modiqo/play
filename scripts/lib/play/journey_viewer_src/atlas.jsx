@@ -57,7 +57,7 @@ function sampledBeads(beads, maximum = 9) {
   return beads.filter((_bead, index) => indexes.has(index))
 }
 
-export default function Cartography({story, interactions, replay, playing, selected, onSelect, fitSignal}) {
+export default function Cartography({story, interactions, replay, playing, selected, onSelect, fitSignal, markerScale = 1}) {
   const atlas = useMemo(() => buildAtlas(story, interactions), [interactions, story])
   const fittedView = useMemo(() => fitView(atlas), [atlas])
   const colors = DARK
@@ -119,10 +119,10 @@ export default function Cartography({story, interactions, replay, playing, selec
   }, [bloomSiteId, bundleBloom, bundleScale])
   const beadPosition = useCallback((bead) => transformPoint(bead.site, bead.center), [transformPoint])
   const beadEdge = useCallback((bead) => transformPoint(bead.site, [
-    bead.center[0] + bead.radius,
+    bead.center[0] + bead.radius * markerScale,
     bead.center[1],
     bead.center[2],
-  ]), [transformPoint])
+  ]), [markerScale, transformPoint])
   const phaseBeads = semanticZoom === 'journey'
     ? atlas.beads
     : atlas.beads.filter((bead) => bead.site.id === focusSite?.id)
@@ -234,8 +234,8 @@ export default function Cartography({story, interactions, replay, playing, selec
     }),
     new ScatterplotLayer({
       id: 'event-bead-hit-targets', data: phaseBeads, coordinateSystem,
-      getPosition: beadPosition, getRadius: (item) => item.radius * (item.site.id === bloomSiteId ? bundleScale : 1),
-      radiusUnits: 'common', radiusMinPixels: semanticZoom === 'journey' ? 5 : 8,
+      getPosition: beadPosition, getRadius: (item) => item.radius * markerScale * (item.site.id === bloomSiteId ? bundleScale : 1),
+      radiusUnits: 'common', radiusMinPixels: (semanticZoom === 'journey' ? 5 : 8) * markerScale,
       filled: true, stroked: false, getFillColor: [0, 0, 0, 1], pickable: true,
       onClick: ({object}) => object && onSelect({siteId: object.site.id, sequence: object.interaction.sequence}),
     }),
@@ -246,7 +246,7 @@ export default function Cartography({story, interactions, replay, playing, selec
     }),
     new ScatterplotLayer({
       id: 'selected-bead-ring', data: selected?.sequence ? [atlas.beadBySequence.get(selected.sequence)].filter(Boolean) : [], coordinateSystem,
-      getPosition: beadPosition, getRadius: (item) => (item.radius + .24) * (item.site.id === bloomSiteId ? bundleScale : 1),
+      getPosition: beadPosition, getRadius: (item) => (item.radius * markerScale + .24) * (item.site.id === bloomSiteId ? bundleScale : 1),
       radiusUnits: 'common', filled: false, stroked: true, getLineColor: [...NAV_BLUE_BRIGHT, 255],
       getLineWidth: 2.2, lineWidthUnits: 'pixels',
     }),
@@ -282,6 +282,7 @@ export default function Cartography({story, interactions, replay, playing, selec
       positionFor={beadPosition}
       edgeFor={beadEdge}
       labelBeads={labelBeads}
+      markerScale={markerScale}
       onSelect={onSelect}
     />
     <div className="map-compass"><span>N</span><i /></div>
