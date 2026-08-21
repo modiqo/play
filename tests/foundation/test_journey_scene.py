@@ -357,6 +357,7 @@ class JourneySceneTest(unittest.TestCase):
         self.assertEqual(registered, from_cwd)
         latest_summary = next(item for item in summaries if item["workspace"] == latest.name)
         self.assertEqual("live", latest_summary["journey_mode"])
+        self.assertFalse(latest_summary["active_recently"])
 
     def test_attached_workspace_is_synchronized_before_viewer_launch(self) -> None:
         capture = {

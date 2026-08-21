@@ -1397,6 +1397,59 @@ class JourneyProjectionTest(unittest.TestCase):
         self.assertEqual(17, first["telemetry"]["duration_ms"])
         self.assertEqual(23, first["telemetry"]["payload_tokens"])
 
+    def test_capture_lifecycle_rebuilds_unchanged_workspace_without_finishing_quiet_active(
+        self,
+    ) -> None:
+        rows = [adapter_command(1, "gmail_probe", 1)]
+        responses = self.workspace / ".rote" / "responses"
+        (responses / "@1.json").write_text(
+            json.dumps(
+                {
+                    "response": {"status": 200, "duration_ms": 17, "body": {}},
+                    "tokens": {"total_tokens": 23},
+                }
+            )
+        )
+        calls: list[tuple[str, ...]] = []
+
+        def rote(_workspace: Path, arguments: list[str]):
+            calls.append(tuple(arguments))
+            if arguments == ["workspace", "stats", "--json"]:
+                return {"commands": 1, "responses": 1}
+            if "log" in arguments:
+                return rows
+            if "deps" in arguments:
+                return []
+            raise AssertionError(arguments)
+
+        recorded = {**self.capture, "status": "recorded"}
+        active = {**self.capture, "status": "active"}
+        settling = {
+            **self.capture,
+            "status": "settling",
+            "trajectory_ref": "sha256:" + "a" * 64,
+        }
+        with patch("scripts.lib.play.journey._run_rote_json", side_effect=rote):
+            recorded_snapshot = refresh_capture(recorded, root=self.journeys)
+            active_snapshot = refresh_capture(active, root=self.journeys)
+            quiet_active_snapshot = refresh_capture(active, root=self.journeys)
+            settling_snapshot = refresh_capture(settling, root=self.journeys)
+
+        assert recorded_snapshot is not None
+        assert active_snapshot is not None
+        assert quiet_active_snapshot is not None
+        assert settling_snapshot is not None
+        self.assertEqual("recorded", recorded_snapshot["state"])
+        self.assertEqual("active", active_snapshot["state"])
+        self.assertEqual(active_snapshot, quiet_active_snapshot)
+        self.assertEqual("settling", settling_snapshot["state"])
+        self.assertEqual(7, len(calls))
+        graph = load_graph(self.capture["reference"], root=self.journeys)
+        assert graph is not None
+        self.assertEqual("settling", graph["state"])
+        intent = next(node for node in graph["nodes"] if node["id"] == "node_intent")
+        self.assertEqual("verified", intent["status"])
+
     def test_recalled_play_projects_nested_adapter_calls_not_outer_executor(self) -> None:
         self.capture.update(
             {

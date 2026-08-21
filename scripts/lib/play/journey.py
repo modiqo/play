@@ -1783,6 +1783,7 @@ def _load_source(capture_ref: str, *, root: Path | None = None) -> dict[str, Any
     if not _database_path(capture_ref, root=root).is_file():
         return {
             "fingerprint": None,
+            "capture_lifecycle": None,
             "command_count": 0,
             "response_count": 0,
             "activities": [],
@@ -1810,6 +1811,7 @@ def _load_source(capture_ref: str, *, root: Path | None = None) -> dict[str, Any
         ]
         return {
             "fingerprint": meta.get("fingerprint"),
+            "capture_lifecycle": meta.get("capture_lifecycle"),
             "command_count": int(meta.get("command_count") or 0),
             "response_count": int(meta.get("response_count") or 0),
             "activities": activities,
@@ -1827,6 +1829,7 @@ def _persist_graph_state(
     activities: Sequence[Mapping[str, Any]],
     dependencies: Sequence[Mapping[str, Any]],
     graph: Mapping[str, Any],
+    capture_lifecycle: Mapping[str, Any] | None = None,
     reset_sources: bool = False,
     replace_dependencies: bool = True,
     root: Path | None = None,
@@ -1916,6 +1919,9 @@ def _persist_graph_state(
         }
         meta = {
             "fingerprint": fingerprint,
+            "capture_lifecycle": (
+                dict(capture_lifecycle) if capture_lifecycle is not None else None
+            ),
             "command_count": command_count,
             "response_count": response_count,
             "graph_header": header,
@@ -1943,14 +1949,29 @@ def refresh_capture(
         return None
     fingerprint = _workspace_fingerprint(workspace)
     source = _load_source(reference, root=root)
+    trajectory_ref = capture.get("trajectory_ref")
+    capture_lifecycle = {
+        "status": str(capture.get("status") or "active"),
+        "trajectory_ref": (
+            trajectory_ref
+            if isinstance(trajectory_ref, str) and trajectory_ref
+            else None
+        ),
+    }
     previous = load_snapshot(reference, root=root)
     previous_graph = source.get("graph")
     previous_graph = previous_graph if isinstance(previous_graph, Mapping) else previous
     projection_changed = not isinstance(previous_graph, Mapping) or (
         previous_graph.get("projection_version") != PROJECTION_VERSION
     )
+    lifecycle_changed = source.get("capture_lifecycle") != capture_lifecycle
     events = _read_events(reference, root=root)
-    if not force and not projection_changed and fingerprint == source.get("fingerprint"):
+    if (
+        not force
+        and not projection_changed
+        and not lifecycle_changed
+        and fingerprint == source.get("fingerprint")
+    ):
         persisted_count = int(source.get("command_count") or 0)
         if (
             previous is not None
@@ -2080,6 +2101,7 @@ def refresh_capture(
         activities=activities if reset_sources else new_activities,
         dependencies=dependencies,
         graph=graph,
+        capture_lifecycle=capture_lifecycle,
         reset_sources=reset_sources,
         replace_dependencies=deps_due,
         root=root,
