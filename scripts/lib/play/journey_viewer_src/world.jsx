@@ -13,10 +13,11 @@ import {plaqueIsVisible, temporalNeighborhood, updateMarkerAppearance} from './m
 import {interactionDurationArc, interactionRadius} from './interaction-metrics.mjs'
 import {journeyVisibilityWindow} from './journey-position.mjs'
 import {calloutIsInTransit} from './world-callout-transition.mjs'
+import {vantageSignal} from './vantage-signal.mjs'
 
 const THREAD_STEEL = 0x717c7f
 const THREAD_PREVIOUS = 0xaeb8ba
-const WORLD_SKY = 0x0b0e10
+const WORLD_SKY = 0x20272a
 const WORLD_STAGE_PAGE = 50
 
 function makeTemporalThreads(markers) {
@@ -161,7 +162,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       scene = new THREE.Scene()
       const tutorialFocus = story.origin?.kind === 'tutorial'
       scene.background = new THREE.Color(WORLD_SKY)
-      scene.fog = new THREE.FogExp2(WORLD_SKY, .012)
+      scene.fog = new THREE.FogExp2(WORLD_SKY, .008)
       camera = new THREE.PerspectiveCamera(54, 1, .1, 260)
       camera.position.set(0, 3.3, 6)
       if (viewState.current?.camera) camera.position.fromArray(viewState.current.camera)
@@ -172,7 +173,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       renderer.shadowMap.type = THREE.PCFShadowMap
       renderer.outputColorSpace = THREE.SRGBColorSpace
       renderer.toneMapping = THREE.ACESFilmicToneMapping
-      renderer.toneMappingExposure = .96
+      renderer.toneMappingExposure = 1.08
       renderer.domElement.className = 'world-canvas'
       host.current.appendChild(renderer.domElement)
       composer = new EffectComposer(renderer)
@@ -188,9 +189,9 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       labels.domElement.className = 'world-labels'
       host.current.appendChild(labels.domElement)
 
-      scene.add(new THREE.HemisphereLight(0xe3e7e7, 0x252a2c, 1.72))
-      scene.add(new THREE.AmbientLight(0xaeb7b9, .58))
-      const key = new THREE.DirectionalLight(0xffffff, 2.7)
+      scene.add(new THREE.HemisphereLight(0xf1f4f4, 0x596164, 2.7))
+      scene.add(new THREE.AmbientLight(0xe4e9ea, 1.55))
+      const key = new THREE.DirectionalLight(0xffffff, 3.2)
       key.position.set(-18, 34, 12)
       key.castShadow = true
       key.shadow.mapSize.set(2048, 2048)
@@ -199,8 +200,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       key.shadow.camera.top = 48
       key.shadow.camera.bottom = -48
       scene.add(key)
-      const amberLight = new THREE.PointLight(AMBER, 10, 24, 2)
-      scene.add(amberLight)
+      const statusLight = new THREE.PointLight(0x55d98b, 6.4, 26, 2)
+      scene.add(statusLight)
 
       const worldLength = Math.max(70, story.chapters.length * 25)
       const ground = new THREE.Mesh(new THREE.PlaneGeometry(130, worldLength), material(GROUND, {roughness: 1}))
@@ -232,7 +233,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         const site = new THREE.Group()
         const siteSemanticMeshes = []
         site.position.copy(positions[index])
-        const platform = new THREE.Mesh(new THREE.BoxGeometry(15, .24, 12), material(0x111518))
+        const platform = new THREE.Mesh(new THREE.BoxGeometry(15, .24, 12), material(0x232a2d))
         platform.position.y = .08
         platform.receiveShadow = true
         platform.userData = {siteId: chapter.id, sequence: null}
@@ -322,7 +323,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         site.add(label)
         scene.add(site)
         sites[index] = {
-          chapter, group: site, platform, landmark, landmarkMaterials, focusEdges, label: root,
+          chapter, records, group: site, platform, landmark, landmarkMaterials, focusEdges, label: root,
           timeLabels: temporalStructure.userData.timeLabels || [], markers, threads, plaques, semanticMeshes: siteSemanticMeshes, worldPosition: site.position.clone(),
           approachDistance: Math.max(12.5, landmarkSize.z * .5 + 8, landmarkSize.x * .38 + 8),
           eyeHeight: THREE.MathUtils.clamp(landmarkSize.y * .42, 2.5, 3.8),
@@ -331,13 +332,13 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
 
       const traveler = new THREE.Mesh(
         new THREE.OctahedronGeometry(.18, 0),
-        new THREE.MeshStandardMaterial({color: AMBER, emissive: AMBER, emissiveIntensity: 2.3, roughness: .28}),
+        new THREE.MeshStandardMaterial({color: 0x55d98b, emissive: 0x55d98b, emissiveIntensity: 2.3, roughness: .28}),
       )
       traveler.castShadow = true
       scene.add(traveler)
       const focusRing = new THREE.Mesh(
         new THREE.RingGeometry(1.05, 1.14, 48),
-        new THREE.MeshBasicMaterial({color: AMBER, transparent: true, opacity: .42, side: THREE.DoubleSide}),
+        new THREE.MeshBasicMaterial({color: 0x55d98b, transparent: true, opacity: .42, side: THREE.DoubleSide}),
       )
       focusRing.rotation.x = -Math.PI / 2
       scene.add(focusRing)
@@ -365,6 +366,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       if (viewState.current?.target) cameraTarget.fromArray(viewState.current.target)
       const desiredCamera = new THREE.Vector3()
       const desiredLook = new THREE.Vector3()
+      const signalTarget = new THREE.Color(0x55d98b)
       let previousReached = -1
       let reachedAt = performance.now()
       let lastCalloutLayout = 0
@@ -412,9 +414,15 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           camera.lookAt(cameraTarget)
           traveler.position.copy(current).setY(.22 + Math.sin(elapsed * 3.2) * .025)
           traveler.rotation.y = elapsed * 1.1
-          amberLight.position.copy(traveler.position).setY(2.1)
+          statusLight.position.copy(traveler.position).setY(2.1)
 
           const reached = Math.max(0, Math.min(lastIndex, Math.floor(scaled + .001)))
+          const signal = vantageSignal(sites[reached]?.chapter, sites[reached]?.records)
+          signalTarget.setHex(signal.color)
+          statusLight.color.lerp(signalTarget, .09)
+          traveler.material.color.lerp(signalTarget, .09)
+          traveler.material.emissive.lerp(signalTarget, .09)
+          focusRing.material.color.lerp(signalTarget, .09)
           if (reached !== previousReached) {
             dismissed.current.delete(sites[reached]?.chapter.id)
             navigation.reset()
@@ -448,7 +456,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             const isSelected = isSelectedSite && !interactionFocus
             const interactionEngaged = (isSelectedSite && interactionFocus) || site.plaques.some((plaque) => plaque.root.classList.contains('spread'))
             site.landmark.position.y = tutorialFocus && isCurrent && !interactionFocus ? .08 + Math.sin(elapsed * 1.8) * .015 : 0
-            site.platform.material.color.setHex(isCurrent && !interactionFocus ? 0x111518 : 0x060809)
+            site.platform.material.color.setHex(isCurrent && !interactionFocus ? 0x252d30 : 0x101518)
             site.landmarkMaterials.forEach((state) => {
               state.material.color.copy(state.color)
               if (interactionFocus) state.material.color.multiplyScalar(.07)

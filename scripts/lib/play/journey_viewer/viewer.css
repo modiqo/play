@@ -182,8 +182,16 @@ main {
 }
 .tutorial-intro, .tutorial-complete {
   position: absolute; z-index: 12; left: 50%; top: 50%; box-sizing: border-box; width: min(720px, calc(100vw - 42px)); max-height: calc(100vh - 130px);
-  padding: 28px 30px; overflow: auto; border: 1px solid rgba(232,132,19,.54); background: rgba(7,9,11,.78);
+  padding: 28px 30px; overflow: auto; border: 1px solid rgba(232,132,19,.54); background: rgba(7,9,11,.93);
   box-shadow: 0 34px 120px rgba(0,0,0,.68); backdrop-filter: blur(26px) saturate(.76); transform: translate(-50%,-50%); pointer-events: auto;
+}
+.tutorial-intro .tutorial-overlay-close, .tutorial-complete .tutorial-overlay-close {
+  position: absolute; top: 12px; right: 14px; width: 30px; height: 30px; margin: 0; padding: 0;
+  border-color: rgba(154,159,160,.24); background: rgba(7,9,11,.38); color: #929899;
+  font-size: calc(14px * var(--experience-scale)); line-height: 1; letter-spacing: 0;
+}
+.tutorial-intro .tutorial-overlay-close:hover, .tutorial-complete .tutorial-overlay-close:hover {
+  border-color: rgba(232,132,19,.7); color: #f0a03a;
 }
 .tutorial-intro { animation: tutorial-orientation-reveal 320ms ease-out both; }
 @keyframes tutorial-orientation-reveal {

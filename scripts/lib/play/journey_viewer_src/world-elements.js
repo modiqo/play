@@ -4,9 +4,9 @@ import {formatNumber} from './format.js'
 import {journeyCoordinates} from './journey-layout.mjs'
 import {KIND_LABEL, MAP_MEANING, WORLD_ROLE, WORLD_STORY, worldSpec} from './semantics.js'
 
-const INK_SOFT = 0x565c5f
-const INK_DARK = 0x24282b
-export const GROUND = 0x080a0c
+const INK_SOFT = 0x929b9e
+const INK_DARK = 0x596164
+export const GROUND = 0x1b2225
 export const AMBER = 0xe88413
 
 function escapeHtml(value) {
@@ -20,6 +20,7 @@ export function journeyPositions(chapters) {
 export function material(color = INK_SOFT, options = {}) {
   return new THREE.MeshStandardMaterial({
     color, roughness: options.roughness ?? .82, metalness: options.metalness ?? .08,
+    emissive: options.emissive ?? color, emissiveIntensity: options.emissiveIntensity ?? .09,
     transparent: options.opacity !== undefined, opacity: options.opacity ?? 1,
   })
 }

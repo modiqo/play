@@ -229,9 +229,21 @@ function BionicText({children}) {
 
 export function TutorialExperience({tutorial, story, interactions, replay, playing, entryReferenceActive, onBegin, onChooseWorkspace, onOpenWorldModel}) {
   const [entered, setEntered] = useState(false)
+  const [completionDismissed, setCompletionDismissed] = useState(false)
+  const complete = replay >= .999 && !playing
+  useEffect(() => {
+    const dismiss = (event) => {
+      if (event.key !== 'Escape') return
+      if (!entered && !entryReferenceActive) setEntered(true)
+      else if (complete) setCompletionDismissed(true)
+    }
+    window.addEventListener('keydown', dismiss)
+    return () => window.removeEventListener('keydown', dismiss)
+  }, [complete, entered, entryReferenceActive])
   if (!tutorial) return null
   if (!entered && entryReferenceActive) return null
   if (!entered) return <aside className="tutorial-intro">
+    <button className="tutorial-overlay-close" onClick={() => setEntered(true)} aria-label="Skip introduction" title="Skip introduction">×</button>
     <span>START HERE · BEFORE YOU PRESS PLAY</span>
     <h1><BionicText>We do not anthropomorphize the agent. We embody it.</BionicText></h1>
     <p><BionicText>Most interfaces describe an agent from the outside, as if it were a person. This world does the opposite: it places you at the agent’s vantage point, inside the situation where it is operating.</BionicText></p>
@@ -240,7 +252,8 @@ export function TutorialExperience({tutorial, story, interactions, replay, playi
     <p><BionicText>One example carries through the whole lesson: create a page in Notion, then use CALL, SHELL, and DRIVE to prepare it, create it, and verify it.</BionicText></p>
     <div className="tutorial-intro-actions"><button onClick={onOpenWorldModel}>◇ READ THE WORLD MODEL</button><button onClick={() => { setEntered(true); onBegin() }}>ENTER THE VANTAGE · PLAY JOURNEY →</button></div>
   </aside>
-  if (replay >= .999 && !playing) return <aside className="tutorial-complete">
+  if (complete && !completionDismissed) return <aside className="tutorial-complete">
+    <button className="tutorial-overlay-close" onClick={() => setCompletionDismissed(true)} aria-label="Dismiss completion" title="Dismiss completion">×</button>
     <span>WORLD MODEL ORIENTED</span>
     <h1><BionicText>Now enter a real situation.</BionicText></h1>
     <p><BionicText>Choose a live or recorded Rote workspace. The same primitives, landmarks, capability lifecycle, and time grammar will repeat there.</BionicText></p>
