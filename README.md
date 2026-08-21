@@ -357,9 +357,10 @@ human stage, and **Evidence** opens one bounded, credential-redacted request/res
 The blue trajectory is the protagonist; monochrome structures remain secondary evidence density.
 The **Play** control performs the traversal for both live and historical captures, progressively
 revealing stages and their recorded interactions while the deterministic **Now / Why / Action /
-Next** guide explains the agent's route. Theme, fit, free navigation, selection, pause, replay, and
-the audit overlay are local presentation controls. The complete canonical graph and every audit
-edge remain preserved underneath; raw evidence is loaded only for the explicitly selected tower and
+Next** guide explains the agent's route. Theme, fit, free navigation, selection, pause, and replay
+are local presentation controls. The complete canonical graph remains preserved by the underlying
+Journey projection even though the viewer does not draw its relationship edges; raw evidence is
+loaded only for the explicitly selected interaction and
 is never copied into the Journey graph. The earlier
 [`play.journey-scene/v1`](references/explore/journey-scene.schema.json) remains a diagnostic geometry
 contract, not the primary viewer.

@@ -8,7 +8,6 @@ export function useJourneyRuntime() {
   const [index, setIndex] = useState(null)
   const [workspace, setWorkspace] = useState('')
   const [story, setStory] = useState(null)
-  const [scene, setScene] = useState(null)
   const [interactions, setInteractions] = useState(null)
   const [tutorial, setTutorial] = useState(null)
   const [selected, setSelected] = useState(null)
@@ -73,13 +72,12 @@ export function useJourneyRuntime() {
     const startsWorkspace = !quiet || startingWorkspaceRef.current === id
     if (startsWorkspace) setReplay(0)
     if (!quiet) setMessage('Loading journey map')
-    const [storyResponse, sceneResponse, interactionResponse] = await Promise.all([
+    const [storyResponse, interactionResponse] = await Promise.all([
       fetch(api('/api/story', {workspace: id}), {cache: 'no-store'}),
-      fetch(api('/api/scene', {workspace: id}), {cache: 'no-store'}),
       fetch(api('/api/interactions', {workspace: id}), {cache: 'no-store'}),
     ])
-    if (!storyResponse.ok || !sceneResponse.ok || !interactionResponse.ok) throw new Error('Journey map is unavailable')
-    const [nextStory, nextScene, nextInteractions] = await Promise.all([storyResponse.json(), sceneResponse.json(), interactionResponse.json()])
+    if (!storyResponse.ok || !interactionResponse.ok) throw new Error('Journey map is unavailable')
+    const [nextStory, nextInteractions] = await Promise.all([storyResponse.json(), interactionResponse.json()])
     if (request !== loadRequestRef.current) return false
     if (quiet && playingRef.current) return false
     const nextTutorial = nextStory.origin?.kind === 'tutorial'
@@ -98,7 +96,6 @@ export function useJourneyRuntime() {
     if (nextStory.state !== 'active') setTrackingLive(false)
     storyRef.current = nextStory
     setStory(nextStory)
-    setScene(nextScene)
     setInteractions(nextInteractions)
     setTutorial(nextTutorial)
     setSelected((current) => nextStory.chapters.some((chapter) => chapter.id === current?.siteId) ? current : null)
@@ -312,7 +309,7 @@ export function useJourneyRuntime() {
 
 
   return {
-    index, workspace, story, scene, interactions, tutorial, selected, setSelected, exchange,
+    index, workspace, story, interactions, tutorial, selected, setSelected, exchange,
     replay, playing, observing, trackingLive, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
     mode, setMode, message, loadError, journeysOpen, setJourneysOpen,
     telemetryOpen, setTelemetryOpen, worldModelOpen, setWorldModelOpen, refreshing,

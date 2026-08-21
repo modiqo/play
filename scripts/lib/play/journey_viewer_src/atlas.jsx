@@ -57,8 +57,8 @@ function sampledBeads(beads, maximum = 9) {
   return beads.filter((_bead, index) => indexes.has(index))
 }
 
-export default function Cartography({story, scene, interactions, replay, playing, audit, selected, onSelect, fitSignal}) {
-  const atlas = useMemo(() => buildAtlas(story, scene, interactions), [interactions, scene, story])
+export default function Cartography({story, interactions, replay, playing, selected, onSelect, fitSignal}) {
+  const atlas = useMemo(() => buildAtlas(story, interactions), [interactions, story])
   const fittedView = useMemo(() => fitView(atlas), [atlas])
   const colors = DARK
   const live = story.state === 'active'
@@ -193,7 +193,6 @@ export default function Cartography({story, scene, interactions, replay, playing
     }),
     new PathLayer({id: 'temporal-spine-bed', data: semanticZoom === 'journey' ? [] : focusStreets, coordinateSystem, getPath: (item) => item.path, getColor: colors.streetCore, getWidth: 4.4, widthUnits: 'pixels', jointRounded: true, capRounded: true}),
     new PathLayer({id: 'temporal-spine', data: semanticZoom === 'journey' ? [] : focusStreets, coordinateSystem, getPath: (item) => item.path, getColor: colors.street, getWidth: .9, widthUnits: 'pixels', jointRounded: true, capRounded: true}),
-    audit && new PathLayer({id: 'semantic-audit-routes', data: atlas.auditRoutes, coordinateSystem, getPath: (item) => item.path, getColor: colors.audit, getWidth: (item) => item.active ? 2.1 : 1, widthUnits: 'pixels', jointRounded: true, capRounded: true, pickable: true}),
     new PathLayer({id: 'journey-road-bed', data: [{path: atlas.semanticPath}], coordinateSystem, getPath: (item) => item.path, getColor: [4, 6, 8, 245], getWidth: 8, widthUnits: 'pixels', jointRounded: true, capRounded: true}),
     new PathLayer({
       id: 'journey-route', data: [{path: atlas.semanticPath}], coordinateSystem,

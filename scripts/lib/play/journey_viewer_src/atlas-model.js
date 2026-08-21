@@ -5,7 +5,7 @@ export const DARK = {
   ground: [12, 14, 16], district: [24, 27, 29], districtAlt: [19, 22, 24],
   street: [78, 84, 86, 145], streetCore: [17, 19, 21, 230],
   building: [91, 96, 99], buildingTop: [128, 132, 134], ink: [242, 160, 57],
-  muted: [149, 115, 71], routeBed: [29, 31, 33, 255], audit: [163, 168, 169, 75],
+  muted: [149, 115, 71], routeBed: [29, 31, 33, 255],
 }
 
 export const NAV_BLUE = [194, 111, 20]
@@ -31,16 +31,6 @@ function rectangle(cx, cy, width, depth, z = 0) {
     [cx - x, cy - y, z], [cx + x, cy - y, z], [cx + x, cy + y, z],
     [cx - x, cy + y, z], [cx - x, cy - y, z],
   ]
-}
-
-function bend(source, target, elevation = .22) {
-  const dx = target[0] - source[0]
-  const dy = target[1] - source[1]
-  const length = Math.max(1, Math.hypot(dx, dy))
-  const curve = Math.min(8, length * .16)
-  const nx = -dy / length
-  const ny = dx / length
-  return [source, [(source[0] + target[0]) / 2 + nx * curve, (source[1] + target[1]) / 2 + ny * curve, elevation], target]
 }
 
 function smoothPath(points, subdivisions = 8) {
@@ -109,20 +99,18 @@ function haloPath(center, radius, sweep, subdivisions = 28) {
   })
 }
 
-export function buildAtlas(story, scene, interactionProjection) {
+export function buildAtlas(story, interactionProjection) {
   const chapters = story.chapters || []
   const count = chapters.length
   const columns = Math.max(2, Math.ceil(Math.sqrt(count * 1.55)))
   const xStep = 34
   const yStep = 28
-  const centers = new Map()
   const sites = chapters.map((chapter, order) => {
     const row = Math.floor(order / columns)
     const cell = order % columns
     const column = row % 2 === 0 ? cell : columns - 1 - cell
     const semanticDrift = ((stableNumber(chapter.id) % 7) - 3) * .42
     const center = [column * xStep, row * yStep + semanticDrift, .42]
-    centers.set(chapter.id, center)
     const interactions = interactionProjection?.sites?.[chapter.id] || []
     return {...chapter, center, row, column, interactions, width: 15, depth: 12}
   })
@@ -182,14 +170,6 @@ export function buildAtlas(story, scene, interactionProjection) {
 
   const beadBySequence = new Map(beads.map((bead) => [bead.interaction.sequence, bead]))
   const semanticPath = smoothPath(sites.map((site) => site.center), 10)
-  const sceneEdges = Array.isArray(scene?.edges) ? scene.edges : []
-  const auditRoutes = sceneEdges.flatMap((edge) => {
-    if (edge.kind === 'derived_from' || edge.kind === 'decomposes_into') return []
-    const source = centers.get(edge.source)
-    const target = centers.get(edge.target)
-    if (!source || !target) return []
-    return [{...edge, path: bend(source, target, .72)}]
-  })
   const minX = Math.min(...sites.map((site) => site.center[0] - site.width / 2)) - 8
   const maxX = Math.max(...sites.map((site) => site.center[0] + site.width / 2)) + 8
   const minY = Math.min(...sites.map((site) => site.center[1] - site.depth / 2)) - 8
@@ -202,7 +182,7 @@ export function buildAtlas(story, scene, interactionProjection) {
     gridLines.push({id: `grid-y-${y}`, path: [[minX, y, .01], [maxX, y, .01]]})
   }
   return {
-    sites, districts, contours, beads, threads, halos, streets, gridLines, semanticPath, auditRoutes, beadBySequence,
+    sites, districts, contours, beads, threads, halos, streets, gridLines, semanticPath, beadBySequence,
     ground: rectangle((minX + maxX) / 2, (minY + maxY) / 2, maxX - minX + 22, maxY - minY + 22, -.1),
     bounds: {minX, maxX, minY, maxY},
   }

@@ -9,7 +9,7 @@ import JourneyWorld from './world.jsx'
 
 export default function App() {
   const {
-    index, workspace, story, scene, interactions, tutorial, selected, setSelected, exchange,
+    index, workspace, story, interactions, tutorial, selected, setSelected, exchange,
     replay, playing, observing, trackingLive, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
     mode, setMode, message, loadError, journeysOpen, setJourneysOpen,
     telemetryOpen, setTelemetryOpen, worldModelOpen, setWorldModelOpen, refreshing,
@@ -46,16 +46,16 @@ export default function App() {
 
   return <main className={`dark mode-${mode}${frozen ? ' is-frozen' : ''}${trackingLive ? ' is-live-tracking' : ''}${isTutorial ? ' tutorial-guided' : ''}${tutorialEntryModelActive ? ' world-model-active' : ''}`}>
     <section className="atlas-stage">
-      {story && scene && interactions
+      {story && interactions
         ? mode === 'follow'
           ? <JourneyWorld key={`follow:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} selected={selected} onSelect={selectVantage} />
-          : <Cartography key={`${mode}:${story.journey_key}`} story={story} scene={scene} interactions={interactions} replay={replay} playing={playing} audit={mode === 'audit'} selected={selected} onSelect={setSelected} fitSignal={fitSignal} />
+          : <Cartography key={`${mode}:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} selected={selected} onSelect={setSelected} fitSignal={fitSignal} />
         : loadError
           ? <div className="loading failed"><strong>JOURNEY CONNECTION LOST</strong><span>{loadError}</span><code>play-journey view --active</code></div>
           : <div className="loading"><i />CONSTRUCTING JOURNEY ATLAS</div>}
     </section>
     <header>
-      <button className="brand" onClick={() => setJourneysOpen((value) => !value)}><strong>PLAY CARTOGRAPHY</strong><small>{mode === 'follow' ? 'JOURNEY FOLLOW' : mode === 'audit' ? 'EVIDENCE AUDIT' : 'JOURNEY ATLAS'}</small></button>
+      <button className="brand" onClick={() => setJourneysOpen((value) => !value)}><strong>PLAY CARTOGRAPHY</strong><small>{mode === 'follow' ? 'JOURNEY FOLLOW' : 'JOURNEY ATLAS'}</small></button>
       <div className={`header-title${liveActivity ? ' live' : ''}`}>
         <i />
         <div className="header-state"><b>{status}</b>{recalled ? <small>KNOWN ROUTE · DISCOVERY SKIPPED</small> : liveActivity && <small>NEXT SNAPSHOT {String(snapshotCountdown).padStart(2, '0')}s</small>}</div>
@@ -68,7 +68,6 @@ export default function App() {
         <button className={refreshing ? 'refreshing' : ''} disabled={refreshing} onClick={refreshWorkspaces} title="Rescan the current Rote workspace root and refresh its Play projections">{refreshing ? 'REFRESHING' : '↻ REFRESH'}</button>
         <button className={mode === 'follow' ? 'active' : ''} onClick={() => changeMode('follow')}>FOLLOW</button>
         <button className={mode === 'atlas' ? 'active' : ''} onClick={() => changeMode('atlas')}>ATLAS</button>
-        <button className={mode === 'audit' ? 'active' : ''} onClick={() => changeMode('audit')}>AUDIT</button>
         {mode !== 'follow' && <button onClick={() => setFitSignal((value) => value + 1)}>FIT</button>}
       </div>
     </header>

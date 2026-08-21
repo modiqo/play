@@ -20,7 +20,7 @@ test('Atlas compacts long journeys into a serpentine terrain without reordering 
   const denseChapters = Array.from({length: 24}, (_, order) => ({
     id: `site-${order}`, order, kind: 'phase', title: `Site ${order}`,
   }))
-  const atlas = buildAtlas({chapters: denseChapters}, {edges: []}, {sites: {}})
+  const atlas = buildAtlas({chapters: denseChapters}, {sites: {}})
   assert.equal(atlas.sites.length, denseChapters.length)
   assert.ok(new Set(atlas.sites.map((site) => site.row)).size > 1)
   assert.deepEqual(atlas.sites.map((site) => site.id), denseChapters.map((site) => site.id))
@@ -33,7 +33,7 @@ test('Atlas projects operations as chronological beads and natural thread segmen
     {sequence: 2, tokens: 1600, duration_ms: 500},
     {sequence: 3, tokens: 240, duration_ms: 75},
   ]
-  const atlas = buildAtlas({chapters}, {edges: []}, {sites: {intent: records}})
+  const atlas = buildAtlas({chapters}, {sites: {intent: records}})
   assert.equal(atlas.beads.length, 3)
   assert.equal(atlas.threads.length, 2)
   assert.equal(atlas.halos.length, 3)
