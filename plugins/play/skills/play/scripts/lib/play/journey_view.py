@@ -18,6 +18,7 @@ import urllib.parse
 import webbrowser
 from collections.abc import Mapping
 from contextlib import contextmanager
+from http.client import HTTPConnection, HTTPException
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -167,7 +168,6 @@ def _journey_server_pids_from_process_list(processes: str) -> set[int]:
 
 
 def _journey_server_pids(*, root: Path | None = None) -> set[int]:
-    del root
     selected: set[int] = set()
     try:
         result = subprocess.run(
@@ -180,8 +180,57 @@ def _journey_server_pids(*, root: Path | None = None) -> set[int]:
         selected.update(_journey_server_pids_from_process_list(result.stdout))
     except (OSError, subprocess.SubprocessError):
         pass
+    for path in _viewer_state_paths(root=root):
+        try:
+            state = load_json(path)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(state, Mapping) or state.get("schema") != VIEWER_SCHEMA:
+            continue
+        pid = state.get("pid")
+        port = state.get("port")
+        if (
+            isinstance(pid, int)
+            and not isinstance(pid, bool)
+            and pid > 0
+            and isinstance(port, int)
+            and not isinstance(port, bool)
+            and 0 < port <= 65535
+            and _pid_running(pid)
+            and (pid in selected or _viewer_state_serves_expected_assets(state))
+        ):
+            selected.add(pid)
     selected.discard(os.getpid())
     return selected
+
+
+def _viewer_state_serves_expected_assets(state: Mapping[str, Any]) -> bool:
+    """Confirm a state PID's recorded port still serves its Journey asset bundle."""
+
+    port = state.get("port")
+    expected = state.get("asset_sha256")
+    if (
+        not isinstance(port, int)
+        or isinstance(port, bool)
+        or not 0 < port <= 65535
+        or not isinstance(expected, str)
+    ):
+        return False
+    digest = hashlib.sha256()
+    connection = HTTPConnection("127.0.0.1", port, timeout=0.5)
+    try:
+        for name in ("index.html", "viewer.css", "viewer.js"):
+            connection.request("GET", f"/{name}")
+            response = connection.getresponse()
+            if response.status != HTTPStatus.OK:
+                return False
+            digest.update(name.encode())
+            digest.update(response.read())
+    except (HTTPException, OSError, TimeoutError):
+        return False
+    finally:
+        connection.close()
+    return secrets.compare_digest(expected, "sha256:" + digest.hexdigest())
 
 
 def _stop_journey_viewers(*, root: Path | None = None) -> list[int]:

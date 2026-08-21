@@ -4,6 +4,7 @@ import json
 import os
 import socket
 import sqlite3
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -40,6 +41,7 @@ from scripts.lib.play.journey_view import (
     _ensure_graph_ready,
     _exchange_projection,
     _interaction_projection,
+    _journey_server_pids,
     _journey_server_pids_from_process_list,
     _refresh_workspace_catalog,
     _viewer_state_path,
@@ -221,6 +223,35 @@ class JourneySceneTest(unittest.TestCase):
         finally:
             held.close()
         self.assertTrue(_wait_for_viewer_port(port, timeout_seconds=0.01))
+
+    def test_viewer_shutdown_falls_back_to_owner_private_state_pid(self) -> None:
+        sleeper = subprocess.Popen(["sleep", "30"])
+        self.addCleanup(sleeper.wait, timeout=1.0)
+        self.addCleanup(sleeper.kill)
+        atomic_write_json(
+            _viewer_state_path("capture-a", root=self.journeys),
+            {
+                "schema": "play.journey-viewer/v1",
+                "pid": sleeper.pid,
+                "port": DEFAULT_VIEWER_PORT,
+                "asset_sha256": "sha256:test",
+            },
+        )
+        empty_process_list = subprocess.CompletedProcess(
+            args=["ps"], returncode=0, stdout="", stderr=""
+        )
+
+        with (
+            patch(
+                "scripts.lib.play.journey_view.subprocess.run",
+                return_value=empty_process_list,
+            ),
+            patch(
+                "scripts.lib.play.journey_view._viewer_state_serves_expected_assets",
+                return_value=True,
+            ),
+        ):
+            self.assertEqual({sleeper.pid}, _journey_server_pids(root=self.journeys))
 
     def test_journey_mode_distinguishes_growing_captures_from_recordings(self) -> None:
         self.assertEqual("live", _journey_mode("active"))
