@@ -2947,6 +2947,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 id=EventId("play_run_ready"),
                 payload={
                     "play": {"version": "0.1.0"},
+                    "execution": {"workspace": "play-capture-abcdefghijklmnop"},
                     "resolution": {"local_state": "exact_ready", "pull_performed": False},
                     "result_ref": "result:1",
                     "response_refs": ["response:1"],
@@ -3261,6 +3262,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 id=EventId("play_run_ready"),
                 payload={
                     "play": {"version": "1.2.0"},
+                    "execution": {"workspace": "play-capture-abcdefghijklmnop"},
                     "resolution": {"local_state": "exact_ready", "pull_performed": False},
                     "result_ref": "result:1",
                     "response_refs": ["response:1"],

@@ -52,6 +52,8 @@ class InstallAllTest(unittest.TestCase):
             "  registry)\n"
             "    if [ \"${2:-}\" = org ] && [ \"${3:-}\" = list ]; then\n"
             "      echo '[]'\n"
+            "    elif [ \"${2:-}\" = play ] && [ \"${3:-}\" = list ]; then\n"
+            "      echo '[{\"name\":\"starter\",\"visibility\":\"public\",\"status\":\"released\"}]'\n"
             "    fi\n"
             "    ;;\n"
             "  play) echo 'rote play' ;;\n"
@@ -80,7 +82,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '{\"marketplaces\":[]}'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.36\",\"enabled\":true}],\"available\":[]}'\n"
+                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.37\",\"enabled\":true}],\"available\":[]}'\n"
                     "  else\n"
                     "    printf '%s\\n' '{\"installed\":[],\"available\":[]}'\n"
                     "  fi\n"
@@ -97,7 +99,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '[]'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.36\",\"enabled\":true,\"scope\":\"user\"}]'\n"
+                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.37\",\"enabled\":true,\"scope\":\"user\"}]'\n"
                     "  else\n"
                     "    printf '%s\\n' '[]'\n"
                     "  fi\n"
@@ -302,7 +304,7 @@ class InstallAllTest(unittest.TestCase):
 
         self.run_installer("install", "--copy")
         installed = install_home / "skill"
-        self.assertEqual("0.4.36", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.37", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():
@@ -370,7 +372,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("◐ Checking the Play setup plan", result.stderr)
         self.assertIn("✓ Verifying Codex", result.stderr)
         self.assertIn("| Play setup plan", result.stdout)
-        self.assertIn("Version: 0.4.36", result.stdout)
+        self.assertIn("Version: 0.4.37", result.stdout)
         self.assertIn("| Play setup", result.stdout)
         self.assertIn("Status: READY", result.stdout)
         self.assertIn("Congratulations — step 1", result.stdout)

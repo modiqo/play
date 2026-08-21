@@ -600,12 +600,12 @@ restored running harness afterward.
 
 Add `--approve-remote-installer` only after approving the official Rote download. The bootstrap is
 safe to retry: it updates Rote only when an update is available and installs or refreshes the
-selected Rote skill providers. Every approved install is a full Play convergence boundary: Codex
-and Claude marketplaces are refreshed, their Play plugins are removed and reinstalled even when
-already current, portable Play state is overwritten, and the canonical hooks are replaced in every
-selected managed-hook harness. Plugin convergence, hook convergence, and per-app preflight
-verification are parallelized. It preserves unrelated hooks and backs up every hook file it
-changes. An
+selected Rote skill providers. Every approved install is a verified Play convergence boundary:
+Codex and Claude plugins are reused when their version and payload bytes match, and refreshed or
+reinstalled only when missing or stale. Portable Play state is converged, and the canonical hooks
+are replaced in every selected managed-hook harness. Plugin convergence, hook convergence, and
+per-app preflight verification are parallelized. It preserves unrelated hooks and backs up every
+hook file it changes. An
 explicitly disabled Codex Play skill remains a user choice: the report asks you to enable it in
 `/skills` before restarting. Reports never contain credentials.
 
@@ -614,8 +614,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.36/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.36 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.37/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.37 sh
 ```
 
 To inspect the small bootstrap before running it:

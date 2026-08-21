@@ -798,7 +798,7 @@ def build_plan(
         },
         {
             "id": "converge_play_marketplaces",
-            "effect": "reinstalls the selected Play version in Codex and Claude after backing up current Play state",
+            "effect": "verifies the selected Play version in Codex and Claude, replacing only missing or byte-stale plugins after backup",
             "targets": [name for name in selected if name in {"codex", "claude"}],
             "commands": {
                 "codex": [
@@ -1207,6 +1207,21 @@ def _marketplace_list_command(harness: str, executable: str) -> list[str]:
     return [executable, "plugin", "marketplace", "list", "--json"]
 
 
+def _marketplace_is_local(harness: str, payload: object, name: str) -> bool:
+    records = payload.get("marketplaces") if isinstance(payload, dict) else payload
+    if not isinstance(records, list):
+        return False
+    for record in records:
+        if not isinstance(record, dict) or record.get("name") != name:
+            continue
+        if harness == "codex":
+            source = record.get("marketplaceSource")
+            return isinstance(source, dict) and source.get("sourceType") == "local"
+        source = record.get("source")
+        return source in {"directory", "local"}
+    return False
+
+
 def _plugin_list_command(harness: str, executable: str) -> list[str]:
     if harness == "codex":
         return [
@@ -1262,6 +1277,13 @@ def _installed_plugin_root(harness: str, record: dict[str, Any]) -> Path | None:
     return Path(value).expanduser()
 
 
+def _plugin_skill_root(root: Path | None) -> Path | None:
+    if root is None:
+        return None
+    packaged = root / "skills" / "play"
+    return packaged if packaged.is_dir() else root
+
+
 def converge_play_marketplace(
     harness: str,
     executable: str,
@@ -1276,8 +1298,9 @@ def converge_play_marketplace(
     marketplace_list = _marketplace_list_command(harness, executable)
     marketplace_result = runner(marketplace_list)
     try:
+        marketplace_payload = _command_json(marketplace_result, marketplace_list)
         marketplaces = _marketplace_names(
-            harness, _command_json(marketplace_result, marketplace_list)
+            harness, marketplace_payload
         )
     except BootstrapError as error:
         return [
@@ -1335,14 +1358,16 @@ def converge_play_marketplace(
             )
         )
         installed_root = _installed_plugin_root(harness, existing) if existing else None
+        expected_skill_root = _plugin_skill_root(expected_plugin_root)
+        installed_skill_root = _plugin_skill_root(installed_root)
         expected_fingerprint = (
-            _plugin_payload_fingerprint(expected_plugin_root)
-            if expected_plugin_root is not None
+            _plugin_payload_fingerprint(expected_skill_root)
+            if expected_skill_root is not None
             else None
         )
         installed_fingerprint = (
-            _plugin_payload_fingerprint(installed_root)
-            if installed_root is not None
+            _plugin_payload_fingerprint(installed_skill_root)
+            if installed_skill_root is not None
             else None
         )
         plugin_errors = existing.get("errors") if existing else None
@@ -1368,7 +1393,23 @@ def converge_play_marketplace(
             )
             return steps
 
-    if PLAY_MARKETPLACE in marketplaces:
+    local_marketplace = (
+        PLAY_MARKETPLACE in marketplaces
+        and _marketplace_is_local(harness, marketplace_payload, PLAY_MARKETPLACE)
+    )
+    refresh_command: list[str] | None = None
+    refresh_id = "refresh_play_marketplace"
+    if local_marketplace:
+        steps.append(
+            Step(
+                "refresh_play_marketplace",
+                "unchanged",
+                f"Local {harness} marketplace reads directly from its configured directory.",
+                target=harness,
+                changed=False,
+            )
+        )
+    elif PLAY_MARKETPLACE in marketplaces:
         refresh_command = [
             executable,
             "plugin",
@@ -1386,12 +1427,14 @@ def converge_play_marketplace(
             PLAY_REPOSITORY,
         ]
         refresh_id = "add_play_marketplace"
-    refresh_result = runner(refresh_command)
-    steps.append(
-        _result_step(refresh_id, refresh_result, refresh_command, target=harness)
-    )
-    if refresh_result.returncode != 0:
-        return steps
+    if not local_marketplace:
+        assert refresh_command is not None
+        refresh_result = runner(refresh_command)
+        steps.append(
+            _result_step(refresh_id, refresh_result, refresh_command, target=harness)
+        )
+        if refresh_result.returncode != 0:
+            return steps
 
     if PLAY_MARKETPLACE not in marketplaces:
         plugin_result = runner(plugin_list)
@@ -3416,7 +3459,11 @@ def apply(
                 harness,
                 executable,
                 expected_version=expected_version,
-                expected_plugin_root=source / "plugins" / "play",
+                expected_plugin_root=(
+                    source / "plugins" / "play"
+                    if (source / "plugins" / "play").is_dir()
+                    else source
+                ),
                 runner=runner,
             )
         except Exception:

@@ -588,6 +588,60 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("unchanged", steps[-1].status)
         self.assertIn("byte-current", steps[-1].detail)
 
+    def test_local_codex_marketplace_is_not_sent_to_git_upgrade(self) -> None:
+        runner = MagicMock()
+        runner.side_effect = [
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "marketplaces": [
+                            {
+                                "name": "play-skills",
+                                "marketplaceSource": {
+                                    "sourceType": "local",
+                                    "source": str(ROOT),
+                                },
+                            }
+                        ]
+                    }
+                ),
+                stderr="",
+            ),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps({"installed": [], "available": []}),
+                stderr="",
+            ),
+            MagicMock(returncode=0, stdout="installed\n", stderr=""),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "installed": [
+                            {
+                                "pluginId": "play@play-skills",
+                                "version": "0.4.37",
+                                "enabled": True,
+                            }
+                        ]
+                    }
+                ),
+                stderr="",
+            ),
+        ]
+
+        steps = converge_play_marketplace(
+            "codex", "/bin/codex", expected_version="0.4.37", runner=runner
+        )
+
+        commands = [call.args[0] for call in runner.call_args_list]
+        self.assertFalse(any("upgrade" in command for command in commands))
+        self.assertEqual(
+            ["/bin/codex", "plugin", "add", "play@play-skills"], commands[2]
+        )
+        self.assertEqual("completed", steps[-1].status)
+
     def test_progress_redraws_one_terminal_line_with_elapsed_time(self) -> None:
         stream = StringIO()
         progress = Progress(
@@ -1230,7 +1284,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.36 is installed and enabled.",
+                "Play 0.4.37 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -1317,7 +1371,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.36", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.37", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 
