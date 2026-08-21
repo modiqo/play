@@ -6,9 +6,9 @@ import {journeyCoordinates} from './journey-layout.mjs'
 import {KIND_LABEL, MAP_MEANING, WORLD_ROLE, WORLD_STORY, worldSpec} from './semantics.js'
 
 export const STRUCTURE_COLORS = Object.freeze({
-  pale: 0x3a555e,
-  soft: 0x2e444b,
-  dark: 0x223238,
+  pale: 0x3a3732,
+  soft: 0x292826,
+  dark: 0x1b1c1b,
 })
 const INK_SOFT = STRUCTURE_COLORS.soft
 const INK_DARK = STRUCTURE_COLORS.dark

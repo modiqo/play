@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {material, STRUCTURE_COLORS} from './world-elements.js'
 
-test('semantic structures use a dark blue-slate palette under scene lighting', () => {
+test('semantic structures use a warm graphite palette under scene lighting', () => {
   assert.deepEqual(STRUCTURE_COLORS, {
-    pale: 0x3a555e,
-    soft: 0x2e444b,
-    dark: 0x223238,
+    pale: 0x3a3732,
+    soft: 0x292826,
+    dark: 0x1b1c1b,
   })
 
   const surface = material()
