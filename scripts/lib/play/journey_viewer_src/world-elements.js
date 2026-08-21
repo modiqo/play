@@ -6,9 +6,9 @@ import {journeyCoordinates} from './journey-layout.mjs'
 import {KIND_LABEL, MAP_MEANING, WORLD_ROLE, WORLD_STORY, worldSpec} from './semantics.js'
 
 export const STRUCTURE_COLORS = Object.freeze({
-  pale: 0x40555c,
-  soft: 0x30444b,
-  dark: 0x203137,
+  pale: 0x3a555e,
+  soft: 0x2e444b,
+  dark: 0x223238,
 })
 const INK_SOFT = STRUCTURE_COLORS.soft
 const INK_DARK = STRUCTURE_COLORS.dark
@@ -26,7 +26,7 @@ export function journeyPositions(chapters) {
 export function material(color = INK_SOFT, options = {}) {
   return new THREE.MeshStandardMaterial({
     color, roughness: options.roughness ?? .88, metalness: options.metalness ?? .035,
-    emissive: options.emissive ?? color, emissiveIntensity: options.emissiveIntensity ?? .045,
+    emissive: options.emissive ?? color, emissiveIntensity: options.emissiveIntensity ?? .025,
     transparent: options.opacity !== undefined, opacity: options.opacity ?? 1,
     dithering: true,
   })
