@@ -196,8 +196,8 @@ export default function App() {
         </>}
       </>}
     </aside>
-    {mode === 'follow' && story && interactions && !isTutorial && <div className="follow-instruments">
-      <JourneyGuide story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} onOpen={selectVantage} onNavigate={jumpToChapter} />
+    {mode === 'follow' && story && interactions && <div className="follow-instruments">
+      {!isTutorial && <JourneyGuide story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} onOpen={selectVantage} onNavigate={jumpToChapter} />}
       {!showEvidencePanel && <ModelLiveCounter story={story} interactions={interactions} replay={replay} playing={playing} live={liveActivity || trackingLive} />}
     </div>}
     {mode !== 'follow' && story && interactions && !isTutorial && (playing || selected?.siteId) && <div className="atlas-instruments">
