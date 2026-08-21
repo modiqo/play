@@ -156,7 +156,8 @@ main {
   opacity: .025; filter: blur(2px); pointer-events: none;
 }
 .tutorial-narration {
-  position: absolute; z-index: 8; right: 22px; bottom: 80px; box-sizing: border-box; width: min(420px, calc(100vw - 44px));
+  position: absolute; z-index: 8; right: 22px; bottom: 122px; box-sizing: border-box; width: min(420px, calc(100vw - 44px));
+  max-height: calc(100vh - 204px); overflow: auto; scrollbar-gutter: stable;
   padding: 12px 13px; border: 1px solid rgba(232,132,19,.44); background: rgba(8,10,12,.64);
   box-shadow: 0 18px 56px rgba(0,0,0,.34); backdrop-filter: blur(22px) saturate(.8); pointer-events: auto;
   transition: opacity 180ms ease, transform 180ms ease;
@@ -176,10 +177,14 @@ main {
 .tutorial-narration nav { display: flex; gap: 6px; margin-top: 8px; }
 .tutorial-narration button { padding: 5px 7px; border: 1px solid rgba(154,159,160,.28); background: transparent; color: #b9bdbd; font: inherit; font-size: calc(6px * var(--experience-scale)); letter-spacing: .1em; cursor: pointer; }
 .tutorial-explain-toggle {
-  position: absolute; z-index: 8; right: 22px; bottom: 80px; padding: 8px 10px; border: 1px solid rgba(232,132,19,.34);
+  position: absolute; z-index: 8; right: 22px; bottom: 122px; padding: 8px 10px; border: 1px solid rgba(232,132,19,.34);
   background: rgba(8,10,12,.58); color: #bd8a4e; backdrop-filter: blur(18px); font: inherit; font-size: calc(6px * var(--experience-scale)); letter-spacing: .12em; cursor: pointer;
   transition: opacity 180ms ease, transform 180ms ease;
 }
+.tutorial-guided.telemetry-open .tutorial-narration {
+  bottom: 248px; max-height: calc(100vh - 330px);
+}
+.tutorial-guided.telemetry-open .tutorial-explain-toggle { bottom: 248px; }
 .tutorial-overlay-layer {
   position: absolute; z-index: 12; inset: 0; pointer-events: auto;
 }
@@ -909,6 +914,10 @@ footer > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
   .journey-guide { top: 68px; left: 8px; width: min(280px, calc(100vw - 176px)); }
   .journey-guide dl { display: none; }
   .telemetry { top: 68px; right: 8px; bottom: auto; width: 160px; }
+  .tutorial-narration { bottom: 62px; max-height: calc(100vh - 138px); }
+  .tutorial-explain-toggle { bottom: 62px; }
+  .tutorial-guided.telemetry-open .tutorial-narration { bottom: 62px; max-height: calc(100vh - 138px); }
+  .tutorial-guided.telemetry-open .tutorial-explain-toggle { bottom: 62px; }
   .metric { margin-top: 6px; }
   .journey-key, .map-legend, .map-scale, .selection-beacon { display: none; }
   .capability-rail { display: none; }
