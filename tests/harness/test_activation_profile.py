@@ -405,6 +405,47 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertEqual(refreshed_metadata, metadata.read_bytes())
         self.assertTrue(backup.is_file())
 
+    def test_checkout_install_backs_up_and_migrates_available_portable_source(self) -> None:
+        checkout = Path(self.temporary.name) / "checkout-return" / "skill"
+        portable = Path(self.temporary.name) / "portable-current" / "skill"
+        for source in (checkout, portable):
+            (source / "agents").mkdir(parents=True)
+            (source / "scripts" / "bin").mkdir(parents=True)
+            (source / "SKILL.md").write_bytes((ROOT / "SKILL.md").read_bytes())
+            (source / "agents" / "openai.yaml").write_bytes(
+                (ROOT / "agents" / "openai.yaml").read_bytes()
+            )
+            (source / "scripts" / "bin" / "play-machine").write_text("#!/bin/sh\n")
+        (portable / ".play-install.json").write_text(
+            json.dumps(
+                {
+                    "schema": "play.portable-install/v1",
+                    "source": "portable-copy",
+                    "version": "test",
+                }
+            )
+            + "\n"
+        )
+
+        self.source = portable
+        self.run_profile("install")
+        previous_state = self.state.read_bytes()
+
+        self.source = checkout
+        result = self.run_profile("install")
+
+        self.assertIn("backed up previous activation profile", result.stdout)
+        migrated = json.loads(self.state.read_text())
+        self.assertEqual(str(checkout.resolve()), migrated["source"])
+        backup = Path(migrated["profile_backups"][0]["path"])
+        self.assertEqual(previous_state, backup.read_bytes())
+        for root in self.roots:
+            self.assertEqual(checkout.resolve(), (root / "play").resolve())
+        self.assertIn(str(checkout / "scripts/bin/play-machine"), self.launcher.read_text())
+
+        self.run_profile("uninstall")
+        self.assertTrue(backup.is_file())
+
     def test_portable_install_takes_over_available_marketplace_profile(self) -> None:
         plugin = Path(self.temporary.name) / "plugin-current"
         plugin_source = plugin / "skills" / "play"

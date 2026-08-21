@@ -159,9 +159,9 @@ def marketplace_source() -> bool:
     )
 
 
-def portable_source() -> bool:
-    """Return whether this source was staged by Play's portable installer."""
-    marker = SOURCE / ".play-install.json"
+def is_portable_source(source: Path) -> bool:
+    """Return whether ``source`` was staged by Play's portable installer."""
+    marker = source / ".play-install.json"
     if not marker.is_file() or marker.is_symlink():
         return False
     try:
@@ -175,6 +175,11 @@ def portable_source() -> bool:
         and isinstance(payload.get("version"), str)
         and bool(payload["version"].strip())
     )
+
+
+def portable_source() -> bool:
+    """Return whether the requested source is a managed portable copy."""
+    return is_portable_source(SOURCE)
 
 
 def overwrite_requested() -> bool:
@@ -481,19 +486,27 @@ def reconcile(state: dict[str, object]) -> None:
         source / "scripts" / "bin" / "play-machine"
     ).is_file()
     orphaned_source_restore = source_changed and not recorded_source_available
-    portable_source_migration = (
+    portable_destination_migration = (
         source_changed
         and mode == "source-linked"
         and portable_source()
     )
+    portable_origin_migration = (
+        source_changed
+        and mode == "source-linked"
+        and is_portable_source(source)
+    )
+    managed_source_migration = (
+        portable_destination_migration or portable_origin_migration
+    )
     if source_changed and not (
         orphaned_source_restore
         or (mode == "marketplace" and previous_mode == "marketplace")
-        or portable_source_migration
+        or managed_source_migration
     ):
         raise ProfileError(f"profile state belongs to another Play source: {source}")
     if previous_mode != mode and not (
-        orphaned_source_restore or portable_source_migration
+        orphaned_source_restore or managed_source_migration
     ):
         raise ProfileError(f"activation mode changed; expected {mode}")
     if not play_is_implicit():
