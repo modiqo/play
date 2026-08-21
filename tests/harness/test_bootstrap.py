@@ -78,9 +78,11 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("gpt-5", json.loads(catalog.read_text(encoding="utf-8")))
         config.write_text("schema: play.model-config/v1\ncustom: retained\n", encoding="utf-8")
 
-        install_journey_model_assets(ROOT, home=owner)
+        second = install_journey_model_assets(ROOT, home=owner)
 
         self.assertIn("custom: retained", config.read_text(encoding="utf-8"))
+        self.assertEqual("unchanged", second.status)
+        self.assertFalse(second.changed)
 
     def test_rote_skill_targets_cover_added_harnesses(self) -> None:
         self.assertEqual(
@@ -540,6 +542,51 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(6, runner.call_count)
         self.assertEqual("completed", steps[-1].status)
         self.assertIn("installed, enabled, and healthy", steps[-1].detail)
+
+    def test_byte_current_plugin_skips_marketplace_reinstall(self) -> None:
+        expected = self.home / "source-plugin"
+        installed = self.home / "installed-plugin"
+        expected.mkdir()
+        installed.mkdir()
+        (expected / "plugin.json").write_text('{"name":"play"}\n', encoding="utf-8")
+        (installed / "plugin.json").write_text('{"name":"play"}\n', encoding="utf-8")
+        (installed / ".in_use").write_text("runtime marker\n", encoding="utf-8")
+        runner = MagicMock()
+        runner.side_effect = [
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps({"marketplaces": [{"name": "play-skills"}]}),
+                stderr="",
+            ),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "installed": [
+                            {
+                                "pluginId": "play@play-skills",
+                                "version": "0.4.36",
+                                "enabled": True,
+                                "source": {"source": "local", "path": str(installed)},
+                            }
+                        ]
+                    }
+                ),
+                stderr="",
+            ),
+        ]
+
+        steps = converge_play_marketplace(
+            "codex",
+            "/bin/codex",
+            expected_version="0.4.36",
+            expected_plugin_root=expected,
+            runner=runner,
+        )
+
+        self.assertEqual(2, runner.call_count)
+        self.assertEqual("unchanged", steps[-1].status)
+        self.assertIn("byte-current", steps[-1].detail)
 
     def test_progress_redraws_one_terminal_line_with_elapsed_time(self) -> None:
         stream = StringIO()
@@ -1018,6 +1065,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("47 public Plays", step.detail)
         assert step.command is not None
         self.assertIn("--require-complete-catalog", step.command)
+        self.assertEqual("6", step.command[step.command.index("--if-older-than") + 1])
 
     @patch("scripts.lib.play.bootstrap.backup_play_state")
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")

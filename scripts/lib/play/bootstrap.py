@@ -911,16 +911,26 @@ def install_journey_model_assets(source: Path, *, home: Path | None = None) -> S
     created = not config_target.exists()
     if created:
         copy_atomic(source_config, config_target)
-    copy_atomic(source_catalog, cache_target)
+    catalog_changed = (
+        not cache_target.is_file()
+        or cache_target.stat().st_size != source_catalog.stat().st_size
+        or hashlib.sha256(cache_target.read_bytes()).digest()
+        != hashlib.sha256(source_catalog.read_bytes()).digest()
+    )
+    if catalog_changed:
+        copy_atomic(source_catalog, cache_target)
+    changed = created or catalog_changed
+    if created:
+        detail = f"Created {config_target} and refreshed {cache_target}"
+    elif catalog_changed:
+        detail = f"Preserved {config_target} and refreshed {cache_target}"
+    else:
+        detail = f"Preserved {config_target}; model catalog is already current"
     return Step(
         "install_journey_model_assets",
-        "completed",
-        (
-            f"Created {config_target} and refreshed {cache_target}"
-            if created
-            else f"Preserved {config_target} and refreshed {cache_target}"
-        ),
-        changed=True,
+        "completed" if changed else "unchanged",
+        detail,
+        changed=changed,
         evidence=str(config_target),
     )
 
@@ -1211,14 +1221,56 @@ def _plugin_list_command(harness: str, executable: str) -> list[str]:
     return [executable, "plugin", "list", "--json"]
 
 
+_PLUGIN_RUNTIME_FILES = {".DS_Store", ".in_use"}
+
+
+def _plugin_payload_fingerprint(root: Path) -> str | None:
+    """Hash an installed plugin without harness-owned runtime markers."""
+
+    if not root.is_dir():
+        return None
+    digest = hashlib.sha256()
+    try:
+        entries = [
+            child
+            for child in root.rglob("*")
+            if child.name not in _PLUGIN_RUNTIME_FILES
+            and "__pycache__" not in child.parts
+            and child.suffix != ".pyc"
+            and (child.is_file() or child.is_symlink())
+        ]
+        for child in sorted(entries, key=lambda item: str(item.relative_to(root))):
+            relative = str(child.relative_to(root)).encode()
+            digest.update(relative + b"\0")
+            if child.is_symlink():
+                digest.update(b"symlink\0" + os.readlink(child).encode())
+            else:
+                digest.update(b"file\0" + child.read_bytes())
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
+def _installed_plugin_root(harness: str, record: dict[str, Any]) -> Path | None:
+    if harness == "claude":
+        value = record.get("installPath")
+    else:
+        source = record.get("source")
+        value = source.get("path") if isinstance(source, dict) else None
+    if not isinstance(value, str) or not value:
+        return None
+    return Path(value).expanduser()
+
+
 def converge_play_marketplace(
     harness: str,
     executable: str,
     *,
     expected_version: str,
+    expected_plugin_root: Path | None = None,
     runner: Runner,
 ) -> list[Step]:
-    """Refresh and reinstall the harness-native Play plugin before startup."""
+    """Converge the harness-native plugin, replacing it only when content differs."""
 
     steps: list[Step] = []
     marketplace_list = _marketplace_list_command(harness, executable)
@@ -1282,9 +1334,39 @@ def converge_play_marketplace(
                 target=harness,
             )
         )
-        # Even a current healthy plugin is reinstalled. The approved install is
-        # a full convergence boundary, and the pre-overwrite backup makes that
-        # replacement recoverable.
+        installed_root = _installed_plugin_root(harness, existing) if existing else None
+        expected_fingerprint = (
+            _plugin_payload_fingerprint(expected_plugin_root)
+            if expected_plugin_root is not None
+            else None
+        )
+        installed_fingerprint = (
+            _plugin_payload_fingerprint(installed_root)
+            if installed_root is not None
+            else None
+        )
+        plugin_errors = existing.get("errors") if existing else None
+        current = (
+            existing is not None
+            and existing.get("version") == expected_version
+            and existing.get("enabled") is not False
+            and not plugin_errors
+            and expected_fingerprint is not None
+            and installed_fingerprint == expected_fingerprint
+        )
+        if current:
+            steps.append(
+                Step(
+                    "verify_play_plugin",
+                    "unchanged",
+                    f"Play {expected_version} is installed, enabled, healthy, and byte-current.",
+                    command=plugin_list,
+                    target=harness,
+                    changed=False,
+                    evidence=json.dumps(existing, sort_keys=True),
+                )
+            )
+            return steps
 
     if PLAY_MARKETPLACE in marketplaces:
         refresh_command = [
@@ -1985,6 +2067,8 @@ def _warm_public_play_cache(
         "refresh",
         "--days",
         "7",
+        "--if-older-than",
+        "6",
         "--require-complete-catalog",
         "--json",
     ]
@@ -3324,6 +3408,7 @@ def apply(
                 harness,
                 executable,
                 expected_version=expected_version,
+                expected_plugin_root=source / "plugins" / "play",
                 runner=runner,
             )
         except Exception:
