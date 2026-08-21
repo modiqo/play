@@ -113,20 +113,16 @@ After Play receives explicit approval, prepare `play.authentication-handoff/v1` 
 `rote-adapter-config`; it neither adds that skill to the CALL execution owner set nor authorizes the
 provider operation. Bind the authentication packet to the exact original CALL packet and SHA.
 
-Until Rote can bootstrap a missing OAuth DCR token-storage entry in place, the approval disclosure
-also covers one narrow MCP recovery owned by `rote-adapter-config`. First try
-`rote adapter reauth <adapter-id>` once. Only when it returns the exact missing-token-entry failure,
-and fresh adapter metadata proves a known HTTPS MCP endpoint, create and validate a restorable
-`.adapt` archive with `rote adapter pack`. Then run `rote adapter delete <adapter-id> --yes` and
-`rote adapter new-from-mcp <adapter-id> <verified-endpoint> --headless`. The specialist owns the
-browser authorization; it must not redirect the user to reconstruct the flow manually.
+Rote `0.69.2` and newer own missing OAuth DCR credential bootstrap in place. For a classified OAuth,
+OAuth DCR, or Google discovery boundary, `rote-adapter-config` runs
+`rote adapter reauth <adapter-id>` against the installed adapter. Never pack, delete, recreate, or
+run `new-from-mcp` for this condition: successful reauthorization preserves the manifest,
+fingerprint, selected tool inventory, provenance, and dependent-Play indexing.
 
-Fail closed before deletion if the backup is unavailable. If recreation or authentication fails,
-restore the backup and do not resume the Play. Success requires fresh evidence for endpoint, auth
-family, fingerprint, tool inventory, health, and dependent-Play indexing, with any provenance
-change recorded in the authentication receipt. This temporary path never applies to static credentials,
-ordinary OAuth, Google discovery, ambiguous failures, or post-call authentication failures, and a
-placeholder token must never be created to trigger it.
+Static credentials remain an explicit local `rote token set <env-var> --stdin` flow. If the installed
+adapter does not declare enough setup metadata to distinguish static bearer authentication from a
+portable OAuth protocol, fail closed with Rote's exact remediation instead of guessing. After either
+protocol-specific path, require fresh adapter health evidence before the original Play may resume.
 
 Require `play.authentication-receipt/v1` and validate it with
 `scripts/bin/play-handoff verify-authentication --stdin --json`. A successful receipt must match the

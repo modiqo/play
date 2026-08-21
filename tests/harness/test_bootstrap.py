@@ -22,6 +22,7 @@ from scripts.lib.play.bootstrap import (
     _official_rote_install_command,
     _render_status_card,
     _result_step,
+    _rote_compatibility_step,
     _run_login_visible,
     _run_visible,
     _rote_skill_command,
@@ -117,6 +118,29 @@ class BootstrapTest(unittest.TestCase):
             ],
             _official_rote_install_command(),
         )
+
+    def test_rote_compatibility_requires_in_place_mcp_lifecycle_support(self) -> None:
+        old = _rote_compatibility_step(
+            "/bin/rote",
+            MagicMock(
+                return_value=MagicMock(
+                    returncode=0, stdout="version: 0.69.1\n", stderr=""
+                )
+            ),
+        )
+        current = _rote_compatibility_step(
+            "/bin/rote",
+            MagicMock(
+                return_value=MagicMock(
+                    returncode=0, stdout="version: 0.69.2\n", stderr=""
+                )
+            ),
+        )
+
+        self.assertEqual("failed", old.status)
+        self.assertIn("rote self-update --yes", old.detail)
+        self.assertEqual("unchanged", current.status)
+        self.assertIn("in-place credential reauthorization", current.detail)
 
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
     @patch("scripts.lib.play.bootstrap.shutil.which")
@@ -621,7 +645,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.38",
+                                "version": "0.4.39",
                                 "enabled": True,
                             }
                         ]
@@ -632,7 +656,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.38", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.39", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -1125,6 +1149,50 @@ class BootstrapTest(unittest.TestCase):
 
     @patch("scripts.lib.play.bootstrap.backup_play_state")
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
+    def test_apply_stops_before_backup_when_rote_is_too_old(
+        self, _resolve_rote: MagicMock, backup: MagicMock
+    ) -> None:
+        plan = {
+            "plan_id": "sha256:rote-version-gate",
+            "selected_harnesses": ["codex"],
+            "targets": [],
+            "rote": {
+                "path": "/bin/rote",
+                "version": "0.69.1",
+                "identity": "authenticated",
+                "update": {
+                    "status": "current",
+                    "detail": "Rote is current.",
+                    "recommended_action": "keep",
+                },
+            },
+            "rote_skills": [],
+        }
+        runner = MagicMock()
+        runner.side_effect = [
+            MagicMock(returncode=0, stdout="version: 0.69.1\n", stderr=""),
+            MagicMock(returncode=0, stdout="version: 0.69.1\n", stderr=""),
+            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
+        ]
+
+        report = apply(
+            ROOT,
+            requested=["codex"],
+            runner=runner,
+            run_id="rote-version-gate-run",
+            prepared_plan=plan,
+        )
+
+        self.assertEqual("blocked", report["status"])
+        self.assertEqual(
+            ["check_rote_update", "verify_rote_compatibility"],
+            [step["id"] for step in report["steps"]],
+        )
+        self.assertIn("Rote 0.69.1 is too old", report["steps"][-1]["detail"])
+        backup.assert_not_called()
+
+    @patch("scripts.lib.play.bootstrap.backup_play_state")
+    @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
     def test_apply_stops_before_backup_when_identity_is_missing(
         self, _resolve_rote: MagicMock, backup: MagicMock
     ) -> None:
@@ -1146,6 +1214,7 @@ class BootstrapTest(unittest.TestCase):
         }
         runner = MagicMock()
         runner.side_effect = [
+            MagicMock(returncode=0, stdout="version: 1.0.0\n", stderr=""),
             MagicMock(returncode=0, stdout="error: Not logged in\n", stderr=""),
             MagicMock(returncode=0, stdout="version: 1.0.0\n", stderr=""),
             MagicMock(returncode=0, stdout="error: Not logged in\n", stderr=""),
@@ -1160,7 +1229,10 @@ class BootstrapTest(unittest.TestCase):
         )
 
         self.assertEqual("onboarding_required", report["status"])
-        self.assertEqual(["check_rote_update", "rote_identity"], [step["id"] for step in report["steps"]])
+        self.assertEqual(
+            ["check_rote_update", "verify_rote_compatibility", "rote_identity"],
+            [step["id"] for step in report["steps"]],
+        )
         backup.assert_not_called()
 
     def test_status_card_keeps_structured_command_output_in_report(self) -> None:
@@ -1284,7 +1356,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.38 is installed and enabled.",
+                "Play 0.4.39 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -1303,6 +1375,7 @@ class BootstrapTest(unittest.TestCase):
             MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
             MagicMock(returncode=0, stdout="Rote 1.1.0 is available\n", stderr=""),
             MagicMock(returncode=0, stdout="updated to 1.1.0\n", stderr=""),
+            MagicMock(returncode=0, stdout="version: 1.1.0\n", stderr=""),
             MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
             MagicMock(
                 returncode=0,
@@ -1363,6 +1436,10 @@ class BootstrapTest(unittest.TestCase):
             step_ids.index("verify_play_plugin"), step_ids.index("install_play")
         )
         self.assertLess(
+            step_ids.index("verify_rote_compatibility"),
+            step_ids.index("rote_identity"),
+        )
+        self.assertLess(
             step_ids.index("rote_identity"), step_ids.index("backup_play_state")
         )
         self.assertLess(
@@ -1371,7 +1448,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.38", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.39", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 

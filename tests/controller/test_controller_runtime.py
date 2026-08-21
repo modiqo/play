@@ -464,22 +464,22 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("human", advanced.projection.as_dict()["state"]["boundary"])
         question = advanced.projection.as_dict()["instruction"]["question"]
         self.assertIn("crucible authentication blocked", question)
-        self.assertIn("rote token set ADAPTER_CRUCIBLE_TOKEN --stdin", question)
-        self.assertIn("without exposing the token in chat", question)
+        self.assertIn("in-place browser reauthorization for OAuth or DCR", question)
+        self.assertIn("never exposed in chat", question)
         verification_choice = next(
             choice
             for choice in advanced.projection.as_dict()["instruction"]["choices"]
             if choice["id"] == "verify"
         )
-        self.assertEqual("I've set it — verify and retry", verification_choice["label"])
+        self.assertEqual("Verify current auth and retry", verification_choice["label"])
         self.assertTrue(verification_choice["recommended"])
-        self.assertIn("rote token list --json", verification_choice["description"])
+        self.assertIn("fresh adapter health for OAuth", verification_choice["description"])
         authentication_choice = next(
             choice
             for choice in advanced.projection.as_dict()["instruction"]["choices"]
             if choice["id"] == "authenticate"
         )
-        self.assertIn("static credentials stay outside the harness", authentication_choice["description"])
+        self.assertIn("without rebuilding the adapter", authentication_choice["description"])
 
     def test_static_token_done_verifies_before_retry_without_specialist(self) -> None:
         session = self.runtime.initial_session(
@@ -649,6 +649,8 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertIn("out-of-band setup path", authentication_policy)
         self.assertIn("first-party HTTPS token_url", authentication_policy)
         self.assertIn("rote token set <env_var> --stdin", authentication_policy)
+        self.assertIn("rote adapter reauth <adapter_id>", authentication_policy)
+        self.assertIn("Never use `rote adapter pack`", authentication_policy)
         self.assertEqual([], yielded.projection["instruction"]["input"]["inspection"]["operations"])
 
         evidence_refs = ["rote:adapter-health/crucible:fresh"]

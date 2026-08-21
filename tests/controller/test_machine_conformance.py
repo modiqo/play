@@ -971,7 +971,6 @@ class MachineConformanceTest(unittest.TestCase):
             [
                 "authentication.adapter_id",
                 "authentication.classified_rung",
-                "authentication.env_var",
             ],
             prompt["template_fields"],
         )
@@ -987,16 +986,19 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertIn("first-party HTTPS token_url", authentication_policy)
         self.assertIn("rote token set <env_var> --stdin", authentication_policy)
         self.assertIn("already present and healthy", authentication_policy)
+        self.assertIn("rote adapter reauth <adapter_id>", authentication_policy)
+        self.assertIn("Rote 0.69.2 or newer", authentication_policy)
+        self.assertIn("Never use `rote adapter pack`", authentication_policy)
         self.assertNotIn("receipt", authentication_policy.casefold())
         self.assertNotIn("repair", authentication_policy.casefold())
         authentication_choice = next(
             choice for choice in prompt["choices"] if choice["id"] == "authenticate"
         )
-        self.assertEqual("Guide me through setup", authentication_choice["label"])
+        self.assertEqual("Continue authentication", authentication_choice["label"])
         verification_choice = next(
             choice for choice in prompt["choices"] if choice["id"] == "verify"
         )
-        self.assertEqual("I've set it — verify and retry", verification_choice["label"])
+        self.assertEqual("Verify current auth and retry", verification_choice["label"])
         self.assertTrue(verification_choice["recommended"])
         stop_choice = next(
             choice for choice in prompt["choices"] if choice["id"] == "stop"

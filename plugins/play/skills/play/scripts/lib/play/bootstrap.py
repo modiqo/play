@@ -90,6 +90,8 @@ ROTE_SKILL_PROVIDERS = {
 PLAY_MARKETPLACE = "play-skills"
 PLAY_PLUGIN = "play@play-skills"
 PLAY_REPOSITORY = "modiqo/play"
+ROTE_MCP_LIFECYCLE_MINIMUM = (0, 69, 2)
+ROTE_MCP_LIFECYCLE_MINIMUM_TEXT = ".".join(map(str, ROTE_MCP_LIFECYCLE_MINIMUM))
 MAX_SELECTED_HARNESSES = 3
 SETUP_INSIGHTS = (
     "Build for Tuesday-you, not your imaginary ten-times-more-productive clone.",
@@ -475,6 +477,44 @@ def _probe_version(rote: str | None, runner: Runner) -> str | None:
         if line.startswith("version:"):
             return line.partition(":")[2].strip()
     return text or None
+
+
+def _parse_semantic_version(value: str | None) -> tuple[int, int, int] | None:
+    if not value:
+        return None
+    match = re.search(r"(?<!\d)v?(\d+)\.(\d+)\.(\d+)(?!\d)", value)
+    if match is None:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+def _rote_compatibility_step(rote: str, runner: Runner) -> Step:
+    version = _probe_version(rote, runner)
+    parsed = _parse_semantic_version(version)
+    command = [rote, "version"]
+    if parsed is None:
+        return Step(
+            "verify_rote_compatibility",
+            "failed",
+            "Play could not verify the installed Rote version. "
+            f"Rote {ROTE_MCP_LIFECYCLE_MINIMUM_TEXT} or newer is required for safe in-place MCP reauthorization.",
+            command=command,
+        )
+    if parsed < ROTE_MCP_LIFECYCLE_MINIMUM:
+        return Step(
+            "verify_rote_compatibility",
+            "failed",
+            f"Rote {version} is too old. Play requires Rote "
+            f"{ROTE_MCP_LIFECYCLE_MINIMUM_TEXT} or newer so MCP credentials can be reauthorized "
+            "without deleting or rebuilding the adapter. Run `rote self-update --yes`, then retry.",
+            command=command,
+        )
+    return Step(
+        "verify_rote_compatibility",
+        "unchanged",
+        f"Rote {version} supports stable MCP identity and in-place credential reauthorization.",
+        command=command,
+    )
 
 
 def _probe_identity(rote: str | None, runner: Runner) -> str:
@@ -3323,6 +3363,11 @@ def apply(
         )
 
     if rote is None:
+        return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
+
+    compatibility_step = _rote_compatibility_step(rote, runner)
+    steps.append(compatibility_step)
+    if compatibility_step.status == "failed":
         return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
 
     identity_step, identity_ready = _identity_gate(

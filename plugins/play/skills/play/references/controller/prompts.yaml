@@ -206,12 +206,12 @@ prompts:
       play_parameter_supplied: [prompt_version, selected_at, parameter_input.name, parameter_input.value]
 
   approve_authentication:
-    question: "{authentication.adapter_id} authentication blocked this run ({authentication.classified_rung}). If you already ran `rote token set {authentication.env_var} --stdin`, Play can verify the adapter manifest key against Rote's token inventory and retry immediately. Otherwise it can show the verified vendor token page and guide setup without exposing the token in chat. What should Play do?"
-    template_fields: [authentication.adapter_id, authentication.classified_rung, authentication.env_var]
+    question: "{authentication.adapter_id} authentication blocked this run ({authentication.classified_rung}). Play can verify the adapter's current credential state, or follow its declared protocol: local token setup for static credentials and in-place browser reauthorization for OAuth or DCR. Credentials are never exposed in chat. What should Play do?"
+    template_fields: [authentication.adapter_id, authentication.classified_rung]
     selection: single
     choices:
-      - {id: verify, label: "I've set it — verify and retry", description: "Compare the adapter's declared credential key with `rote token list --json`, then retry the exact approved Play only when that key is present and healthy.", event: authentication_verification_requested, recommended: true}
-      - {id: authenticate, label: Guide me through setup, description: "Show the named adapter's verified first-party authentication path; static credentials stay outside the harness.", event: authentication_approved}
+      - {id: verify, label: Verify current auth and retry, description: "Verify the declared token inventory for static credentials or fresh adapter health for OAuth, then retry the exact approved Play only when authentication is healthy.", event: authentication_verification_requested, recommended: true}
+      - {id: authenticate, label: Continue authentication, description: "Use the adapter's declared path: verified local token setup for static credentials or in-place Rote reauthorization for OAuth and DCR without rebuilding the adapter.", event: authentication_approved}
       - {id: stop, label: Not now, description: Stop without changing authentication or retrying the Play., event: authentication_declined}
     events:
       authentication_verification_requested: [prompt_version, selected_at, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.original_packet_sha256]

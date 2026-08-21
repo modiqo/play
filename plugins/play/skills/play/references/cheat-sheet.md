@@ -212,6 +212,11 @@ Play:  verifies the named credential and continues the same approved run
 The harness should not ask you to paste an OAuth credential, build an authentication receipt by
 hand, or restart the request after successful browser authorization.
 
+For an older Play without `adapter.auth.ensure`, Play delegates the same named adapter to
+`rote-adapter-config`, which runs `rote adapter reauth <adapter-id>` in place. Rote `0.69.2` and newer
+preserve the adapter manifest, fingerprint, tool inventory, provenance, and dependent Play index;
+Play never deletes or rebuilds the adapter to restore its credential.
+
 ### Static tokens: create and store them out of band
 
 A Play can detect a missing vendor token, but it cannot mint one for you.
@@ -220,7 +225,7 @@ A Play can detect a missing vendor token, but it cannot mint one for you.
 Play:      GitHub authentication needs GITHUB_TOKEN
 Play:      shows GitHub’s verified first-party token page
 Your shell: rote token set GITHUB_TOKEN --stdin
-You:       choose “I've set it — verify and retry”
+You:       choose “Verify current auth and retry”
 Play:      compares the adapter manifest key with the exact name in `rote token list --json`
 Play:      retries the exact approved run only when that named credential is healthy
 ```
