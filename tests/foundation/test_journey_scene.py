@@ -38,6 +38,7 @@ from scripts.lib.play.journey_view import (
     DEFAULT_VIEWER_PORT,
     EXCHANGE_SCHEMA,
     INTERACTIONS_SCHEMA,
+    MAX_LIFETIME_SECONDS,
     _ensure_graph_ready,
     _exchange_projection,
     _interaction_projection,
@@ -45,6 +46,8 @@ from scripts.lib.play.journey_view import (
     _journey_server_pids_from_process_list,
     _refresh_workspace_catalog,
     _viewer_state_path,
+    _viewer_session_path,
+    _viewer_session_token,
     _wait_for_viewer_port,
     _workspace_activity,
     _workspace_catalog,
@@ -223,12 +226,34 @@ class JourneySceneTest(unittest.TestCase):
             _viewer_state_path("capture-b", root=self.journeys),
         )
         self.assertEqual(DEFAULT_VIEWER_PORT, 52050)
+        self.assertGreaterEqual(MAX_LIFETIME_SECONDS, 30 * 24 * 60 * 60)
         processes = """
         101 /usr/bin/python /opt/play-journey serve --capture x --viewer-token secret --port 52050
         102 /usr/bin/python /opt/play-journey view --active
         103 /usr/bin/python unrelated-server --viewer-token secret
         """
         self.assertEqual({101}, _journey_server_pids_from_process_list(processes))
+
+    def test_viewer_session_token_is_private_and_stable_across_restarts(self) -> None:
+        first = _viewer_session_token(root=self.journeys)
+        second = _viewer_session_token(root=self.journeys)
+
+        self.assertEqual(first, second)
+        self.assertEqual(0o600, _viewer_session_path(root=self.journeys).stat().st_mode & 0o777)
+
+    def test_viewer_session_migrates_the_running_viewer_token(self) -> None:
+        atomic_write_json(
+            _viewer_state_path("capture-a", root=self.journeys),
+            {
+                "schema": "play.journey-viewer/v1",
+                "url": "http://127.0.0.1:52050/?token=existing-viewer-token-1234",
+            },
+        )
+
+        self.assertEqual(
+            "existing-viewer-token-1234",
+            _viewer_session_token(root=self.journeys),
+        )
 
     def test_viewer_waits_for_the_singleton_port_to_be_released(self) -> None:
         held = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

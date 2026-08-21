@@ -73,13 +73,17 @@ from .private_store import atomic_write_json, load_json
 
 
 VIEWER_SCHEMA = "play.journey-viewer/v1"
+VIEWER_SESSION_SCHEMA = "play.journey-viewer-session/v1"
 ASSET_ROOT = Path(__file__).with_name("journey_viewer")
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
 }
-MAX_LIFETIME_SECONDS = 8 * 60 * 60
+# A Journey viewer is a single loopback resident, not a short-lived preview.
+# Keep it available across sleep and overnight exploration; the next `view`
+# command still replaces it deterministically on the one fixed port.
+MAX_LIFETIME_SECONDS = 30 * 24 * 60 * 60
 PROJECTION_START_TIMEOUT_SECONDS = 4.0
 DEFAULT_VIEWER_PORT = 52050
 VIEWER_STOP_TIMEOUT_SECONDS = 2.0
@@ -133,6 +137,60 @@ def _viewer_state_path(capture_ref: str, *, root: Path | None = None) -> Path:
 
     del capture_ref
     return journey_root(root) / "viewer.json"
+
+
+def _viewer_session_path(*, root: Path | None = None) -> Path:
+    """Return the owner-private credential shared by resident replacements."""
+
+    return journey_root(root) / "viewer-session.json"
+
+
+def _valid_viewer_token(value: object) -> str | None:
+    if not isinstance(value, str) or not 24 <= len(value) <= 128:
+        return None
+    if not all(character.isalnum() or character in "-_" for character in value):
+        return None
+    return value
+
+
+def _token_from_viewer_state(*, root: Path | None = None) -> str | None:
+    """Recover the current credential when upgrading an existing resident."""
+
+    try:
+        state = load_json(_viewer_state_path("", root=root))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(state, Mapping) or state.get("schema") != VIEWER_SCHEMA:
+        return None
+    url = state.get("url")
+    if not isinstance(url, str):
+        return None
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+    return _valid_viewer_token(query.get("token", [""])[0])
+
+
+def _viewer_session_token(*, root: Path | None = None) -> str:
+    """Load or establish the stable credential for the singleton viewer."""
+
+    path = _viewer_session_path(root=root)
+    try:
+        session = load_json(path)
+    except (OSError, ValueError):
+        session = None
+    if isinstance(session, Mapping) and session.get("schema") == VIEWER_SESSION_SCHEMA:
+        token = _valid_viewer_token(session.get("token"))
+        if token is not None:
+            return token
+    token = _token_from_viewer_state(root=root) or secrets.token_urlsafe(24)
+    atomic_write_json(
+        path,
+        {
+            "schema": VIEWER_SESSION_SCHEMA,
+            "token": token,
+            "created_at_epoch": time.time(),
+        },
+    )
+    return token
 
 
 def _viewer_state_paths(*, root: Path | None = None) -> list[Path]:
@@ -694,6 +752,9 @@ def launch_viewer(
     _ensure_graph_ready(capture_ref, capture=capture, root=root)
     selected_port = max(1, min(65535, int(port)))
     with _viewer_launch_lock(root=root):
+        # Resolve the credential before stopping the old resident so an open
+        # browser tab remains authorized while the implementation is replaced.
+        token = _viewer_session_token(root=root)
         stopped = _stop_journey_viewers(root=root)
         if not _wait_for_viewer_port(selected_port):
             previous = f" after stopping {len(stopped)} older viewer{'s' if len(stopped) != 1 else ''}" if stopped else ""
@@ -709,7 +770,6 @@ def launch_viewer(
         state: dict[str, Any] | None = None
         process: subprocess.Popen[bytes] | None = None
         for attempt in range(VIEWER_START_ATTEMPTS):
-            token = secrets.token_urlsafe(24)
             command = [
                 sys.executable,
                 str(executable),

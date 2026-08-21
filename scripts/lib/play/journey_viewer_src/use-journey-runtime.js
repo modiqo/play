@@ -215,10 +215,25 @@ export function useJourneyRuntime() {
   }
 
   useEffect(() => {
-    loadIndex().catch((error) => {
-      setMessage(error.message)
-      setLoadError(error.message)
-    })
+    let cancelled = false
+    let retryTimer = null
+    let retryDelay = 1000
+    const connect = () => {
+      loadIndex().catch((error) => {
+        if (cancelled) return
+        setMessage('Reconnecting to Journey')
+        setLoadError(error.message)
+        retryTimer = window.setTimeout(() => {
+          retryDelay = Math.min(retryDelay * 2, 15000)
+          connect()
+        }, retryDelay)
+      })
+    }
+    connect()
+    return () => {
+      cancelled = true
+      if (retryTimer !== null) window.clearTimeout(retryTimer)
+    }
   }, [loadIndex])
   useEffect(() => {
     if (!workspace) return undefined
