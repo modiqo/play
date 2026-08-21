@@ -108,7 +108,6 @@ export function useJourneyRuntime() {
 
   async function choose(item) {
     try {
-      startingWorkspaceRef.current = item.id
       setReplay(0)
       setPlaying(false)
       setObserving(true)
@@ -134,14 +133,18 @@ export function useJourneyRuntime() {
         }
         if (!ready) throw new Error('First map is still building; select it again in a moment')
       }
-      await loadJourney(item.id)
+      // Commit the user's destination before hydrating its (potentially large)
+      // story and interaction payloads. Keeping the previous workspace current
+      // during that request lets index reconciliation preserve the old journey
+      // and makes a successful click appear to do nothing.
+      startingWorkspaceRef.current = item.id
       setWorkspace(item.id)
-      // Selection is an explicit request to enter this journey, so it wins over
-      // any quiet refresh or live-head position that completed concurrently.
-      setReplay(0)
-      setObserving(false)
       trackWorkspaceLocation(item.workspace_path || item.workspace || item.id)
       setJourneysOpen(false)
+      setMessage('Loading journey map')
+      // Selecting the already-open card does not change `workspace`, so its
+      // effect will not run again. Refresh it explicitly in that one case.
+      if (item.id === workspace) await loadJourney(item.id)
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)) }
   }
 

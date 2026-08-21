@@ -191,9 +191,13 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
     if capture is None:
         capture = _workspace_capture_for_reference(capture_ref)
     workspace_value = capture.get("workspace_path") if isinstance(capture, Mapping) else None
+    origin = graph.get("origin")
+    origin = origin if isinstance(origin, Mapping) else {}
     model_telemetry = (
         telemetry_context(Path(workspace_value), projected)
         if isinstance(workspace_value, str)
+        else telemetry_context(None, projected)
+        if origin.get("kind") == "tutorial"
         else None
     )
     return {

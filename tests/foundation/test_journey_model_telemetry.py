@@ -80,6 +80,16 @@ class JourneyModelTelemetryTest(unittest.TestCase):
             {key: summary[key] for key in ("input_tokens", "output_tokens", "count", "success", "error")},
         )
 
+    def test_default_model_supports_a_packaged_journey_without_a_workspace(self) -> None:
+        records = [{"input_tokens": 62, "output_tokens": 38, "status": "succeeded"}]
+        context = telemetry_context(None, records, home=self.home)
+
+        self.assertEqual("codex", context["model"]["name"])
+        self.assertEqual("play_default", context["model"]["source"])
+        self.assertEqual(100, context["session"]["input_tokens"] + context["session"]["output_tokens"])
+        self.assertIsNotNone(context["pricing"])
+        self.assertIsNotNone(context["context"])
+
 
 if __name__ == "__main__":
     unittest.main()

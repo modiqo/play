@@ -21,7 +21,7 @@ from .private_store import atomic_write_json
 
 TUTORIAL_REFERENCE = "tutorial:start-here-v1"
 TUTORIAL_WORKSPACE_ID = _journey_key(TUTORIAL_REFERENCE)
-TUTORIAL_VERSION = "start-here-v3"
+TUTORIAL_VERSION = "start-here-v4"
 TUTORIAL_ASSET_ROOT = Path(__file__).with_name("journey_tutorial")
 
 
@@ -132,10 +132,14 @@ def _metadata(sequence: int) -> dict[str, Any]:
     process_policy = (
         {"risk_tags": ["read_fs"]} if sequence == 7 else None
     )
+    total_tokens = (20, 0, 40, 920, 360, 440, 150, 0, 680, 120, 410)[sequence - 1]
+    input_tokens = round(total_tokens * 0.62)
     value: dict[str, Any] = {
         "ok": sequence != 5,
         "duration_ms": (30, 80, 240, 760, 430, 520, 110, 90, 1250, 35, 180)[sequence - 1],
-        "tokens": (20, 0, 40, 920, 360, 440, 150, 0, 680, 120, 410)[sequence - 1],
+        "tokens": total_tokens,
+        "input_tokens": input_tokens,
+        "output_tokens": total_tokens - input_tokens,
     }
     if process_policy is not None:
         value["process_policy"] = process_policy

@@ -134,7 +134,7 @@ class JourneySceneTest(unittest.TestCase):
         self.assertLess(shell_station, shell_operation)
         self.assertEqual(TUTORIAL_WORKSPACE_ID, index["selected_id"])
         tutorial = tutorial_payload()
-        self.assertEqual("start-here-v3", tutorial["version"])
+        self.assertEqual("start-here-v4", tutorial["version"])
         self.assertEqual(
             list(range(len(story["chapters"]))),
             [cue["chapter"] for cue in tutorial["cues"]],
@@ -148,6 +148,22 @@ class JourneySceneTest(unittest.TestCase):
         failed_exchange = tutorial_exchange(5)
         assert failed_exchange is not None
         self.assertFalse(failed_exchange["response"]["ok"])
+        with patch(
+            "scripts.lib.play.journey_view_evidence.telemetry_context",
+            return_value={"model": {"name": "codex"}},
+        ) as telemetry:
+            interactions = _interaction_projection(TUTORIAL_REFERENCE, root=self.journeys)
+        telemetry.assert_called_once()
+        self.assertEqual("codex", interactions["model_telemetry"]["model"]["name"])
+        projected = [
+            item
+            for site in interactions["sites"].values()
+            for item in site
+        ]
+        self.assertEqual(
+            sum(item["tokens"] for item in projected),
+            sum(item["input_tokens"] + item["output_tokens"] for item in projected),
+        )
         for filename, value in (
             ("journey-graph.schema.json", graph),
             ("journey-story.schema.json", story),

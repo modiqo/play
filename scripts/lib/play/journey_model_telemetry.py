@@ -117,7 +117,9 @@ def load_model_config(*, home: Path | None = None) -> dict[str, Any]:
     return dict(value)
 
 
-def _workspace_model(workspace: Path) -> dict[str, Any] | None:
+def _workspace_model(workspace: Path | None) -> dict[str, Any] | None:
+    if workspace is None:
+        return None
     database = workspace / ".rote" / "workspace.db"
     if not database.is_file():
         return None
@@ -156,7 +158,7 @@ def _family(model: str) -> str:
     return lowered.split("/")[-1]
 
 
-def select_model(workspace: Path, config: Mapping[str, Any]) -> dict[str, Any]:
+def select_model(workspace: Path | None, config: Mapping[str, Any]) -> dict[str, Any]:
     configured = config.get("model")
     configured = configured if isinstance(configured, Mapping) else {}
     selection = config.get("selection")
@@ -331,7 +333,7 @@ def summarize(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
-def telemetry_context(workspace: Path, records: list[dict[str, Any]], *, home: Path | None = None) -> dict[str, Any]:
+def telemetry_context(workspace: Path | None, records: list[dict[str, Any]], *, home: Path | None = None) -> dict[str, Any]:
     config = load_model_config(home=home)
     model = select_model(workspace, config)
     catalog = load_catalog(config, home=home)
