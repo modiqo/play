@@ -257,9 +257,10 @@ Lifecycle changes the station state:
 
 ### Operation structures
 
-Operations remain lossless glass structures with modality marks and explicit capability ownership.
-Shape does not need to encode every operation name. The local time axis, label, posture, and
-capability tether provide that information.
+Operations remain lossless physical-glass interaction beads with modality marks and explicit
+capability ownership. Shape does not need to encode every operation name. The local time axis,
+`@sequence` label, posture, and capability tether provide that information. A natural thread joins
+the beads in canonical order.
 
 ## Temporal grammar
 
@@ -287,14 +288,14 @@ Visual variables have one meaning each:
 | Variable | Meaning |
 |---|---|
 | X position | operation start time/order |
-| Base width | duration |
+| Amber duration treatment | latency/duration |
 | Depth lane | proven concurrency |
-| Height | token volume |
+| Bubble volume | token volume |
 | Modality mark/material detail | CALL, SHELL, DRIVE |
 | Posture mark | read, write, mixed, unknown |
 | Fracture/barricade | failure/blocker |
 
-Latency is represented once by the duration footprint. Token volume is represented once by height;
+Latency is represented once by the duration treatment. Token volume is represented once by volume;
 the two signals are never blended into a composite score.
 
 Selecting an operation changes the camera state, not the temporal grammar. The focus camera moves
@@ -352,10 +353,10 @@ Here. `Enter the Vantage` begins the embodied replay directly. The two glass sur
 shown together.
 
 A compact, dismissible glass caption names the shape, maps it back to the exact world-model
-primitive, and explains why the local operation towers sit in front of this vantage: they are
+primitive, and explains why the local interaction beads sit in front of this vantage: they are
 inspectable evidence belonging to this semantic step, not additional stops on the global route.
 The caption clears during travel so it does not become permanent HUD obstruction. It repeats the
-tower channels and tells the learner to pause and select an amber tower or `@sequence` plaque to
+bead channels and tells the learner to pause and select a glass bead or `@sequence` plaque to
 inspect its redacted exchange.
 
 It is identified by a typed tutorial origin and is visually labeled `START HERE`. It is never

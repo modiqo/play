@@ -143,6 +143,7 @@ $play journal yesterday                   # Recall another local day
 $play settle <capture-handle> <summary>    # Settle an existing Rote capture
 $play birth weekly customer report         # See how one of your Plays was made
 $play list my organizations and Plays      # Browse authorized collections
+play-journey view --active                  # Follow or map the active exploration
 play cheat-sheet                           # Learn Play through short example interactions
 direct: <request>                           # Bypass Play and Rote for one whole turn
 play-routing --project . list               # Inspect this repository's direct routes
@@ -154,6 +155,8 @@ That is enough for everyday use. Jump to the section that matches what you need 
   multi-harness bootstrap.
 - [Everyday Play commands](#everyday-play-commands)—searching, running, saving, the inbox, and birth
   certificates.
+- [Journey viewer guide](docs/journey-viewer.md)—follow live or recorded agent traces, read the
+  world model, inspect evidence, and use Atlas.
 - [Architecture and internals](#architecture-and-internals)—the state machine and typed runtime.
 - [Development checks](#development-checks)—package, test, benchmark, and UI validation commands.
 
@@ -334,6 +337,10 @@ $play journey live
 play-journey view --active
 ```
 
+See the [Journey viewer guide](docs/journey-viewer.md) for the Start Here tutorial, Follow and
+Atlas, the spatial vocabulary, interaction bubbles, live tracking, model telemetry, and
+troubleshooting.
+
 The command synchronizes with the current Rote workspace first (the workspace containing the current
 directory when applicable, otherwise Rote's most recently updated workspace), overlays matching
 active Play capture metadata when available, stops older Journey HTTP servers, then starts one
@@ -350,7 +357,7 @@ keeps its exact site while the map refreshes. Selecting an older pre-projector c
 projection and switches after the first graph is ready. A capture whose source workspace and graph
 are both unavailable remains visible but disabled rather than disappearing from its history.
 
-The Deck.gl viewer does not draw Rote commands as anonymous boxes. It consumes the deterministic
+The Journey viewer does not draw Rote commands as anonymous boxes. It consumes the deterministic
 [`play.journey-story/v1`](references/explore/journey-story.schema.json) projection and uses semantic
 zoom: **Journey** shows the outcome-bearing route, **Phase** enters the interactions inside one
 human stage, and **Evidence** opens one bounded, credential-redacted request/response display copy.
@@ -377,9 +384,10 @@ Read/write posture is equally typed: adapter tool hints or declared HTTP methods
 risk tags, and browser ledger primitives are the only effect sources. Names such as `gh`, `curl`,
 `get`, or `publish` are never treated as safety evidence; missing typed evidence remains unknown.
 The capability rail exposes that posture and scope without changing the underlying graph. Each
-vantage places every canonical `@N` on a compact left-to-right frontage timeline, with its evidence
-tower immediately behind the corresponding index. Recorded journeys start at **Play**, become
-**Freeze** while moving, and show
+vantage places every canonical `@N` on a compact left-to-right timeline. Physical-glass interaction
+beads sit in front of their semantic site and a natural thread preserves operation order; bead
+volume represents token volume while the amber duration treatment represents latency. Recorded
+journeys start at **Play**, become **Freeze** while moving, and show
 **Resume** only after the user freezes at a vantage. All enrichment occurs in the detached projector,
 never in the viewer or prompt hook.
 
