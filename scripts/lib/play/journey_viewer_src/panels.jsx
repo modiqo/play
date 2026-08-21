@@ -1,4 +1,5 @@
 import React, {useEffect, useRef, useState} from 'react'
+import {capabilityJumpIndex} from './capability-navigation.mjs'
 import {formatNumber} from './format.js'
 import {estimatedContextProgress, formatModelCost, playbackModelTelemetry, summarizeModelRecords} from './model-telemetry.mjs'
 import {KIND_LABEL, MAP_MEANING, MODALITY_VOCABULARY, WORLD_MODEL_KINDS, WORLD_ROLE, WORLD_STORY, worldSpec} from './semantics.js'
@@ -338,9 +339,10 @@ export function CapabilityRail({story, interactions, replay, onJump}) {
       if (!(capability.family in CAPABILITY_FAMILIES)) continue
       const key = capabilityKey(record)
       const existing = byKey.get(key)
-      const entry = existing || {key, capability, instance: instances.get(record.capability_ref), firstIndex: sourceIndex, lastIndex: sourceIndex, count: 0, modes: new Set(), tools: new Set(), postures: new Set(), scopes: new Set(), destructive: false}
+      const entry = existing || {key, capability, instance: instances.get(record.capability_ref), firstIndex: sourceIndex, lastIndex: sourceIndex, occurrenceIndexes: new Set(), count: 0, modes: new Set(), tools: new Set(), postures: new Set(), scopes: new Set(), destructive: false}
       entry.firstIndex = Math.min(entry.firstIndex, sourceIndex)
       entry.lastIndex = Math.max(entry.lastIndex, sourceIndex)
+      entry.occurrenceIndexes.add(sourceIndex)
       entry.count += 1
       if (capability.phase) entry.modes.add(capability.phase)
       if (capability.mode) entry.modes.add(capability.mode)
@@ -377,7 +379,8 @@ export function CapabilityRail({story, interactions, replay, onJump}) {
       {expanded[group.family] && <div className="capability-family-items">{group.entries.slice(0, 6).map((entry) => {
         const active = activeKeys.has(entry.key)
         const used = entry.firstIndex <= chapterIndex
-        return <button key={entry.key} className={`capability-item ${active ? 'active' : used ? 'used' : ''}`} onClick={() => onJump(entry.firstIndex)} title={`${entry.capability.label}: ${[...entry.tools].join(', ')}`}>
+        const jumpIndex = capabilityJumpIndex([...entry.occurrenceIndexes], chapterIndex, entry.firstIndex)
+        return <button key={entry.key} className={`capability-item ${active ? 'active' : used ? 'used' : ''}`} onClick={() => onJump(jumpIndex)} title={`${entry.capability.label}: ${[...entry.tools].join(', ')}`}>
           <i /><span><strong>{entry.capability.label}</strong><small>{capabilityDetail(entry)}</small></span><b>{active ? 'IN USE' : used ? 'USED' : 'AHEAD'}</b><em>{entry.count}</em>
         </button>
       })}</div>}
