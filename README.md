@@ -41,6 +41,9 @@ That is the whole setup. The installer opens a small terminal wizard: press Ente
 guided walkthrough, or choose **Review details** to inspect every planned change. Play finds your
 agent apps, checks Rote and its skills, and explains what it will install, update, or refresh. One
 approval covers the displayed setup, including the official Rote installer when Rote is missing.
+On a fresh home directory, it creates personal skill directories only for agent apps it actually
+detects and selects; users never need to pre-create `~/.codex/skills`, `~/.claude/skills`, or another
+harness directory.
 Before changing Play-owned harness state, the wizard verifies the current Rote identity and, when
 needed, asks whether to continue with Google or GitHub. The browser OAuth flow signs in or creates
 the account; the installer then builds and fingerprints the public Play catalog used by **What’s
@@ -631,8 +634,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.46/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.46 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.47/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.47 sh
 ```
 
 To inspect the small bootstrap before running it:

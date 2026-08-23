@@ -726,6 +726,50 @@ def _rote_skill_roots() -> dict[str, tuple[str, Path]]:
     return roots
 
 
+def prepare_selected_skill_roots(selected: Sequence[str]) -> Step:
+    """Create only the personal skill roots required by selected harnesses."""
+    roots = _rote_skill_roots()
+    created: list[str] = []
+    present: list[str] = []
+    for harness in dict.fromkeys(selected):
+        provider = TARGET_IDS.get(harness)
+        if provider is None or provider not in roots:
+            return Step(
+                "prepare_harness_skill_roots",
+                "failed",
+                f"No personal skill root is defined for selected harness {harness!r}.",
+            )
+        label, root = roots[provider]
+        existed = root.is_dir()
+        try:
+            root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        except OSError as error:
+            return Step(
+                "prepare_harness_skill_roots",
+                "failed",
+                f"Could not prepare {label} skill root {root}: {error}",
+            )
+        if not root.is_dir():
+            return Step(
+                "prepare_harness_skill_roots",
+                "failed",
+                f"The {label} skill root is not a directory: {root}",
+            )
+        (present if existed else created).append(f"{label}: {root}")
+
+    details: list[str] = []
+    if created:
+        details.append("created " + ", ".join(created))
+    if present:
+        details.append("already present " + ", ".join(present))
+    return Step(
+        "prepare_harness_skill_roots",
+        "completed" if created else "unchanged",
+        "; ".join(details) or "No harness skill roots were selected.",
+        changed=bool(created),
+    )
+
+
 def _rote_skills_snapshot(providers: Sequence[str] | None = None) -> list[dict[str, Any]]:
     result = []
     roots = _rote_skill_roots()
@@ -919,6 +963,12 @@ def build_plan(
         {
             "id": "warm_public_play_cache",
             "effect": "builds and verifies a canonical seven-day public Play snapshot for What’s New",
+            "recommended": True,
+        },
+        {
+            "id": "prepare_harness_skill_roots",
+            "effect": "creates missing personal skill directories only for detected and selected harnesses",
+            "targets": selected,
             "recommended": True,
         },
         {
@@ -3579,6 +3629,21 @@ def apply(
     )
     steps.append(cache_step)
     if cache_step.status != "completed":
+        return _finish_report(
+            plan,
+            run_id,
+            started,
+            steps,
+            status="blocked",
+            runner=runner,
+        )
+
+    root_step = active_progress.call(
+        "Preparing selected harness skill roots",
+        lambda: prepare_selected_skill_roots(selected),
+    )
+    steps.append(root_step)
+    if root_step.status == "failed":
         return _finish_report(
             plan,
             run_id,
