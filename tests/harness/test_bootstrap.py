@@ -189,6 +189,59 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("keep", skill_status["codex"]["recommended_action"])
         self.assertEqual("keep", skill_status["claude-code"]["recommended_action"])
 
+    @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
+    @patch("scripts.lib.play.bootstrap.shutil.which")
+    def test_plan_skips_missing_harness_roots_with_python_312_lazy_iteration(
+        self, which: MagicMock, _resolve_rote: MagicMock
+    ) -> None:
+        which.side_effect = lambda name: "/bin/claude" if name == "claude" else None
+        original_iterdir = Path.iterdir
+
+        def lazy_iterdir(path: Path):
+            def entries():
+                if not path.is_dir():
+                    raise FileNotFoundError(2, "No such file or directory", str(path))
+                yield from original_iterdir(path)
+
+            return entries()
+
+        def probe(command: list[str]) -> MagicMock:
+            if command[-1] == "whoami":
+                return MagicMock(
+                    returncode=0, stdout="ok: person@example.com\n", stderr=""
+                )
+            if command[-1] == "--check":
+                return MagicMock(
+                    returncode=0,
+                    stdout="You are on the latest version!\n",
+                    stderr="",
+                )
+            return MagicMock(returncode=0, stdout="version: 1.2.3\n", stderr="")
+
+        runner = MagicMock(side_effect=probe)
+
+        with patch.object(Path, "iterdir", lazy_iterdir):
+            plan = build_plan(top_k=3, runner=runner)
+            requested_plan = build_plan(
+                top_k=3, requested=["codex", "claude"], runner=runner
+            )
+
+        self.assertEqual(["claude"], plan["selected_harnesses"])
+        targets = {target["id"]: target for target in plan["targets"]}
+        self.assertFalse(targets["codex"]["detected"])
+        self.assertFalse(targets["codex"]["selected"])
+        self.assertEqual("not detected", targets["codex"]["selection_reason"])
+        self.assertTrue(targets["claude"]["detected"])
+        self.assertTrue(targets["claude"]["selected"])
+        self.assertEqual(["claude"], requested_plan["selected_harnesses"])
+        requested_targets = {
+            target["id"]: target for target in requested_plan["targets"]
+        }
+        self.assertEqual(
+            "requested but not detected",
+            requested_targets["codex"]["selection_reason"],
+        )
+
     def test_codex_hooks_replace_only_managed_play_entries_and_create_backup(self) -> None:
         path = self.home / ".codex" / "hooks.json"
         path.parent.mkdir(parents=True)
@@ -1267,6 +1320,27 @@ class BootstrapTest(unittest.TestCase):
         self.assertNotIn("plugin failed", rendered)
         self.assertIn("see the detailed JSON report", rendered)
         self.assertIn("/tmp/quiet-card.json", rendered)
+
+    def test_status_card_reports_absent_and_unselected_harnesses(self) -> None:
+        rendered = _render_status_card(
+            {
+                "status": "completed",
+                "run_id": "inventory-card",
+                "selected_harnesses": ["claude"],
+                "targets": [
+                    {"id": "codex", "detected": False, "selected": False},
+                    {"id": "claude", "detected": True, "selected": True},
+                    {"id": "kimi", "detected": True, "selected": False},
+                ],
+                "steps": [],
+            }
+        )
+
+        self.assertIn("Claude Code    READY", rendered)
+        self.assertIn("Skipped — not installed", rendered)
+        self.assertIn("Codex", rendered)
+        self.assertIn("Detected — not selected", rendered)
+        self.assertIn("Kimi", rendered)
 
     def test_status_card_surfaces_stderr_instead_of_a_stdout_heading(self) -> None:
         rendered = _render_status_card(

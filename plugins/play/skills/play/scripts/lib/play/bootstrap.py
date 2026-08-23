@@ -120,6 +120,7 @@ class HarnessTarget:
     play_skill_installed: bool
     hooks: str
     score: int
+    detected: bool
     selected: bool
     selection_reason: str
 
@@ -350,14 +351,13 @@ def _has_skill(root: Path, kind: str) -> bool:
     if kind == "play":
         return (root / "play" / "SKILL.md").is_file()
     try:
-        children = root.iterdir()
+        return any(
+            (child.name == "rote" or child.name.startswith("rote-"))
+            and (child / "SKILL.md").is_file()
+            for child in root.iterdir()
+        )
     except OSError:
         return False
-    return any(
-        (child.name == "rote" or child.name.startswith("rote-"))
-        and (child / "SKILL.md").is_file()
-        for child in children
-    )
 
 
 def resolve_rote() -> str | None:
@@ -724,11 +724,16 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
                 "play_skill_installed": play_ready,
                 "hooks": "managed" if name in {"codex", "claude", "cursor"} else "not_required",
                 "score": score,
+                "detected": present,
                 "present": present,
             }
         )
     if requested_unique:
-        selected = set(requested_unique)
+        selected = {
+            str(item["id"])
+            for item in candidates
+            if item["present"] and item["id"] in requested_unique
+        }
     else:
         ranked = sorted(
             (item for item in candidates if item["present"]),
@@ -743,9 +748,13 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
                 "explicitly selected"
                 if requested_unique and item["id"] in selected
                 else (
-                    f"selected in top {top_k}"
-                    if item["id"] in selected
-                    else ("not detected" if not item["present"] else f"outside top {top_k}")
+                    "requested but not detected"
+                    if requested_unique and item["id"] in requested_unique
+                    else (
+                        f"selected in top {top_k}"
+                        if item["id"] in selected
+                        else ("not detected" if not item["present"] else f"outside top {top_k}")
+                    )
                 )
             ),
         )
@@ -2883,6 +2892,21 @@ def _markdown(report: dict[str, Any]) -> str:
         "",
     ]
     lines.extend(f"- {name}" for name in report["selected_harnesses"])
+    targets = [
+        target for target in report.get("targets", []) if isinstance(target, dict)
+    ]
+    if targets:
+        lines.extend(["", "## Harness inventory", ""])
+        for target in targets:
+            harness = str(target.get("id") or "unknown")
+            label = LABELS.get(harness, harness)
+            if target.get("selected") is True:
+                state = "selected"
+            elif target.get("detected") is True:
+                state = "detected, not selected"
+            else:
+                state = "skipped, not installed"
+            lines.append(f"- **{label}**: {state}")
     lines.extend(["", "## Steps", ""])
     for step in report["steps"]:
         target = f" ({step['target']})" if step.get("target") else ""
@@ -2961,6 +2985,26 @@ def _render_status_card(report: dict[str, Any]) -> str:
         else:
             state = "READY"
         lines.append(f"    {LABELS.get(harness, harness):<14} {state}")
+
+    targets = [
+        target for target in report.get("targets", []) if isinstance(target, dict)
+    ]
+    skipped = [target for target in targets if target.get("detected") is not True]
+    not_selected = [
+        target
+        for target in targets
+        if target.get("detected") is True and target.get("selected") is not True
+    ]
+    if skipped:
+        lines.extend(["", "  Skipped — not installed"])
+        for target in skipped:
+            harness = str(target.get("id") or "unknown")
+            lines.append(f"    {LABELS.get(harness, harness)}")
+    if not_selected:
+        lines.extend(["", "  Detected — not selected"])
+        for target in not_selected:
+            harness = str(target.get("id") or "unknown")
+            lines.append(f"    {LABELS.get(harness, harness)}")
 
     action_steps = [
         step
