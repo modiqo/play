@@ -315,6 +315,19 @@ def _home() -> Path:
     return Path.home()
 
 
+def _require_supported_os(
+    *, platform: str | None = None, os_name: str | None = None
+) -> None:
+    """Reject untested native Windows while allowing Linux-based WSL."""
+
+    detected_platform = sys.platform if platform is None else platform
+    detected_os_name = os.name if os_name is None else os_name
+    if detected_os_name == "nt" or detected_platform.startswith("win"):
+        raise BootstrapError(
+            "native Windows is not supported yet; run Play from WSL2, Linux, or macOS"
+        )
+
+
 def _play_version() -> str:
     return (Path(__file__).resolve().parents[3] / "VERSION").read_text(
         encoding="utf-8"
@@ -3848,6 +3861,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     progress = Progress(enabled=os.environ.get("PLAY_INSTALL_QUIET") != "1")
     try:
+        _require_supported_os()
         if args.command == "backup":
             if args.backup_command == "list":
                 payload = list_play_backups()

@@ -413,6 +413,36 @@ class InstallAllTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn('install "$@" < /dev/tty', installer)
 
+    def test_portable_installer_rejects_native_windows_before_changes(self) -> None:
+        fake_bin = self.home / "windows-bin"
+        fake_bin.mkdir()
+        uname = fake_bin / "uname"
+        uname.write_text("#!/bin/sh\nprintf '%s\\n' MINGW64_NT-10.0\n", encoding="utf-8")
+        uname.chmod(0o755)
+        install_home = self.home / "windows-install"
+        environment = {
+            **self.environment,
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "PLAY_INSTALL_HOME": str(install_home),
+            "PLAY_INSTALL_SOURCE": str(ROOT),
+            "PLAY_INSTALL_YES": "1",
+        }
+
+        result = subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh")],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("native Windows is not supported yet", result.stderr)
+        self.assertIn("WSL2", result.stderr)
+        self.assertFalse(install_home.exists())
+        self.assertNotIn("Modiqo Rote", result.stdout)
+
     def test_portable_installer_rejects_unknown_login_provider(self) -> None:
         environment = {
             **self.environment,

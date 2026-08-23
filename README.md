@@ -54,6 +54,10 @@ agent app, then continue to step 3. The installer requires Python 3.10+ and
 [`uv`](https://docs.astral.sh/uv/); advanced options are in the
 [installation reference](#installation-reference).
 
+Native Windows is not supported yet. On Windows, run Play inside WSL2; Linux and macOS are
+supported directly. The installer exits before making changes when it detects a native Windows
+shell.
+
 ### 3. Say hello
 
 Start a new conversation and invoke Play:

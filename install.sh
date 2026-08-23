@@ -8,6 +8,15 @@ fail() {
   exit 1
 }
 
+require_supported_os() {
+  platform=$(uname -s 2>/dev/null || printf '%s' unknown)
+  case "$platform" in
+    MINGW*|MSYS*|CYGWIN*|Windows_NT*)
+      fail "native Windows is not supported yet; run Play from WSL2, Linux, or macOS"
+      ;;
+  esac
+}
+
 print_banner() {
   if [ "${PLAY_INSTALL_NO_BANNER:-0}" = 1 ]; then
     return
@@ -90,6 +99,7 @@ stage_finish() {
   fi
 }
 
+require_supported_os
 command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 
 print_banner

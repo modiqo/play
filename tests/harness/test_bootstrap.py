@@ -13,10 +13,12 @@ from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
 from scripts.lib.play.bootstrap import (
+    BootstrapError,
     Step,
     Progress,
     _accept_identity_only_preflight,
     _parallel_harness_work,
+    _require_supported_os,
     _fallback_skill_config_entries,
     _identity_gate,
     _official_rote_install_command,
@@ -68,6 +70,12 @@ class BootstrapTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.environment_patch.stop()
         self.temporary.cleanup()
+
+    def test_native_windows_is_rejected_but_wsl_is_supported(self) -> None:
+        with self.assertRaisesRegex(BootstrapError, "native Windows is not supported"):
+            _require_supported_os(platform="win32", os_name="nt")
+
+        _require_supported_os(platform="linux", os_name="posix")
 
     def test_journey_model_assets_seed_config_and_refresh_catalog(self) -> None:
         owner = self.home / ".play"
