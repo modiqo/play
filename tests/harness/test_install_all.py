@@ -375,6 +375,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("Version: 0.4.44", result.stdout)
         self.assertIn("| Play setup", result.stdout)
         self.assertIn("Status: READY", result.stdout)
+        self.assertIn("OS:     ", result.stdout)
         self.assertIn("Congratulations — step 1", result.stdout)
         self.assertIn("becoming a Playmaster", result.stdout)
         self.assertIn("mind-meld with your agent of choice", result.stdout)
@@ -386,6 +387,10 @@ class InstallAllTest(unittest.TestCase):
         self.assertEqual(1, len(reports))
         report = json.loads(reports[0].read_text(encoding="utf-8"))
         self.assertEqual("completed", report["status"])
+        self.assertTrue(report["os"]["display"])
+        self.assertIn(
+            "- OS:", reports[0].with_suffix(".md").read_text(encoding="utf-8")
+        )
         self.assertEqual(["codex", "claude", "kimi"], report["selected_harnesses"])
         step_ids = [step["id"] for step in report["steps"]]
         self.assertLess(step_ids.index("rote_identity"), step_ids.index("backup_play_state"))

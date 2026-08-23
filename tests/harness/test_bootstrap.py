@@ -18,6 +18,7 @@ from scripts.lib.play.bootstrap import (
     Progress,
     _accept_identity_only_preflight,
     _parallel_harness_work,
+    _os_snapshot,
     _require_supported_os,
     _fallback_skill_config_entries,
     _identity_gate,
@@ -76,6 +77,32 @@ class BootstrapTest(unittest.TestCase):
             _require_supported_os(platform="win32", os_name="nt")
 
         _require_supported_os(platform="linux", os_name="posix")
+
+    @patch("scripts.lib.play.bootstrap._linux_release")
+    @patch("scripts.lib.play.bootstrap.platform_module.machine", return_value="x86_64")
+    @patch(
+        "scripts.lib.play.bootstrap.platform_module.release",
+        return_value="5.15.153.1-microsoft-standard-WSL2",
+    )
+    @patch("scripts.lib.play.bootstrap.platform_module.system", return_value="Linux")
+    def test_os_snapshot_identifies_wsl2_and_distribution(
+        self,
+        _system: MagicMock,
+        _release: MagicMock,
+        _machine: MagicMock,
+        linux_release: MagicMock,
+    ) -> None:
+        linux_release.return_value = {
+            "PRETTY_NAME": "Ubuntu 24.04 LTS",
+            "VERSION_ID": "24.04",
+        }
+
+        snapshot = _os_snapshot()
+
+        self.assertEqual("linux", snapshot["family"])
+        self.assertEqual("WSL2", snapshot["name"])
+        self.assertEqual("Ubuntu 24.04 LTS", snapshot["distribution"])
+        self.assertEqual("WSL2 · Ubuntu 24.04 LTS · x86_64", snapshot["display"])
 
     def test_journey_model_assets_seed_config_and_refresh_catalog(self) -> None:
         owner = self.home / ".play"
@@ -1334,6 +1361,7 @@ class BootstrapTest(unittest.TestCase):
             {
                 "status": "completed",
                 "run_id": "inventory-card",
+                "os": {"display": "WSL2 · Ubuntu 24.04 LTS · x86_64"},
                 "selected_harnesses": ["claude"],
                 "targets": [
                     {"id": "codex", "detected": False, "selected": False},
@@ -1345,6 +1373,7 @@ class BootstrapTest(unittest.TestCase):
         )
 
         self.assertIn("Claude Code    READY", rendered)
+        self.assertIn("OS:     WSL2 · Ubuntu 24.04 LTS · x86_64", rendered)
         self.assertIn("Skipped — not installed", rendered)
         self.assertIn("Codex", rendered)
         self.assertIn("Detected — not selected", rendered)

@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform as platform_module
 import queue
 import re
 import shlex
@@ -326,6 +327,81 @@ def _require_supported_os(
         raise BootstrapError(
             "native Windows is not supported yet; run Play from WSL2, Linux, or macOS"
         )
+
+
+def _linux_release() -> dict[str, str]:
+    try:
+        lines = Path("/etc/os-release").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    values: dict[str, str] = {}
+    for line in lines:
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key] = value.strip().strip('"')
+    return values
+
+
+def _os_snapshot() -> dict[str, Any]:
+    """Return a stable, human-readable operating-system receipt."""
+
+    system = platform_module.system() or "Unknown"
+    release = platform_module.release() or "unknown"
+    architecture = platform_module.machine() or "unknown"
+    if architecture.lower() in {"aarch64", "arm64"}:
+        architecture = "arm64"
+    elif architecture.lower() in {"amd64", "x86_64"}:
+        architecture = "x86_64"
+
+    family = system.lower()
+    name = system
+    version = release
+    distribution: str | None = None
+    wsl = False
+    wsl_version: int | None = None
+    if system == "Darwin":
+        family = "macos"
+        name = "macOS"
+        version = platform_module.mac_ver()[0] or release
+    elif system == "Linux":
+        release_values = _linux_release()
+        distribution = release_values.get("PRETTY_NAME") or release_values.get("NAME")
+        name = distribution or "Linux"
+        version = release_values.get("VERSION_ID") or release
+        release_lower = release.lower()
+        wsl = bool(
+            os.environ.get("WSL_DISTRO_NAME")
+            or os.environ.get("WSL_INTEROP")
+            or "microsoft" in release_lower
+        )
+        if wsl:
+            wsl_version = (
+                2
+                if "wsl2" in release_lower or "microsoft-standard" in release_lower
+                else 1
+            )
+            name = f"WSL{wsl_version}"
+
+    if wsl:
+        display_parts = [name]
+        if distribution:
+            display_parts.append(distribution)
+    else:
+        display_parts = [name]
+        if version and version.lower() not in name.lower():
+            display_parts.append(version)
+    display_parts.append(architecture)
+    return {
+        "family": family,
+        "name": name,
+        "version": version,
+        "architecture": architecture,
+        "distribution": distribution,
+        "wsl": wsl,
+        "wsl_version": wsl_version,
+        "display": " · ".join(display_parts),
+    }
 
 
 def _play_version() -> str:
@@ -905,6 +981,7 @@ def build_plan(
     body = {
         "schema": PLAN_SCHEMA,
         "play_version": _play_version(),
+        "os": _os_snapshot(),
         "top_k": top_k,
         "max_selected_harnesses": MAX_SELECTED_HARNESSES,
         "selected_harnesses": selected,
@@ -2904,6 +2981,9 @@ def _markdown(report: dict[str, Any]) -> str:
         "## Selected harnesses",
         "",
     ]
+    system = report.get("os")
+    if isinstance(system, dict) and system.get("display"):
+        lines.insert(7, f"- OS: {system['display']}")
     lines.extend(f"- {name}" for name in report["selected_harnesses"])
     targets = [
         target for target in report.get("targets", []) if isinstance(target, dict)
@@ -2980,6 +3060,9 @@ def _render_status_card(report: dict[str, Any]) -> str:
         "",
         "  Apps",
     ]
+    system = report.get("os")
+    if isinstance(system, dict) and system.get("display"):
+        lines.insert(6, f"  OS:     {system['display']}")
     for harness in report["selected_harnesses"]:
         harness_steps = [step for step in steps if step.get("target") == harness]
         if onboarding_steps:
@@ -3741,6 +3824,7 @@ def _finish_report(
         "status": status,
         "started_at": started,
         "finished_at": datetime.now(timezone.utc).isoformat(),
+        "os": plan.get("os") or _os_snapshot(),
         "selected_harnesses": plan["selected_harnesses"],
         "targets": plan["targets"],
         "rote": {
