@@ -32,6 +32,11 @@ On macOS or Linux, run:
 curl -fsSL https://getrote.dev/playoffs/install.sh | sh
 ```
 
+Run the same command again to update an existing installation. The stable URL always retrieves the
+latest installer, which snapshots the current Play-owned state before replacement, verifies the new
+version in every selected harness, and automatically restores the verified snapshot if the update
+does not pass.
+
 That is the whole setup. The installer opens a small terminal wizard: press Enter for a concise
 guided walkthrough, or choose **Review details** to inspect every planned change. Play finds your
 agent apps, checks Rote and its skills, and explains what it will install, update, or refresh. One
@@ -762,9 +767,16 @@ changed.
 
 ## Update an installed Play plugin
 
-After a new Play release is pushed, refresh the marketplace snapshot and reinstall/update the
-plugin. Published changes must carry a new plugin version; a push that keeps the same version is not
-a reliable cache invalidation mechanism.
+After a new Play release is pushed, rerun the stable installer. It refreshes the marketplace,
+reinstalls only when the installed version or payload is stale, verifies the replacement, and
+automatically restores the pre-update snapshot on failure:
+
+```bash
+curl -fsSL https://getrote.dev/playoffs/install.sh | sh
+```
+
+Published changes must carry a new plugin version; a push that keeps the same version is not a
+reliable cache invalidation mechanism. The equivalent manual marketplace commands are below.
 
 For Codex:
 

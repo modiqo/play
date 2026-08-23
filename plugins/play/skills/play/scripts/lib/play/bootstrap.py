@@ -954,7 +954,7 @@ def build_plan(
         },
         {
             "id": "backup_play_state",
-            "effect": "backs up every detected Play-owned skill, hook, launcher, profile, portable copy, and plugin state before overwrite",
+            "effect": "backs up every detected Play-owned skill, hook, launcher, profile, portable copy, model asset, and plugin state before overwrite; restores it automatically if replacement verification fails",
             "targets": selected,
             "recommended": True,
         },
@@ -976,7 +976,10 @@ def build_plan(
             "portable_targets": portable_hook_targets,
             "targets": portable_hook_targets,
         },
-        {"id": "verify_and_report", "effect": "runs preflight checks and writes JSON and Markdown receipts"},
+        {
+            "id": "verify_and_report",
+            "effect": "runs preflight checks, automatically rolls back an unverified replacement, and writes JSON and Markdown receipts",
+        },
     ]
     body = {
         "schema": PLAN_SCHEMA,
@@ -1100,6 +1103,7 @@ def _play_state_candidates(
     """Enumerate Play-owned harness state before an overwrite begins."""
 
     home = _home()
+    play_home = Path(os.environ.get("PLAY_HOME", home / ".play")).expanduser()
     state_path = _activation_profile_state_path()
     candidates = [
         state_path,
@@ -1120,6 +1124,8 @@ def _play_state_candidates(
                 "PLAY_JOURNEY_LAUNCHER", home / ".local" / "bin" / "play-journey"
             )
         ).expanduser(),
+        play_home / "model-config.yaml",
+        play_home / "cache" / "model_prices_and_context_window.json",
     ]
     hooks = _hook_paths()
     for harness in selected:
@@ -2802,6 +2808,30 @@ def _verify_restored_manifest(manifest: dict[str, Any]) -> None:
             raise BootstrapError(f"restore verification failed for: {target}")
 
 
+def _rollback_play_state(manifest_path: Path) -> Step:
+    """Restore and verify the pre-install Play snapshot after a failed update."""
+
+    try:
+        manifest = _load_backup_manifest(manifest_path)
+        _restore_manifest_entries(manifest)
+        _verify_restored_manifest(manifest)
+    except (BootstrapError, OSError) as error:
+        return Step(
+            "rollback_play_state",
+            "failed",
+            f"Automatic rollback failed: {error}",
+            changed=False,
+            evidence=str(manifest_path),
+        )
+    return Step(
+        "rollback_play_state",
+        "completed",
+        "The Play update did not verify; restored and verified the previous Play state.",
+        changed=True,
+        evidence=str(manifest_path),
+    )
+
+
 def _write_restore_report(report: dict[str, Any]) -> tuple[Path, Path]:
     root = _report_root() / "runs"
     json_path = root / f"{report['restore_id']}.json"
@@ -3039,6 +3069,7 @@ def _render_status_card(report: dict[str, Any]) -> str:
         "completed": "READY",
         "onboarding_required": "SETUP PAUSED — SIGN IN REQUIRED",
         "action_required": "READY — ACTION REQUIRED",
+        "rolled_back": "UPDATE FAILED — PREVIOUS VERSION RESTORED",
         "blocked": "INCOMPLETE",
     }.get(status, status.upper())
     steps = [step for step in report["steps"] if isinstance(step, dict)]
@@ -3065,7 +3096,9 @@ def _render_status_card(report: dict[str, Any]) -> str:
         lines.insert(6, f"  OS:     {system['display']}")
     for harness in report["selected_harnesses"]:
         harness_steps = [step for step in steps if step.get("target") == harness]
-        if onboarding_steps:
+        if status == "rolled_back":
+            state = "RESTORED"
+        elif onboarding_steps:
             state = "WAITING FOR SIGN-IN"
         elif general_blocker or any(
             step.get("status") in {"failed", "approval_required"}
@@ -3129,7 +3162,18 @@ def _render_status_card(report: dict[str, Any]) -> str:
                 prefix = step_id.replace("_", " ").title() + ": "
             lines.append(f"    - {prefix}{_human_step_detail(step)}")
 
-    if status not in {"blocked", "onboarding_required"}:
+    if status == "rolled_back":
+        lines.extend(
+            [
+                "",
+                "  Previous version restored",
+                "    The replacement did not pass verification.",
+                "    Play restored and verified the pre-update snapshot automatically.",
+                "    Review the detailed report, then restart the harness.",
+            ]
+        )
+
+    if status not in {"blocked", "onboarding_required", "rolled_back"}:
         lines.extend(
             [
                 "",
@@ -3616,6 +3660,26 @@ def apply(
             evidence=str(backup_manifest),
         )
     )
+
+    def rollback_failed_update() -> dict[str, Any]:
+        rollback_step = active_progress.call(
+            "Restoring the previous Play version",
+            lambda: _rollback_play_state(backup_manifest),
+        )
+        steps.append(rollback_step)
+        return _finish_report(
+            plan,
+            run_id,
+            started,
+            steps,
+            status="rolled_back" if rollback_step.status == "completed" else "blocked",
+            runner=runner,
+        )
+
+    def fail_update(step_id: str, error: Exception) -> dict[str, Any]:
+        steps.append(Step(step_id, "failed", str(error)))
+        return rollback_failed_update()
+
     for harness in selected:
         target = plan_targets.get(harness, {})
         executable = target.get("command") if isinstance(target, dict) else None
@@ -3659,9 +3723,12 @@ def apply(
         )
         return result
 
-    marketplace_results = _parallel_harness_work(
-        marketplace_harnesses, converge_marketplace
-    )
+    try:
+        marketplace_results = _parallel_harness_work(
+            marketplace_harnesses, converge_marketplace
+        )
+    except Exception as error:
+        return fail_update("converge_play_marketplaces", error)
     for harness in marketplace_harnesses:
         steps.extend(marketplace_results[harness])
     if any(
@@ -3669,12 +3736,13 @@ def apply(
         for harness in marketplace_harnesses
         for step in marketplace_results[harness]
     ):
-        return _finish_report(
-            plan, run_id, started, steps, status="blocked", runner=runner
-        )
+        return rollback_failed_update()
 
     if "codex" in selected:
-        steps.append(codex_play_enablement_step())
+        try:
+            steps.append(codex_play_enablement_step())
+        except Exception as error:
+            return fail_update("enable_play_skill", error)
 
     installer = source / "scripts" / "harness" / "install-all"
     install_command = [
@@ -3686,14 +3754,17 @@ def apply(
     ]
     for harness in selected:
         install_command.extend(["--harness", harness])
-    install_result = active_progress.command(
-        f"Activating Play in {len(selected)} harness{'es' if len(selected) != 1 else ''}",
-        runner,
-        install_command,
-    )
+    try:
+        install_result = active_progress.command(
+            f"Activating Play in {len(selected)} harness{'es' if len(selected) != 1 else ''}",
+            runner,
+            install_command,
+        )
+    except Exception as error:
+        return fail_update("install_play", error)
     steps.append(_result_step("install_play", install_result, install_command))
     if install_result.returncode != 0:
-        return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
+        return rollback_failed_update()
 
     try:
         steps.append(
@@ -3704,9 +3775,7 @@ def apply(
         )
     except (BootstrapError, OSError) as error:
         steps.append(Step("install_journey_model_assets", "failed", str(error)))
-        return _finish_report(
-            plan, run_id, started, steps, status="blocked", runner=runner
-        )
+        return rollback_failed_update()
 
     installed_source = Path(os.environ.get("PLAY_INSTALL_HOME", source)).expanduser()
     if os.environ.get("PLAY_INSTALL_HOME"):
@@ -3728,7 +3797,10 @@ def apply(
             ),
         )
 
-    hook_results = _parallel_harness_work(hook_harnesses, install_harness_hooks)
+    try:
+        hook_results = _parallel_harness_work(hook_harnesses, install_harness_hooks)
+    except Exception as error:
+        return fail_update("install_hooks", error)
     for harness in selected:
         if harness in hook_results:
             steps.append(hook_results[harness])
@@ -3754,7 +3826,10 @@ def apply(
             command,
         )
 
-    verification_results = _parallel_harness_work(selected, verify_harness)
+    try:
+        verification_results = _parallel_harness_work(selected, verify_harness)
+    except Exception as error:
+        return fail_update("verify", error)
     for harness in selected:
         command = [
             "env",
@@ -3777,6 +3852,8 @@ def apply(
         status = "onboarding_required"
     else:
         status = "completed"
+    if status == "blocked":
+        return rollback_failed_update()
     if status == "completed":
         try:
             removed = prune_play_backups(protect=[run_id])
@@ -3872,6 +3949,10 @@ def _finish_report(
                     entry.get("kind") != "absent" for entry in manifest["entries"]
                 ),
                 "retention": BACKUP_RETENTION,
+                "auto_restored": any(
+                    step.id == "rollback_play_state" and step.status == "completed"
+                    for step in steps
+                ),
                 "restore_command": restore_command,
             }
         except (BootstrapError, OSError):

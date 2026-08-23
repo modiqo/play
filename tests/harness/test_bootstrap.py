@@ -10,6 +10,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from typing import Sequence
 from unittest.mock import ANY, MagicMock, patch
 
 from scripts.lib.play.bootstrap import (
@@ -895,6 +896,14 @@ class BootstrapTest(unittest.TestCase):
         play = self.home / ".codex" / "skills" / "play"
         play.mkdir(parents=True)
         (play / "SKILL.md").write_text("play\n", encoding="utf-8")
+        model_config = self.home / ".play" / "model-config.yaml"
+        model_config.parent.mkdir(parents=True)
+        model_config.write_text("schema: play.model-config/v1\n", encoding="utf-8")
+        model_catalog = (
+            self.home / ".play" / "cache" / "model_prices_and_context_window.json"
+        )
+        model_catalog.parent.mkdir(parents=True)
+        model_catalog.write_text("{}\n", encoding="utf-8")
         targets = {"codex": {"skill_roots": [str(play.parent)]}}
 
         manifest_path = backup_play_state(
@@ -907,6 +916,8 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn(str(hooks), backed_up)
         self.assertIn(str(config), backed_up)
         self.assertIn(str(play), backed_up)
+        self.assertIn(str(model_config), backed_up)
+        self.assertIn(str(model_catalog), backed_up)
         self.assertEqual(0o700, manifest_path.parent.stat().st_mode & 0o777)
         self.assertEqual(0o600, manifest_path.stat().st_mode & 0o777)
 
@@ -1026,6 +1037,32 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn(
             "play-bootstrap restore --dossier /tmp/run.json", rendered
         )
+
+    def test_status_card_makes_automatic_update_rollback_explicit(self) -> None:
+        rendered = _render_status_card(
+            {
+                "status": "rolled_back",
+                "run_id": "rolled-back-card",
+                "selected_harnesses": ["claude"],
+                "steps": [
+                    {
+                        "id": "install_play",
+                        "status": "failed",
+                        "detail": "replacement verification failed",
+                    },
+                    {
+                        "id": "rollback_play_state",
+                        "status": "completed",
+                        "detail": "Previous state restored and verified.",
+                    },
+                ],
+            }
+        )
+
+        self.assertIn("UPDATE FAILED — PREVIOUS VERSION RESTORED", rendered)
+        self.assertIn("Claude Code    RESTORED", rendered)
+        self.assertIn("Previous version restored", rendered)
+        self.assertNotIn("Congratulations", rendered)
 
     def test_codex_play_override_removal_preserves_unrelated_toml(self) -> None:
         config = self.home / ".codex" / "config.toml"
@@ -1278,6 +1315,63 @@ class BootstrapTest(unittest.TestCase):
         )
         self.assertIn("Rote 0.69.1 is too old", report["steps"][-1]["detail"])
         backup.assert_not_called()
+
+    @patch("scripts.lib.play.bootstrap._warm_public_play_cache")
+    @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
+    def test_failed_update_restores_and_verifies_previous_play_state(
+        self,
+        _resolve_rote: MagicMock,
+        warm_cache: MagicMock,
+    ) -> None:
+        portable = self.home / ".local" / "share" / "modiqo" / "play" / "skill"
+        portable.mkdir(parents=True)
+        state = portable / "VERSION"
+        state.write_text("0.4.44\n", encoding="utf-8")
+        warm_cache.return_value = Step(
+            "warm_public_play_cache", "completed", "Cache is ready."
+        )
+        plan = {
+            "plan_id": "sha256:auto-rollback",
+            "selected_harnesses": [],
+            "targets": [],
+            "rote": {
+                "path": "/bin/rote",
+                "version": "1.0.0",
+                "identity": "authenticated",
+                "update": {
+                    "status": "current",
+                    "detail": "Rote is current.",
+                    "recommended_action": "keep",
+                },
+            },
+            "rote_skills": [],
+        }
+
+        def runner(command: Sequence[str]) -> MagicMock:
+            argv = [str(item) for item in command]
+            if argv and argv[0].endswith("install-all"):
+                state.write_text("broken update\n", encoding="utf-8")
+                return MagicMock(returncode=1, stdout="", stderr="install failed")
+            if len(argv) > 1 and argv[1] == "version":
+                return MagicMock(returncode=0, stdout="version: 1.0.0\n", stderr="")
+            if len(argv) > 1 and argv[1] == "whoami":
+                return MagicMock(
+                    returncode=0, stdout="ok: person@example.com\n", stderr=""
+                )
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        report = apply(
+            ROOT,
+            runner=runner,
+            run_id="auto-rollback-run",
+            prepared_plan=plan,
+        )
+
+        self.assertEqual("rolled_back", report["status"])
+        self.assertEqual("0.4.44\n", state.read_text(encoding="utf-8"))
+        self.assertEqual("rollback_play_state", report["steps"][-1]["id"])
+        self.assertEqual("completed", report["steps"][-1]["status"])
+        self.assertTrue(report["backup"]["auto_restored"])
 
     @patch("scripts.lib.play.bootstrap.backup_play_state")
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
