@@ -465,7 +465,8 @@
             "enum": [
               "local",
               "remote_private",
-              "remote_public"
+              "remote_public",
+              "remote_baseline"
             ]
           }
         },
@@ -498,7 +499,8 @@
           "enum": [
             "local",
             "remote_private",
-            "remote_public"
+            "remote_public",
+            "remote_baseline"
           ]
         },
         "uri": {

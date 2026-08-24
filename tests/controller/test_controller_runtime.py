@@ -818,6 +818,66 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("classify_play_invocation", yielded.trace[0].action)
         self.assertEqual("ordinary_play_invocation", yielded.trace[0].event)
 
+    def test_search_transition_accepts_public_baseline_scope(self) -> None:
+        candidate = {
+            "name": "retrieve-rideshare-receipts",
+            "description": "Retrieve rideshare receipts",
+            "reference": "modiqo/retrieve-rideshare-receipts",
+            "exact_reference": "modiqo/retrieve-rideshare-receipts@0.1.0",
+            "version": "0.1.0",
+            "status": "approved",
+            "sources": ["remote_baseline"],
+            "score": 1.0,
+            "coverage": 1.0,
+            "match_classification": "full",
+            "primary_scope": "remote_baseline",
+            "uri": "https://play.modiqo.ai/modiqo/retrieve-rideshare-receipts",
+            "run_command": "rote play run modiqo/retrieve-rideshare-receipts",
+            "inspect_command": (
+                "rote play inspect modiqo/retrieve-rideshare-receipts --json"
+            ),
+            "hint_kind": "play",
+            "local_availability": "not_found",
+            "execution_resolution": "pull_required",
+            "selection_description": (
+                "Remote baseline match; pulling requires approval."
+            ),
+        }
+        cursor = replace(
+            self.runtime.initial_cursor(run_id="baseline-1", task_key="baseline-1"),
+            state=StateId("search"),
+        )
+
+        result = self.runtime.step(
+            cursor,
+            ControllerEvent(
+                id=EventId("search_ready"),
+                payload={
+                    "search": {
+                        "complete": True,
+                        "query": "retrieve rideshare receipts",
+                        "sources": ["remote_baseline"],
+                        "result_refs": [candidate["reference"]],
+                        "results": [candidate],
+                        "play_choices": [
+                            {
+                                "reference": candidate["reference"],
+                                "label": "retrieve-rideshare-receipts — baseline",
+                                "description": candidate["selection_description"],
+                                "parameters": {},
+                            }
+                        ],
+                    }
+                },
+                guards={
+                    GuardId("search_only_requested"): False,
+                    GuardId("search_is_complete"): True,
+                },
+            ),
+        )
+
+        self.assertEqual("classify", result.cursor.state)
+
     @patch("play.runtime_actions.subprocess.run")
     def test_retrieve_outcome_inspects_full_remote_match_without_choice(
         self, run

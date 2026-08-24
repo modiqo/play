@@ -44,13 +44,14 @@ using one source.
   require a pull of that canonical reference. Do not execute the stale local owner alias.
 - Never merge matching names from different organizations without that evidence.
 - Combine source ranks with reciprocal-rank fusion and sort deterministically. Rank adequate matches
-  by execution scope first: local, then private organization, then public hub.
+  by execution scope first: local, then private organization, then public hub, then the public
+  baseline catalog.
 
 For registry-addressable results, emit:
 
 - latest-release URI: `https://play.modiqo.ai/<owner>/<name>`;
 - the currently resolved `<owner>/<name>@<version>` only as inspection metadata;
-- sources: `local`, `remote_private`, `remote_public`, or a combination;
+- sources: `local`, `remote_private`, `remote_public`, `remote_baseline`, or a combination;
 - local availability and whether a pull/install is expected;
 - next command: `rote play inspect <owner>/<name> --json`.
 
