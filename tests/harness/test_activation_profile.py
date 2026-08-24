@@ -23,6 +23,7 @@ class ActivationProfileTest(unittest.TestCase):
         self.launcher = base / "bin" / "play-machine"
         self.routing_launcher = base / "bin" / "play-routing"
         self.journey_launcher = base / "bin" / "play-journey"
+        self.cli_launcher = base / "bin" / "play"
         self.originals: dict[Path, bytes] = {}
 
         for index, root in enumerate(self.roots):
@@ -52,6 +53,7 @@ class ActivationProfileTest(unittest.TestCase):
         environment["PLAY_MACHINE_LAUNCHER"] = str(self.launcher)
         environment["PLAY_ROUTING_LAUNCHER"] = str(self.routing_launcher)
         environment["PLAY_JOURNEY_LAUNCHER"] = str(self.journey_launcher)
+        environment["PLAY_CLI_LAUNCHER"] = str(self.cli_launcher)
         if hasattr(self, "source"):
             environment["PLAY_PROFILE_SOURCE"] = str(self.source)
         result = subprocess.run(
@@ -77,6 +79,9 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertTrue(os.access(self.routing_launcher, os.X_OK))
         self.assertTrue(self.journey_launcher.is_file())
         self.assertTrue(os.access(self.journey_launcher, os.X_OK))
+        self.assertTrue(self.cli_launcher.is_file())
+        self.assertTrue(os.access(self.cli_launcher, os.X_OK))
+        self.assertIn(str(ROOT / "scripts/bin/play"), self.cli_launcher.read_text())
 
         for skill in (self.roots[0] / "rote", self.roots[1] / "rote-shell"):
             self.assertIn(
@@ -96,6 +101,7 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertFalse(self.launcher.exists())
         self.assertFalse(self.routing_launcher.exists())
         self.assertFalse(self.journey_launcher.exists())
+        self.assertFalse(self.cli_launcher.exists())
         for root in self.roots:
             self.assertFalse((root / "play").exists())
         for path, content in self.originals.items():
@@ -110,6 +116,24 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertIn("refusing to replace", result.stderr)
         self.assertEqual(before, (self.roots[0] / "rote" / "SKILL.md").read_bytes())
         self.assertFalse(self.state.exists())
+
+    def test_upgrade_adds_cli_launcher_to_legacy_profile_state(self) -> None:
+        self.run_profile("install")
+        state = json.loads(self.state.read_text(encoding="utf-8"))
+        state.pop("cli_launcher")
+        state["backups"].pop(str(self.cli_launcher.resolve()), None)
+        self.state.write_text(
+            json.dumps(state, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        self.cli_launcher.unlink()
+
+        self.run_profile("install")
+
+        upgraded = json.loads(self.state.read_text(encoding="utf-8"))
+        self.assertEqual(str(self.cli_launcher.resolve()), upgraded["cli_launcher"])
+        self.assertTrue(self.cli_launcher.is_file())
+        self.assertIn(str(self.cli_launcher.resolve()), upgraded["backups"])
 
     def test_uninstall_refuses_to_overwrite_changed_activation_files(self) -> None:
         self.run_profile("install")

@@ -18,6 +18,8 @@ class PluginPackageTest(unittest.TestCase):
         self.assertTrue((TARGET / "scripts/harness/start-harness").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-activate").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-activate").stat().st_mode & 0o111)
+        self.assertTrue((TARGET / "scripts/bin/play").is_file())
+        self.assertTrue((TARGET / "scripts/bin/play").stat().st_mode & 0o111)
         self.assertTrue((TARGET / "scripts/bin/play-cheat-sheet").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-cheat-sheet").stat().st_mode & 0o111)
         self.assertTrue((TARGET / "scripts/bin/play-journal").is_file())

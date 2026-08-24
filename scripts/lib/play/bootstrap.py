@@ -1174,6 +1174,9 @@ def _play_state_candidates(
                 "PLAY_JOURNEY_LAUNCHER", home / ".local" / "bin" / "play-journey"
             )
         ).expanduser(),
+        Path(
+            os.environ.get("PLAY_CLI_LAUNCHER", home / ".local" / "bin" / "play")
+        ).expanduser(),
         play_home / "model-config.yaml",
         play_home / "cache" / "model_prices_and_context_window.json",
     ]

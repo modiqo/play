@@ -71,11 +71,24 @@ def journey_launcher_content() -> bytes:
     return f'#!/bin/sh\nexec "{executable}" "$@"\n'.encode()
 
 
+def cli_launcher_path() -> Path:
+    override = os.environ.get("PLAY_CLI_LAUNCHER")
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path.home() / ".local" / "bin" / "play"
+
+
+def cli_launcher_content() -> bytes:
+    executable = SOURCE / "scripts" / "bin" / "play"
+    return f'#!/bin/sh\nexec "{executable}" "$@"\n'.encode()
+
+
 def managed_launchers() -> tuple[tuple[Path, bytes], ...]:
     return (
         (launcher_path(), launcher_content()),
         (routing_launcher_path(), routing_launcher_content()),
         (journey_launcher_path(), journey_launcher_content()),
+        (cli_launcher_path(), cli_launcher_content()),
     )
 
 
@@ -436,6 +449,12 @@ def verify_state(state: dict[str, object]) -> list[str]:
         or read_bytes(journey_launcher) != journey_launcher_content()
     ):
         problems.append(f"missing or changed Play Journey launcher: {journey_launcher}")
+    cli_launcher = Path(str(state.get("cli_launcher", cli_launcher_path())))
+    if (
+        not cli_launcher.is_file()
+        or read_bytes(cli_launcher) != cli_launcher_content()
+    ):
+        problems.append(f"missing or changed Play CLI launcher: {cli_launcher}")
     try:
         current_roots = {
             str(root)
@@ -566,6 +585,13 @@ def reconcile(state: dict[str, object]) -> None:
         and Path(str(recorded_journey_launcher)) != journey_launcher
     ):
         raise ProfileError("Play Journey launcher path changed; uninstall before reinstalling")
+    cli_launcher = cli_launcher_path()
+    recorded_cli_launcher = state.get("cli_launcher")
+    if (
+        recorded_cli_launcher is not None
+        and Path(str(recorded_cli_launcher)) != cli_launcher
+    ):
+        raise ProfileError("Play CLI launcher path changed; uninstall before reinstalling")
 
     profile_backups = copy.deepcopy(state.get("profile_backups", []))
     if not isinstance(profile_backups, list):
@@ -689,6 +715,7 @@ def reconcile(state: dict[str, object]) -> None:
             "launcher": str(launcher),
             "routing_launcher": str(routing_launcher),
             "journey_launcher": str(journey_launcher),
+            "cli_launcher": str(cli_launcher),
             "backups": backups,
             "profile_backups": profile_backups,
         }
@@ -791,6 +818,7 @@ def install() -> None:
             "launcher": str(launcher_path()),
             "routing_launcher": str(routing_launcher_path()),
             "journey_launcher": str(journey_launcher_path()),
+            "cli_launcher": str(cli_launcher_path()),
             "backups": backups,
         }
         atomic_write(
@@ -827,7 +855,8 @@ def plan() -> None:
         if (link.exists() or link.is_symlink()) and link not in managed_links
     ]
     for field, (managed_path, _content) in zip(
-        ("launcher", "routing_launcher", "journey_launcher"), managed_launchers()
+        ("launcher", "routing_launcher", "journey_launcher", "cli_launcher"),
+        managed_launchers(),
     ):
         recorded = Path(str(state.get(field))) if state and state.get(field) else None
         if (managed_path.exists() or managed_path.is_symlink()) and recorded != managed_path:

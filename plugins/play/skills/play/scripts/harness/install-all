@@ -387,6 +387,20 @@ def verify_play_runtime(source: Path) -> None:
         raise InstallError(
             f"Play Journey launcher does not point at the installed skill: {journey_launcher}"
         )
+    cli_launcher = Path(
+        os.environ.get("PLAY_CLI_LAUNCHER", _home() / ".local" / "bin" / "play")
+    ).expanduser().resolve()
+    if not cli_launcher.is_file() or not os.access(cli_launcher, os.X_OK):
+        raise InstallError(f"Play CLI launcher is missing or not executable: {cli_launcher}")
+    expected_cli = source / "scripts" / "bin" / "play"
+    try:
+        cli_content = cli_launcher.read_text(encoding="utf-8")
+    except OSError as error:
+        raise InstallError(f"cannot read Play CLI launcher {cli_launcher}: {error}") from error
+    if str(expected_cli) not in cli_content:
+        raise InstallError(
+            f"Play CLI launcher does not point at the installed skill: {cli_launcher}"
+        )
     required_modules = ("jsonschema", "statemachine", "yaml")
     if (
         any(importlib.util.find_spec(module) is None for module in required_modules)
@@ -399,6 +413,7 @@ def verify_play_runtime(source: Path) -> None:
         f"  runtime: {launcher} (Python launcher; {len(REQUIRED_PLAY_EXECUTABLES)} bundled entrypoints verified)"
     )
     print(f"  journey: {journey_launcher}")
+    print(f"  cli: {cli_launcher}")
 
 
 def opencode_command_path() -> Path:

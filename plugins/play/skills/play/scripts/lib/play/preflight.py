@@ -47,6 +47,7 @@ HARNESS_LABELS = {
     "deepseek": "DeepSeek Harness (preview)",
 }
 REQUIRED_PLAY_EXECUTABLES = (
+    "play",
     "play-machine",
     "play-bootstrap",
     "play-birth",
