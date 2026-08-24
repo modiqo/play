@@ -303,7 +303,7 @@ class InstallAllTest(unittest.TestCase):
         self.environment["PLAY_INSTALL_HOME"] = str(install_home)
 
         self.run_installer("install", "--copy")
-        installed = install_home / "skill"
+        installed = (install_home / "skill").resolve()
         self.assertEqual("0.4.47", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
@@ -312,6 +312,27 @@ class InstallAllTest(unittest.TestCase):
 
         result = self.run_installer("install", "--copy")
         self.assertIn("already active", result.stdout)
+        self.uninstall(installed)
+
+    def test_install_syncs_locked_runtime_dependencies_before_activation(self) -> None:
+        install_home = self.home / "portable-dependencies"
+        uv_log = self.home / "uv.log"
+        uv = self.bin / "uv"
+        uv.write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$PLAY_TEST_UV_LOG\"\n",
+            encoding="utf-8",
+        )
+        uv.chmod(0o755)
+        self.environment["PLAY_INSTALL_HOME"] = str(install_home)
+        self.environment["PLAY_TEST_UV_LOG"] = str(uv_log)
+
+        self.run_installer("install", "--copy", "--harness", "codex")
+
+        installed = (install_home / "skill").resolve()
+        self.assertEqual(
+            f"sync --locked --no-dev --inexact --project {installed}",
+            uv_log.read_text(encoding="utf-8").strip(),
+        )
         self.uninstall(installed)
 
     def test_portable_copy_migrates_source_profile_with_backup(self) -> None:

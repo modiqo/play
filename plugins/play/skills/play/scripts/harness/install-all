@@ -316,6 +316,45 @@ def verify_harness_coverage(harnesses: list[Harness], source: Path) -> None:
         print(f"  {harness.name}: {path}")
 
 
+def install_python_dependencies(source: Path) -> None:
+    """Materialize the locked runtime environment before exposing Play's launchers."""
+
+    uv = shutil.which("uv")
+    if uv is None:
+        missing = [
+            module
+            for module in ("jsonschema", "statemachine", "yaml")
+            if importlib.util.find_spec(module) is None
+        ]
+        if missing:
+            raise InstallError(
+                "Play needs uv to install its locked Python dependencies "
+                f"(missing: {', '.join(missing)})"
+            )
+        print("  Python dependencies: using the current environment")
+        return
+
+    result = subprocess.run(
+        [
+            uv,
+            "sync",
+            "--locked",
+            "--no-dev",
+            "--inexact",
+            "--project",
+            str(source),
+        ],
+        cwd=source,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        reason = (result.stderr or result.stdout).strip() or "uv sync failed"
+        raise InstallError(f"cannot install Play's locked Python dependencies: {reason}")
+    print(f"  Python dependencies: {source / '.venv'}")
+
+
 def verify_play_runtime(source: Path) -> None:
     validate_source(source)
     launcher = Path(
@@ -348,7 +387,11 @@ def verify_play_runtime(source: Path) -> None:
         raise InstallError(
             f"Play Journey launcher does not point at the installed skill: {journey_launcher}"
         )
-    if importlib.util.find_spec("statemachine") is None and shutil.which("uv") is None:
+    required_modules = ("jsonschema", "statemachine", "yaml")
+    if (
+        any(importlib.util.find_spec(module) is None for module in required_modules)
+        and shutil.which("uv") is None
+    ):
         raise InstallError(
             "Play needs uv or an environment containing its pinned Python dependencies"
         )
@@ -527,6 +570,8 @@ def execute(
         destination, backup = stage_portable_copy(package_source())
         source = destination
     try:
+        if command == "install":
+            install_python_dependencies(source)
         run_profile(source, "install" if command == "install" else "verify", harnesses)
         profile_activated = command == "install"
         if command == "install" and any(item.name == "opencode" for item in harnesses):

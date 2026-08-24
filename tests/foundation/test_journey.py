@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
+import subprocess
 import tempfile
 import time
 import unittest
@@ -107,6 +109,45 @@ class JourneyProjectionTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
+
+    @unittest.skipUnless(Path("/usr/bin/python3").is_file(), "system Python unavailable")
+    def test_view_entrypoint_bootstraps_pinned_environment_when_yaml_is_missing(
+        self,
+    ) -> None:
+        if shutil.which("uv") is None:
+            self.skipTest("uv unavailable")
+        probe = subprocess.run(
+            ["/usr/bin/python3", "-c", "import yaml"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if probe.returncode == 0:
+            self.skipTest("system Python already contains PyYAML")
+
+        result = subprocess.run(
+            [
+                "/usr/bin/python3",
+                str(ROOT / "scripts" / "bin" / "play-journey"),
+                "view",
+                "--active",
+                "--no-open",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+            env={
+                **os.environ,
+                "HOME": str(self.base),
+                "ROTE_HOME": str(self.base / "rote-home"),
+                "PLAY_JOURNEY_UV_BOOTSTRAPPED": "0",
+            },
+        )
+
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertIn("there is no current Rote workspace to visualize", result.stderr)
+        self.assertNotIn("ModuleNotFoundError", result.stderr)
 
     @staticmethod
     def metadata(
