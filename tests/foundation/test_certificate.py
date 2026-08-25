@@ -79,11 +79,7 @@ class CertificatePresentationTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def payload(self, *, visibility: str = "public") -> dict:
-        play_uri = (
-            "https://play.modiqo.ai/daily-chores/modiqo-pricing-grid@0.0.1"
-            if visibility == "public"
-            else None
-        )
+        play_uri = "https://play.modiqo.ai/daily-chores/modiqo-pricing-grid@0.0.1"
         return {
             "birth": {
                 "sha256": self.sha,
@@ -137,16 +133,18 @@ class CertificatePresentationTest(unittest.TestCase):
         self.assertEqual(64, len(result["presentation_ref"]))
         self.assertGreaterEqual(result["birth"]["certificate_ns"], 0)
 
-    def test_private_certificate_does_not_invent_public_links_or_share_copy(self) -> None:
+    def test_private_certificate_shows_uri_access_and_team_copy(self) -> None:
         result = build_certificate_presentation(
             self.payload(visibility="private"), home=self.home
         )
 
-        self.assertIn("private — no public URI", result["presentation_markdown"])
-        self.assertNotIn("## 📣 Share your Play", result["presentation_markdown"])
-        self.assertEqual(
-            {"x": None, "linkedin": None}, result["publication"]["share_copy"]
-        )
+        play_uri = self.payload(visibility="private")["publication"]["uri"]
+        self.assertIn(play_uri, result["presentation_markdown"])
+        self.assertIn("Add a team member", result["presentation_markdown"])
+        self.assertIn("## Share your private Play", result["presentation_markdown"])
+        self.assertIn(play_uri, result["publication"]["share_copy"]["team"])
+        self.assertIsNone(result["publication"]["share_copy"]["x"])
+        self.assertIsNone(result["publication"]["share_copy"]["linkedin"])
 
     def test_legacy_birth_without_outcomes_marks_every_command_unknown(self) -> None:
         del self.record["journey"]["outcomes"]

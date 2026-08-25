@@ -309,7 +309,7 @@ def initial_context(
             "indexed": False,
             "index_ref": None,
             "inspect_ref": None,
-            "share_copy": {"x": None, "linkedin": None},
+            "share_copy": {"team": None, "x": None, "linkedin": None},
             "presentation_ref": None,
             "presented": False,
         },

@@ -198,7 +198,7 @@ def render_certificate(
         f"Visibility: {visibility}",
         f"Owner: {owner}",
         f"Content hash: {content_hash}",
-        f"Play URI: {play_uri if isinstance(play_uri, str) else 'private — no public URI'}",
+        f"Play URI: {play_uri}",
         f"Birth SHA: {sha}",
         f"Flow fingerprint: {_string(flow.get('fingerprint'), 'flow fingerprint')}",
         f"Captured: {captured_at}",
@@ -231,15 +231,40 @@ def render_certificate(
             [
                 "",
                 f"Play URI: [{_markdown_label(title)} — {_markdown_label(description)}]({play_uri})",
-                f"Install/bootstrap: [Install {_markdown_label(title)}]({install_uri})",
-                "Associated credential contracts: **verified**",
-                f"Canonical public smoke: **verified** ({publication['smoke_ns'] / 1_000_000:.2f} ms)",
             ]
         )
+        if visibility == "public":
+            lines.extend(
+                [
+                    f"Install/bootstrap: [Install {_markdown_label(title)}]({install_uri})",
+                    "Community access: **public**",
+                    "Associated credential contracts: **verified**",
+                    f"Canonical public smoke: **verified** ({publication['smoke_ns'] / 1_000_000:.2f} ms)",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    f"Private access: **authorized members of {_markdown_label(owner)}**",
+                    "Add a team member to share this Play with them.",
+                ]
+            )
     share_copy = _object(publication.get("share_copy"), "publication share copy")
+    team_copy = share_copy.get("team")
     x_copy = share_copy.get("x")
     linkedin_copy = share_copy.get("linkedin")
-    if isinstance(x_copy, str) and isinstance(linkedin_copy, str):
+    if isinstance(team_copy, str):
+        lines.extend(
+            [
+                "",
+                "## Share your private Play",
+                "",
+                "Copy this message to your team:",
+                "",
+                *_fenced(team_copy),
+            ]
+        )
+    elif isinstance(x_copy, str) and isinstance(linkedin_copy, str):
         lines.extend(
             [
                 "",

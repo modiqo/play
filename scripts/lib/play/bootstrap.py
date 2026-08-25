@@ -31,6 +31,18 @@ RESTORE_PLAN_SCHEMA = "play.install-restore-plan/v1"
 RESTORE_REPORT_SCHEMA = "play.install-restore-report/v1"
 BACKUP_RETENTION = 10
 LOGIN_PROVIDERS = ("google", "github")
+REGISTRY_NETWORK_MARKERS = (
+    "network error",
+    "error sending request",
+    "failed to refresh session",
+    "connection refused",
+    "connection reset",
+    "could not resolve host",
+    "dns error",
+    "name or service not known",
+    "operation timed out",
+    "timed out",
+)
 SUPPORTED_HARNESSES = (
     "codex",
     "claude",
@@ -614,6 +626,29 @@ def _probe_identity(rote: str | None, runner: Runner) -> str:
     return "authenticated" if result.returncode == 0 and "ok:" in output else "required"
 
 
+def _registry_network_failure(result: subprocess.CompletedProcess[str]) -> bool:
+    output = "\n".join(
+        part for part in (result.stdout, result.stderr) if part
+    ).lower()
+    return any(marker in output for marker in REGISTRY_NETWORK_MARKERS)
+
+
+def _registry_network_blocker(action: str) -> str:
+    return (
+        f"{action} could not reach the Rote registry. Run setup from a normal terminal "
+        "with network access. If an agent launched setup, allow network access in the "
+        "Codex sandbox or permit the command in Claude Code, then retry."
+    )
+
+
+def _registry_credentials_blocker() -> str:
+    return (
+        "Rote registry credentials are required before Play can be installed. "
+        "Re-run setup in a normal terminal and choose Google or GitHub. "
+        "For unattended setup, set PLAY_LOGIN_PROVIDER=google or github."
+    )
+
+
 def _identity_gate(
     rote: str,
     *,
@@ -625,14 +660,7 @@ def _identity_gate(
     if _probe_identity(rote, runner) == "authenticated":
         return Step("rote_identity", "completed", "Rote identity verified."), True
     if login_provider is None:
-        return (
-            Step(
-                "rote_identity",
-                "onboarding_required",
-                "Choose Google or GitHub sign-in before Play-owned harness state is changed.",
-            ),
-            False,
-        )
+        raise BootstrapError(_registry_credentials_blocker())
     if login_provider not in LOGIN_PROVIDERS:
         raise BootstrapError(
             f"login provider must be one of: {', '.join(LOGIN_PROVIDERS)}"
@@ -640,11 +668,19 @@ def _identity_gate(
     command = [rote, "login", "--provider", login_provider]
     result = _run_login_visible(command, runner)
     if result.returncode != 0:
+        detail = (
+            _registry_network_blocker("Rote sign-in")
+            if _registry_network_failure(result)
+            else (
+                f"{login_provider.title()} sign-in did not complete. "
+                "Retry setup or choose the other provider."
+            )
+        )
         return (
             Step(
                 "rote_identity",
                 "onboarding_required",
-                f"{login_provider.title()} sign-in did not complete. Retry setup or choose the other provider.",
+                detail,
                 command=command,
             ),
             False,
@@ -653,11 +689,19 @@ def _identity_gate(
     identity_output = (identity.stdout or identity.stderr).strip()
     email_match = re.search(r"(?im)^ok:\s*([^@\s]+@[^@\s]+\.[^@\s]+)\s*$", identity_output)
     if identity.returncode != 0 or email_match is None:
+        detail = (
+            _registry_network_blocker("Rote identity verification")
+            if _registry_network_failure(identity)
+            else (
+                f"{login_provider.title()} sign-in returned without a verified "
+                "Rote identity."
+            )
+        )
         return (
             Step(
                 "rote_identity",
                 "onboarding_required",
-                f"{login_provider.title()} sign-in returned without a verified Rote identity.",
+                detail,
                 command=command,
             ),
             False,
@@ -2315,6 +2359,13 @@ def _warm_public_play_cache(
     ]
     result = progress.command("Caching public Plays", runner, command)
     if result.returncode != 0:
+        if _registry_network_failure(result):
+            return Step(
+                "warm_public_play_cache",
+                "failed",
+                _registry_network_blocker("The public Play catalog refresh"),
+                command=command,
+            )
         return _result_step("warm_public_play_cache", result, command)
     try:
         payload = json.loads(result.stdout)
@@ -3547,6 +3598,12 @@ def apply(
         raise BootstrapError(
             f"plan changed: expected {expected_plan_id}, got {plan['plan_id']}"
         )
+    rote_plan = plan.get("rote")
+    planned_identity = (
+        rote_plan.get("identity") if isinstance(rote_plan, dict) else None
+    )
+    if planned_identity != "authenticated" and login_provider is None:
+        raise BootstrapError(_registry_credentials_blocker())
     selected = list(plan["selected_harnesses"])
     steps: list[Step] = []
     rote = resolve_rote()

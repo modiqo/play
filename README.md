@@ -471,6 +471,9 @@ guarantees.
 
 ### Install Play everywhere
 
+Play supports macOS, Linux, and WSL2. The installer rejects native Windows shells before it
+downloads or changes anything.
+
 Use the same command on a new machine or to bring an existing installation up to date:
 
 ```bash
@@ -514,8 +517,10 @@ and 30 days of recall history. Existing explicit journal choices survive reinsta
 Identity is an early setup gate. If Rote is unsigned, the terminal wizard offers Google and GitHub
 before any Play-owned backup, plugin, skill, or hook is changed. OAuth login also creates a new
 account when the provider identity has not been seen before. A non-interactive install without an
-authenticated profile or explicit provider pauses at **SETUP PAUSED — SIGN IN REQUIRED**; rerun it
-with a terminal or provide `PLAY_LOGIN_PROVIDER=google|github`. The harness identity lane remains an
+authenticated profile or explicit provider exits with an error because registry credentials are
+required. Rerun it in a terminal or provide `PLAY_LOGIN_PROVIDER=google|github`. A registry network
+failure now points to Codex sandbox access, Claude Code permissions, proxies, or firewalls before
+the user reaches a broken Play command. The harness identity lane remains an
 authentication path for sessions that expire or are revoked later. Managed activation also restores a
 launcher whose recorded Play source no longer exists; it will not take over a different source that
 is still present.
@@ -634,8 +639,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.51/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.51 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.52/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.52 sh
 ```
 
 To inspect the small bootstrap before running it:

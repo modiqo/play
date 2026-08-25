@@ -86,10 +86,23 @@ def _x_copy(title: str, description: str, play_uri: str) -> str:
     available = X_LIMIT - len(suffix)
     if available < 2:
         raise PublicationPresentationError("play_uri is too long for paste-ready X copy")
-    body = f"{title}: {description}"
+    body = (
+        f"My agent and I co-created {title} from a real run, capturing what worked, "
+        f"what failed, and what we learned. {description}"
+    )
     if len(body) > available:
         body = body[: available - 1].rstrip() + "…"
     return body + suffix
+
+
+def _team_copy(title: str, description: str, owner: str, play_uri: str) -> str:
+    return (
+        "My agent and I co-created a private Play from a real run, capturing "
+        "what worked, what failed, and what we learned.\n\n"
+        f"{description}\n\n"
+        f"Open it: {play_uri}\n\n"
+        f"The {owner} team can open it. Ask me to add you if you need access."
+    )
 
 
 def build_publication_presentation(payload: dict[str, Any]) -> dict[str, Any]:
@@ -105,7 +118,7 @@ def build_publication_presentation(payload: dict[str, Any]) -> dict[str, Any]:
         raise PublicationPresentationError("visibility must be private or public")
     owner = _string(payload, "owner")
     content_hash = _string(payload, "content_hash")
-    play_uri = _https_url(payload, "play_uri", required=visibility == "public")
+    play_uri = _https_url(payload, "play_uri", required=True)
     install_uri = _https_url(payload, "install_uri", required=visibility == "public")
     exact_reference = _exact_reference(canonical_reference, version)
     credential_status = _string(payload, "credential_status")
@@ -133,7 +146,11 @@ def build_publication_presentation(payload: dict[str, Any]) -> dict[str, Any]:
             "private presentation requires publication validation to be not_required"
         )
 
-    share_copy: dict[str, str | None] = {"x": None, "linkedin": None}
+    share_copy: dict[str, str | None] = {
+        "team": None,
+        "x": None,
+        "linkedin": None,
+    }
     lines = [
         "Published Play",
         "",
@@ -146,8 +163,10 @@ def build_publication_presentation(payload: dict[str, Any]) -> dict[str, Any]:
         assert play_uri is not None and install_uri is not None and isinstance(smoke_ns, int)
         share_copy["x"] = _x_copy(title, description, play_uri)
         share_copy["linkedin"] = (
-            f"I published {title} as a reusable Play.\n\n"
+            f"My agent and I co-created {title} from a real run, capturing what worked, "
+            "what failed, and what we learned.\n\n"
             f"{description}\n\n"
+            "Others can inspect the method, run it, and improve it.\n\n"
             f"View the Play: {play_uri}\n"
             f"Install or bootstrap it: {install_uri}"
         )
@@ -170,6 +189,27 @@ def build_publication_presentation(payload: dict[str, Any]) -> dict[str, Any]:
                 "",
                 "```text",
                 share_copy["linkedin"],
+                "```",
+            ]
+        )
+    else:
+        assert play_uri is not None
+        share_copy["team"] = _team_copy(title, description, owner, play_uri)
+        lines[2:2] = [
+            f"- Private Play page: [{title} — {description}]({play_uri})",
+            f"- Access: authorized members of {owner}",
+        ]
+        lines.extend(
+            [
+                "",
+                "Share privately",
+                "",
+                "Add the recipient to the team if they do not already have access.",
+                "",
+                "Paste to your team:",
+                "",
+                "```text",
+                share_copy["team"],
                 "```",
             ]
         )

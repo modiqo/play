@@ -2567,11 +2567,15 @@
         "share_copy": {
           "type": "object",
           "required": [
+            "team",
             "x",
             "linkedin"
           ],
           "additionalProperties": false,
           "properties": {
+            "team": {
+              "$ref": "#/$defs/nullableString"
+            },
             "x": {
               "$ref": "#/$defs/nullableString"
             },

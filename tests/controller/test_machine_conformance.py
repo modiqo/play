@@ -369,14 +369,19 @@ class MachineConformanceTest(unittest.TestCase):
         published = ACTIONS["publish_public"]["events"]["play_published"]
         self.assertIn("publication.uri", published)
         self.assertIn("publication.install_uri", published)
+        self.assertIn(
+            "publication.uri",
+            ACTIONS["publish_private"]["events"]["play_published"],
+        )
         self.assertEqual(
             "scripts/bin/play-certificate --stdin --json",
             ACTIONS["present_birth_certificate"]["command"],
         )
         policy = " ".join(ACTIONS["present_birth_certificate"]["command_policy"])
         self.assertIn("ready to paste into X and LinkedIn", policy)
+        self.assertIn("ready to paste to teammates", policy)
         self.assertIn("Never invent, reconstruct, shorten, or silently omit", policy)
-        self.assertIn("public URLs or social copy", policy)
+        self.assertIn("requires team membership", policy)
         self.assertIn("same redacted trace", policy)
         self.assertIn("we did an excellent job", policy)
         publication = CONTEXT["$defs"]["publication"]

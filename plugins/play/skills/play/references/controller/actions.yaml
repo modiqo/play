@@ -324,7 +324,7 @@ actions:
     input_required: [team.slug, team.name, team.status, team.members]
     command: scripts/bin/play-onboarding present-team --stdin --json
     command_policy:
-      - Explain the shared team-to-community learning loop once, with team review before Community publication and paste-ready X/LinkedIn copy only after verified public publication.
+      - Explain the shared team-to-community learning loop once, with a paste-ready team message after private publication and paste-ready X/LinkedIn copy after verified public publication.
       - Never claim that a Play was shared, published, or posted by presenting this orientation.
     events:
       team_loop_presented: [team.status, team.presentation_ref, presentation.markdown]
@@ -816,8 +816,9 @@ actions:
       - Invoke rote-registry in a new, publication-only handoff after birth_capture has succeeded; pass the exact released Flow and the captured birth receipt.
       - Do not author, modify, test, or release the Flow in this state, and never reuse the broader rote-flow-authoring request that produced the release.
       - Return the captured birth SHA unchanged as publication.birth_sha256 with the publication receipt so the controller can reject a publication detached from its pre-publication birth.
+      - Preserve the registry-returned private Play page URI exactly; do not reconstruct it from the canonical reference.
     events:
-      play_published: [publication.canonical_reference, publication.birth_sha256, visibility, owner, play.version, birth.sha256]
+      play_published: [publication.canonical_reference, publication.uri, publication.birth_sha256, visibility, owner, play.version, birth.sha256]
 
   resolve_public_owner:
     kind: deterministic
@@ -926,7 +927,7 @@ actions:
       - Derive successes, errors, and unknown outcomes only from the same redacted trace captured in the immutable birth object; never infer missing outcomes as successes.
       - For public Plays, include the registry-returned Play URI and separate fenced plain-text blocks ready to paste into X and LinkedIn; the X copy must remain within 280 characters and both must contain the Play page URI.
       - Use only the registry-returned publication.uri and publication.install_uri. Never invent, reconstruct, shorten, or silently omit either URL.
-      - For private Plays, certify the verified private reference without public URLs or social copy.
+      - For private Plays, include the registry-returned private Play URI, state that access requires team membership, and provide a fenced message ready to paste to teammates.
       - End with the resolved safe human handle in the exact sentiment that it was a pleasure working together and that we did an excellent job; use friend only when no verified handle is available.
       - Presenting copy does not post, share, invite, or perform any external write.
     events:

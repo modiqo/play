@@ -185,8 +185,10 @@ that exact `plan_id`. Then run `apply --plan-id <id>`; add `--approve-remote-ins
 the user separately approves the official Rote installer. Apply first creates an owner-private,
 restorable backup manifest under the Play bootstrap state directory, then fully replaces Play-owned
 plugin, skill, hook, launcher, portable-copy, and activation-profile state while preserving
-unrelated harness settings. A logged-out receipt is `onboarding_required`, not an install failure:
-open a selected harness and invoke Play so its typed Google/GitHub login states can continue there.
+unrelated harness settings. Installation requires an authenticated Rote identity. A logged-out
+non-interactive install exits before changing Play-owned state unless it names Google or GitHub as
+the login provider. Re-run interactively when a browser sign-in or harness permission change is
+needed.
 Never collect credentials in bootstrap context, backups, or reports.
 
 ## Stay out of the way

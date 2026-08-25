@@ -4,6 +4,7 @@ import {KIND_LABEL, MAP_MEANING, WORLD_ROLE, WORLD_STORY} from './semantics.js'
 import {adaptiveRenderPixelRatio} from './render-quality.mjs'
 import {buildDriveWorldPlan, sampleDriveRoute} from './drive-world-plan.mjs'
 import {animateDriveEnvironment, createDriveEnvironment, createDriveEvents, createDriveFixture, DRIVE_COLORS, updateDriveFixture} from './drive-world-elements.js'
+import {interactionStateLabel} from './interaction-affordance.mjs'
 import {formatModelCost, playbackModelTelemetry} from './model-telemetry.mjs'
 
 function orientToRoute(object, tangent) {
@@ -13,17 +14,9 @@ function orientToRoute(object, tangent) {
   )
 }
 
-function interactionState(record = {}) {
-  const status = String(record.status || 'recorded').toUpperCase()
-  const posture = String(record.effect_profile?.posture || record.effect || 'unknown').toUpperCase()
-  return `${posture} · ${status}`
-}
-
-function compactTokens(value) {
+function formatTokens(value) {
   const count = Number(value || 0)
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 1 : 2)}M`
-  if (count >= 1_000) return `${(count / 1_000).toFixed(count >= 10_000 ? 1 : 2)}K`
-  return String(Math.round(count))
+  return new Intl.NumberFormat('en-US', {maximumFractionDigits: 0}).format(Math.round(count))
 }
 
 function capabilityGear(chapters, sites, index) {
@@ -38,12 +31,21 @@ function capabilityGear(chapters, sites, index) {
 }
 
 function DriveMetric({label, value, tone = ''}) {
-  return <div className={`drive-metric ${tone}`}>
+  const previous = useRef(value)
+  const [changed, setChanged] = useState(false)
+  useEffect(() => {
+    if (previous.current === value) return undefined
+    previous.current = value
+    setChanged(true)
+    const timer = window.setTimeout(() => setChanged(false), 460)
+    return () => window.clearTimeout(timer)
+  }, [value])
+  return <div className={`drive-metric ${tone}${changed ? ' changed' : ''}`}>
     <strong title={String(value)}>{value}</strong><span>{label}</span>
   </div>
 }
 
-export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect}) {
+export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect, onTogglePlayback}) {
   const host = useRef(null)
   const replayRef = useRef(replay)
   const playingRef = useRef(playing)
@@ -238,6 +240,15 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         <h2>{chapter.title}</h2>
         <p><strong>{WORLD_ROLE[chapter.kind] || 'Stage'}.</strong> {MAP_MEANING[chapter.kind] || chapter.detail}</p>
         <small>{WORLD_STORY[chapter.kind] || chapter.detail}</small>
+        <button
+          className={`drive-primary-play${playing ? ' playing' : frozen ? ' frozen' : ''}`}
+          onClick={onTogglePlayback}
+          aria-label={playing ? 'Pause journey playback' : frozen ? 'Resume journey playback' : progress >= .999 ? 'Replay journey' : 'Play journey'}
+        >
+          <i className="drive-play-glyph" aria-hidden="true" />
+          <span><b>{playing ? 'PAUSE ROUTE' : frozen ? 'RESUME ROUTE' : progress >= .999 ? 'REPLAY ROUTE' : 'PLAY ROUTE'}</b><small>{playing ? 'HOLD AT CURRENT POSITION' : frozen ? 'CONTINUE TO NEXT SITE' : progress >= .999 ? 'RETURN TO THE START' : 'BEGIN THE RECORDED TRAVERSAL'}</small></span>
+          <em>{playing ? 'Ⅱ' : '▶'}</em>
+        </button>
       </div>
       {!nextIsCurrent && <div className="drive-next">
         <span>UP NEXT · {KIND_LABEL[nextChapter.kind] || nextChapter.kind}</span>
@@ -250,19 +261,26 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           className={selected?.sequence === record.sequence ? 'selected' : ''}
           onClick={() => onSelect(selected?.sequence === record.sequence ? null : {siteId: chapter.id, sequence: record.sequence})}
         >
-          <span>@{String(record.sequence).padStart(2, '0')}</span>
+          <i className="drive-event-evidence" aria-hidden="true"><u /><u /></i>
+          <span className="drive-event-index">@{String(record.sequence).padStart(2, '0')}</span>
           <strong>{record.capability?.label || record.operation}</strong>
-          <small>{interactionState(record)}</small>
-          <i>REQUEST → RESPONSE</i>
+          <small>{interactionStateLabel(record)}</small>
+          <span className="drive-event-action">
+            <span className="drive-event-flow"><b>REQ</b><i>→</i><b>RES</b></span>
+            <em>INSPECT</em><b className="drive-event-chevron">›</b>
+          </span>
         </button>)}
       </div>}
     </section>
-    <div className="drive-dashboard" aria-label="Run telemetry dashboard" style={{'--route-progress': `${Math.round(progress * 74)}%`}}>
-      <div className="drive-status">
-        <span className={playing ? 'moving' : ''}>{playing ? 'ROUTE ENGAGED' : frozen ? 'VANTAGE HELD' : 'READY'}</span>
-        <small>{stageNumber} / {stageTotal}</small>
+    <div className="drive-dashboard" aria-label="Run telemetry dashboard">
+      <div className="drive-cluster-left">
+        <span className={`drive-motion-state${playing ? ' moving' : ''}`}>{playing && progress < .002 ? 'DEPARTING' : playing ? 'ROUTE ENGAGED' : frozen ? 'VANTAGE HELD' : 'READY'}</span>
+        <div className="drive-readouts drive-readouts-left">
+          <DriveMetric label="TOKENS" value={formatTokens(Number(telemetry.input_tokens || 0) + Number(telemetry.output_tokens || 0))} />
+          <DriveMetric label="COST" value={formatModelCost(telemetry.cost_usd)} />
+        </div>
         {runtimeRecord && <button
-          className={selected?.runtime && selected.sequence === runtimeRecord.sequence ? 'selected' : ''}
+          className={`drive-runtime-control${selected?.runtime && selected.sequence === runtimeRecord.sequence ? ' selected' : ''}`}
           onClick={() => onSelect({
             siteId: runtimeRecord.site_id || story.chapters[0]?.id,
             sequence: runtimeRecord.sequence,
@@ -271,19 +289,20 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           title={`Inspect Play runtime @${runtimeRecord.sequence}`}
         >RUNTIME <b>@{String(runtimeRecord.sequence).padStart(2, '0')}</b></button>}
       </div>
-      <div className="drive-readouts">
-        <DriveMetric label="TOKENS" value={compactTokens(Number(telemetry.input_tokens || 0) + Number(telemetry.output_tokens || 0))} />
-        <DriveMetric label="COST" value={formatModelCost(telemetry.cost_usd)} />
+      <div className="drive-dashboard-clearance" aria-hidden="true" />
+      <div className="drive-cluster-right">
+        <div className="drive-readouts drive-readouts-right">
         <DriveMetric label="SUCCESS" value={telemetry.success} tone="green" />
         <DriveMetric label="ERRORS" value={telemetry.error} tone={telemetry.error ? 'red' : ''} />
-      </div>
-      <div className="drive-gearbox">
-        <span>GEAR</span>
-        <div>{[
-          ['call', 'A', 'ADAPTER'],
-          ['drive', 'B', 'BROWSER'],
-          ['shell', 'S', 'SHELL'],
-        ].map(([id, action, system]) => <i className={gear === id ? 'active' : ''} key={id}><b>{action}</b><small>{system}</small></i>)}</div>
+        </div>
+        <div className="drive-gearbox">
+          <span>CAPABILITY</span>
+          <div>{[
+            ['call', 'A', 'ADAPTER'],
+            ['drive', 'B', 'BROWSER'],
+            ['shell', 'S', 'SHELL'],
+          ].map(([id, action, system]) => <i className={gear === id ? 'active' : ''} key={id}><b>{action}</b><small>{system}</small></i>)}</div>
+        </div>
       </div>
     </div>
   </div>

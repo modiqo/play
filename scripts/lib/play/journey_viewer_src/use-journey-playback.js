@@ -1,4 +1,5 @@
 import {useCallback, useEffect} from 'react'
+import {PLAYBACK_DEPARTURE_MS, playbackProgress} from './playback-clock.mjs'
 
 export function useJourneyPlayback({
   story,
@@ -23,23 +24,24 @@ export function useJourneyPlayback({
     // to register before the embodied walk resumes.
     const dwellMs = tutorial ? 6500 : 2800
     const travelMs = tutorial ? 3200 : 4200
-    const cycleMs = dwellMs + travelMs
-    const startingUnits = (playback.current?.from || 0) * intervals
-    const startingStage = Math.min(intervals, Math.floor(startingUnits))
-    const startingFraction = startingUnits - startingStage
-    const timelineOffset = startingStage * cycleMs + (startingFraction > .001 ? dwellMs + startingFraction * travelMs : 0)
-    const finishAt = intervals * cycleMs + dwellMs
     const tick = (time) => {
       const state = playback.current
       if (!state) return
-      const timeline = timelineOffset + time - state.started
-      const stage = Math.min(intervals, Math.floor(timeline / cycleMs))
-      const withinStage = timeline - stage * cycleMs
-      const rawTravel = stage >= intervals ? 0 : Math.max(0, Math.min(1, (withinStage - dwellMs) / travelMs))
-      const travel = rawTravel * rawTravel * (3 - 2 * rawTravel)
-      const progress = Math.min(1, (stage + travel) / intervals)
+      const clock = playbackProgress({
+        from: state.from,
+        elapsedMs: time - state.started,
+        intervals,
+        travelMs,
+        dwellMs,
+        departureMs: PLAYBACK_DEPARTURE_MS,
+      })
+      const units = clock.progress * intervals
+      const stage = Math.min(intervals, Math.floor(units))
+      const fraction = units - stage
+      const easedFraction = fraction * fraction * (3 - 2 * fraction)
+      const progress = Math.min(1, (stage + easedFraction) / intervals)
       setReplay(progress)
-      if (timeline >= finishAt) {
+      if (clock.complete) {
         playback.current = null
         setPlaying(false)
         setObserving(true)
@@ -68,7 +70,7 @@ export function useJourneyPlayback({
     setFitSignal((value) => value + 1)
     playback.current = {from, started: performance.now()}
     setPlaying(true)
-    setMessage('Following the agent trajectory')
+    setMessage('Departing for the next site')
   }
 
   function jumpToChapter(index) {

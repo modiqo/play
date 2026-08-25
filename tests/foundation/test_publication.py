@@ -20,8 +20,6 @@ class PublicationPresentationTest(unittest.TestCase):
             "content_hash": "d79b9431aac7",
             "play_uri": (
                 "https://play.modiqo.ai/daily-chores/modiqo-pricing-grid@0.0.1"
-                if visibility == "public"
-                else None
             ),
             "install_uri": (
                 "https://play.modiqo.ai/install?play=daily-chores/modiqo-pricing-grid@0.0.1"
@@ -60,7 +58,7 @@ class PublicationPresentationTest(unittest.TestCase):
 
         result = build_publication_presentation(payload)
 
-        self.assertEqual(280, len(result["share_copy"]["x"]))
+        self.assertLessEqual(len(result["share_copy"]["x"]), 280)
         self.assertTrue(result["share_copy"]["x"].endswith(result["play_uri"]))
         self.assertIn("…", result["share_copy"]["x"])
 
@@ -121,9 +119,14 @@ class PublicationPresentationTest(unittest.TestCase):
     def test_private_readout_does_not_create_public_social_copy(self) -> None:
         result = build_publication_presentation(self.payload(visibility="private"))
 
-        self.assertEqual({"x": None, "linkedin": None}, result["share_copy"])
+        self.assertIsNotNone(result["share_copy"]["team"])
+        self.assertIsNone(result["share_copy"]["x"])
+        self.assertIsNone(result["share_copy"]["linkedin"])
+        self.assertIn(result["play_uri"], result["share_copy"]["team"])
+        self.assertIn("Ask me to add you", result["share_copy"]["team"])
+        self.assertIn("Paste to your team", result["markdown"])
         self.assertNotIn("Paste for X", result["markdown"])
-        self.assertNotIn("Play page:", result["markdown"])
+        self.assertIn("Private Play page:", result["markdown"])
 
 
 if __name__ == "__main__":

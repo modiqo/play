@@ -82,7 +82,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '{\"marketplaces\":[]}'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.51\",\"enabled\":true}],\"available\":[]}'\n"
+                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.52\",\"enabled\":true}],\"available\":[]}'\n"
                     "  else\n"
                     "    printf '%s\\n' '{\"installed\":[],\"available\":[]}'\n"
                     "  fi\n"
@@ -99,7 +99,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '[]'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.51\",\"enabled\":true,\"scope\":\"user\"}]'\n"
+                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.52\",\"enabled\":true,\"scope\":\"user\"}]'\n"
                     "  else\n"
                     "    printf '%s\\n' '[]'\n"
                     "  fi\n"
@@ -312,7 +312,7 @@ class InstallAllTest(unittest.TestCase):
 
         self.run_installer("install", "--copy")
         installed = (install_home / "skill").resolve()
-        self.assertEqual("0.4.51", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.52", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():
@@ -401,7 +401,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("◐ Checking the Play setup plan", result.stderr)
         self.assertIn("✓ Verifying Codex", result.stderr)
         self.assertIn("| Play setup plan", result.stdout)
-        self.assertIn("Version: 0.4.51", result.stdout)
+        self.assertIn("Version: 0.4.52", result.stdout)
         self.assertIn("| Play setup", result.stdout)
         self.assertIn("Status: READY", result.stdout)
         self.assertIn("OS:     ", result.stdout)
@@ -527,7 +527,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("test", (destination / "VERSION").read_text().strip())
 
-    def test_local_bootstrap_guides_first_time_sign_in_without_error_state(self) -> None:
+    def test_local_bootstrap_requires_first_time_sign_in_choice(self) -> None:
         install_home = self.home / "curl-first-use"
         environment = {
             **self.environment,
@@ -546,19 +546,11 @@ class InstallAllTest(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertIn("Status: SETUP PAUSED — SIGN IN REQUIRED", result.stdout)
-        self.assertIn("Sign in to finish setup", result.stdout)
-        self.assertIn("choose Google or GitHub", result.stdout)
-        self.assertIn("Play-owned harness state has not been changed", result.stdout)
-        self.assertNotIn("rote login --provider", result.stdout)
-        self.assertNotIn("Status: INCOMPLETE", result.stdout)
-        reports = list((self.home / "bootstrap-state" / "runs").glob("*.json"))
-        self.assertEqual(1, len(reports))
-        report = json.loads(reports[0].read_text(encoding="utf-8"))
-        self.assertEqual("onboarding_required", report["status"])
-        identity = next(step for step in report["steps"] if step["id"] == "rote_identity")
-        self.assertEqual("onboarding_required", identity["status"])
+        self.assertEqual(1, result.returncode, result.stderr + result.stdout)
+        self.assertIn("Rote registry credentials are required", result.stderr)
+        self.assertIn("choose Google or GitHub", result.stderr)
+        self.assertIn("PLAY_LOGIN_PROVIDER=google or github", result.stderr)
+        self.assertNotIn("Status: READY", result.stdout)
         self.assertFalse((install_home / "skill").exists())
 
     def test_sign_in_and_disabled_codex_are_actionable_not_install_errors(self) -> None:

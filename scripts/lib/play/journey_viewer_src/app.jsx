@@ -3,6 +3,7 @@ import Cartography from './atlas.jsx'
 import {formatNumber} from './format.js'
 import {KIND_LABEL, MAP_MEANING} from './semantics.js'
 import {journeyTrackerIndexes} from './journey-position.mjs'
+import {journeyActivityLabel, journeyKind, journeyPickerItems} from './journey-picker.mjs'
 import {EXPERIENCE_SCALES, adjacentExperienceScale, defaultExperienceScale, markerScaleForExperience, storedExperienceScale} from './experience-scale.mjs'
 import {useJourneyRuntime} from './use-journey-runtime.js'
 import JourneyWorld from './world.jsx'
@@ -50,6 +51,8 @@ export default function App() {
   const replayChapter = story ? Math.min(story.chapters.length - 1, Math.floor(replay * Math.max(1, story.chapters.length - 1) + .001)) : 0
   const currentReplayChapter = story?.chapters[replayChapter]
   const trackerIndexes = journeyTrackerIndexes(story?.chapters || [], replayChapter)
+  const pickerItems = journeyPickerItems(index?.workspaces || [])
+  const journeyCount = pickerItems.filter((item) => !item.tutorial).length
   const frozen = mode === 'follow' && observing && !playing
   const showEvidencePanel = chapter && (mode !== 'follow' || interaction)
   const changeMode = (nextMode) => {
@@ -62,6 +65,14 @@ export default function App() {
     setMode(nextMode)
     if (nextMode !== 'follow') setFitSignal((value) => value + 1)
   }
+  React.useEffect(() => {
+    if (!journeysOpen) return undefined
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setJourneysOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [journeysOpen, setJourneysOpen])
 
   return <main
     className={`dark mode-${mode}${frozen ? ' is-frozen' : ''}${trackingLive ? ' is-live-tracking' : ''}${showEvidencePanel ? ' evidence-open' : ''}`}
@@ -70,14 +81,28 @@ export default function App() {
     <section className="atlas-stage">
       {story && interactions
         ? mode === 'follow'
-          ? <JourneyWorld key={`follow:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} selected={selected} onSelect={selectVantage} markerScale={markerScale} />
+          ? <JourneyWorld key={`follow:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} selected={selected} onSelect={selectVantage} onTogglePlayback={togglePlayback} markerScale={markerScale} />
           : <Cartography key={`${mode}:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} selected={selected} onSelect={setSelected} fitSignal={fitSignal} markerScale={markerScale} />
         : loadError
           ? <div className="loading failed"><strong>JOURNEY CONNECTION LOST</strong><span>{loadError}</span><code>play-journey view --active</code></div>
           : <div className="loading"><i />CONSTRUCTING JOURNEY ATLAS</div>}
     </section>
     <header>
-      <button className="brand" onClick={() => setJourneysOpen((value) => !value)}><strong>PLAY</strong><small>{mode === 'follow' ? 'FOLLOW' : 'ATLAS'}</small></button>
+      <div className="header-launcher">
+        <div className="brand"><strong>PLAY</strong><small>{mode === 'follow' ? 'FOLLOW' : 'ATLAS'}</small></div>
+        <button
+          className={`journey-picker-trigger${journeysOpen ? ' active' : ''}`}
+          onClick={() => setJourneysOpen((value) => !value)}
+          aria-expanded={journeysOpen}
+          aria-controls="journey-picker"
+          title="Open another live or recorded journey"
+        >
+          <i className="file-picker-icon" aria-hidden="true" />
+          <span>JOURNEYS</span>
+          <small>{journeyCount}</small>
+          <b aria-hidden="true">⌄</b>
+        </button>
+      </div>
       <div className={`header-title${liveActivity ? ' live' : ''}`}>
         <i />
         <div className="header-identity" title={`${selectedWorkspace?.intent || story?.outcome || 'Captured exploration'}\n${selectedWorkspace?.workspace_path || selectedWorkspace?.workspace || workspace || ''}`}>
@@ -100,10 +125,20 @@ export default function App() {
         >A·{Math.round(experienceScale * 100)}</button>
       </div>
     </header>
-    <aside className={`journey-drawer${journeysOpen ? ' open' : ''}`}>
-      <div className="panel-heading"><span>JOURNEY ARCHIVE</span><button onClick={() => setJourneysOpen(false)}>×</button></div>
-      <div className="workspace-list">{index?.workspaces.map((item) => {
+    {journeysOpen && <button className="journey-picker-scrim" onClick={() => setJourneysOpen(false)} aria-label="Close journey picker" />}
+    <aside id="journey-picker" className={`journey-drawer${journeysOpen ? ' open' : ''}`} aria-label="Open journey">
+      <div className="journey-picker-heading">
+        <span><b>OPEN JOURNEY</b><small>NEWEST FIRST</small></span>
+        <button onClick={() => setJourneysOpen(false)} aria-label="Close journey picker">×</button>
+      </div>
+      <div className="journey-picker-summary">
+        <span><i className="live" />{pickerItems.filter((item) => journeyKind(item) === 'LIVE').length} LIVE</span>
+        <span><i />{pickerItems.filter((item) => journeyKind(item) === 'RECORDED').length} RECORDED</span>
+        <span><i />{pickerItems.filter((item) => journeyKind(item) === 'WORKSPACE').length} WORKSPACE</span>
+      </div>
+      <div className="workspace-list">{pickerItems.map((item, itemIndex) => {
         const unavailable = !item.graph_ready && !item.projectable
+        const kind = journeyKind(item)
         const stateLabel = workspace === item.id
           ? item.tutorial ? 'VIEWING · TUTORIAL' : recalled ? 'VIEWING · RECALLED' : item.journey_mode === 'live' && item.active_recently ? 'VIEWING · LIVE' : item.journey_mode === 'live' ? 'VIEWING · QUIET' : item.journey_mode === 'workspace' ? 'VIEWING · WORKSPACE' : 'VIEWING · RECORDED'
           : item.tutorial
@@ -126,11 +161,22 @@ export default function App() {
             : item.workspace_available
               ? 'Rote workspace · no Play capture'
               : 'workspace unavailable'
-        return <button key={item.id} disabled={unavailable} className={`workspace-card${workspace === item.id ? ' active' : ''}${item.journey_mode === 'live' && item.active_recently ? ' live' : ''}`} onClick={() => choose(item)}>
-        <i /><span>{item.intent}</span>
-        <small><b>{stateLabel}</b><em>{coverage}</em></small>
-      </button>})}</div>
-      <p>The atlas is a semantic projection. Every canonical node, edge, command and evidence reference remains preserved below it.</p>
+        const beginsGuide = item.tutorial && itemIndex > 0 && !pickerItems[itemIndex - 1]?.tutorial
+        return <React.Fragment key={item.id}>
+        {beginsGuide && <div className="journey-list-divider"><span>GUIDE</span></div>}
+        <button disabled={unavailable} className={`workspace-card${workspace === item.id ? ' active' : ''}${item.journey_mode === 'live' && item.active_recently ? ' live' : ''}`} onClick={() => choose(item)}>
+        <i className="workspace-file" aria-hidden="true"><u /></i>
+        <span className="workspace-card-copy"><strong>{item.intent}</strong><small>{coverage}</small></span>
+        <span className="workspace-card-meta">
+          <b className={`journey-kind kind-${kind.toLowerCase().replaceAll(' ', '-')}`}>{kind}</b>
+          <time>{journeyActivityLabel(item)}</time>
+          <em>{workspace === item.id ? 'CURRENT' : unavailable ? 'UNAVAILABLE' : 'OPEN →'}</em>
+        </span>
+        <span className="workspace-state">{stateLabel}</span>
+        </button>
+        </React.Fragment>
+      })}</div>
+      <p>Select a journey to load its recorded sites, route, and evidence.</p>
     </aside>
     <aside
       className={`landmark-panel${showEvidencePanel ? ' visible' : ''}${runtimeInteraction ? ' runtime-evidence' : ''}`}
@@ -187,12 +233,10 @@ export default function App() {
       </>}
     </aside>
     <footer>
-      <button onClick={() => setJourneysOpen((value) => !value)}>☷ JOURNEYS</button>
-      <span>{story ? `${story.audit.canonical_nodes} STAGES · ${interactions?.total || 0} INTERACTIONS · GEN ${story.graph_generation}` : 'WAITING FOR GRAPH'}</span>
       <div className="replay">
         <div className="replay-controls">
           <button className={playing ? 'playing' : frozen ? 'frozen' : ''} onClick={togglePlayback}>{playing ? 'Ⅱ FREEZE' : frozen ? '▶ RESUME' : '▶ PLAY'}</button>
-          {liveCapture && <button className={`live-track${trackingLive ? ' active' : ''}`} disabled={story?.state !== 'active'} onClick={toggleLiveTracking} title="Follow new call sites as calm snapshots arrive">{trackingLive ? '● LIVE HEAD' : '○ TRACK LIVE'}</button>}
+          {liveCapture && <button className={`live-track${trackingLive ? ' active' : ''}`} disabled={story?.state !== 'active'} onClick={toggleLiveTracking} title="Follow new call sites as calm snapshots arrive" aria-label={trackingLive ? 'Stop tracking live head' : 'Track live head'}>{trackingLive ? '● LIVE' : '○ LIVE'}</button>}
         </div>
         <div className={`replay-track${(story?.chapters.length || 0) > 14 ? ' condensed' : ''}`} style={{'--progress': `${replay * 100}%`}}>
           <span className="track-anchor start">START</span>
@@ -204,15 +248,30 @@ export default function App() {
               const number = String(itemIndex + 1).padStart(2, '0')
               const kind = (KIND_LABEL[item.kind] || item.kind || 'stage').toUpperCase()
               const hiddenUntilNext = Math.max(0, (trackerIndexes[markerIndex + 1] ?? itemIndex + 1) - itemIndex - 1)
-              return <button
-                key={item.id}
-                className={itemIndex === replayChapter ? 'current' : itemIndex < replayChapter ? 'reached' : ''}
-                style={{left: `${itemIndex / Math.max(1, story.chapters.length - 1) * 100}%`}}
-                onClick={() => jumpToChapter(itemIndex)}
-                aria-label={`Freeze at stage ${number}: ${kind}, ${item.title}`}
-                data-kind={item.kind || 'phase'}
-                data-tooltip={`${number} · ${kind} · ${item.title}${hiddenUntilNext ? ` · ${hiddenUntilNext} intermediate stage${hiddenUntilNext === 1 ? '' : 's'}` : ''}`}
-              />
+              const left = itemIndex / Math.max(1, story.chapters.length - 1) * 100
+              const nextIndex = trackerIndexes[markerIndex + 1]
+              const nextLeft = Number.isInteger(nextIndex) ? nextIndex / Math.max(1, story.chapters.length - 1) * 100 : left
+              const state = itemIndex === replayChapter ? 'current' : itemIndex < replayChapter ? 'reached' : ''
+              return <React.Fragment key={item.id}>
+                <button
+                  className={state}
+                  style={{left: `${left}%`}}
+                  onClick={() => jumpToChapter(itemIndex)}
+                  aria-label={`Open stage ${number}: ${kind}, ${item.title}`}
+                  data-kind={item.kind || 'phase'}
+                  data-tooltip={`OPEN STAGE ${number} · ${kind} · ${item.title}${hiddenUntilNext ? ` · ${hiddenUntilNext} intermediate stage${hiddenUntilNext === 1 ? '' : 's'}` : ''}`}
+                >
+                  <span className="marker-core" />
+                  {hiddenUntilNext > 0 && <small className="marker-cluster">+{hiddenUntilNext}</small>}
+                  {itemIndex === replayChapter && <span className="marker-current-label">
+                    <b>{number} · {kind}</b><em>{item.title}</em>
+                  </span>}
+                </button>
+                {Number.isInteger(nextIndex) && <i
+                  className="marker-segment"
+                  style={{left: `${left}%`, width: `${Math.max(0, nextLeft - left)}%`}}
+                />}
+              </React.Fragment>
             })}
           </div>
           {liveCapture && story?.state === 'active' && <button

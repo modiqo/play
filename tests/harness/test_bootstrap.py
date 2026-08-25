@@ -473,6 +473,7 @@ class BootstrapTest(unittest.TestCase):
         report = apply(
             ROOT,
             requested=["codex"],
+            login_provider="github",
             runner=MagicMock(),
             run_id="approval-run",
         )
@@ -758,7 +759,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.51",
+                                "version": "0.4.52",
                                 "enabled": True,
                             }
                         ]
@@ -769,7 +770,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.51", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.52", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -1212,13 +1213,33 @@ class BootstrapTest(unittest.TestCase):
             return_value=MagicMock(returncode=0, stdout="error: Not logged in\n", stderr="")
         )
 
+        with self.assertRaisesRegex(
+            BootstrapError, "Rote registry credentials are required"
+        ):
+            _identity_gate("/bin/rote", login_provider=None, runner=runner)
+
+        runner.assert_called_once_with(["/bin/rote", "whoami"])
+
+    def test_identity_gate_explains_network_restrictions_during_login(self) -> None:
+        runner = MagicMock()
+        runner.side_effect = [
+            MagicMock(returncode=1, stdout="error: Not logged in\n", stderr=""),
+            MagicMock(
+                returncode=1,
+                stdout="",
+                stderr="Failed to refresh session: Network error sending request",
+            ),
+        ]
+
         step, ready = _identity_gate(
-            "/bin/rote", login_provider=None, runner=runner
+            "/bin/rote", login_provider="github", runner=runner
         )
 
         self.assertFalse(ready)
         self.assertEqual("onboarding_required", step.status)
-        runner.assert_called_once_with(["/bin/rote", "whoami"])
+        self.assertIn("normal terminal with network access", step.detail)
+        self.assertIn("Codex sandbox", step.detail)
+        self.assertIn("Claude Code", step.detail)
 
     def test_identity_gate_runs_selected_oauth_provider_and_reverifies(self) -> None:
         runner = MagicMock()
@@ -1295,6 +1316,24 @@ class BootstrapTest(unittest.TestCase):
         assert step.command is not None
         self.assertIn("--require-complete-catalog", step.command)
         self.assertEqual("6", step.command[step.command.index("--if-older-than") + 1])
+
+    def test_public_cache_warm_explains_restricted_network(self) -> None:
+        runner = MagicMock(
+            return_value=MagicMock(
+                returncode=1,
+                stdout="",
+                stderr="Network error: could not resolve host",
+            )
+        )
+
+        step = _warm_public_play_cache(
+            ROOT, runner=runner, progress=Progress(enabled=False)
+        )
+
+        self.assertEqual("failed", step.status)
+        self.assertIn("Rote registry", step.detail)
+        self.assertIn("Codex sandbox", step.detail)
+        self.assertIn("Claude Code", step.detail)
 
     @patch("scripts.lib.play.bootstrap.backup_play_state")
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
@@ -1426,19 +1465,18 @@ class BootstrapTest(unittest.TestCase):
             MagicMock(returncode=0, stdout="error: Not logged in\n", stderr=""),
         ]
 
-        report = apply(
-            ROOT,
-            requested=["codex"],
-            runner=runner,
-            run_id="identity-gate-run",
-            prepared_plan=plan,
-        )
+        with self.assertRaisesRegex(
+            BootstrapError, "Rote registry credentials are required"
+        ):
+            apply(
+                ROOT,
+                requested=["codex"],
+                runner=runner,
+                run_id="identity-gate-run",
+                prepared_plan=plan,
+            )
 
-        self.assertEqual("onboarding_required", report["status"])
-        self.assertEqual(
-            ["check_rote_update", "verify_rote_compatibility", "rote_identity"],
-            [step["id"] for step in report["steps"]],
-        )
+        runner.assert_not_called()
         backup.assert_not_called()
 
     def test_status_card_keeps_structured_command_output_in_report(self) -> None:
@@ -1585,7 +1623,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.51 is installed and enabled.",
+                "Play 0.4.52 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -1677,7 +1715,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.51", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.52", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 

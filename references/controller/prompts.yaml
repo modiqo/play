@@ -223,7 +223,7 @@ prompts:
     template_fields: [publication.owner_summary]
     selection: single
     choices:
-      - {id: private, label: Team, description: "Publish it to an authorized team so colleagues can review, improve, and use it; offer member invites after verification.", event: save_private, recommended: true}
+      - {id: private, label: Team, description: "Publish a private URI for authorized teammates, offer member invites after verification, and provide a paste-ready team message.", event: save_private, recommended: true}
       - {id: public, label: Community, description: "Teach the Community what the team learned, verify the exact public Play, then produce paste-ready X and LinkedIn explanations.", event: save_public}
       - {id: skip, label: Skip, description: Keep the verified result but do not publish or index a Play., event: save_skipped}
     events:
