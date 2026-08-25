@@ -15,7 +15,7 @@ export function applyInteractionFocusView(
   return distance
 }
 
-export function createWorldNavigation({canvas, camera, frozenRef, interactionMeshes, semanticMeshes, onSelect}) {
+export function createWorldNavigation({canvas, camera, frozenRef, interactionMeshes, semanticMeshes, onSelect, surfaceHeightAt = null}) {
   const raycaster = new THREE.Raycaster()
   const pointer = new THREE.Vector2()
   const actionableMeshes = interactionMeshes.concat(semanticMeshes)
@@ -83,7 +83,7 @@ export function createWorldNavigation({canvas, camera, frozenRef, interactionMes
     if (groundDirection.lengthSq() < .001) return
     groundDirection.normalize()
     walkOffset.addScaledVector(groundDirection, stride)
-    if (walkOffset.length() > 12) walkOffset.setLength(12)
+    if (walkOffset.length() > 4) walkOffset.setLength(4)
   }
 
   const onClick = (event) => {
@@ -134,10 +134,12 @@ export function createWorldNavigation({canvas, camera, frozenRef, interactionMes
         -Math.cos(yaw) * Math.cos(lookPitch),
       )
       currentLookDirection.copy(lookDirection)
-      const approachDistance = THREE.MathUtils.clamp(Number(vantage.approachDistance) || 12.5, 10, 18)
-      const eyeHeight = THREE.MathUtils.clamp(Number(vantage.eyeHeight) || 2.8, 2.1, 4.2)
-      desiredCamera.copy(current).addScaledVector(direction, -approachDistance).add(walkOffset)
-      desiredCamera.y = eyeHeight
+      const eyeHeight = THREE.MathUtils.clamp(Number(vantage.eyeHeight) || 2.08, 1.9, 3.2)
+      desiredCamera.copy(current).add(walkOffset)
+      const terrainFloor = typeof surfaceHeightAt === 'function'
+        ? Number(surfaceHeightAt(desiredCamera.x, desiredCamera.z)) + .22
+        : current.y
+      desiredCamera.y = Math.max(current.y, Number.isFinite(terrainFloor) ? terrainFloor : current.y) + eyeHeight
       desiredLook.copy(desiredCamera).addScaledVector(lookDirection, 12)
     },
     reset() {

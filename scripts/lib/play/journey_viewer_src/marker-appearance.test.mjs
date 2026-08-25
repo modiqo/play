@@ -84,9 +84,9 @@ test('tolerates a partial marker during scene replacement', () => {
   assert.doesNotThrow(() => updateMarkerAppearance(null))
 })
 
-test('reveals an expanded evidence plaque only after explicit selection', () => {
-  assert.equal(plaqueIsVisible({isCurrent: true, playing: true}), false)
-  assert.equal(plaqueIsVisible({isCurrent: true, playing: false}), false)
-  assert.equal(plaqueIsVisible({isCurrent: true, playing: true, frozen: true}), false)
-  assert.equal(plaqueIsVisible({isCurrent: false, playing: true, selected: true}), true)
+test('reveals request and response affordances after arrival or explicit selection', () => {
+  assert.equal(plaqueIsVisible({isCurrent: true, inTransit: true}), false)
+  assert.equal(plaqueIsVisible({isCurrent: true, inTransit: false}), true)
+  assert.equal(plaqueIsVisible({isCurrent: false, inTransit: false}), false)
+  assert.equal(plaqueIsVisible({isCurrent: false, inTransit: true, selected: true}), true)
 })

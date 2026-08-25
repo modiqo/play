@@ -49,7 +49,7 @@ export function temporalNeighborhood(markers = [], selectedSequence = null) {
   return {selectedIndex, markerRelations, segmentRelations}
 }
 
-/** The bead is the resting evidence control; its expanded plaque appears only after selection. */
-export function plaqueIsVisible({selected = false} = {}) {
-  return Boolean(selected)
+/** Surface evidence affordances once the embodied camera has settled at a site. */
+export function plaqueIsVisible({isCurrent = false, selected = false, inTransit = false} = {}) {
+  return Boolean(selected || (isCurrent && !inTransit))
 }

@@ -521,6 +521,61 @@ class JourneySceneTest(unittest.TestCase):
         # guess.
         self.assertEqual("rote", descriptors[3]["family"])
 
+    def test_recalled_play_runtime_is_telemetry_not_a_site_exchange(self) -> None:
+        capture = {
+            **self.capture,
+            "reference": "cap_recalled-runtime",
+            "origin": {"kind": "recalled_play", "exact_reference": "modiqo/example@1.0.0"},
+        }
+        runtime = {
+            **activity(1, "phase"),
+            "source": "command_log",
+            "command_type": "ProcessExec",
+            "operation": "deno eval",
+            "capability": {"family": "proc", "interface": "shell", "id": "deno", "label": "deno CLI"},
+            "capability_ref": "cap_deno",
+            "modality": "shell",
+            "lifecycle_phase": "use",
+        }
+        gmail = {
+            **activity(2, "effect", provider="gmail"),
+            "source": "typed_response",
+            "command_type": "HttpRequest",
+            "operation": "gmail.users.messages.list",
+            "capability": {"family": "adapter", "interface": "api", "id": "gmail", "label": "Gmail API"},
+            "capability_ref": "cap_gmail",
+            "modality": "call",
+            "lifecycle_phase": "use",
+        }
+        activities = [runtime, gmail]
+        graph = build_graph(
+            capture,
+            activities=activities,
+            dependencies=[],
+            stats={"commands": 2, "responses": 2},
+        )
+        _persist_graph_state(
+            capture["reference"],
+            fingerprint="a" * 64,
+            command_count=2,
+            activities=activities,
+            dependencies=[],
+            graph=graph,
+            root=self.journeys,
+        )
+
+        projected = _interaction_projection(capture["reference"], root=self.journeys)
+        visible_sequences = [
+            item["sequence"]
+            for records in projected["sites"].values()
+            for item in records
+        ]
+        self.assertEqual([2], visible_sequences)
+        self.assertEqual([1], [item["sequence"] for item in projected["runtime"]])
+        self.assertEqual("node_intent", projected["runtime"][0]["site_id"])
+        self.assertEqual("play_runtime", projected["runtime"][0]["presentation_role"])
+        self.assertEqual(1, projected["total"])
+
     def test_scene_is_complete_deterministic_and_schema_valid(self) -> None:
         graph = self.graph(self.activities)
         first = build_scene(graph)
@@ -691,23 +746,20 @@ class JourneySceneTest(unittest.TestCase):
                 self.assertIn(b'journey-root', response.read())
             with urllib.request.urlopen(f"{base}/viewer.js", timeout=2) as response:
                 viewer = response.read()
-                self.assertIn(b"PLAY CARTOGRAPHY", viewer)
-                self.assertIn(b"JOURNEY FOLLOW", viewer)
-                self.assertIn(b"WORLD ROLE", viewer)
-                self.assertIn(b"WHAT HAPPENED", viewer)
-                self.assertIn(b"STORY", viewer)
+                self.assertIn(b'"PLAY"', viewer)
+                self.assertIn(b'"FOLLOW"', viewer)
+                self.assertIn(b'"ATLAS"', viewer)
+                self.assertIn(b"WHY THIS STEP EXISTS", viewer)
                 self.assertIn(b"FROZEN VANTAGE", viewer)
-                self.assertIn(b"SITUATIONAL AWARENESS", viewer)
-                self.assertIn(b"DRAG TO LOOK 360", viewer)
-                self.assertIn(b"LOOK AROUND", viewer)
-                self.assertIn(b"behind-interaction", viewer)
-                self.assertIn(b"PRIOR VANTAGE", viewer)
-                self.assertIn(b"ROUTE DIRECTION", viewer)
+                self.assertIn(b"RECORDED EXCHANGES", viewer)
+                self.assertIn(b"PLAY RUNTIME", viewer)
+                self.assertIn(b"REQUEST", viewer)
+                self.assertIn(b"RESPONSE", viewer)
                 self.assertIn(b"NEXT SNAPSHOT", viewer)
-                self.assertIn(b"USING CAPABILITIES", viewer)
-                self.assertIn(b"SHELL ", viewer)
-                self.assertIn(b"NO SYSTEM EQUIPPED", viewer)
-                self.assertIn(b"REFRESH", viewer)
+                self.assertIn(b"ADAPTER", viewer)
+                self.assertIn(b"BROWSER", viewer)
+                self.assertIn(b"SHELL", viewer)
+                self.assertIn(b"Refresh Play projections", viewer)
             with urllib.request.urlopen(
                 f"{base}/api/events?token=viewer-secret", timeout=2
             ) as response:

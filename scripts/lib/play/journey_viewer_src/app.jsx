@@ -1,7 +1,6 @@
 import React from 'react'
 import Cartography from './atlas.jsx'
 import {formatNumber} from './format.js'
-import {CapabilityRail, JourneyGuide, ModelLiveCounter, Telemetry, TutorialExperience, WorldModel} from './panels.jsx'
 import {KIND_LABEL, MAP_MEANING} from './semantics.js'
 import {journeyTrackerIndexes} from './journey-position.mjs'
 import {EXPERIENCE_SCALES, adjacentExperienceScale, defaultExperienceScale, markerScaleForExperience, storedExperienceScale} from './experience-scale.mjs'
@@ -28,16 +27,19 @@ export default function App() {
   const markerScale = markerScaleForExperience(experienceScale, viewport.width, viewport.height)
   const panelScale = 1 + (experienceScale - 1) * .48
   const {
-    index, workspace, story, interactions, tutorial, selected, setSelected, exchange,
+    index, workspace, story, interactions, selected, setSelected, exchange,
     replay, playing, observing, trackingLive, snapshotCountdown, lastSnapshotAt, fitSignal, setFitSignal,
     mode, setMode, message, loadError, journeysOpen, setJourneysOpen,
-    telemetryOpen, setTelemetryOpen, worldModelOpen, setWorldModelOpen, refreshing,
+    refreshing,
     choose, refreshWorkspaces, togglePlayback, toggleLiveTracking, jumpToChapter, selectVantage, freezeAtProgress,
   } = useJourneyRuntime()
   const chapter = story?.chapters.find((item) => item.id === selected?.siteId)
   const interaction = selected?.sequence
-    ? interactions?.sites?.[selected.siteId]?.find((item) => item.sequence === selected.sequence)
+    ? selected.runtime
+      ? interactions?.runtime?.find((item) => item.sequence === selected.sequence)
+      : interactions?.sites?.[selected.siteId]?.find((item) => item.sequence === selected.sequence)
     : null
+  const runtimeInteraction = interaction?.presentation_role === 'play_runtime'
   const presentedKind = interaction?.semantic_kind || chapter?.kind
   const selectedWorkspace = index?.workspaces.find((item) => item.id === workspace)
   const liveCapture = selectedWorkspace?.journey_mode === 'live'
@@ -49,8 +51,6 @@ export default function App() {
   const currentReplayChapter = story?.chapters[replayChapter]
   const trackerIndexes = journeyTrackerIndexes(story?.chapters || [], replayChapter)
   const frozen = mode === 'follow' && observing && !playing
-  const tutorialEntryModelActive = Boolean(isTutorial && worldModelOpen)
-
   const showEvidencePanel = chapter && (mode !== 'follow' || interaction)
   const changeMode = (nextMode) => {
     if (nextMode === mode) {
@@ -64,7 +64,7 @@ export default function App() {
   }
 
   return <main
-    className={`dark mode-${mode}${frozen ? ' is-frozen' : ''}${trackingLive ? ' is-live-tracking' : ''}${isTutorial ? ' tutorial-guided' : ''}${tutorialEntryModelActive ? ' world-model-active' : ''}${telemetryOpen ? ' telemetry-open' : ''}`}
+    className={`dark mode-${mode}${frozen ? ' is-frozen' : ''}${trackingLive ? ' is-live-tracking' : ''}${showEvidencePanel ? ' evidence-open' : ''}`}
     style={{'--experience-scale': experienceScale, '--experience-panel-scale': panelScale, '--experience-marker-scale': markerScale}}
   >
     <section className="atlas-stage">
@@ -77,40 +77,27 @@ export default function App() {
           : <div className="loading"><i />CONSTRUCTING JOURNEY ATLAS</div>}
     </section>
     <header>
-      <button className="brand" onClick={() => setJourneysOpen((value) => !value)}><strong>PLAY CARTOGRAPHY</strong><small>{mode === 'follow' ? 'JOURNEY FOLLOW' : 'JOURNEY ATLAS'}</small></button>
+      <button className="brand" onClick={() => setJourneysOpen((value) => !value)}><strong>PLAY</strong><small>{mode === 'follow' ? 'FOLLOW' : 'ATLAS'}</small></button>
       <div className={`header-title${liveActivity ? ' live' : ''}`}>
         <i />
-        <div className="header-state"><b>{status}</b>{recalled ? <small>KNOWN ROUTE · DISCOVERY SKIPPED</small> : liveActivity && <small>NEXT SNAPSHOT {String(snapshotCountdown).padStart(2, '0')}s</small>}</div>
         <div className="header-identity" title={`${selectedWorkspace?.intent || story?.outcome || 'Captured exploration'}\n${selectedWorkspace?.workspace_path || selectedWorkspace?.workspace || workspace || ''}`}>
           <span>{selectedWorkspace?.intent || story?.outcome || 'Captured exploration'}</span>
-          <code>{recalled && story?.origin?.exact_reference ? `${story.origin.exact_reference} · ` : ''}{selectedWorkspace?.workspace_path || selectedWorkspace?.workspace || workspace || 'Workspace loading'}</code>
+          <code>{liveActivity ? `LIVE · NEXT ${String(snapshotCountdown).padStart(2, '0')}s` : status}</code>
         </div>
       </div>
       <div className="header-actions">
-        <button className={refreshing ? 'refreshing' : ''} disabled={refreshing} onClick={refreshWorkspaces} title="Rescan the current Rote workspace root and refresh its Play projections">{refreshing ? 'REFRESHING' : '↻ REFRESH'}</button>
-        <button className={mode === 'follow' ? 'active' : ''} onClick={() => changeMode('follow')}>FOLLOW</button>
-        <button className={mode === 'atlas' ? 'active' : ''} onClick={() => changeMode('atlas')}>ATLAS</button>
-        {mode !== 'follow' && <button onClick={() => setFitSignal((value) => value + 1)}>FIT</button>}
-        <div className="experience-scale-control" aria-label="Experience scale">
-          <button
-            disabled={experienceScale === EXPERIENCE_SCALES[0]}
-            onClick={() => setExperienceScale((value) => adjacentExperienceScale(value, -1))}
-            title="Decrease text, cards, callouts, and glass bead size"
-            aria-label="Decrease experience scale"
-          >A−</button>
-          <button
-            className="experience-scale-value"
-            onClick={() => setExperienceScale(1)}
-            title="Reset experience scale"
-            aria-label={`Experience scale ${Math.round(experienceScale * 100)} percent; reset to standard`}
-          >{Math.round(experienceScale * 100)}%</button>
-          <button
-            disabled={experienceScale === EXPERIENCE_SCALES.at(-1)}
-            onClick={() => setExperienceScale((value) => adjacentExperienceScale(value, 1))}
-            title="Increase text, cards, callouts, and glass bead size"
-            aria-label="Increase experience scale"
-          >A+</button>
+        <button className={`header-refresh${refreshing ? ' refreshing' : ''}`} disabled={refreshing} onClick={refreshWorkspaces} title="Refresh Play projections" aria-label="Refresh Play projections">↻</button>
+        <div className="view-switch" aria-label="View">
+          <button className={mode === 'follow' ? 'active' : ''} onClick={() => changeMode('follow')}>FOLLOW</button>
+          <button className={mode === 'atlas' ? 'active' : ''} onClick={() => changeMode('atlas')}>ATLAS</button>
         </div>
+        {mode !== 'follow' && <button onClick={() => setFitSignal((value) => value + 1)}>FIT</button>}
+        <button
+          className="experience-scale-cycle"
+          onClick={() => setExperienceScale((value) => value === EXPERIENCE_SCALES.at(-1) ? EXPERIENCE_SCALES[0] : adjacentExperienceScale(value, 1))}
+          title="Cycle experience scale"
+          aria-label={`Experience scale ${Math.round(experienceScale * 100)} percent; activate to cycle`}
+        >A·{Math.round(experienceScale * 100)}</button>
       </div>
     </header>
     <aside className={`journey-drawer${journeysOpen ? ' open' : ''}`}>
@@ -145,13 +132,16 @@ export default function App() {
       </button>})}</div>
       <p>The atlas is a semantic projection. Every canonical node, edge, command and evidence reference remains preserved below it.</p>
     </aside>
-    <aside className={`landmark-panel${showEvidencePanel ? ' visible' : ''}`}>
+    <aside
+      className={`landmark-panel${showEvidencePanel ? ' visible' : ''}${runtimeInteraction ? ' runtime-evidence' : ''}`}
+      onMouseLeave={interaction ? () => setSelected(null) : undefined}
+    >
       {showEvidencePanel && <>
-        <div className="panel-heading"><span>{interaction ? `INTERACTION @${interaction.sequence}` : `DISTRICT ${String(chapter.order + 1).padStart(2, '0')}`}</span><button onClick={() => setSelected(null)}>×</button></div>
-        <span className="kind">{KIND_LABEL[presentedKind] || presentedKind}</span>
+        <div className="panel-heading"><span>{runtimeInteraction ? `PLAY RUNTIME @${interaction.sequence}` : interaction ? `INTERACTION @${interaction.sequence}` : `DISTRICT ${String(chapter.order + 1).padStart(2, '0')}`}</span><button onClick={() => setSelected(null)}>×</button></div>
+        <span className="kind">{runtimeInteraction ? 'RUNTIME ENVELOPE' : KIND_LABEL[presentedKind] || presentedKind}</span>
         <h1>{interaction ? interaction.capability?.label || interaction.operation : chapter.title}</h1>
-        <p>{interaction ? `${interaction.operation} · situated at ${chapter.title}` : chapter.detail}</p>
-        <div className="meaning"><strong>WHY THIS STEP EXISTS</strong><span>{MAP_MEANING[presentedKind] || 'Advances the requested outcome while preserving evidence.'}</span></div>
+        <p>{runtimeInteraction ? `${interaction.operation} · executes the unfurled Play` : interaction ? `${interaction.operation} · situated at ${chapter.title}` : chapter.detail}</p>
+        <div className="meaning"><strong>WHY THIS STEP EXISTS</strong><span>{runtimeInteraction ? 'Runs the Play and contributes telemetry without becoming a capability or route site.' : MAP_MEANING[presentedKind] || 'Advances the requested outcome while preserving evidence.'}</span></div>
         {interaction ? <>
           <dl>
             <dt>OPERATION</dt><dd>{interaction.operation}</dd><dt>STATE</dt><dd>{interaction.status}</dd>
@@ -196,17 +186,6 @@ export default function App() {
         </>}
       </>}
     </aside>
-    {mode === 'follow' && story && interactions && <div className="follow-instruments">
-      {!isTutorial && <JourneyGuide story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} onOpen={selectVantage} onNavigate={jumpToChapter} />}
-      {!showEvidencePanel && <ModelLiveCounter story={story} interactions={interactions} replay={replay} playing={playing} live={liveActivity || trackingLive} />}
-    </div>}
-    {mode !== 'follow' && story && interactions && !isTutorial && (playing || selected?.siteId) && <div className="atlas-instruments">
-      <ModelLiveCounter story={story} interactions={interactions} replay={replay} playing={playing} live={liveActivity || trackingLive} siteId={playing ? '' : selected?.siteId} />
-    </div>}
-    {mode === 'follow' && story && tutorial && <TutorialExperience key={story.journey_key} tutorial={tutorial} story={story} interactions={interactions} replay={replay} playing={playing} entryReferenceActive={tutorialEntryModelActive} onBegin={() => { setWorldModelOpen(false); jumpToChapter(0); togglePlayback() }} onChooseWorkspace={() => setJourneysOpen(true)} onOpenWorldModel={() => setWorldModelOpen(true)} />}
-    {mode === 'follow' && story && interactions && !isTutorial && !showEvidencePanel && <CapabilityRail story={story} interactions={interactions} replay={replay} onJump={jumpToChapter} />}
-    <WorldModel open={worldModelOpen} onToggle={() => setWorldModelOpen((value) => !value)} highlightKind={isTutorial ? currentReplayChapter?.kind : ''} tutorial={isTutorial} />
-    <Telemetry story={story} open={telemetryOpen} onToggle={() => setTelemetryOpen((value) => !value)} />
     <footer>
       <button onClick={() => setJourneysOpen((value) => !value)}>☷ JOURNEYS</button>
       <span>{story ? `${story.audit.canonical_nodes} STAGES · ${interactions?.total || 0} INTERACTIONS · GEN ${story.graph_generation}` : 'WAITING FOR GRAPH'}</span>
@@ -249,7 +228,7 @@ export default function App() {
             : '00 / 00'}
         </em>
       </div>
-      <span className="footer-message">{trackingLive ? `TRACKING LIVE HEAD · NEXT SNAPSHOT ${String(snapshotCountdown).padStart(2, '0')}s` : playing ? `PLAYING SNAPSHOT · ${message}` : frozen ? `FROZEN VANTAGE · ${message}` : lastSnapshotAt && liveCapture ? `READY TO PLAY FROM HERE · SNAPSHOT ${new Date(lastSnapshotAt).toLocaleTimeString()} · ${message}` : `READY TO PLAY · ${message}`}</span>
+      <span className="footer-message" aria-live="polite">{trackingLive ? `TRACKING LIVE HEAD · NEXT SNAPSHOT ${String(snapshotCountdown).padStart(2, '0')}s` : playing ? `PLAYING SNAPSHOT · ${message}` : frozen ? `FROZEN VANTAGE · ${message}` : lastSnapshotAt && liveCapture ? `READY TO PLAY FROM HERE · SNAPSHOT ${new Date(lastSnapshotAt).toLocaleTimeString()} · ${message}` : `READY TO PLAY · ${message}`}</span>
     </footer>
   </main>
 }

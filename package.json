@@ -1,14 +1,12 @@
 {
   "name": "play-journey-viewer",
   "private": true,
+  "type": "module",
   "scripts": {
     "build:journey-viewer": "esbuild scripts/lib/play/journey_viewer_src/main.jsx --bundle --minify --format=iife --target=es2022 --outfile=scripts/lib/play/journey_viewer/viewer.js",
-    "test:journey-layout": "node --test scripts/lib/play/journey_viewer_src/*.test.mjs"
+    "test:journey-layout": "env -u FORCE_COLOR node --test scripts/lib/play/journey_viewer_src/*.test.mjs"
   },
   "dependencies": {
-    "@deck.gl/core": "9.3.10",
-    "@deck.gl/layers": "9.3.10",
-    "@deck.gl/react": "9.3.10",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "three": "0.185.1"

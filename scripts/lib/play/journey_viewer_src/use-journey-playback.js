@@ -19,6 +19,8 @@ export function useJourneyPlayback({
     const count = story.chapters.length
     const intervals = Math.max(1, count - 1)
     const tutorial = story.origin?.kind === 'tutorial'
+    // Give each site enough stillness for its meaning and evidence affordances
+    // to register before the embodied walk resumes.
     const dwellMs = tutorial ? 6500 : 2800
     const travelMs = tutorial ? 3200 : 4200
     const cycleMs = dwellMs + travelMs

@@ -48,6 +48,19 @@ test('reveals exact recorded operations and adds them to the reached journey pre
   assert.equal(snapshot.journey.count, 2)
 })
 
+test('counts the Play runtime in telemetry without presenting it as a site exchange', () => {
+  const runtime = [
+    {input_tokens: 12, output_tokens: 3, estimated_cost_usd: .001, status: 'succeeded'},
+  ]
+  const snapshot = playbackModelTelemetry([{id: 'intent'}], {intent: []}, 0, 0, runtime)
+  assert.deepEqual(snapshot.site, {
+    input_tokens: 0, output_tokens: 0, cost_usd: 0, count: 0, success: 0, error: 0,
+  })
+  assert.deepEqual(snapshot.journey, {
+    input_tokens: 12, output_tokens: 3, cost_usd: .001, count: 1, success: 1, error: 0,
+  })
+})
+
 test('estimates context-cycle progress without claiming an observed compaction', () => {
   assert.deepEqual(estimatedContextProgress(
     {input_tokens: 225, output_tokens: 75},

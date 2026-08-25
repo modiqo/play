@@ -1569,6 +1569,9 @@ class JourneyProjectionTest(unittest.TestCase):
         self.assertEqual({"capability", "effect"}, {node["kind"] for node in provider_nodes})
         effect_node = next(node for node in provider_nodes if node["kind"] == "effect")
         self.assertEqual(2, effect_node["activity_count"])
+        self.assertNotIn("deno", {item.get("subject") for item in graph["capabilities"]})
+        self.assertEqual([], graph["nodes"][0]["capability_refs"])
+        self.assertEqual([], graph["nodes"][0]["modalities"])
         self.assertEqual(
             {"@2", "@3"},
             {

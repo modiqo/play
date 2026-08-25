@@ -12,7 +12,7 @@ from typing import Any
 from .journey import _capture, _load_source
 from .journey_capabilities import capability_descriptor
 from .journey_model_telemetry import telemetry_context
-from .journey_world_model import enrich_operation
+from .journey_world_model import enrich_operation, is_play_runtime_activity
 from .journey_view_catalog import _workspace_capture_for_reference
 
 
@@ -96,7 +96,14 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
     }
     sites: dict[str, list[dict[str, Any]]] = {}
     projected: list[dict[str, Any]] = []
+    runtime: list[dict[str, Any]] = []
     assigned: set[int] = set()
+    origin_value = graph.get("origin")
+    origin = origin_value if isinstance(origin_value, Mapping) else {}
+    recalled = origin.get("kind") == "recalled_play"
+    has_nested_provider_work = any(
+        activity.get("source") == "typed_response" for activity in activities.values()
+    )
     for node in graph.get("nodes", []):
         if not isinstance(node, Mapping) or not isinstance(node.get("id"), str):
             continue
@@ -136,6 +143,7 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
             operation_context["capability"] = capability
             enrich_operation(operation_context)
             item = {
+                    "site_id": str(node["id"]),
                     "sequence": sequence,
                     "command_type": command_type,
                     "operation": operation,
@@ -184,15 +192,21 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
                     if isinstance(activity.get("timestamp"), str)
                     else None,
                 }
-            interactions.append(item)
             projected.append(item)
+            if is_play_runtime_activity(
+                activity,
+                recalled=recalled,
+                has_nested_provider_work=has_nested_provider_work,
+            ):
+                item["presentation_role"] = "play_runtime"
+                runtime.append(item)
+                continue
+            interactions.append(item)
         sites[str(node["id"])] = sorted(interactions, key=lambda item: item["sequence"])
     capture = _capture(capture_ref)
     if capture is None:
         capture = _workspace_capture_for_reference(capture_ref)
     workspace_value = capture.get("workspace_path") if isinstance(capture, Mapping) else None
-    origin = graph.get("origin")
-    origin = origin if isinstance(origin, Mapping) else {}
     model_telemetry = (
         telemetry_context(Path(workspace_value), projected)
         if isinstance(workspace_value, str)
@@ -204,7 +218,8 @@ def _interaction_projection(capture_ref: str, *, root: Path | None = None) -> di
         "schema": INTERACTIONS_SCHEMA,
         "journey_key": str(graph.get("journey_key") or ""),
         "sites": sites,
-        "total": len(assigned),
+        "runtime": sorted(runtime, key=lambda item: item["sequence"]),
+        "total": len(assigned) - len(runtime),
         "model_telemetry": model_telemetry,
     }
 
@@ -220,6 +235,11 @@ def _exchange_projection(
         for items in interaction["sites"].values()
         for item in items
     }
+    allowed.update(
+        int(item["sequence"])
+        for item in interaction.get("runtime", [])
+        if isinstance(item, Mapping) and isinstance(item.get("sequence"), int)
+    )
     if sequence not in allowed:
         return None
     capture = _capture(capture_ref)

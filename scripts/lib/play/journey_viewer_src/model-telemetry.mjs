@@ -37,14 +37,15 @@ export function recordedModelPrefix(records = [], revealedRecords = records.leng
   return summarizeModelRecords(records.slice(0, count))
 }
 
-export function playbackModelTelemetry(chapters = [], sites = {}, index = 0, revealedRecords = Number.MAX_SAFE_INTEGER) {
+export function playbackModelTelemetry(chapters = [], sites = {}, index = 0, revealedRecords = Number.MAX_SAFE_INTEGER, runtime = []) {
   const safeIndex = Math.max(0, Math.min(Math.max(0, chapters.length - 1), index))
   const previous = chapters
     .slice(0, safeIndex)
     .flatMap((chapter) => sites?.[chapter.id] || [])
   const records = sites?.[chapters[safeIndex]?.id] || []
   const site = recordedModelPrefix(records, revealedRecords)
-  return {site, journey: addModelSummaries(summarizeModelRecords(previous), site)}
+  const reached = addModelSummaries(summarizeModelRecords(previous), site)
+  return {site, journey: addModelSummaries(summarizeModelRecords(runtime), reached)}
 }
 
 export function estimatedContextProgress(summary, limits) {

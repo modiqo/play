@@ -31,7 +31,11 @@ from .journey_capabilities import (
     attach_browser_lenses,
     capability_descriptor,
 )
-from .journey_world_model import capability_instances, enrich_operation
+from .journey_world_model import (
+    capability_instances,
+    enrich_operation,
+    is_play_runtime_activity,
+)
 from .journey_effects import classify_effect
 from .private_store import atomic_write_json, ensure_private_directory, load_json
 from .state_home import state_path
@@ -41,7 +45,7 @@ SCHEMA = "play.journey-viewport/v1"
 FULL_GRAPH_SCHEMA = "play.journey-graph/v1"
 EVENT_SCHEMA = "play.journey-source-event/v1"
 WORKER_SCHEMA = "play.journey-worker/v1"
-PROJECTION_VERSION = "rules-v11"
+PROJECTION_VERSION = "rules-v12"
 DATABASE_SCHEMA_VERSION = 1
 
 MAX_LABEL_CHARS = 120
@@ -914,7 +918,12 @@ def _empty_evidence() -> dict[str, list[Any]]:
     }
 
 
-def _append_activity(node: dict[str, Any], activity: Mapping[str, Any]) -> None:
+def _append_activity(
+    node: dict[str, Any],
+    activity: Mapping[str, Any],
+    *,
+    include_capability: bool = True,
+) -> None:
     evidence = node["evidence"]
     sequence = int(activity["sequence"])
     if sequence not in evidence["rote_commands"]:
@@ -927,15 +936,16 @@ def _append_activity(node: dict[str, Any], activity: Mapping[str, Any]) -> None:
     telemetry["payload_tokens"] += int(activity.get("tokens") or 0)
     telemetry["tokens_saved"] += int(activity.get("tokens_saved") or 0)
     node["activity_count"] += 1
-    capability_ref = activity.get("capability_ref")
-    if isinstance(capability_ref, str) and capability_ref not in node["capability_refs"]:
-        node["capability_refs"].append(capability_ref)
-    modality = activity.get("modality")
-    if isinstance(modality, str) and modality not in node["modalities"]:
-        node["modalities"].append(modality)
-    lifecycle = activity.get("lifecycle_phase")
-    if isinstance(lifecycle, str) and lifecycle not in node["lifecycle_phases"]:
-        node["lifecycle_phases"].append(lifecycle)
+    if include_capability:
+        capability_ref = activity.get("capability_ref")
+        if isinstance(capability_ref, str) and capability_ref not in node["capability_refs"]:
+            node["capability_refs"].append(capability_ref)
+        modality = activity.get("modality")
+        if isinstance(modality, str) and modality not in node["modalities"]:
+            node["modalities"].append(modality)
+        lifecycle = activity.get("lifecycle_phase")
+        if isinstance(lifecycle, str) and lifecycle not in node["lifecycle_phases"]:
+            node["lifecycle_phases"].append(lifecycle)
 
 
 def _new_node(activity: Mapping[str, Any], label: str, *, kind: str | None = None) -> dict[str, Any]:
@@ -1168,10 +1178,22 @@ def build_graph(
     }
     nodes: list[dict[str, Any]] = [intent_node]
     nodes_by_id: dict[str, dict[str, Any]] = {"node_intent": intent_node}
-    capabilities = capability_instances(activities)
+    has_nested_provider_work = any(
+        activity.get("source") == "typed_response" for activity in activities
+    )
+    semantic_activities = [
+        activity
+        for activity in activities
+        if not is_play_runtime_activity(
+            activity,
+            recalled=recalled,
+            has_nested_provider_work=has_nested_provider_work,
+        )
+    ]
+    capabilities = capability_instances(semantic_activities)
     explicit_capability_refs = {
         str(activity["capability_ref"])
-        for activity in activities
+        for activity in semantic_activities
         if activity.get("kind") == "capability"
         and isinstance(activity.get("capability_ref"), str)
     }
@@ -1185,10 +1207,6 @@ def build_graph(
     response_to_node: dict[int, str] = {}
     failure_by_signature: dict[str, str] = {}
     current: dict[str, Any] | None = None
-    has_nested_provider_work = any(
-        activity.get("source") == "typed_response" for activity in activities
-    )
-
     for activity in activities:
         sequence = int(activity["sequence"])
         kind = str(activity.get("kind") or "phase")
@@ -1196,16 +1214,17 @@ def build_graph(
         signature = str(activity.get("signature") or "")
         assigned: dict[str, Any] | None = None
         if (
-            recalled
-            and has_nested_provider_work
-            and activity.get("source") == "command_log"
-            and str(activity.get("command_type") or "").startswith("Process")
+            is_play_runtime_activity(
+                activity,
+                recalled=recalled,
+                has_nested_provider_work=has_nested_provider_work,
+            )
         ):
             # A recalled Play often runs through one local executor while Rote's
             # typed response plane records the provider operations it performs.
             # Keep the executor on the starting gate for audit and telemetry;
             # do not misrepresent it as the user's semantic journey.
-            _append_activity(intent_node, activity)
+            _append_activity(intent_node, activity, include_capability=False)
             assigned = intent_node
         elif kind == "blocker":
             current = _new_node(activity, _activity_label(activity))

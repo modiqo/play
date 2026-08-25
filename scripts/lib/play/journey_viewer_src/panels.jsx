@@ -135,7 +135,7 @@ export function ModelLiveCounter({story, interactions, replay, playing = false, 
     return () => cancelAnimationFrame(frame)
   }, [chapter?.id, playing, recordCount, revealKey])
   if (!chapterCount || !telemetry?.model) return null
-  const snapshot = playbackModelTelemetry(story.chapters, interactions?.sites, index, revealedRecords)
+  const snapshot = playbackModelTelemetry(story.chapters, interactions?.sites, index, revealedRecords, interactions?.runtime)
   const model = telemetry.model
   const provenance = telemetry.pricing
     ? `Live playback of captured tool I/O using ${telemetry.pricing.key} rates. Journey is the reached prefix, not the final session. Excludes hidden reasoning and unrecorded dialogue.`

@@ -16,6 +16,22 @@ MODALITY_BY_FAMILY = {
 LIFECYCLE_PHASES = {"initialize", "authorize", "use", "observe", "close"}
 
 
+def is_play_runtime_activity(
+    activity: Mapping[str, Any],
+    *,
+    recalled: bool,
+    has_nested_provider_work: bool,
+) -> bool:
+    """Return whether a local process is the envelope around an unfurled Play."""
+
+    return bool(
+        recalled
+        and has_nested_provider_work
+        and activity.get("source") == "command_log"
+        and str(activity.get("command_type") or "").startswith("Process")
+    )
+
+
 def modality_for_capability(capability: Mapping[str, Any]) -> str | None:
     """Return Rote's user-facing modality for an equipped capability family."""
 

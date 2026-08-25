@@ -1,292 +1,484 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react'
-import DeckGL from '@deck.gl/react'
-import {AmbientLight, COORDINATE_SYSTEM, DirectionalLight, LightingEffect, LinearInterpolator, OrbitView} from '@deck.gl/core'
-import {ColumnLayer, PathLayer, PolygonLayer, ScatterplotLayer} from '@deck.gl/layers'
-import {DARK, NAV_BLUE, NAV_BLUE_BRIGHT, buildAtlas, fitView, interpolatePath, rgba} from './atlas-model.js'
-import PhysicalBeadOverlay from './physical-bead-overlay.jsx'
+import React, {useEffect, useMemo, useRef} from 'react'
+import * as THREE from 'three'
+import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js'
+import {RoundedBoxGeometry} from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import {buildAtlas} from './atlas-model.js'
+import {buildAtlasCityPlan, sampleAtlasCityRoute} from './atlas-city-plan.mjs'
+import {adaptiveRenderPixelRatio} from './render-quality.mjs'
 import {KIND_LABEL} from './semantics.js'
+import {formatNumber} from './format.js'
+import {createDriveFixture, updateDriveFixture} from './drive-world-elements.js'
 
-function useMotion(active) {
-  const [phase, setPhase] = useState(0)
-  useEffect(() => {
-    if (!active) return undefined
-    let frame = 0
-    let previous = 0
-    const tick = (time) => {
-      if (time - previous > 40) {
-        previous = time
-        setPhase((time % 3200) / 3200)
-      }
-      frame = requestAnimationFrame(tick)
-    }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
-  }, [active])
-  return phase
+const BLUE = 0x159dff
+const BLUE_BRIGHT = 0x75cfff
+const CITY = 0x697176
+const CITY_DARK = 0x40484d
+const RED = 0xff5a52
+
+function signalMaterial(color, opacity = 1) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: opacity < 1,
+    opacity,
+    depthWrite: opacity >= 1,
+    toneMapped: false,
+  })
 }
 
-function useArrivalBloom(active, siteId) {
-  const [amount, setAmount] = useState(0)
-  useEffect(() => {
-    if (!active || !siteId) {
-      setAmount(0)
-      return undefined
-    }
-    let frame = 0
-    let started = 0
-    const tick = (time) => {
-      if (!started) started = time
-      const elapsed = time - started
-      const next = elapsed < 380
-        ? elapsed / 380
-        : elapsed < 1950
-          ? 1
-          : elapsed < 2700 ? 1 - (elapsed - 1950) / 750 : 0
-      setAmount(next * next * (3 - 2 * next))
-      if (elapsed < 2700) frame = requestAnimationFrame(tick)
-    }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
-  }, [active, siteId])
-  return amount
+function cityMaterial(color, options = {}) {
+  const opacity = options.opacity ?? 1
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: options.roughness ?? .72,
+    metalness: options.metalness ?? .08,
+    emissive: options.emissive ?? 0x000000,
+    emissiveIntensity: options.emissiveIntensity ?? 0,
+    transparent: opacity < 1,
+    opacity,
+    depthWrite: opacity >= 1,
+    dithering: true,
+  })
 }
 
-function sampledBeads(beads, maximum = 9) {
-  if (beads.length <= maximum) return beads
-  const indexes = new Set(Array.from({length: maximum}, (_, index) => Math.round(index * (beads.length - 1) / (maximum - 1))))
-  return beads.filter((_bead, index) => indexes.has(index))
+function addMesh(group, geometry, material, position = [0, 0, 0], rotation = [0, 0, 0]) {
+  const object = new THREE.Mesh(geometry, material)
+  object.position.set(...position)
+  object.rotation.set(...rotation)
+  object.castShadow = true
+  object.receiveShadow = true
+  group.add(object)
+  return object
 }
 
-export default function Cartography({story, interactions, replay, playing, selected, onSelect, fitSignal, markerScale = 1}) {
-  const atlas = useMemo(() => buildAtlas(story, interactions), [interactions, story])
-  const fittedView = useMemo(() => fitView(atlas), [atlas])
-  const colors = DARK
-  const live = story.state === 'active'
-  const phase = useMotion(live || playing)
-  const [viewState, setViewState] = useState(() => fittedView)
-  const previousJourney = useRef(story.journey_key)
+function routeCurve(route) {
+  return new THREE.CatmullRomCurve3(route.map((point) => new THREE.Vector3(...point)), false, 'catmullrom', .32)
+}
 
-  useEffect(() => {
-    if (previousJourney.current !== story.journey_key || fitSignal) {
-      previousJourney.current = story.journey_key
-      setViewState(fittedView)
+function roadGeometry(curve, width, segments) {
+  const positions = []
+  const indices = []
+  const up = new THREE.Vector3(0, 1, 0)
+  const normal = new THREE.Vector3()
+  for (let index = 0; index <= segments; index += 1) {
+    const amount = index / segments
+    const point = curve.getPointAt(amount)
+    const tangent = curve.getTangentAt(amount).setY(0).normalize()
+    normal.crossVectors(up, tangent).normalize().multiplyScalar(width / 2)
+    positions.push(point.x + normal.x, .115, point.z + normal.z)
+    positions.push(point.x - normal.x, .115, point.z - normal.z)
+    if (index < segments) {
+      const cursor = index * 2
+      indices.push(cursor, cursor + 2, cursor + 1, cursor + 2, cursor + 3, cursor + 1)
     }
-  }, [atlas, fitSignal, fittedView, story.journey_key])
-
-  useEffect(() => {
-    if (!selected?.siteId) return
-    const bead = selected.sequence ? atlas.beadBySequence.get(selected.sequence) : null
-    const site = atlas.sites.find((item) => item.id === selected.siteId)
-    if (!bead && !site) return
-    const center = bead?.center || site.center
-    setViewState((current) => ({
-      ...current,
-      target: [center[0], center[1], bead ? center[2] : 0],
-      zoom: bead ? Math.max(5.2, fittedView.zoom + 3.1) : Math.max(4.2, fittedView.zoom + 2.1),
-      rotationX: bead ? 66 : 60,
-      rotationOrbit: 0,
-      transitionDuration: 850,
-      transitionInterpolator: new LinearInterpolator(['target', 'zoom', 'rotationX', 'rotationOrbit']),
-    }))
-  }, [atlas, fittedView.zoom, selected?.sequence, selected?.siteId])
-
-  const zoomDelta = viewState.zoom - fittedView.zoom
-  const semanticZoom = selected?.sequence ? 'evidence' : selected?.siteId ? 'phase' : zoomDelta < .82 ? 'journey' : zoomDelta < 2.05 ? 'phase' : 'evidence'
-  const visibleSiteCount = atlas.sites.length
-    ? Math.min(atlas.sites.length, Math.floor(replay * Math.max(1, atlas.sites.length - 1) + .001) + 1)
-    : 0
-  const reachedSites = new Set(atlas.sites.slice(0, visibleSiteCount).map((site) => site.id))
-  const pathCount = Math.max(1, Math.ceil(replay * atlas.semanticPath.length))
-  const visiblePath = atlas.semanticPath.slice(0, pathCount)
-  const currentPosition = interpolatePath(atlas.semanticPath, replay)
-  const selectedSite = atlas.sites.find((site) => site.id === selected?.siteId)
-  const replaySite = atlas.sites[Math.max(0, visibleSiteCount - 1)]
-  const currentSite = playing || story.state !== 'active'
-    ? replaySite
-    : (atlas.sites.find((site) => site.id === story.current_chapter) || replaySite)
-  const focusSite = selectedSite || currentSite
-  const arrivalBloom = useArrivalBloom(playing, currentSite?.id)
-  const bundleBloom = selectedSite ? .78 : arrivalBloom
-  const bloomSiteId = selectedSite?.id || (playing ? currentSite?.id : '')
-  const bundleScale = 1 + bundleBloom * 1.55
-  const transformPoint = useCallback((site, point) => {
-    if (!site || site.id !== bloomSiteId || bundleBloom <= .001) return point
-    return [
-      site.center[0] + (point[0] - site.center[0]) * bundleScale,
-      site.center[1] + (point[1] - site.center[1]) * bundleScale,
-      site.center[2] + (point[2] - site.center[2]) * bundleScale,
-    ]
-  }, [bloomSiteId, bundleBloom, bundleScale])
-  const beadPosition = useCallback((bead) => transformPoint(bead.site, bead.center), [transformPoint])
-  const beadEdge = useCallback((bead) => transformPoint(bead.site, [
-    bead.center[0] + bead.radius * markerScale,
-    bead.center[1],
-    bead.center[2],
-  ]), [markerScale, transformPoint])
-  const phaseBeads = semanticZoom === 'journey'
-    ? atlas.beads
-    : atlas.beads.filter((bead) => bead.site.id === focusSite?.id)
-  const phaseThreads = semanticZoom === 'journey'
-    ? atlas.threads
-    : atlas.threads.filter((thread) => thread.site.id === focusSite?.id)
-  const phaseHalos = semanticZoom === 'journey'
-    ? atlas.halos
-    : atlas.halos.filter((halo) => halo.bead.site.id === focusSite?.id)
-  const focusBeads = atlas.beads
-    .filter((bead) => bead.site.id === focusSite?.id)
-    .sort((left, right) => left.interaction.sequence - right.interaction.sequence)
-  const selectedBeadIndex = focusBeads.findIndex((bead) => bead.interaction.sequence === selected?.sequence)
-  const adjacentSequences = new Set(selectedBeadIndex < 0 ? [] : focusBeads
-    .slice(Math.max(0, selectedBeadIndex - 1), selectedBeadIndex + 2)
-    .map((bead) => bead.interaction.sequence))
-  const labelBeads = selected?.sequence
-    ? focusBeads.filter((bead) => adjacentSequences.has(bead.interaction.sequence))
-    : selectedSite || (playing && arrivalBloom > .08)
-      ? sampledBeads(focusBeads)
-      : []
-  const focusContours = focusSite ? atlas.contours.filter((contour) => contour.site.id === focusSite.id) : []
-  const focusStreets = focusSite ? atlas.streets.filter((street) => street.id.includes(focusSite.id)) : []
-  useEffect(() => {
-    if (!playing) return
-    setViewState((current) => ({
-      ...current, ...fittedView,
-      rotationX: 62,
-      rotationOrbit: -34,
-      zoom: fittedView.zoom + .14,
-      transitionDuration: 900,
-      transitionInterpolator: new LinearInterpolator(['target', 'zoom', 'rotationX', 'rotationOrbit']),
-    }))
-  }, [fittedView, playing])
-  const ambient = useMemo(() => new AmbientLight({color: [255, 255, 255], intensity: 1.15}), [])
-  const sun = useMemo(() => new DirectionalLight({color: [255, 255, 255], intensity: 2.15, direction: [-3, -7, -10]}), [])
-  const effects = useMemo(() => [new LightingEffect({ambient, sun})], [ambient, sun])
-  const coordinateSystem = COORDINATE_SYSTEM.CARTESIAN
-  const terrainDistricts = atlas.districts
-  const beadAlpha = (bead, base = 1) => {
-    if (selected?.sequence) {
-      if (selected.sequence === bead.interaction.sequence) return Math.round(245 * base)
-      if (adjacentSequences.has(bead.interaction.sequence)) return Math.round(112 * base)
-      return Math.round(15 * base)
-    }
-    if (semanticZoom !== 'journey') return Math.round(178 * base)
-    return Math.round((reachedSites.has(bead.site.id) ? 118 : 22) * base)
   }
-  const layers = [
-    new PolygonLayer({id: 'atlas-ground', data: [{polygon: atlas.ground}], coordinateSystem, getPolygon: (item) => item.polygon, getFillColor: rgba(colors.ground), filled: true, stroked: false, extruded: false}),
-    new PathLayer({
-      id: 'terrain-grid', data: atlas.gridLines, coordinateSystem, getPath: (item) => item.path,
-      getColor: [...colors.street, 26], getWidth: .65, widthUnits: 'pixels',
-    }),
-    new PolygonLayer({
-      id: 'semantic-districts', data: terrainDistricts, coordinateSystem, getPolygon: (item) => item.polygon,
-      getFillColor: (item) => [17, 21, 24, item.site.id === focusSite?.id ? 176 : reachedSites.has(item.site.id) ? 112 : 52],
-      filled: true, stroked: true,
-      getLineColor: (item) => item.site.id === focusSite?.id ? [...NAV_BLUE, 174] : [...colors.street, reachedSites.has(item.site.id) ? 88 : 48],
-      getLineWidth: (item) => item.site.id === focusSite?.id ? 1.5 : .65,
-      lineWidthUnits: 'pixels', extruded: false, pickable: true,
-      onClick: ({object}) => object && onSelect({siteId: object.site.id, sequence: null}),
-    }),
-    new PathLayer({
-      id: 'terrain-contours', data: semanticZoom === 'journey' ? [] : focusContours, coordinateSystem, getPath: (item) => item.path,
-      getColor: (item) => [...colors.street, 74 - item.ring * 12],
-      getWidth: .75, widthUnits: 'pixels', jointRounded: true, capRounded: true,
-    }),
-    new PathLayer({id: 'temporal-spine-bed', data: semanticZoom === 'journey' ? [] : focusStreets, coordinateSystem, getPath: (item) => item.path, getColor: colors.streetCore, getWidth: 4.4, widthUnits: 'pixels', jointRounded: true, capRounded: true}),
-    new PathLayer({id: 'temporal-spine', data: semanticZoom === 'journey' ? [] : focusStreets, coordinateSystem, getPath: (item) => item.path, getColor: colors.street, getWidth: .9, widthUnits: 'pixels', jointRounded: true, capRounded: true}),
-    new PathLayer({id: 'journey-road-bed', data: [{path: atlas.semanticPath}], coordinateSystem, getPath: (item) => item.path, getColor: [4, 6, 8, 245], getWidth: 8, widthUnits: 'pixels', jointRounded: true, capRounded: true}),
-    new PathLayer({
-      id: 'journey-route', data: [{path: atlas.semanticPath}], coordinateSystem,
-      getPath: (item) => item.path, getColor: [...NAV_BLUE, 132], getWidth: 2.4,
-      widthUnits: 'pixels', jointRounded: true, capRounded: true,
-    }),
-    new PathLayer({
-      id: 'journey-live-trail', data: [{path: visiblePath}], coordinateSystem,
-      getPath: (item) => item.path, getColor: [...NAV_BLUE_BRIGHT, 248], getWidth: 2.8,
-      widthUnits: 'pixels', jointRounded: true, capRounded: true,
-    }),
-    new PathLayer({
-      id: 'event-thread-shadow', data: phaseThreads, coordinateSystem, getPath: (item) => item.path.map((point) => transformPoint(item.site, point)),
-      getColor: [3, 5, 6, 210], getWidth: semanticZoom === 'journey' ? 2.6 : 4.2,
-      widthUnits: 'pixels', jointRounded: true, capRounded: true,
-    }),
-    new PathLayer({
-      id: 'event-threads', data: phaseThreads, coordinateSystem, getPath: (item) => item.path.map((point) => transformPoint(item.site, point)),
-      getColor: (item) => {
-        const selectedThread = selected?.sequence && (
-          adjacentSequences.has(item.source.interaction.sequence) && adjacentSequences.has(item.target.interaction.sequence)
-        )
-        if (selected?.sequence) return [...NAV_BLUE_BRIGHT, selectedThread ? 172 : 12]
-        if (semanticZoom === 'journey') return [...NAV_BLUE, reachedSites.has(item.site.id) ? 76 : 15]
-        return [...NAV_BLUE, 112]
-      },
-      getWidth: semanticZoom === 'evidence' ? 1.45 : .85,
-      widthUnits: 'pixels', jointRounded: true, capRounded: true,
-    }),
-    new ScatterplotLayer({
-      id: 'semantic-stations', data: atlas.sites, coordinateSystem,
-      getPosition: (item) => [item.center[0], item.center[1], .22],
-      getRadius: (item) => item.id === currentSite?.id ? 7 : 4.5,
-      radiusUnits: 'pixels', filled: true, stroked: true,
-      getFillColor: [12, 14, 16, 255],
-      getLineColor: (item) => item.id === currentSite?.id ? [...NAV_BLUE_BRIGHT, 255] : [178, 184, 187, reachedSites.has(item.id) ? 185 : 58],
-      getLineWidth: (item) => item.id === currentSite?.id ? 2 : 1, lineWidthUnits: 'pixels',
-      pickable: true, onClick: ({object}) => object && onSelect({siteId: object.id, sequence: null}),
-    }),
-    new ScatterplotLayer({
-      id: 'event-bead-hit-targets', data: phaseBeads, coordinateSystem,
-      getPosition: beadPosition, getRadius: (item) => item.radius * markerScale * (item.site.id === bloomSiteId ? bundleScale : 1),
-      radiusUnits: 'common', radiusMinPixels: (semanticZoom === 'journey' ? 5 : 8) * markerScale,
-      filled: true, stroked: false, getFillColor: [0, 0, 0, 1], pickable: true,
-      onClick: ({object}) => object && onSelect({siteId: object.site.id, sequence: object.interaction.sequence}),
-    }),
-    new PathLayer({
-      id: 'event-latency-halos', data: phaseHalos, coordinateSystem, getPath: (item) => item.path.map((point) => transformPoint(item.bead.site, point)),
-      getColor: (item) => [...NAV_BLUE_BRIGHT, beadAlpha(item.bead, selected?.sequence === item.bead.interaction.sequence ? .9 : .54)],
-      getWidth: selected?.sequence ? 1.5 : 1, widthUnits: 'pixels', jointRounded: true, capRounded: true,
-    }),
-    new ScatterplotLayer({
-      id: 'selected-bead-ring', data: selected?.sequence ? [atlas.beadBySequence.get(selected.sequence)].filter(Boolean) : [], coordinateSystem,
-      getPosition: beadPosition, getRadius: (item) => (item.radius * markerScale + .24) * (item.site.id === bloomSiteId ? bundleScale : 1),
-      radiusUnits: 'common', filled: false, stroked: true, getLineColor: [...NAV_BLUE_BRIGHT, 255],
-      getLineWidth: 2.2, lineWidthUnits: 'pixels',
-    }),
-    new ScatterplotLayer({
-      id: 'traveler-beacon', data: [{position: currentPosition}], coordinateSystem,
-      getPosition: (item) => item.position, getRadius: live || playing ? 9 + phase * 8 : 9,
-      radiusUnits: 'pixels', filled: false, stroked: true,
-      getLineColor: [232, 132, 19, live || playing ? Math.round(175 * (1 - phase)) : 150], getLineWidth: 1.4, lineWidthUnits: 'pixels',
-    }),
-    new ColumnLayer({
-      id: 'journey-traveler', data: [{position: currentPosition}], coordinateSystem,
-      getPosition: (item) => item.position, diskResolution: 4, radius: .72, angle: 45,
-      extruded: true, getElevation: 1.5, getFillColor: [232, 132, 19, 255],
-      stroked: true, getLineColor: [247, 200, 137, 255], getLineWidth: 1, lineWidthUnits: 'pixels',
-    }),
-  ].filter(Boolean)
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
+}
 
-  return <DeckGL
-    views={new OrbitView({id: 'journey-atlas', controller: {dragRotate: true, inertia: true}, orbitAxis: 'Z', fovy: 48})}
-    viewState={viewState} onViewStateChange={({viewState: next}) => setViewState(next)}
-    layers={layers} effects={effects} useDevicePixels={Math.min(1.5, window.devicePixelRatio || 1)}
-    getCursor={({isDragging, isHovering}) => isDragging ? 'grabbing' : isHovering ? 'pointer' : 'grab'}
-    onClick={({object}) => { if (!object) onSelect(null) }}
-  >
-    <PhysicalBeadOverlay
-      beads={phaseBeads}
-      viewState={viewState}
-      semanticZoom={semanticZoom}
-      currentSiteId={bloomSiteId || currentSite?.id}
-      selectedSequence={selected?.sequence}
-      adjacentSequences={[...adjacentSequences]}
-      reachedSiteIds={[...reachedSites]}
-      positionFor={beadPosition}
-      edgeFor={beadEdge}
-      labelBeads={labelBeads}
-      markerScale={markerScale}
-      onSelect={onSelect}
-    />
-    <div className="map-compass"><span>N</span><i /></div>
-    <div className="map-scale">{semanticZoom.toUpperCase()} SCALE · {semanticZoom === 'journey' ? 'COMPACT SPATIO-TEMPORAL TERRAIN' : semanticZoom === 'phase' ? 'EVENT BEADS FOLLOW TIME LEFT TO RIGHT' : 'SELECT A GLASS BEAD TO INSPECT EVIDENCE'}</div>
-    {selectedSite && <div className="selection-beacon">{String(selectedSite.order + 1).padStart(2, '0')} · {selected?.sequence ? `INTERACTION @${selected.sequence}` : KIND_LABEL[selectedSite.kind]}</div>}
-  </DeckGL>
+function travelerGeometry(scale = 1) {
+  const shape = new THREE.Shape()
+  shape.moveTo(0, 1.35 * scale)
+  shape.lineTo(-.88 * scale, -.9 * scale)
+  shape.quadraticCurveTo(0, -.55 * scale, .88 * scale, -.9 * scale)
+  shape.closePath()
+  return new THREE.ShapeGeometry(shape)
+}
+
+function createCityScene(plan, interactions) {
+  const root = new THREE.Group()
+  root.name = 'atlas-city'
+  const pickables = []
+  const siteMarkers = []
+  const eventMarkers = []
+  const siteFixtures = []
+  const {minimumX, maximumX, minimumZ, maximumZ} = plan.bounds
+  const width = maximumX - minimumX
+  const depth = maximumZ - minimumZ
+  const centerX = (minimumX + maximumX) / 2
+  const centerZ = (minimumZ + maximumZ) / 2
+
+  const ground = addMesh(
+    root,
+    new THREE.PlaneGeometry(width + 30, depth + 30),
+    cityMaterial(0x252a2e, {roughness: .96}),
+    [centerX, -.04, centerZ],
+    [-Math.PI / 2, 0, 0],
+  )
+  ground.castShadow = false
+
+  const grid = new THREE.GridHelper(Math.max(width, depth) + 32, Math.round(Math.max(width, depth) / 5.6), 0x596269, 0x42494e)
+  grid.position.set(centerX, .006, centerZ)
+  grid.material.transparent = true
+  grid.material.opacity = .2
+  root.add(grid)
+
+  const buildingGeometry = new RoundedBoxGeometry(1, 1, 1, 3, .075)
+  const buildingMaterial = cityMaterial(CITY, {roughness: .76, metalness: .05})
+  const buildings = new THREE.InstancedMesh(buildingGeometry, buildingMaterial, plan.buildings.length)
+  buildings.castShadow = true
+  buildings.receiveShadow = true
+  const matrix = new THREE.Matrix4()
+  const color = new THREE.Color()
+  plan.buildings.forEach((building, index) => {
+    matrix.compose(
+      new THREE.Vector3(building.x, building.height / 2, building.z),
+      new THREE.Quaternion(),
+      new THREE.Vector3(building.width, building.height, building.depth),
+    )
+    buildings.setMatrixAt(index, matrix)
+    color.setRGB(building.tone * .55, building.tone * .58, building.tone * .6)
+    buildings.setColorAt(index, color)
+  })
+  buildings.instanceMatrix.needsUpdate = true
+  buildings.instanceColor.needsUpdate = true
+  root.add(buildings)
+
+  const crowned = plan.buildings.filter((building) => building.crown)
+  if (crowned.length) {
+    const crownGeometry = new RoundedBoxGeometry(1, 1, 1, 2, .08)
+    const crowns = new THREE.InstancedMesh(crownGeometry, cityMaterial(CITY_DARK, {roughness: .62, metalness: .12}), crowned.length)
+    crowned.forEach((building, index) => {
+      matrix.compose(
+        new THREE.Vector3(building.x, building.height + .42, building.z),
+        new THREE.Quaternion(),
+        new THREE.Vector3(building.width * .42, .84, building.depth * .42),
+      )
+      crowns.setMatrixAt(index, matrix)
+    })
+    crowns.instanceMatrix.needsUpdate = true
+    crowns.castShadow = true
+    root.add(crowns)
+  }
+
+  const curve = routeCurve(plan.route)
+  const routeSegments = Math.max(96, plan.route.length * 2)
+  const road = addMesh(root, roadGeometry(curve, 3.7, routeSegments), signalMaterial(0x111a20, .96))
+  road.receiveShadow = true
+  road.renderOrder = 2
+  const routeGlow = addMesh(root, new THREE.TubeGeometry(curve, routeSegments, .34, 10, false), signalMaterial(BLUE, .28), [0, .22, 0])
+  const routeCore = addMesh(root, new THREE.TubeGeometry(curve, routeSegments, .145, 10, false), signalMaterial(BLUE), [0, .28, 0])
+  const routeHighlight = addMesh(root, new THREE.TubeGeometry(curve, routeSegments, .045, 8, false), signalMaterial(BLUE_BRIGHT), [0, .32, 0])
+  routeGlow.renderOrder = 3
+  routeCore.renderOrder = 4
+  routeHighlight.renderOrder = 5
+  routeGlow.castShadow = routeCore.castShadow = routeHighlight.castShadow = false
+
+  plan.sites.forEach((site, siteIndex) => {
+    const previous = plan.sites[Math.max(0, siteIndex - 1)]
+    const next = plan.sites[Math.min(plan.sites.length - 1, siteIndex + 1)]
+    const tangent = new THREE.Vector3(
+      next.world[0] - previous.world[0],
+      0,
+      next.world[2] - previous.world[2],
+    ).normalize()
+    const fixture = createDriveFixture(site, {
+      id: site.id,
+      x: site.world[0],
+      y: .2,
+      z: site.world[2],
+      shoulder: siteIndex % 2 ? 1 : -1,
+    })
+    fixture.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), tangent.lengthSq() ? tangent : new THREE.Vector3(0, 0, -1))
+    fixture.scale.setScalar(.72)
+    root.add(fixture)
+    siteFixtures.push({site, fixture})
+
+    const marker = new THREE.Group()
+    marker.position.set(...site.world)
+    marker.userData.pick = {siteId: site.id, sequence: null}
+    const pad = addMesh(marker, new THREE.CylinderGeometry(1.34, 1.34, .18, 32), signalMaterial(0x111a20), [0, .13, 0])
+    const ring = addMesh(marker, new THREE.TorusGeometry(1.06, .115, 10, 40), signalMaterial(0x8a9ca5), [0, .28, 0], [-Math.PI / 2, 0, 0])
+    const stem = addMesh(marker, new THREE.CylinderGeometry(.13, .22, 1.55, 16), signalMaterial(BLUE), [0, 1.02, 0])
+    const beacon = addMesh(marker, new THREE.SphereGeometry(.34, 18, 12), signalMaterial(0xe8f7ff), [0, 1.9, 0])
+    const halo = addMesh(marker, new THREE.SphereGeometry(.68, 18, 12), signalMaterial(BLUE, .2), [0, 1.9, 0])
+    for (const object of [pad, ring, stem, beacon, halo]) object.userData.pick = marker.userData.pick
+    pickables.push(pad, ring, stem, beacon, halo)
+    pad.renderOrder = ring.renderOrder = stem.renderOrder = beacon.renderOrder = halo.renderOrder = 6
+    root.add(marker)
+    siteMarkers.push({site, marker, pad, ring, stem, beacon, halo})
+
+    const records = interactions?.sites?.[site.id] || []
+    const eventGroup = new THREE.Group()
+    eventGroup.position.set(...site.world)
+    records.slice(0, 12).forEach((record, index) => {
+      const angle = index / Math.max(1, records.length) * Math.PI * 2 - Math.PI / 2
+      const radius = 1.55 + (index % 2) * .32
+      const succeeded = record.status === 'succeeded' || record.status === 'ok'
+      const bead = addMesh(eventGroup, new THREE.SphereGeometry(.26, 18, 12), signalMaterial(succeeded ? 0xdce8ed : RED), [Math.cos(angle) * radius, .62, Math.sin(angle) * radius])
+      bead.userData.pick = {siteId: site.id, sequence: record.sequence}
+      pickables.push(bead)
+      eventMarkers.push({siteId: site.id, sequence: record.sequence, bead, group: eventGroup})
+    })
+    eventGroup.visible = false
+    root.add(eventGroup)
+  })
+
+  const traveler = new THREE.Group()
+  const shadow = addMesh(traveler, travelerGeometry(1.08), cityMaterial(0x101417, {opacity: .62}), [0, .02, .12], [-Math.PI / 2, 0, 0])
+  shadow.castShadow = false
+  const outer = addMesh(traveler, travelerGeometry(1), cityMaterial(RED, {emissive: RED, emissiveIntensity: 1.25, roughness: .22}), [0, .18, 0], [-Math.PI / 2, 0, 0])
+  outer.castShadow = false
+  const inner = addMesh(traveler, travelerGeometry(.68), cityMaterial(0xf4f7f8, {emissive: 0xd8f2ff, emissiveIntensity: .6, roughness: .22}), [0, .205, -.035], [-Math.PI / 2, 0, 0])
+  inner.castShadow = false
+  root.add(traveler)
+
+  return {root, pickables, siteMarkers, siteFixtures, eventMarkers, traveler}
+}
+
+function disposeScene(root) {
+  root.traverse((object) => {
+    object.geometry?.dispose?.()
+    if (Array.isArray(object.material)) object.material.forEach((item) => item.dispose?.())
+    else object.material?.dispose?.()
+  })
+}
+
+export default function Cartography({story, interactions, replay, playing, selected, onSelect, fitSignal}) {
+  const host = useRef(null)
+  const replayRef = useRef(replay)
+  const selectedRef = useRef(selected)
+  const apiRef = useRef(null)
+  const atlas = useMemo(() => buildAtlas(story, interactions), [interactions, story])
+  const cityPlan = useMemo(() => buildAtlasCityPlan(atlas, story.journey_key || story.outcome), [atlas, story.journey_key, story.outcome])
+  const replayIndex = Math.max(0, Math.min(story.chapters.length - 1, Math.floor(replay * Math.max(1, story.chapters.length - 1) + .001)))
+  const currentChapter = story.chapters[replayIndex]
+  const activeSiteId = selected?.siteId || currentChapter?.id
+  const activeSite = cityPlan.sites.find((site) => site.id === activeSiteId) || currentChapter
+  const activeRecords = interactions?.sites?.[activeSiteId] || []
+
+  useEffect(() => { replayRef.current = replay }, [replay])
+  useEffect(() => { selectedRef.current = selected }, [selected])
+
+  useEffect(() => {
+    if (!host.current) return undefined
+    let disposed = false
+    let frame = 0
+    let observer
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x121a1f)
+    scene.fog = new THREE.FogExp2(0x121a1f, .0048)
+    const camera = new THREE.PerspectiveCamera(42, 1, .1, 700)
+    const renderer = new THREE.WebGLRenderer({antialias: true, powerPreference: 'high-performance'})
+    renderer.domElement.className = 'atlas-city-canvas'
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.08
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    host.current.appendChild(renderer.domElement)
+
+    scene.add(new THREE.HemisphereLight(0xdce8ed, 0x20262a, 2.35))
+    scene.add(new THREE.AmbientLight(0xb9c5ca, .48))
+    const sun = new THREE.DirectionalLight(0xffffff, 3.4)
+    sun.position.set(-42, 74, 36)
+    sun.castShadow = true
+    sun.shadow.mapSize.set(2048, 2048)
+    sun.shadow.camera.left = -90
+    sun.shadow.camera.right = 90
+    sun.shadow.camera.top = 90
+    sun.shadow.camera.bottom = -90
+    scene.add(sun)
+
+    const city = createCityScene(cityPlan, interactions)
+    scene.add(city.root)
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.dampingFactor = .075
+    controls.screenSpacePanning = false
+    controls.minPolarAngle = .28
+    controls.maxPolarAngle = 1.28
+    controls.minDistance = 12
+    controls.maxDistance = 240
+
+    const center = new THREE.Vector3(
+      (cityPlan.bounds.minimumX + cityPlan.bounds.maximumX) / 2,
+      0,
+      (cityPlan.bounds.minimumZ + cityPlan.bounds.maximumZ) / 2,
+    )
+    const span = Math.max(
+      cityPlan.bounds.maximumX - cityPlan.bounds.minimumX,
+      cityPlan.bounds.maximumZ - cityPlan.bounds.minimumZ,
+      40,
+    )
+    const fit = () => {
+      controls.target.copy(center)
+      camera.position.set(center.x + span * .5, span * .78, center.z + span * .68)
+      camera.near = Math.max(.1, span / 900)
+      camera.far = span * 8
+      camera.updateProjectionMatrix()
+      controls.update()
+    }
+    const focus = (siteId) => {
+      const site = cityPlan.sites.find((item) => item.id === siteId)
+      if (!site) return
+      const target = new THREE.Vector3(...site.world)
+      const direction = camera.position.clone().sub(controls.target).normalize()
+      controls.target.copy(target)
+      camera.position.copy(target).addScaledVector(direction, Math.max(24, span * .34))
+    }
+    fit()
+    apiRef.current = {fit, focus}
+
+    const raycaster = new THREE.Raycaster()
+    const pointer = new THREE.Vector2()
+    const pointerStart = new THREE.Vector2()
+    let dragging = false
+    const pointerDown = (event) => {
+      pointerStart.set(event.clientX, event.clientY)
+      dragging = false
+    }
+    const pointerMove = (event) => {
+      if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 4) dragging = true
+    }
+    const pointerUp = (event) => {
+      if (dragging) return
+      const bounds = renderer.domElement.getBoundingClientRect()
+      pointer.set((event.clientX - bounds.left) / bounds.width * 2 - 1, -((event.clientY - bounds.top) / bounds.height) * 2 + 1)
+      raycaster.setFromCamera(pointer, camera)
+      const hit = raycaster.intersectObjects(city.pickables, true)[0]
+      if (hit?.object?.userData?.pick) onSelect(hit.object.userData.pick)
+      else onSelect(null)
+    }
+    renderer.domElement.addEventListener('pointerdown', pointerDown)
+    renderer.domElement.addEventListener('pointermove', pointerMove)
+    renderer.domElement.addEventListener('pointerup', pointerUp)
+
+    const resize = () => {
+      if (!host.current) return
+      const width = host.current.clientWidth
+      const height = host.current.clientHeight
+      camera.aspect = width / Math.max(1, height)
+      camera.updateProjectionMatrix()
+      renderer.setPixelRatio(adaptiveRenderPixelRatio(window.devicePixelRatio, width, height))
+      renderer.setSize(width, height, false)
+    }
+    observer = new ResizeObserver(resize)
+    observer.observe(host.current)
+    resize()
+
+    const forward = new THREE.Vector3(0, 0, -1)
+    const heading = new THREE.Vector3()
+    const desiredScale = new THREE.Vector3()
+    const projected = new THREE.Vector3()
+    const labelNodes = new Map([...host.current.querySelectorAll('[data-atlas-site]')].map((node) => [node.dataset.atlasSite, node]))
+    const render = () => {
+      if (disposed) return
+      const sample = sampleAtlasCityRoute(cityPlan.route, replayRef.current)
+      city.traveler.position.set(...sample.position)
+      city.traveler.position.y = .22
+      heading.set(...sample.tangent).normalize()
+      city.traveler.quaternion.setFromUnitVectors(forward, heading)
+      const stageIndex = Math.max(0, Math.min(city.siteMarkers.length - 1, Math.floor(replayRef.current * Math.max(1, city.siteMarkers.length - 1) + .001)))
+      const selectedSiteId = selectedRef.current?.siteId
+      const currentSiteId = city.siteMarkers[stageIndex]?.site.id
+      const elapsed = performance.now() / 1000
+      city.siteFixtures.forEach(({site, fixture}, index) => {
+        const active = index === stageIndex || site.id === selectedSiteId
+        updateDriveFixture(fixture, {
+          active,
+          approaching: !active,
+          completed: index < stageIndex,
+          elapsed,
+        })
+      })
+      city.siteMarkers.forEach(({site, marker, ring, pad, stem, halo}, index) => {
+        const active = index === stageIndex || site.id === selectedSiteId
+        const reached = index <= stageIndex
+        ring.material.color.setHex(active ? BLUE_BRIGHT : reached ? BLUE : 0x8a9ca5)
+        stem.material.color.setHex(active ? BLUE_BRIGHT : reached ? BLUE : 0x61727b)
+        halo.material.opacity = active ? .32 : reached ? .14 : .08
+        pad.material.color.setHex(active ? 0x183b50 : 0x262e33)
+        desiredScale.setScalar(active ? 1.18 : 1)
+        ring.scale.lerp(desiredScale, .12)
+        marker.getWorldPosition(projected)
+        projected.y += 2.55
+        projected.project(camera)
+        const label = labelNodes.get(site.id)
+        if (label) {
+          const visible = projected.z > -1 && projected.z < 1 && Math.abs(projected.x) < 1.08 && Math.abs(projected.y) < 1.08
+          label.style.left = `${(projected.x * .5 + .5) * 100}%`
+          label.style.top = `${(-projected.y * .5 + .5) * 100}%`
+          label.style.opacity = visible ? (active ? '1' : reached ? '.82' : '.58') : '0'
+          label.style.zIndex = String(active ? 8 : reached ? 7 : 6)
+          label.classList.toggle('active', active)
+          label.classList.toggle('reached', reached)
+        }
+      })
+      city.eventMarkers.forEach((event) => {
+        event.group.visible = event.siteId === (selectedSiteId || currentSiteId)
+        const selectedEvent = event.sequence === selectedRef.current?.sequence
+        event.bead.scale.setScalar(selectedEvent ? 1.55 : 1)
+      })
+      controls.update()
+      renderer.render(scene, camera)
+      frame = requestAnimationFrame(render)
+    }
+    render()
+
+    return () => {
+      disposed = true
+      cancelAnimationFrame(frame)
+      observer?.disconnect()
+      renderer.domElement.removeEventListener('pointerdown', pointerDown)
+      renderer.domElement.removeEventListener('pointermove', pointerMove)
+      renderer.domElement.removeEventListener('pointerup', pointerUp)
+      controls.dispose()
+      disposeScene(city.root)
+      renderer.dispose()
+      renderer.domElement.remove()
+      apiRef.current = null
+    }
+  }, [cityPlan, interactions, onSelect])
+
+  useEffect(() => {
+    if (selected?.siteId) apiRef.current?.focus(selected.siteId)
+  }, [selected?.siteId])
+
+  useEffect(() => {
+    if (fitSignal) apiRef.current?.fit()
+  }, [fitSignal])
+
+  return <div className="atlas-city" ref={host}>
+    <div className="atlas-site-labels" aria-label="Route vantage points">
+      {cityPlan.sites.map((site, index) => <button
+        key={site.id}
+        data-atlas-site={site.id}
+        onClick={() => onSelect({siteId: site.id, sequence: null})}
+        aria-label={`Open vantage ${index + 1}: ${site.title}`}
+      >
+        <b>{String(index + 1).padStart(2, '0')}</b>
+        <span>{site.title}</span>
+      </button>)}
+    </div>
+    <div className="atlas-city-status">
+      <span>3D NAVIGATION · {String(replayIndex + 1).padStart(2, '0')} / {String(story.chapters.length).padStart(2, '0')}</span>
+      <strong>{currentChapter?.title}</strong>
+      <small>{KIND_LABEL[currentChapter?.kind] || currentChapter?.kind}</small>
+    </div>
+    <div className="atlas-city-compass"><b>N</b><i>▲</i><small>DRAG · ORBIT<br />SCROLL · ZOOM</small></div>
+    <div className="atlas-city-scale">{playing ? 'ROUTE ADVANCING' : selected?.siteId ? 'SITE SELECTED · OPENING EVIDENCE' : 'SELECT A ROUTE SITE'}</div>
+    <section className="atlas-exchange-rail" aria-label="Recorded exchanges at current vantage">
+      <div className="atlas-exchange-heading">
+        <span>{selected?.siteId ? 'OPEN VANTAGE' : 'CURRENT VANTAGE'}</span>
+        <strong>{activeSite?.title}</strong>
+        <small>{KIND_LABEL[activeSite?.kind] || activeSite?.kind} · {activeRecords.length} {activeRecords.length === 1 ? 'exchange' : 'exchanges'}</small>
+      </div>
+      <div className="atlas-exchange-list">
+        {activeRecords.length ? activeRecords.slice(0, 8).map((record) => <button
+          key={record.sequence}
+          className={selected?.sequence === record.sequence ? 'selected' : ''}
+          onClick={() => onSelect({siteId: activeSiteId, sequence: record.sequence})}
+          title="Open recorded request and response"
+        >
+          <b>@{String(record.sequence).padStart(2, '0')}</b>
+          <span>{record.capability?.label || record.provider || record.operation}</span>
+          <em>{formatNumber(record.tokens)} tok · {record.status}</em>
+        </button>) : <p>No external exchange recorded at this vantage.</p>}
+      </div>
+      {activeRecords.length > 0 && <small className="atlas-exchange-hint">SELECT AN EXCHANGE TO INSPECT REQUEST → RESPONSE</small>}
+    </section>
+  </div>
 }

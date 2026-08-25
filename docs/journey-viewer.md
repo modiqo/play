@@ -57,7 +57,7 @@ Journey has two complementary views of the same projection:
 
 | View | Use it for | What it shows |
 |---|---|---|
-| **Follow** | Experiencing the trace from the agent's vantage | First-person travel from one semantic site to the next, with local interactions arranged in front of the current site |
+| **Follow** | Experiencing the trace as an embodied route | A stable chase view of one road, semantic infrastructure, upcoming stages, and a fixed evidence HUD |
 | **Atlas** | Understanding the whole route | A compact aerial terrain with the same sites, chronology, interaction clusters, and evidence links |
 
 Follow is the primary replay experience. Atlas is the cartographic overview; it is not a second
@@ -88,8 +88,8 @@ exists*. The interactions situated at that site answer *what happened there*.
 | Play candidate | Reusable blueprint | Shapes verified work into a reusable procedure | Draft a reusable verified-page route |
 | Play | Published gateway | Makes that procedure available to a later journey | Release the verified Notion-page Play |
 
-Open **World Model** at any time to see this vocabulary. In the tutorial, the current primitive is
-lifted while its surroundings soften, pairing the abstract role with the site you are standing in.
+Open **World Model** at any time to see this vocabulary. Follow turns each primitive into road
+infrastructure: decisions become junctions, authority becomes a barrier, and phases become gates.
 
 ## Capabilities, modalities, and operations
 
@@ -116,21 +116,13 @@ ledger primitives; absent typed evidence remains **unknown**.
 
 ## Read interactions and time
 
-At a vantage, the physical-glass bubbles are recorded interactions, not more landmarks. They sit
-in front of the site because they are evidence belonging to that semantic step. A natural thread
-connects them in operation order.
+Follow renders recorded interactions as constant-sized detected objects near the current stage.
+The fixed HUD keeps every operation readable while the road moves. Each exchange shows its
+canonical `@N`, capability, access posture, status, and a request → response affordance.
 
-- Bubble volume represents recorded token volume.
-- The amber duration treatment represents latency.
-- Left to right represents earlier to later operations.
-- Additional depth is used only for recorded overlap.
-- `@N` is the operation's canonical sequence in the Rote trace.
-
-Tokens and latency are never blended into one height or importance score. Select a bubble or its
-`@N` marker to face it head-on. The selected interaction gains focus, its immediate predecessor and
-successor remain softly illuminated, and the rest recedes. The evidence panel shows typed
-capability, lifecycle, access, timing, token, and redacted request/response data when Rote recorded
-it.
+Select an exchange to open the evidence panel. The panel shows typed capability, lifecycle,
+access, timing, tokens, and redacted request/response data when Rote recorded it. Scale no longer
+encodes telemetry because large foreground geometry obscures the route and weakens comparison.
 
 An **Evidence unavailable** message means the source trace has no displayable exchange at that
 reference, it was redacted, or its owner-private evidence is no longer present. Journey never
@@ -175,10 +167,8 @@ an observed compaction boundary. Hidden reasoning and unrecorded conversation ar
 
 ## Controls
 
-- Drag or use the arrow keys to look around in Follow.
-- Scroll to move forward or backward.
-- Click a vantage to freeze there; use **Resume** to continue.
-- Click an interaction bubble or `@N` marker to inspect its evidence.
+- Use **Play** to follow the road or **Freeze** to hold the current stage.
+- Select a recorded exchange in the fixed Follow HUD to inspect its evidence.
 - Use the bottom scrubber or semantic markers to jump through a long journey.
 - Use **Fit** in Atlas to restore the complete aerial framing.
 - Use **Refresh** to request a coherent snapshot without changing a frozen vantage.
