@@ -181,22 +181,14 @@ Never infer confirmation, choose **Yes, continue** for the user, or summarize a 
   specialist flow; return to the runtime only with a declared receipt event.
 - `terminal`: present the terminal outcome and stop.
 
-After presenting an ordinary successful Play receipt unchanged, there is one optional follow-up.
+Present the complete result and its verified receipt unchanged. When a run qualifies, ask whether
+the user wants it to repeat. This includes a first remote pull or replacement and a run of an
+already-local exact version.
 
-Never show its picker during the request that first pulls or replaces a remote Play. That first run
-is the user's trial. Deliver the complete result, then show exactly one passive hint:
-
-> **Tip: To repeat this Play automatically with Tulving, say “schedule this” and choose hourly,
-> daily, or custom timing.**
-
-End the turn without probing Tulving or presenting a scheduling question. The hint is not consent
-and must not create a schedule. If the user explicitly asks to schedule, use the explicit scheduling
-path above without requiring another Play run. Offer the recurrence picker only after a later
-successful run when that exact Play version was already local beforehand.
-
-Do not use it for the onboarding starter, a failed or blocked run, an interactive Play, or an
-inspection with writes or unverified effects. For an eligible receipt, run `play recurring probe`
-after the receipt is visible. Continue only when its `tulving` capability is `ready`.
+Do not use the choice for the onboarding starter, a failed or blocked run, or an interactive Play.
+Do not use it for an inspection with writes or unverified effects. The complete result must be
+visible before you run `play recurring probe` or open the picker. Continue only when its `tulving`
+capability is `ready`.
 
 Ask whether to repeat that exact Play: **Hourly**, **Daily**, **Choose cadence**, or **Not now**.
 This is a per-run choice, never standing consent. On acceptance, invoke `play recurring schedule`
@@ -204,6 +196,7 @@ with the exact versioned reference and approved parameters. Add a concise reason
 then present Tulving's schedule receipt.
 
 If the capability is not ready, end with the Play receipt. Do not mention or invoke scheduling.
+A later scheduling request uses the explicit path above. Do not require another Play run.
 
 Authentication declared by a saved Play stays inside its approved `rote play run`. When inspection
 shows `adapter.auth.ensure`, complete secure browser-capable provider sign-in inside that step and

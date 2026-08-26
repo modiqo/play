@@ -46,30 +46,31 @@ class PresentationTest(unittest.TestCase):
             normalized,
         )
 
-    def test_first_pull_and_run_ends_before_recurring_offer(self) -> None:
+    def test_every_eligible_run_executes_before_recurring_offer(self) -> None:
         skill = (Path(__file__).resolve().parents[2] / "SKILL.md").read_text()
         normalized = skill.replace("\n", " ")
 
         self.assertIn(
-            "Never show its picker during the request that first pulls or replaces a remote Play",
+            "Present the complete result and its verified receipt unchanged",
             normalized,
         )
         self.assertIn(
-            "Tip: To repeat this Play automatically with Tulving",
+            "When a run qualifies, ask whether the user wants it to repeat",
             normalized,
         )
         self.assertIn(
-            "End the turn without probing Tulving or presenting a scheduling question",
+            "This includes a first remote pull or replacement and a run of an already-local exact version",
             normalized,
         )
         self.assertIn(
-            "explicit scheduling path above without requiring another Play run",
+            "The complete result must be visible before you run `play recurring probe` or open the picker",
             normalized,
         )
         self.assertIn(
-            "only after a later successful run when that exact Play version was already local",
+            "A later scheduling request uses the explicit path above",
             normalized,
         )
+        self.assertNotIn("Tip: To repeat this Play automatically with Tulving", skill)
 
     def test_pre_receipt_scheduling_barrier_precedes_every_execution_path(self) -> None:
         skill = (Path(__file__).resolve().parents[2] / "SKILL.md").read_text()
