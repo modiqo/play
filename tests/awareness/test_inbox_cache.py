@@ -309,11 +309,12 @@ class InboxCacheTest(unittest.TestCase):
         )
 
     def test_cache_merges_public_baseline_after_authorized_tiers(self) -> None:
-        cache = refresh_cache(
-            cache_path=self.cache_path,
-            state_path=self.state_path,
-            collect=lambda **_: _digest(0, 0),
-            load_flows=lambda _: {
+        authorized_scopes = []
+        public_scopes = []
+
+        def load_authorized(slugs):
+            authorized_scopes.append(set(slugs))
+            return {
                 "acme": [
                     {
                         "name": "private-report",
@@ -325,18 +326,30 @@ class InboxCacheTest(unittest.TestCase):
                         "status": "released",
                     },
                 ]
-            },
-            load_public_flows=lambda slug: [
+            }
+
+        def load_public(slug):
+            public_scopes.append(slug)
+            return [
                 {
                     "name": "starter",
                     "visibility": "public",
                     "status": "released",
                 }
-            ] if slug == "modiqo" else [],
+            ]
+
+        cache = refresh_cache(
+            cache_path=self.cache_path,
+            state_path=self.state_path,
+            collect=lambda **_: _digest(0, 0),
+            load_flows=load_authorized,
+            load_public_flows=load_public,
             organizations=[Organization("acme", "Acme", "org-acme")],
             require_complete_catalog=True,
         )
 
+        self.assertEqual([{"acme"}], authorized_scopes)
+        self.assertEqual(["modiqo"], public_scopes)
         self.assertEqual(["modiqo"], cache["baseline_scope"])
         self.assertRegex(cache["authority_sha256"], r"^sha256:[0-9a-f]{64}$")
         self.assertEqual(

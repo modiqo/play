@@ -2344,7 +2344,7 @@ def _warm_public_play_cache(
     runner: Runner,
     progress: Progress,
 ) -> Step:
-    """Build and validate the first What’s New snapshot before harness activation."""
+    """Best-effort warm and validation of the first bounded Play snapshot."""
 
     command = [
         sys.executable,
@@ -2362,18 +2362,27 @@ def _warm_public_play_cache(
         if _registry_network_failure(result):
             return Step(
                 "warm_public_play_cache",
-                "failed",
-                _registry_network_blocker("The public Play catalog refresh"),
+                "skipped",
+                "Play discovery cache warmup was skipped; live search will be used "
+                "on cache misses. "
+                + _registry_network_blocker("The bounded Play catalog refresh"),
                 command=command,
             )
-        return _result_step("warm_public_play_cache", result, command)
+        output = (result.stdout or result.stderr or f"exit {result.returncode}").strip()
+        return Step(
+            "warm_public_play_cache",
+            "skipped",
+            f"Play discovery cache warmup was skipped: {output}",
+            command=command,
+        )
     try:
         payload = json.loads(result.stdout)
     except (json.JSONDecodeError, TypeError) as error:
         return Step(
             "warm_public_play_cache",
-            "failed",
-            f"Public Play cache refresh returned invalid JSON: {error}",
+            "skipped",
+            "Play discovery cache warmup returned invalid JSON and was skipped: "
+            f"{error}",
             command=command,
         )
     counts = payload.get("counts") if isinstance(payload, dict) else None
@@ -2401,8 +2410,9 @@ def _warm_public_play_cache(
     if not valid:
         return Step(
             "warm_public_play_cache",
-            "failed",
-            "Public Play cache refresh did not return a complete, fingerprinted snapshot.",
+            "skipped",
+            "Play discovery cache warmup did not return a complete, fingerprinted "
+            "snapshot; live search will be used on cache misses.",
             command=command,
         )
     assert isinstance(public_count, int)
@@ -3688,15 +3698,6 @@ def apply(
         progress=active_progress,
     )
     steps.append(cache_step)
-    if cache_step.status != "completed":
-        return _finish_report(
-            plan,
-            run_id,
-            started,
-            steps,
-            status="blocked",
-            runner=runner,
-        )
 
     root_step = active_progress.call(
         "Preparing selected harness skill roots",

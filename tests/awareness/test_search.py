@@ -1,7 +1,6 @@
 import os
 import pathlib
 import sys
-import threading
 import unittest
 from unittest import mock
 
@@ -358,13 +357,17 @@ class SearchTest(unittest.TestCase):
                     }
                 )
             )
-            with mock.patch.object(PLAY_SEARCH, "run_json", side_effect=fake_run), \
-                    mock.patch.dict(
-                        os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
-                    ):
+            with mock.patch.object(
+                PLAY_SEARCH, "run_json", side_effect=fake_run
+            ) as live_search, mock.patch.dict(
+                os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
+            ):
                 local, registry = PLAY_SEARCH.search_both(
                     "list top committers for modiqo rote", 5
                 )
+            self.assertTrue(
+                all("--source" not in call.args[0] for call in live_search.call_args_list)
+            )
             self.assertEqual("list-top-committers", registry[0]["skill_name"])
             results = PLAY_SEARCH.merge_results(
                 local, registry, pathlib.Path("/tmp/none"), 5,
@@ -535,7 +538,9 @@ class SearchTest(unittest.TestCase):
             ), mock.patch.dict(
                 os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
             ):
-                local, registry = PLAY_SEARCH.search_both("local report", 5)
+                local, registry = PLAY_SEARCH.search_both(
+                    "local report", 5, flow_root=flow_root
+                )
 
         results = PLAY_SEARCH.merge_results(
             local, registry, flow_root, 5, "local report"
@@ -607,6 +612,57 @@ class SearchTest(unittest.TestCase):
             {result["reference"] for result in results},
         )
 
+    def test_complete_cache_miss_is_confirmed_by_live_registry_search(self):
+        import json as json_module
+        import tempfile
+
+        commands = []
+
+        def fake_run(command, **_kwargs):
+            commands.append(command)
+            if "--source" not in command:
+                return {"flows": []}
+            return {
+                "schema": "rote.remote-play-search.v1",
+                "items": [
+                    {
+                        "play_id": "remote-only",
+                        "reference": "partner/receipt-export@0.4.0",
+                        "owner": {"slug": "partner", "kind": "organization"},
+                        "name": "receipt-export",
+                        "description": "Export rideshare receipts.",
+                        "version": "0.4.0",
+                        "visibility": "public",
+                        "status": "released",
+                    }
+                ],
+            }
+
+        with tempfile.TemporaryDirectory() as temporary:
+            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
+            cache_path.write_text(
+                json_module.dumps(
+                    {
+                        "schema": "play.inbox-cache/v1",
+                        "catalog_complete": True,
+                        "catalog": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                PLAY_SEARCH, "run_json", side_effect=fake_run
+            ), mock.patch.dict(
+                os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
+            ):
+                local, registry = PLAY_SEARCH.search_both(
+                    "rideshare receipt export", 5
+                )
+
+        self.assertEqual("live_after_cache_miss", local["source_health"]["mode"])
+        self.assertEqual("receipt-export", registry[0]["skill_name"])
+        self.assertTrue(any("--source" in command for command in commands))
+
     def test_malformed_live_search_without_verified_catalog_fails_closed(self):
         with mock.patch.object(
             PLAY_SEARCH,
@@ -624,10 +680,10 @@ class SearchTest(unittest.TestCase):
         import subprocess
 
         def typed_result(command, **_kwargs):
-            if command[1:3] == ["play", "search"]:
+            if "--source" not in command:
                 payload = '{"flows":[]}'
             else:
-                payload = "[]"
+                payload = '{"schema":"rote.remote-play-search.v1","items":[]}'
             return subprocess.CompletedProcess(
                 command,
                 0,
@@ -645,14 +701,31 @@ class SearchTest(unittest.TestCase):
         self.assertEqual([], registry)
         self.assertEqual([], local["source_health"]["live_errors"])
 
-    def test_local_and_registry_searches_start_in_parallel(self):
-        barrier = threading.Barrier(2)
+    def test_cache_miss_runs_live_accessible_registry_search(self):
         commands = []
 
         def fake_run(command, **_kwargs):
             commands.append(command)
-            barrier.wait(timeout=2)
-            return {"flows": []} if command[1:3] == ["play", "search"] else []
+            if "--source" not in command:
+                return {"flows": []}
+            return {
+                "schema": "rote.remote-play-search.v1",
+                "items": [
+                    {
+                        "play_id": "play-123",
+                        "reference": "acme/hello@1.2.3",
+                        "owner": {"kind": "organization", "slug": "acme"},
+                        "name": "hello",
+                        "description": "Say hello to a customer.",
+                        "version": "1.2.3",
+                        "visibility": "private",
+                        "status": "released",
+                        "rank": 0.9,
+                        "tags": ["greeting"],
+                        "requires_adapters": ["slack"],
+                    }
+                ],
+            }
 
         with mock.patch.object(PLAY_SEARCH, "run_json", side_effect=fake_run), \
                 mock.patch.dict(
@@ -661,12 +734,19 @@ class SearchTest(unittest.TestCase):
             local, registry = PLAY_SEARCH.search_both("hello", 5)
         self.assertEqual([], local["flows"])
         self.assertEqual("unavailable", local["source_health"]["catalog_cache"])
-        self.assertEqual([], registry)
+        self.assertEqual("live_after_cache_miss", local["source_health"]["mode"])
+        self.assertEqual("acme", registry[0]["owner_slug"])
+        self.assertEqual("hello", registry[0]["skill_name"])
+        self.assertEqual(["slack"], registry[0]["adapters"])
         self.assertIn(
             ["rote", "play", "search", "hello", "--limit", "50", "--json"], commands
         )
         self.assertIn(
-            ["rote", "registry", "play", "search", "hello", "--limit", "50", "--json"],
+            [
+                "rote", "play", "search", "hello",
+                "--source", "registry", "--scope", "accessible",
+                "--limit", "50", "--json",
+            ],
             commands,
         )
 

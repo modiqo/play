@@ -1317,7 +1317,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("--require-complete-catalog", step.command)
         self.assertEqual("6", step.command[step.command.index("--if-older-than") + 1])
 
-    def test_public_cache_warm_explains_restricted_network(self) -> None:
+    def test_public_cache_warm_is_best_effort_on_restricted_network(self) -> None:
         runner = MagicMock(
             return_value=MagicMock(
                 returncode=1,
@@ -1330,7 +1330,8 @@ class BootstrapTest(unittest.TestCase):
             ROOT, runner=runner, progress=Progress(enabled=False)
         )
 
-        self.assertEqual("failed", step.status)
+        self.assertEqual("skipped", step.status)
+        self.assertIn("live search will be used on cache misses", step.detail)
         self.assertIn("Rote registry", step.detail)
         self.assertIn("Codex sandbox", step.detail)
         self.assertIn("Claude Code", step.detail)

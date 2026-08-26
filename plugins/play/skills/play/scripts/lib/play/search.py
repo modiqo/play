@@ -1,4 +1,4 @@
-"""Search local and authorized registry Plays concurrently and deduplicate results."""
+"""Search local and cached Plays first, then query the registry on a miss."""
 
 from __future__ import annotations
 
@@ -77,24 +77,24 @@ def discovery_queries(query: str) -> list[str]:
     return list(dict.fromkeys(candidate for candidate in (query, broad) if candidate))
 
 
-def search_both(query: str, limit: int) -> tuple[dict, list]:
-    fetch_limit = max(50, limit * 10)
+def search_both(
+    query: str,
+    limit: int,
+    *,
+    flow_root: Path | None = None,
+) -> tuple[dict, list]:
+    fetch_limit = min(50, max(20, limit * 10))
     queries = discovery_queries(query)
     catalog_items, catalog_complete = _catalog_snapshot()
-    commands = {}
+    local_commands = {}
     for index, candidate in enumerate(queries):
-        commands[("local", index)] = [
+        local_commands[("local", index)] = [
             "rote", "play", "search", candidate, "--limit", str(fetch_limit), "--json"
         ]
-        if not catalog_complete:
-            commands[("registry", index)] = [
-                "rote", "registry", "play", "search", candidate,
-                "--limit", str(fetch_limit), "--json",
-            ]
-    with ThreadPoolExecutor(max_workers=len(commands)) as executor:
+    with ThreadPoolExecutor(max_workers=len(local_commands)) as executor:
         pending = {
             key: executor.submit(run_json, command, error_type=SearchError)
-            for key, command in commands.items()
+            for key, command in local_commands.items()
         }
         results = {}
         source_errors: dict[tuple[str, int], str] = {}
@@ -106,7 +106,6 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
 
     local_flows = []
     seen_paths = set()
-    live_registry_items = []
     for index in range(len(queries)):
         local = results.get(("local", index))
         if local is not None:
@@ -119,14 +118,51 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
                     if key not in seen_paths:
                         seen_paths.add(key)
                         local_flows.append(item)
-        registry = results.get(("registry", index))
-        if registry is not None:
-            if not isinstance(registry, list):
-                source_errors[("registry", index)] = (
-                    "registry search result is not an array"
-                )
-            else:
-                live_registry_items.extend(registry)
+
+    local_payload = {"flows": local_flows}
+    resolved_flow_root = flow_root or Path(
+        os.environ.get("ROTE_FLOW_DIR", Path.home() / ".rote" / "flows")
+    )
+    cached_results = merge_results(
+        local_payload,
+        catalog_items,
+        resolved_flow_root,
+        limit,
+        query,
+    )
+    cache_hit = any(
+        result.get("match_classification") == "full" for result in cached_results
+    )
+
+    live_registry_items: list[dict] = []
+    if not cache_hit:
+        registry_commands = {
+            ("registry", index): [
+                "rote",
+                "play",
+                "search",
+                candidate,
+                "--source",
+                "registry",
+                "--scope",
+                "accessible",
+                "--limit",
+                str(fetch_limit),
+                "--json",
+            ]
+            for index, candidate in enumerate(queries)
+        }
+        with ThreadPoolExecutor(max_workers=len(registry_commands)) as executor:
+            pending = {
+                key: executor.submit(run_json, command, error_type=SearchError)
+                for key, command in registry_commands.items()
+            }
+            for key, future in pending.items():
+                try:
+                    live_registry_items.extend(_remote_search_items(future.result()))
+                except SearchError as error:
+                    source_errors[key] = str(error)
+
     if source_errors and not catalog_complete:
         details = "; ".join(
             f"{source}[{index}]: {message}"
@@ -135,15 +171,19 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
         raise SearchError(
             f"live search was incomplete and no verified complete catalog cache was available: {details}"
         )
-    # The registry's lexical search can miss an exactly-named Play the user is
-    # authorized to run. The cached hub catalog is the authoritative bounded
-    # enumeration of authorized-org Plays, so merge it as a recall backstop;
-    # live results keep rank priority, and adequacy scoring decides matches.
+    registry_errors = any(source == "registry" for source, _ in source_errors)
+    mode = (
+        "cached_with_local"
+        if cache_hit
+        else "cached_fallback"
+        if registry_errors
+        else "live_after_cache_miss"
+    )
     return {
         "flows": local_flows,
         "source_health": {
             "catalog_cache": "complete" if catalog_complete else "unavailable",
-            "mode": "cached_with_local" if catalog_complete else "live_fallback",
+            "mode": mode,
             "live_errors": [
                 {
                     "source": source,
@@ -156,6 +196,51 @@ def search_both(query: str, limit: int) -> tuple[dict, list]:
     }, reconcile_registry_items(
         live_registry_items, catalog_items
     )
+
+
+def _remote_search_items(payload: object) -> list[dict]:
+    """Normalize both current and legacy Rote registry search responses."""
+
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+        raise SearchError("registry search result has no items array")
+    normalized: list[dict] = []
+    for raw_item in payload["items"]:
+        if not isinstance(raw_item, dict):
+            raise SearchError("registry search contains an invalid item")
+        owner = raw_item.get("owner")
+        owner_slug = owner.get("slug") if isinstance(owner, dict) else None
+        name = raw_item.get("name")
+        reference = raw_item.get("reference")
+        if (not isinstance(owner_slug, str) or not owner_slug) and isinstance(
+            reference, str
+        ):
+            base_reference = reference.partition("@")[0]
+            if "/" in base_reference:
+                owner_slug, reference_name = base_reference.split("/", 1)
+                if not isinstance(name, str) or not name:
+                    name = reference_name
+        normalized.append(
+            {
+                "owner_slug": owner_slug,
+                "skill_name": name,
+                "skill_description": raw_item.get("description") or "",
+                "skill_id": raw_item.get("play_id"),
+                "visibility": raw_item.get("visibility"),
+                "version": raw_item.get("version"),
+                "status": raw_item.get("status"),
+                "rank": raw_item.get("rank"),
+                "labels": [],
+                "tags": raw_item.get("tags") if isinstance(raw_item.get("tags"), list) else [],
+                "adapters": (
+                    raw_item.get("requires_adapters")
+                    if isinstance(raw_item.get("requires_adapters"), list)
+                    else []
+                ),
+            }
+        )
+    return normalized
 
 
 def _registry_reference(item: dict) -> tuple[str, str] | None:
@@ -623,7 +708,7 @@ def render_markdown(
         "local index + cached authorized Play feed"
         if isinstance(source_health, dict)
         and source_health.get("mode") == "cached_with_local"
-        else "local + authorized registry"
+        else "local + cached authorized feed + live authorized registry"
     )
     lines = [f"Search: `{normalized}`", "", f"Sources: {source_label}"]
     if original.strip().casefold() != normalized:
@@ -689,11 +774,16 @@ def main() -> int:
     original = " ".join(args.query)
     try:
         normalized = normalize_query(original)
-        local_payload, registry_payload = search_both(normalized, args.limit)
+        flow_root = Path(
+            os.environ.get("ROTE_FLOW_DIR", Path.home() / ".rote" / "flows")
+        )
+        local_payload, registry_payload = search_both(
+            normalized, args.limit, flow_root=flow_root
+        )
         results = merge_results(
             local_payload,
             registry_payload,
-            Path(os.environ.get("ROTE_FLOW_DIR", Path.home() / ".rote" / "flows")),
+            flow_root,
             args.limit,
             normalized,
         )
