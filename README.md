@@ -786,6 +786,26 @@ curl -fsSL https://getrote.dev/playoffs/install.sh | sh
 Published changes must carry a new plugin version; a push that keeps the same version is not a
 reliable cache invalidation mechanism. The equivalent manual marketplace commands are below.
 
+### Publish the stable installer selector
+
+Make this the final step of every Play release, after `main` and its matching version tag reach GitHub:
+
+```bash
+just release-publish
+```
+
+The command updates `modiqo/rote-releases` and deploys its exact commit to the `getrote-dev` Cloudflare Pages project.
+It waits until the public installer serves the tag, then prints a JSON receipt.
+
+Publication stops unless local Play `main` matches `origin/main`, the tag belongs to remote `main`, and both versions match.
+Run the read-only release gate at any time:
+
+```bash
+just release-check
+```
+
+The gate prints a `ready` JSON receipt only when the public installer selects the current Play tag.
+
 For Codex:
 
 ```bash
