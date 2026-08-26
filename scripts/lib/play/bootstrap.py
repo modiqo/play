@@ -939,6 +939,115 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
     ]
 
 
+def _parse_harness_selection(
+    answer: str, detected: Sequence[HarnessTarget]
+) -> list[str]:
+    defaults = [target.id for target in detected if target.selected]
+    normalized = answer.strip().lower()
+    if not normalized:
+        return defaults
+    if normalized in {"q", "quit", "cancel"}:
+        return []
+    tokens = [item for item in re.split(r"[\s,]+", normalized) if item]
+    if not tokens or any(not item.isdigit() for item in tokens):
+        raise BootstrapError("choose harnesses by number, separated by commas")
+    indexes = list(dict.fromkeys(int(item) for item in tokens))
+    if any(index < 1 or index > len(detected) for index in indexes):
+        raise BootstrapError(f"choose numbers from 1 to {len(detected)}")
+    if len(indexes) > MAX_SELECTED_HARNESSES:
+        raise BootstrapError(
+            f"select at most {MAX_SELECTED_HARNESSES} harnesses per install"
+        )
+    return [detected[index - 1].id for index in indexes]
+
+
+def _render_harness_picker(detected: Sequence[HarnessTarget]) -> str:
+    default_indexes = [
+        str(index)
+        for index, target in enumerate(detected, start=1)
+        if target.selected
+    ]
+    lines = [
+        "",
+        "  Harnesses detected",
+        "",
+        f"  Choose up to {MAX_SELECTED_HARNESSES} apps for this Play setup.",
+    ]
+    for index, target in enumerate(detected, start=1):
+        recommendation = "  recommended" if target.selected else ""
+        lines.append(f"    [{index}] {target.label}{recommendation}")
+    lines.extend(
+        [
+            "",
+            "  Shared harness support",
+            "    Kimi, OpenCode, and DeepSeek Harness use ~/.agents/skills.",
+            "    Play creates that directory when missing and updates only Play-owned entries.",
+            "",
+            f"  Select apps [{','.join(default_indexes)}], or q to cancel: ",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _choose_detected_harnesses(*, top_k: int) -> list[str]:
+    detected = [
+        target
+        for target in discover_targets(top_k=top_k)
+        if target.detected
+    ]
+    if not detected:
+        raise BootstrapError(
+            "no supported harnesses were detected; use --harness after installing one"
+        )
+    stream = None
+    close_stream = False
+    output = sys.stderr
+    if sys.stdin.isatty():
+        stream = sys.stdin
+    else:
+        try:
+            stream = open("/dev/tty", "r+", encoding="utf-8")
+            output = stream
+            close_stream = True
+        except OSError as error:
+            raise BootstrapError(
+                "harness selection needs an interactive terminal; CI must pass "
+                "--harness or set PLAY_INSTALL_YES=1"
+            ) from error
+    try:
+        while True:
+            print(_render_harness_picker(detected), end="", file=output, flush=True)
+            answer = stream.readline()
+            if not answer:
+                raise BootstrapError(
+                    "harness selection ended before a choice was received"
+                )
+            try:
+                return _parse_harness_selection(answer, detected)
+            except BootstrapError as error:
+                print(f"  {error}.\n", file=output, flush=True)
+    finally:
+        if close_stream:
+            stream.close()
+
+
+def _shared_agents_plan(selected: Sequence[str]) -> dict[str, Any]:
+    targets = [
+        harness
+        for harness in selected
+        if harness in {"kimi", "opencode", "deepseek"}
+    ]
+    root = Path(
+        os.environ.get("AGENTS_HOME", _home() / ".agents")
+    ).expanduser()
+    return {
+        "path": str(root / "skills"),
+        "targets": targets,
+        "will_create": bool(targets) and not (root / "skills").is_dir(),
+        "preserves_unrelated_entries": True,
+    }
+
+
 def build_plan(
     *, top_k: int = 3, requested: Sequence[str] | None = None, runner: Runner = run
 ) -> dict[str, Any]:
@@ -947,6 +1056,11 @@ def build_plan(
     selected = [target.id for target in targets if target.selected]
     if not selected:
         raise BootstrapError("no supported harnesses were detected or selected")
+    if "codex" in selected:
+        # Fail before identity, cache, backup, or harness mutations. The same
+        # parser protects later Codex enablement and rollback operations.
+        codex_disabled_play_entries()
+    shared_agents = _shared_agents_plan(selected)
     rote_state = _rote_snapshot(runner)
     rote = rote_state["path"]
     update = rote_state["update"]
@@ -1016,6 +1130,14 @@ def build_plan(
             "recommended": True,
         },
         {
+            "id": "prepare_shared_agents_root",
+            "effect": (
+                f"creates or updates {shared_agents['path']} for compatible selected harnesses while preserving unrelated entries"
+            ),
+            "targets": shared_agents["targets"],
+            "recommended": bool(shared_agents["targets"]),
+        },
+        {
             "id": "converge_rote_skills",
             "effect": (
                 "installs missing or updated bundled Rote skills in personal harness roots"
@@ -1082,6 +1204,7 @@ def build_plan(
         "top_k": top_k,
         "max_selected_harnesses": MAX_SELECTED_HARNESSES,
         "selected_harnesses": selected,
+        "shared_agents": shared_agents,
         "recovery": {
             "retention": BACKUP_RETENTION,
             "existing_recovery_points": len(recovery_catalog["backups"]),
@@ -3457,6 +3580,23 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
             "",
             f"    Rote   {rote_summary}",
             f"    Apps   {apps}",
+    ]
+    shared_agents = plan.get("shared_agents", {})
+    shared_targets = (
+        shared_agents.get("targets", [])
+        if isinstance(shared_agents, dict)
+        else []
+    )
+    if shared_targets:
+        shared_action = "Create" if shared_agents.get("will_create") else "Update"
+        lines.extend(
+            [
+                f"    Shared {shared_action} {shared_agents['path']} for compatible apps",
+                "           Preserve every unrelated entry in that shared root",
+            ]
+        )
+    lines.extend(
+        [
             "",
             "  What happens next",
             "",
@@ -3465,7 +3605,8 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
             f"    3. Prepare Rote and its skills for {app_count} {app_word}",
             "    4. Back up and replace Play-owned harness state while preserving unrelated settings",
             "    5. Verify every app and save a detailed receipt",
-    ]
+        ]
+    )
     recovery = plan.get("recovery", {})
     existing = (
         recovery.get("existing_recovery_points", 0)
@@ -4192,9 +4333,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         else:
             source = Path(__file__).resolve().parents[3]
+            requested_harnesses = args.harness
+            if requested_harnesses is None and not args.yes:
+                requested_harnesses = _choose_detected_harnesses(top_k=args.top_k)
+                if not requested_harnesses:
+                    print("Play installation cancelled before any changes were made.")
+                    return 0
             plan = progress.call(
                 "Checking the Play setup plan",
-                lambda: build_plan(top_k=args.top_k, requested=args.harness),
+                lambda: build_plan(
+                    top_k=args.top_k, requested=requested_harnesses
+                ),
             )
             approve_remote_installer = args.approve_remote_installer
             login_provider = args.login_provider
@@ -4219,7 +4368,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             payload = apply(
                 source,
                 top_k=args.top_k,
-                requested=args.harness,
+                requested=requested_harnesses,
                 approve_remote_installer=approve_remote_installer,
                 login_provider=login_provider,
                 run_id=args.run_id,

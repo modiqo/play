@@ -22,6 +22,9 @@ from scripts.lib.play.bootstrap import (
     _os_snapshot,
     _require_supported_os,
     _fallback_skill_config_entries,
+    _parse_harness_selection,
+    _render_harness_picker,
+    _shared_agents_plan,
     _identity_gate,
     _official_rote_install_command,
     _render_status_card,
@@ -39,6 +42,7 @@ from scripts.lib.play.bootstrap import (
     codex_disabled_play_entries,
     codex_play_enablement_step,
     converge_play_marketplace,
+    discover_targets,
     install_hooks,
     install_journey_model_assets,
     list_play_backups,
@@ -248,6 +252,42 @@ class BootstrapTest(unittest.TestCase):
         skill_status = {item["provider"]: item for item in plan["rote_skills"]}
         self.assertEqual("keep", skill_status["codex"]["recommended_action"])
         self.assertEqual("keep", skill_status["claude-code"]["recommended_action"])
+
+    @patch("scripts.lib.play.bootstrap.shutil.which")
+    def test_detected_harness_picker_uses_explicit_numbered_selection(
+        self, which: MagicMock
+    ) -> None:
+        which.side_effect = (
+            lambda name: f"/bin/{name}" if name in {"codex", "kimi", "hermes"} else None
+        )
+        detected = [
+            target
+            for target in discover_targets(top_k=2)
+            if target.detected
+        ]
+
+        self.assertEqual(["codex", "kimi"], _parse_harness_selection("", detected))
+        self.assertEqual(
+            ["kimi", "hermes"], _parse_harness_selection("2, 3", detected)
+        )
+        picker = _render_harness_picker(detected)
+        self.assertIn("Harnesses detected", picker)
+        self.assertIn("[1] Codex", picker)
+        self.assertIn("[2] Kimi", picker)
+        self.assertIn("[3] Hermes Agent", picker)
+        self.assertIn("~/.agents/skills", picker)
+        self.assertIn("updates only Play-owned entries", picker)
+
+    def test_shared_agents_plan_discloses_create_and_update_behavior(self) -> None:
+        plan = _shared_agents_plan(["codex", "kimi", "opencode"])
+
+        self.assertEqual(["kimi", "opencode"], plan["targets"])
+        self.assertEqual(str(self.home / ".agents" / "skills"), plan["path"])
+        self.assertTrue(plan["will_create"])
+        self.assertTrue(plan["preserves_unrelated_entries"])
+
+        (self.home / ".agents" / "skills").mkdir(parents=True)
+        self.assertFalse(_shared_agents_plan(["kimi"])["will_create"])
 
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
     @patch("scripts.lib.play.bootstrap.shutil.which")
@@ -759,7 +799,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.55",
+                                "version": "0.4.56",
                                 "enabled": True,
                             }
                         ]
@@ -770,7 +810,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.55", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.56", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -908,6 +948,22 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("completed", step.status)
         self.assertIn("plugin now owns enablement", step.detail)
         self.assertNotIn("play/0.3.0", config.read_text(encoding="utf-8"))
+
+    @patch("scripts.lib.play.bootstrap._rote_snapshot")
+    @patch("scripts.lib.play.bootstrap.shutil.which", return_value="/bin/harness")
+    def test_plan_rejects_malformed_codex_config_before_remote_checks(
+        self, _which: MagicMock, rote_snapshot: MagicMock
+    ) -> None:
+        config = self.home / ".codex" / "config.toml"
+        config.parent.mkdir(parents=True)
+        config.write_text('exporter = { otlp-http = {\n', encoding="utf-8")
+
+        with self.assertRaisesRegex(
+            BootstrapError, "cannot safely read Codex configuration"
+        ):
+            build_plan(requested=["codex"], runner=MagicMock())
+
+        rote_snapshot.assert_not_called()
 
     def test_full_install_backup_captures_play_owned_harness_state(self) -> None:
         hooks = self.home / ".codex" / "hooks.json"
@@ -1624,7 +1680,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.55 is installed and enabled.",
+                "Play 0.4.56 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -1716,10 +1772,14 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.55", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.56", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 
+    @patch(
+        "scripts.lib.play.bootstrap._choose_detected_harnesses",
+        return_value=["codex"],
+    )
     @patch("scripts.lib.play.bootstrap._choose_login_provider", return_value="google")
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
     @patch("scripts.lib.play.bootstrap.apply")
@@ -1730,6 +1790,7 @@ class BootstrapTest(unittest.TestCase):
         apply_plan: MagicMock,
         confirm: MagicMock,
         choose_provider: MagicMock,
+        choose_harnesses: MagicMock,
     ) -> None:
         build.return_value = {
             "plan_id": "sha256:guided",
@@ -1772,11 +1833,13 @@ class BootstrapTest(unittest.TestCase):
 
         output = StringIO()
         with redirect_stdout(output), redirect_stderr(StringIO()):
-            result = main(["install", "--harness", "codex", "--run-id", "guided-run"])
+            result = main(["install", "--run-id", "guided-run"])
 
         self.assertEqual(0, result)
         confirm.assert_called_once()
         choose_provider.assert_called_once_with()
+        choose_harnesses.assert_called_once_with(top_k=3)
+        build.assert_called_once_with(top_k=3, requested=["codex"])
         self.assertIn("Install Rote and Play", confirm.call_args.args[0])
         self.assertIn("Your setup", output.getvalue())
         self.assertNotIn("Play setup plan", output.getvalue())
