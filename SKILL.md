@@ -87,8 +87,8 @@ invoke Rote, capture work, update preferences, handle credentials, or claim that
 harness permissions or safety checks.
 
 If the request explicitly asks to schedule a known Play or keep the completed Play running, use the
-bundled `scripts/bin/play-recurring` CLI. Do not enter the state machine again. Run
-`play-recurring probe` first. Continue only when its Tulving capability is `ready`.
+installed `play recurring` facade for the bundled CLI. Do not enter the state machine again. Run
+`play recurring probe` first. Continue only when its Tulving capability is `ready`.
 
 If Tulving is unavailable, report that recurring Plays are off and do not invoke `tulving add`.
 Schedule only an exact versioned reference from a verified receipt. Preserve approved parameters as
@@ -169,7 +169,7 @@ Never infer confirmation, choose **Yes, continue** for the user, or summarize a 
 
 After presenting an ordinary successful Play receipt unchanged, there is one optional follow-up.
 Do not use it for the onboarding starter, a failed or blocked run, an interactive Play, or an
-inspection with writes or unverified effects. For an eligible receipt, run `play-scheduler-probe`
+inspection with writes or unverified effects. For an eligible receipt, run `play recurring probe`
 after the receipt is visible. Continue only when its `tulving` capability is `ready`.
 
 Ask whether to repeat that exact Play: **Hourly**, **Daily**, **Choose cadence**, or **Not now**.
