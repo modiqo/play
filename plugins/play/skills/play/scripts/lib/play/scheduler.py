@@ -5,10 +5,12 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
-from collections.abc import Callable
+import subprocess
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from .commands import CommandError, run_text
+from .recurrence import probe_tulving
 from .render import json_text
 
 
@@ -106,10 +108,17 @@ def probe_harnesses(
                     "integration": "resolve the probe failure before scheduling",
                 }
             )
+    def tulving_runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.CompletedProcess(command, 0, runner(command), "")
+        except CommandError as error:
+            return subprocess.CompletedProcess(command, 1, "", str(error))
+
     return {
         "schema": SCHEMA,
         "delivery_contract": "play.digest-delivery/v1",
         "harnesses": results,
+        "tulving": probe_tulving(resolver=resolver, runner=tulving_runner),
     }
 
 

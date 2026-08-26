@@ -86,6 +86,15 @@ when policy matches; “route Cloudflare directly in this repo” manages policy
 invoke Rote, capture work, update preferences, handle credentials, or claim that routing changes
 harness permissions or safety checks.
 
+If the request explicitly asks to schedule a known Play or keep the completed Play running, use the
+installed `play recurring` facade for the bundled CLI. Do not enter the state machine again. Run
+`play recurring probe` first. Continue only when its Tulving capability is `ready`.
+
+If Tulving is unavailable, report that recurring Plays are off and do not invoke `tulving add`.
+Schedule only an exact versioned reference from a verified receipt. Preserve approved parameters as
+repeated `--parameter name=value` arguments. Require `--why`, default to `--for 30d`, and reject
+bare or latest references.
+
 ## Enter or resume
 
 For an activated new task run `play-machine run-until-yield --stdin --json` with a harness-owned run
@@ -157,6 +166,18 @@ Never infer confirmation, choose **Yes, continue** for the user, or summarize a 
   specialists own their own user questions — ask those directly and continue inside the
   specialist flow; return to the runtime only with a declared receipt event.
 - `terminal`: present the terminal outcome and stop.
+
+After presenting an ordinary successful Play receipt unchanged, there is one optional follow-up.
+Do not use it for the onboarding starter, a failed or blocked run, an interactive Play, or an
+inspection with writes or unverified effects. For an eligible receipt, run `play recurring probe`
+after the receipt is visible. Continue only when its `tulving` capability is `ready`.
+
+Ask whether to repeat that exact Play: **Hourly**, **Daily**, **Choose cadence**, or **Not now**.
+This is a per-run choice, never standing consent. On acceptance, invoke `play recurring schedule`
+with the exact versioned reference and approved parameters. Add a concise reason, `--for 30d`, and
+then present Tulving's schedule receipt.
+
+If the capability is not ready, end with the Play receipt. Do not mention or invoke scheduling.
 
 Authentication declared by a saved Play stays inside its approved `rote play run`. When inspection
 shows `adapter.auth.ensure`, complete secure browser-capable provider sign-in inside that step and
@@ -244,5 +265,6 @@ bypasses both Play and Rote and therefore cannot complete the governed publicati
 Stop with the projected blocker on an undeclared event, invalid payload, continuation or bundle
 mismatch, missing authority, unavailable specialist, declined approval, invalid receipt, or
 unverifiable outcome. Never infer success from specialist prose. At a terminal state present only
-the projected receipt, completed, exited, or blocked outcome — a saved Play is complete only when
-its birth certificate has been presented.
+the projected receipt, completed, exited, or blocked outcome as the primary result. The post-receipt
+recurring choice above is the sole permitted follow-up to an ordinary verified receipt; a saved Play
+is complete only when its birth certificate has been presented.

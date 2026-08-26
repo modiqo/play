@@ -30,6 +30,8 @@ class SchedulerTest(unittest.TestCase):
 
     def test_claude_native_cron_is_detected_from_supported_version(self) -> None:
         result = describe_claude_cron("claude", "2.1.220 (Claude Code)")
+        self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual("native", result["status"])
         self.assertIn("CronCreate", result["commands"])
         self.assertIsNone(describe_claude_cron("claude", "2.1.71 (Claude Code)"))
@@ -46,6 +48,22 @@ class SchedulerTest(unittest.TestCase):
             ["unavailable", "not_installed"],
             [item["status"] for item in payload["harnesses"]],
         )
+        self.assertEqual("not_installed", payload["tulving"]["status"])
+
+    def test_probe_reports_ready_tulving_as_the_external_scheduler(self) -> None:
+        paths = {"tulving": "/usr/local/bin/tulving"}
+
+        def runner(command: list[str]) -> str:
+            if command[-1] == "--version":
+                return "tulving 0.1.0\n"
+            if command[-1] == "status":
+                return "✓ clock    launchd agent\n"
+            return ""
+
+        payload = probe_harnesses({}, resolver=paths.get, runner=runner)
+
+        self.assertEqual("ready", payload["tulving"]["status"])
+        self.assertTrue(payload["tulving"]["ready"])
 
 
 if __name__ == "__main__":
