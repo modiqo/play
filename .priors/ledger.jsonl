@@ -401,3 +401,18 @@
 {"action":"scope-missing","id":"P-0076","run":"run-045","t":"event"}
 {"born":"run-045","claim":"When an explicit recurring Play command finds Tulving absent, it must fail without scheduling and print the Homebrew install command, tulving init, and the Tulving repository URL.","direction":"make-absent-scheduler-actionable","evidence":"Tulving is not installed; Play scheduling is unavailable. Install and enable Tulving: brew install modiqo/tap/tulving; tulving init.","facets":{"activation":"verify-phase","authority":"advisory","lifecycle":"stale-on-scope-change","obligation":"disposition-required","scope":"content-hash"},"id":"P-0079","ns":"play","scope_hash":"29af4181fa57","scope_ref":"scripts/lib/play/recurrence.py","severity":"major","t":"prior","type":"conclusion"}
 {"action":"commit","ns":"play","run":"run-045","summary":["Checked against 12 priors:","  → 3 carried (same identities, current scope state)","New this run: 1"],"t":"run"}
+{"action":"scope-missing","id":"P-0044","run":"run-046","t":"event"}
+{"action":"scope-missing","id":"P-0048","run":"run-046","t":"event"}
+{"action":"scope-missing","id":"P-0053","run":"run-046","t":"event"}
+{"action":"scope-missing","id":"P-0054","run":"run-046","t":"event"}
+{"action":"scope-missing","id":"P-0055","run":"run-046","t":"event"}
+{"action":"scope-missing","id":"P-0056","run":"run-046","t":"event"}
+{"action":"scope-missing","id":"P-0057","run":"run-046","t":"event"}
+{"action":"scope-missing","id":"P-0058","run":"run-046","t":"event"}
+{"action":"scope-missing","id":"P-0075","run":"run-046","t":"event"}
+{"action":"scope-missing","id":"P-0076","run":"run-046","t":"event"}
+{"action":"scope-missing","id":"P-0077","run":"run-046","t":"event"}
+{"action":"scope-missing","id":"P-0078","run":"run-046","t":"event"}
+{"action":"scope-missing","id":"P-0079","run":"run-046","t":"event"}
+{"born":"run-046","claim":"A Play release intended for Cloudflare pickup must increment VERSION and keep every packaged manifest, lockfile, installer reference, and version-sensitive test aligned.","direction":"bump-cloudflare-release-version","evidence":"Cloudflare will not pick it up without a version bump.","facets":{"activation":"verify-phase","authority":"advisory","lifecycle":"stale-on-scope-change","obligation":"disposition-required","scope":"content-hash"},"id":"P-0080","ns":"play","scope_hash":"7a76c29f2014","scope_ref":"VERSION","severity":"major","t":"prior","type":"conclusion"}
+{"action":"commit","ns":"play","run":"run-046","summary":["Checked against 13 priors:","  … 7 resting — the code they point at is gone; they wake if it returns","New this run: 1"],"t":"run"}

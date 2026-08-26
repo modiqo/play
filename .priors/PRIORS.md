@@ -47,20 +47,20 @@
 | P-0041 | skill-creator | conclusion | open | scripts/lib/play/digest.py | Play awareness reads authorized registry flow info for publication autho |
 | P-0042 | skill-creator | conclusion | open | SKILL.md | Play birth certificates remain an owner-private Play-skill feature under |
 | P-0043 | skill-creator | conclusion | open | references/controller/machine.yaml | Every saved Play captures an immutable birth object after Flow release a |
-| P-0044 | play | conclusion | open | references/integration/rote-handoffs.md | The current Play contract explicitly assigns adapter discovery and calls |
+| P-0044 | play | conclusion | resting | references/integration/rote-handoffs.md | The current Play contract explicitly assigns adapter discovery and calls |
 | P-0045 | play | conclusion | fixed | references/controller/context.schema.json | execution.owner accepts any string or null, so context validation cannot |
 | P-0046 | play | conclusion | fixed | scripts/lib/play/machine.py | Machine conformance validates declared state/action owner equality but d |
 | P-0047 | play | behavioral | open | tool:rote | After explore_approved selects CALL, Play must delegate through rote-usi |
-| P-0048 | play | conclusion | open | scripts/lib/play/handoff.py | A successful CALL receipt must prove execution through a Rote adapter by |
+| P-0048 | play | conclusion | resting | scripts/lib/play/handoff.py | A successful CALL receipt must prove execution through a Rote adapter by |
 | P-0049 | play | conclusion | obsolete-proposed | references/integration/rote-handoffs.md | When CALL lacks an adequate installed adapter, the delegated Rote route  |
 | P-0050 | plugin-creator | conclusion | open | README.md | Play release documentation must distinguish remote marketplace refresh f |
 | P-0051 | skill-creator | conclusion | open | scripts/harness/play-profile | The Play-first activation profile must keep every discovered Rote specia |
 | P-0052 | play | conclusion | fixed | references/controller/machine.yaml | Play currently has no resumable effect-approval transition during Explor |
-| P-0053 | play | conclusion | open | references/controller/machine.yaml | Play enters effect approval only from a validated Rote confirmation_requ |
-| P-0054 | play | conclusion | open | references/controller/machine.yaml | A recoverable CALL authentication failure enters a separately approved r |
-| P-0055 | play | conclusion | open | references/publish/lifecycle.md | A saved public Play may complete only after canonical inspection and det |
-| P-0056 | play | conclusion | open | references/controller/machine.yaml | A Play save run must block when author_release reports prior registry pu |
-| P-0057 | play | conclusion | open | references/publish/lifecycle.md | Before save consent, Play must resolve the claimed profile handle and au |
+| P-0053 | play | conclusion | resting | references/controller/machine.yaml | Play enters effect approval only from a validated Rote confirmation_requ |
+| P-0054 | play | conclusion | resting | references/controller/machine.yaml | A recoverable CALL authentication failure enters a separately approved r |
+| P-0055 | play | conclusion | resting | references/publish/lifecycle.md | A saved public Play may complete only after canonical inspection and det |
+| P-0056 | play | conclusion | resting | references/controller/machine.yaml | A Play save run must block when author_release reports prior registry pu |
+| P-0057 | play | conclusion | resting | references/publish/lifecycle.md | Before save consent, Play must resolve the claimed profile handle and au |
 | P-0058 | play | conclusion | open | SKILL.md | Play must use rote play for local discovery, inspection, execution, and  |
 | P-0059 | skill-creator | conclusion | open | SKILL.md | First-use copy explains that the human supplies domain goals, local rule |
 | P-0060 | skill-creator | conclusion | open | scripts/lib/play/onboarding.py | First-use memory stores only a SHA-256 identity digest, orientation vers |
@@ -83,3 +83,4 @@
 | P-0077 | play | conclusion | open | scripts/lib/play/recurrence.py | Recurring Play creation must fail closed unless Tulving is installed and |
 | P-0078 | play | conclusion | open | SKILL.md | Play may offer Tulving recurrence only after an ordinary verified read-o |
 | P-0079 | play | conclusion | open | scripts/lib/play/recurrence.py | When an explicit recurring Play command finds Tulving absent, it must fa |
+| P-0080 | play | conclusion | open | VERSION | A Play release intended for Cloudflare pickup must increment VERSION and |
