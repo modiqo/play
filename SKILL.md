@@ -168,10 +168,17 @@ Never infer confirmation, choose **Yes, continue** for the user, or summarize a 
 - `terminal`: present the terminal outcome and stop.
 
 After presenting an ordinary successful Play receipt unchanged, there is one optional follow-up.
-Never offer it during the request that first pulls or replaces a remote Play. That first run is the
-user's trial: deliver the complete result and end the turn without probing or mentioning scheduling.
-Offer recurrence only after a later successful run when that exact Play version was already local
-before the request.
+
+Never show its picker during the request that first pulls or replaces a remote Play. That first run
+is the user's trial. Deliver the complete result, then show exactly one passive hint:
+
+> **Tip: To repeat this Play automatically with Tulving, say “schedule this” and choose hourly,
+> daily, or custom timing.**
+
+End the turn without probing Tulving or presenting a scheduling question. The hint is not consent
+and must not create a schedule. If the user explicitly asks to schedule, use the explicit scheduling
+path above without requiring another Play run. Offer the recurrence picker only after a later
+successful run when that exact Play version was already local beforehand.
 
 Do not use it for the onboarding starter, a failed or blocked run, an interactive Play, or an
 inspection with writes or unverified effects. For an eligible receipt, run `play recurring probe`

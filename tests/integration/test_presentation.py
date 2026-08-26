@@ -51,11 +51,19 @@ class PresentationTest(unittest.TestCase):
         normalized = skill.replace("\n", " ")
 
         self.assertIn(
-            "Never offer it during the request that first pulls or replaces a remote Play",
+            "Never show its picker during the request that first pulls or replaces a remote Play",
             normalized,
         )
         self.assertIn(
-            "end the turn without probing or mentioning scheduling",
+            "Tip: To repeat this Play automatically with Tulving",
+            normalized,
+        )
+        self.assertIn(
+            "End the turn without probing Tulving or presenting a scheduling question",
+            normalized,
+        )
+        self.assertIn(
+            "explicit scheduling path above without requiring another Play run",
             normalized,
         )
         self.assertIn(
