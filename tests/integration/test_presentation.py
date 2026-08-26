@@ -71,6 +71,26 @@ class PresentationTest(unittest.TestCase):
             normalized,
         )
 
+    def test_pre_receipt_scheduling_barrier_precedes_every_execution_path(self) -> None:
+        skill = (Path(__file__).resolve().parents[2] / "SKILL.md").read_text()
+        normalized = skill.replace("\n", " ")
+        barrier = skill.index("### Scheduling begins only after the result")
+
+        self.assertLess(barrier, skill.index("If the request explicitly asks to schedule"))
+        self.assertLess(barrier, skill.index("## Enter or resume"))
+        self.assertIn(
+            "Before Play returns a verified successful receipt, never mention scheduling",
+            normalized,
+        )
+        self.assertIn(
+            "A domain result called a receipt, such as a ride-share receipt, is not a verified Play receipt",
+            normalized,
+        )
+        self.assertIn(
+            "Do not treat a request to pull and run as a scheduling request",
+            normalized,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

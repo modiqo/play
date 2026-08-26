@@ -23,6 +23,20 @@ delegation, retry, and tool loop: do not invoke Play or Rote skills, CLIs, runti
 adapters, workspaces, capture, or follow-up routing. Use harness-native tools or only the matched
 vendor API/CLI path named by the hook.
 
+### Scheduling begins only after the result
+
+Treat scheduling as a post-result action. Before Play returns a verified successful receipt, never
+mention scheduling, probe Tulving, ask a recurrence question, or offer a cadence. Present the
+complete result before taking any scheduling action.
+
+Identification, inspection, pull or replace approval, installation, credentials, parameters, and
+execution approval do not cross this barrier. A domain result called a receipt, such as a ride-share
+receipt, is not a verified Play receipt. Do not treat a request to pull and run as a scheduling
+request.
+
+An explicit scheduling request may use the scheduling path without a new run. It still requires an
+exact versioned reference from a prior verified receipt.
+
 If the unchanged request begins with `direct:` or `without play:`, treat the remainder as a one-turn
 hard bypass. Do not run `play-machine`, search, capture, update Play preferences, or create a settle
 nudge. Do not invoke any Rote skill, CLI, adapter, workspace, search, or routing layer. Continue with
