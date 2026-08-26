@@ -79,3 +79,6 @@
 | P-0073 | design-review | conclusion | open | scripts/lib/play/search.py | Use BM25 as an in-memory scorer over the owner-private authorized catalo |
 | P-0074 | installer-diagnosis | conclusion | fixed | scripts/lib/play/bootstrap.py | The Play curl installer appears stalled because bootstrap captures every |
 | P-0075 | play | conclusion | open | scripts/harness/play-profile | A marked portable install may migrate an available source-linked Play pr |
+| P-0076 | play | conclusion | open | scripts/lib/play/bootstrap.py | Play setup must obtain separate default-no consent before installing or  |
+| P-0077 | play | conclusion | open | scripts/lib/play/recurrence.py | Recurring Play creation must fail closed unless Tulving is installed and |
+| P-0078 | play | conclusion | open | SKILL.md | Play may offer Tulving recurrence only after an ordinary verified read-o |

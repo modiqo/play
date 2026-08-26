@@ -26,6 +26,7 @@ class PlayCliTest(unittest.TestCase):
             "AGENT · DISCOVER AND RUN",
             "EXPLORE & VISUALIZE",
             "RECALL & REFERENCE",
+            "RECURRING PLAYS · OPTIONAL TULVING",
             "ROUTING",
             "RECOVERY & DIAGNOSTICS",
         ):
@@ -35,6 +36,8 @@ class PlayCliTest(unittest.TestCase):
         self.assertIn("play-journey view --active", result.stdout)
         self.assertIn("play cheat-sheet", result.stdout)
         self.assertIn(FIELD_GUIDE, result.stdout)
+        self.assertIn("play recurring probe", result.stdout)
+        self.assertIn("play schedule", result.stdout)
         for journey_operation in (
             "snapshot",
             "graph",
@@ -92,6 +95,24 @@ class PlayCliTest(unittest.TestCase):
         executable, arguments = calls.pop()
         self.assertEqual(str(ROOT / "scripts/bin/play-journal"), executable)
         self.assertEqual([executable, "show", "--day", "today"], arguments)
+
+    def test_schedule_is_an_alias_for_recurring_schedule(self) -> None:
+        calls: list[tuple[str, list[str]]] = []
+
+        result = main(
+            ["schedule", "--reference", "modiqo/check@1.2.3"],
+            executor=lambda executable, arguments: calls.append(
+                (executable, arguments)
+            ),
+        )
+
+        self.assertEqual(0, result)
+        executable, arguments = calls.pop()
+        self.assertEqual(str(ROOT / "scripts/bin/play-recurring"), executable)
+        self.assertEqual(
+            [executable, "schedule", "--reference", "modiqo/check@1.2.3"],
+            arguments,
+        )
 
     def test_unknown_command_is_actionable(self) -> None:
         result = subprocess.run(

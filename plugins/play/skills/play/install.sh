@@ -202,6 +202,11 @@ case "${PLAY_APPROVE_REMOTE_INSTALLER:-}" in
   1) set -- "$@" --approve-remote-installer ;;
   *) fail "PLAY_APPROVE_REMOTE_INSTALLER must be 0 or 1" ;;
 esac
+case "${PLAY_INSTALL_TULVING:-}" in
+  ""|0) ;;
+  1) set -- "$@" --enable-tulving ;;
+  *) fail "PLAY_INSTALL_TULVING must be 0 or 1" ;;
+esac
 case "${PLAY_LOGIN_PROVIDER:-}" in
   "") ;;
   google|github) set -- "$@" --login-provider "$PLAY_LOGIN_PROVIDER" ;;

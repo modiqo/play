@@ -1187,8 +1187,26 @@ maintenance refresh cannot reach the registry. The cache stores exact references
 labels, tags, and each entry's tier when the registry exposes them; digest acknowledgment remains a
 separate state so refreshing never marks an item as viewed.
 
-Recurring delivery is optional and must be explicitly requested. Its host-neutral two-phase
-contract remains available for an authorized scheduler:
+Recurring work is optional. During guided setup, Play checks for
+[Tulving](https://github.com/modiqo/tulving) and asks before enabling it. With permission, setup runs
+`brew install modiqo/tap/tulving` only when the binary is absent, then runs `tulving init` when its
+clock is not ready. Declining leaves recurring Plays off; unattended setup enables them only when
+`PLAY_INSTALL_TULVING=1` or `--enable-tulving` is explicit.
+
+After an eligible read-only Play finishes, Play checks the installed capability. A ready Tulving
+clock makes a per-run choice available: hourly, daily, another cadence, or not now. Play does not
+ask when Tulving is absent or unavailable. Accepted schedules pin the exact Play version and
+approved parameters, record the reason, and expire after 30 days by default:
+
+```bash
+play recurring probe
+play schedule --reference modiqo/check-registry@1.2.3 \
+  --cadence daily --why "Notice registry changes" --for 30d \
+  --parameter org=modiqo
+```
+
+The existing host-neutral two-phase delivery contract remains available for scheduler-driven
+digests:
 
 ```bash
 scripts/bin/play-scheduler-probe
@@ -1196,10 +1214,10 @@ scripts/bin/play-delivery prepare --target-key daily-self --channel harness --da
 scripts/bin/play-delivery release --envelope envelope.json --ack delivered-ack.json
 ```
 
-The host scheduler owns recurrence, destination delivery, and storage. `prepare` emits an immutable
+Tulving or another host scheduler owns recurrence, destination delivery, and storage. `prepare` emits an immutable
 envelope with a deterministic delivery ID; `release` emits the next checkpoint only for a matching
 successful acknowledgment and never persists it. Failed sends therefore leave the prior checkpoint
-unchanged. Play never installs or fabricates a scheduler as part of an on-demand digest request.
+unchanged. An on-demand digest never installs or fabricates a scheduler.
 
 Search normalizes punctuation and repeated terms, runs both sources concurrently, deduplicates
 aliases and versions by canonical Play reference, and shows a URI, local availability, and the next

@@ -21,6 +21,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+from .recurrence import (
+    RecurrenceError,
+    enable_tulving as enable_tulving_support,
+    probe_tulving,
+)
+
 
 SCHEMA = "play.bootstrap/v1"
 PLAN_SCHEMA = "play.bootstrap-plan/v1"
@@ -1061,6 +1067,7 @@ def build_plan(
         # parser protects later Codex enablement and rollback operations.
         codex_disabled_play_entries()
     shared_agents = _shared_agents_plan(selected)
+    tulving = probe_tulving(resolver=shutil.which)
     rote_state = _rote_snapshot(runner)
     rote = rote_state["path"]
     update = rote_state["update"]
@@ -1217,6 +1224,7 @@ def build_plan(
         "targets": [asdict(target) for target in targets],
         "rote": rote_state,
         "rote_skills": rote_skills,
+        "tulving": tulving,
         "actions": actions,
     }
     canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
@@ -3271,6 +3279,11 @@ def _markdown(report: dict[str, Any]) -> str:
     for step in report["steps"]:
         target = f" ({step['target']})" if step.get("target") else ""
         lines.append(f"- **{step['status']}** `{step['id']}`{target}: {step['detail']}")
+    tulving = report.get("tulving", {})
+    if isinstance(tulving, dict) and isinstance(tulving.get("after"), dict):
+        after = tulving["after"]
+        recurring = "ready" if after.get("ready") is True else "off"
+        lines.extend(["", "## Recurring Plays", "", f"- Tulving: **{recurring}**"])
     lines.extend(["", "## Restart", "", report["restart"]])
     backup = report.get("backup")
     if isinstance(backup, dict) and backup.get("restore_command"):
@@ -3351,6 +3364,13 @@ def _render_status_card(report: dict[str, Any]) -> str:
         else:
             state = "READY"
         lines.append(f"    {LABELS.get(harness, harness):<14} {state}")
+
+    tulving = report.get("tulving", {})
+    after = tulving.get("after", {}) if isinstance(tulving, dict) else {}
+    recurring_state = (
+        "READY" if isinstance(after, dict) and after.get("ready") is True else "OFF"
+    )
+    lines.extend(["", f"  Recurring Plays   {recurring_state}"])
 
     targets = [
         target for target in report.get("targets", []) if isinstance(target, dict)
@@ -3509,6 +3529,17 @@ def _render_plan(plan: dict[str, Any]) -> str:
         lines.append("    Status:    NOT INSTALLED")
     update = rote["update"]
     lines.append(f"    Update:    {str(update['status']).upper()}")
+    tulving = plan.get("tulving", {})
+    lines.extend(["", "  Recurring Plays (optional)"])
+    if isinstance(tulving, dict) and tulving.get("ready") is True:
+        lines.append("    Tulving:   READY")
+        lines.append(f"    Path:      {tulving.get('executable')}")
+    elif isinstance(tulving, dict) and tulving.get("available") is True:
+        lines.append("    Tulving:   INSTALLED — CLOCK NOT READY")
+        lines.append("    Choice:    Enable during setup or leave scheduling off")
+    else:
+        lines.append("    Tulving:   NOT INSTALLED")
+        lines.append("    Choice:    Install with Homebrew or leave scheduling off")
     lines.extend(["", "  Apps"])
     skill_states = {
         str(item["provider"]): item
@@ -3581,6 +3612,11 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
             f"    Rote   {rote_summary}",
             f"    Apps   {apps}",
     ]
+    tulving = plan.get("tulving", {})
+    if isinstance(tulving, dict) and tulving.get("ready") is True:
+        lines.append("    Repeat Tulving is ready for optional recurring Plays")
+    else:
+        lines.append("    Repeat Optional; setup asks before enabling Tulving")
     shared_agents = plan.get("shared_agents", {})
     shared_targets = (
         shared_agents.get("targets", [])
@@ -3730,6 +3766,7 @@ def apply(
     top_k: int = 3,
     requested: Sequence[str] | None = None,
     approve_remote_installer: bool = False,
+    enable_tulving: bool = False,
     login_provider: str | None = None,
     runner: Runner = run,
     run_id: str | None = None,
@@ -4111,6 +4148,36 @@ def apply(
                 "verify", verification_results[harness], command, target=harness
             )
         )
+    if enable_tulving:
+        try:
+            tulving_result = active_progress.call(
+                "Enabling recurring Plays with Tulving",
+                lambda: enable_tulving_support(runner=runner),
+            )
+            changed = bool(
+                tulving_result.get("installed") or tulving_result.get("initialized")
+            )
+            steps.append(
+                Step(
+                    "enable_tulving",
+                    "completed" if changed else "unchanged",
+                    (
+                        "Tulving was installed with Homebrew and its clock is ready."
+                        if tulving_result.get("installed")
+                        else "Tulving is installed and its clock is ready."
+                    ),
+                    changed=changed,
+                    evidence=str(tulving_result.get("executable") or ""),
+                )
+            )
+        except RecurrenceError as error:
+            steps.append(
+                Step(
+                    "enable_tulving",
+                    "review_required",
+                    f"Play is installed, but recurring Plays remain off: {error}",
+                )
+            )
     if any(step.status in {"failed", "approval_required"} for step in steps):
         status = "blocked"
     elif any(step.status in {"human_action_required", "review_required"} for step in steps):
@@ -4185,6 +4252,10 @@ def _finish_report(
                 ]
             ),
         },
+        "tulving": {
+            "before": plan.get("tulving", {}),
+            "after": probe_tulving(),
+        },
         "steps": [asdict(step) for step in steps],
         "restart": "Restart every selected running harness so it reloads skills and hooks.",
     }
@@ -4240,6 +4311,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         command.add_argument("--json", action="store_true")
     apply_parser = subparsers.choices["apply"]
     apply_parser.add_argument("--approve-remote-installer", action="store_true")
+    apply_parser.add_argument("--enable-tulving", action="store_true")
     apply_parser.add_argument("--login-provider", choices=LOGIN_PROVIDERS)
     apply_parser.add_argument("--run-id")
     apply_parser.add_argument("--plan-id")
@@ -4248,6 +4320,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--yes",
         action="store_true",
         help="apply the displayed Play plan without its interactive confirmation",
+    )
+    install_parser.add_argument(
+        "--enable-tulving",
+        action="store_true",
+        help="install Tulving with Homebrew when needed and initialize its clock",
     )
     install_parser.add_argument(
         "--approve-remote-installer",
@@ -4326,6 +4403,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 top_k=args.top_k,
                 requested=args.harness,
                 approve_remote_installer=args.approve_remote_installer,
+                enable_tulving=args.enable_tulving,
                 login_provider=args.login_provider,
                 run_id=args.run_id,
                 expected_plan_id=args.plan_id,
@@ -4346,6 +4424,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ),
             )
             approve_remote_installer = args.approve_remote_installer
+            enable_tulving = args.enable_tulving
             login_provider = args.login_provider
             renderer = _render_guided_plan if args.mode == "guided" else _render_plan
             print(renderer(plan), file=sys.stderr if args.json else sys.stdout)
@@ -4365,11 +4444,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                     and login_provider is None
                 ):
                     login_provider = _choose_login_provider()
+                tulving = plan.get("tulving", {})
+                if not (
+                    isinstance(tulving, dict) and tulving.get("ready") is True
+                ):
+                    enable_tulving = _confirm(
+                        "Enable recurring Plays with Tulving? Homebrew installs it only if needed.",
+                        default=False,
+                    )
             payload = apply(
                 source,
                 top_k=args.top_k,
                 requested=requested_harnesses,
                 approve_remote_installer=approve_remote_installer,
+                enable_tulving=enable_tulving,
                 login_provider=login_provider,
                 run_id=args.run_id,
                 expected_plan_id=plan["plan_id"],

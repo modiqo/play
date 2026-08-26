@@ -46,6 +46,11 @@ RECALL & REFERENCE
   play cheat-sheet              Print the complete bundled field guide
   {FIELD_GUIDE}
 
+RECURRING PLAYS · OPTIONAL TULVING
+  play recurring probe          Check whether Tulving's clock is ready
+  play recurring schedule ...   Schedule one exact versioned Play
+  play schedule ...             Alias: play recurring schedule ...
+
 ROUTING
   play routing ...              Inspect or configure direct-routing policy
   direct: <request>             Bypass Play for one agent request
@@ -116,6 +121,12 @@ def main(
         if tail:
             return _usage_error("'cheat-sheet' takes no arguments")
         return _execute("play-cheat-sheet", [], executor)
+
+    if command in {"recurring", "schedule"}:
+        recurring_arguments = tail if command == "recurring" else ["schedule", *tail]
+        if not recurring_arguments:
+            recurring_arguments = ["--help"]
+        return _execute("play-recurring", recurring_arguments, executor)
 
     delegated = {
         "routing": "play-routing",

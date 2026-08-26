@@ -1784,7 +1784,7 @@ class BootstrapTest(unittest.TestCase):
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
     @patch("scripts.lib.play.bootstrap.apply")
     @patch("scripts.lib.play.bootstrap.build_plan")
-    def test_guided_install_uses_one_consent_for_plan_and_missing_rote(
+    def test_guided_install_uses_separate_consent_for_optional_tulving(
         self,
         build: MagicMock,
         apply_plan: MagicMock,
@@ -1836,11 +1836,13 @@ class BootstrapTest(unittest.TestCase):
             result = main(["install", "--run-id", "guided-run"])
 
         self.assertEqual(0, result)
-        confirm.assert_called_once()
+        self.assertEqual(2, confirm.call_count)
         choose_provider.assert_called_once_with()
         choose_harnesses.assert_called_once_with(top_k=3)
         build.assert_called_once_with(top_k=3, requested=["codex"])
-        self.assertIn("Install Rote and Play", confirm.call_args.args[0])
+        self.assertIn("Install Rote and Play", confirm.call_args_list[0].args[0])
+        self.assertIn("Enable recurring Plays", confirm.call_args_list[1].args[0])
+        self.assertFalse(confirm.call_args_list[1].kwargs["default"])
         self.assertIn("Your setup", output.getvalue())
         self.assertNotIn("Play setup plan", output.getvalue())
         apply_plan.assert_called_once_with(
@@ -1848,6 +1850,7 @@ class BootstrapTest(unittest.TestCase):
             top_k=3,
             requested=["codex"],
             approve_remote_installer=True,
+            enable_tulving=True,
             login_provider="google",
             run_id="guided-run",
             expected_plan_id="sha256:guided",

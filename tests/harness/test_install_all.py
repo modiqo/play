@@ -529,6 +529,26 @@ class InstallAllTest(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn("PLAY_LOGIN_PROVIDER must be google or github", result.stderr)
 
+    def test_portable_installer_rejects_unknown_tulving_choice(self) -> None:
+        environment = {
+            **self.environment,
+            "PLAY_INSTALL_SOURCE": str(ROOT),
+            "PLAY_INSTALL_YES": "1",
+            "PLAY_INSTALL_TULVING": "sometimes",
+        }
+
+        result = subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh")],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("PLAY_INSTALL_TULVING must be 0 or 1", result.stderr)
+
     def test_remote_archive_extraction_selects_a_safe_python_policy(self) -> None:
         installer = (ROOT / "install.sh").read_text(encoding="utf-8")
         start_marker = "python3 - \"$archive\" \"$source_root\" <<'PY'\n"
