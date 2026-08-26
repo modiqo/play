@@ -82,3 +82,4 @@
 | P-0076 | play | conclusion | open | scripts/lib/play/bootstrap.py | Play setup must obtain separate default-no consent before installing or  |
 | P-0077 | play | conclusion | open | scripts/lib/play/recurrence.py | Recurring Play creation must fail closed unless Tulving is installed and |
 | P-0078 | play | conclusion | open | SKILL.md | Play may offer Tulving recurrence only after an ordinary verified read-o |
+| P-0079 | play | conclusion | open | scripts/lib/play/recurrence.py | When an explicit recurring Play command finds Tulving absent, it must fa |

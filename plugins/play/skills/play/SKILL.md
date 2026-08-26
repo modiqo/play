@@ -173,7 +173,7 @@ inspection with writes or unverified effects. For an eligible receipt, run `play
 after the receipt is visible. Continue only when its `tulving` capability is `ready`.
 
 Ask whether to repeat that exact Play: **Hourly**, **Daily**, **Choose cadence**, or **Not now**.
-This is a per-run choice, never standing consent. On acceptance, invoke `play-recurring schedule`
+This is a per-run choice, never standing consent. On acceptance, invoke `play recurring schedule`
 with the exact versioned reference and approved parameters. Add a concise reason, `--for 30d`, and
 then present Tulving's schedule receipt.
 

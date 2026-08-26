@@ -15,7 +15,15 @@ from typing import Any
 CAPABILITY_SCHEMA = "play.tulving-capability/v1"
 SCHEDULE_SCHEMA = "play.tulving-schedule/v1"
 TULVING_FORMULA = "modiqo/tap/tulving"
+TULVING_REPOSITORY = "https://github.com/modiqo/tulving"
 DEFAULT_DURATION = "30d"
+TULVING_INSTALL_GUIDANCE = (
+    "Tulving is not installed; Play scheduling is unavailable.\n\n"
+    "Install and enable Tulving:\n"
+    f"  brew install {TULVING_FORMULA}\n"
+    "  tulving init\n\n"
+    f"Learn more: {TULVING_REPOSITORY}"
+)
 _EXACT_REFERENCE = re.compile(
     r"^(?:https://play\.modiqo\.ai/)?"
     r"[A-Za-z0-9][A-Za-z0-9_-]*/"
@@ -177,7 +185,7 @@ def schedule_play(
 
     executable = resolver("tulving")
     if executable is None:
-        raise RecurrenceError("Tulving is not installed; Play scheduling is unavailable")
+        raise RecurrenceError(TULVING_INSTALL_GUIDANCE)
     capability = probe_tulving(resolver=resolver, runner=probe_runner)
     if not capability["ready"]:
         raise RecurrenceError(

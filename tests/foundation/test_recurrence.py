@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
 import unittest
 from collections.abc import Sequence
+from pathlib import Path
 
 from scripts.lib.play.recurrence import (
     RecurrenceError,
@@ -11,6 +14,8 @@ from scripts.lib.play.recurrence import (
     probe_tulving,
     schedule_play,
 )
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def completed(
@@ -24,6 +29,36 @@ def completed(
 
 
 class RecurrenceTest(unittest.TestCase):
+    def test_schedule_command_explains_how_to_install_tulving(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/bin/play-recurring"),
+                "schedule",
+                "--reference",
+                "modiqo/check-registry@1.2.3",
+                "--cadence",
+                "daily",
+                "--why",
+                "See what changed",
+            ],
+            env={**os.environ, "PATH": ""},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertEqual("", result.stdout)
+        self.assertEqual(
+            "play-recurring: Tulving is not installed; Play scheduling is unavailable.\n\n"
+            "Install and enable Tulving:\n"
+            "  brew install modiqo/tap/tulving\n"
+            "  tulving init\n\n"
+            "Learn more: https://github.com/modiqo/tulving\n",
+            result.stderr,
+        )
+
     def test_absent_probe_invokes_nothing(self) -> None:
         calls: list[list[str]] = []
 
@@ -91,7 +126,7 @@ class RecurrenceTest(unittest.TestCase):
     def test_schedule_invokes_nothing_when_tulving_is_absent(self) -> None:
         calls: list[list[str]] = []
 
-        with self.assertRaisesRegex(RecurrenceError, "not installed"):
+        with self.assertRaises(RecurrenceError) as raised:
             schedule_play(
                 reference="modiqo/check-registry@1.2.3",
                 cadence="daily",
@@ -102,6 +137,14 @@ class RecurrenceTest(unittest.TestCase):
             )
 
         self.assertEqual([], calls)
+        self.assertEqual(
+            "Tulving is not installed; Play scheduling is unavailable.\n\n"
+            "Install and enable Tulving:\n"
+            "  brew install modiqo/tap/tulving\n"
+            "  tulving init\n\n"
+            "Learn more: https://github.com/modiqo/tulving",
+            str(raised.exception),
+        )
 
     def test_schedule_pins_reference_parameters_reason_and_expiry(self) -> None:
         submitted: list[dict[str, object]] = []
