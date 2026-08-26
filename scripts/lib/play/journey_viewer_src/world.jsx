@@ -30,6 +30,12 @@ function capabilityGear(chapters, sites, index) {
   return 'call'
 }
 
+const CAPABILITY_GEARS = [
+  {id: 'call', action: 'A', system: 'ADAPTER'},
+  {id: 'drive', action: 'B', system: 'BROWSER'},
+  {id: 'shell', action: 'S', system: 'SHELL'},
+]
+
 function DriveMetric({label, value, tone = ''}) {
   const previous = useRef(value)
   const [changed, setChanged] = useState(false)
@@ -68,6 +74,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
     () => capabilityGear(story.chapters, interactions?.sites || {}, currentIndex),
     [currentIndex, interactions?.sites, story.chapters],
   )
+  const activeGear = CAPABILITY_GEARS.find((item) => item.id === gear)
 
   useEffect(() => { replayRef.current = replay }, [replay])
   useEffect(() => { playingRef.current = playing }, [playing])
@@ -289,19 +296,40 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           title={`Inspect Play runtime @${runtimeRecord.sequence}`}
         >RUNTIME <b>@{String(runtimeRecord.sequence).padStart(2, '0')}</b></button>}
       </div>
-      <div className="drive-dashboard-clearance" aria-hidden="true" />
+      <div className="drive-dashboard-clearance">
+        <div
+          className={`drive-cockpit gear-${gear || 'neutral'}${playing ? ' moving' : ''}`}
+          role="status"
+          aria-live="polite"
+          aria-label={`Capability gear: ${activeGear?.system || 'neutral'}`}
+        >
+          <div className="drive-steering-column" aria-hidden="true">
+            <div className="drive-steering-wheel">
+              <i className="drive-wheel-rim" />
+              <i className="drive-wheel-spoke drive-wheel-spoke-left" />
+              <i className="drive-wheel-spoke drive-wheel-spoke-right" />
+              <i className="drive-wheel-spoke drive-wheel-spoke-lower" />
+              <span className="drive-wheel-hub"><b>PLAY</b><small>FOLLOW</small></span>
+            </div>
+          </div>
+          <div className="drive-capability-shifter">
+            <span>CAPABILITY GEAR</span>
+            <strong>{activeGear?.system || 'NEUTRAL'}</strong>
+            <div className="drive-shift-gate" aria-hidden="true">
+              <i className="drive-shift-rail" />
+              <i className="drive-shift-lever"><b /></i>
+              {CAPABILITY_GEARS.map((item) => <span
+                className={`drive-shift-option${gear === item.id ? ' active' : ''}`}
+                key={item.id}
+              ><b>{item.action}</b><small>{item.system}</small></span>)}
+            </div>
+          </div>
+        </div>
+      </div>
       <div className="drive-cluster-right">
         <div className="drive-readouts drive-readouts-right">
         <DriveMetric label="SUCCESS" value={telemetry.success} tone="green" />
         <DriveMetric label="ERRORS" value={telemetry.error} tone={telemetry.error ? 'red' : ''} />
-        </div>
-        <div className="drive-gearbox">
-          <span>CAPABILITY</span>
-          <div>{[
-            ['call', 'A', 'ADAPTER'],
-            ['drive', 'B', 'BROWSER'],
-            ['shell', 'S', 'SHELL'],
-          ].map(([id, action, system]) => <i className={gear === id ? 'active' : ''} key={id}><b>{action}</b><small>{system}</small></i>)}</div>
         </div>
       </div>
     </div>
