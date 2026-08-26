@@ -168,6 +168,11 @@ Never infer confirmation, choose **Yes, continue** for the user, or summarize a 
 - `terminal`: present the terminal outcome and stop.
 
 After presenting an ordinary successful Play receipt unchanged, there is one optional follow-up.
+Never offer it during the request that first pulls or replaces a remote Play. That first run is the
+user's trial: deliver the complete result and end the turn without probing or mentioning scheduling.
+Offer recurrence only after a later successful run when that exact Play version was already local
+before the request.
+
 Do not use it for the onboarding starter, a failed or blocked run, an interactive Play, or an
 inspection with writes or unverified effects. For an eligible receipt, run `play recurring probe`
 after the receipt is visible. Continue only when its `tulving` capability is `ready`.

@@ -46,6 +46,23 @@ class PresentationTest(unittest.TestCase):
             normalized,
         )
 
+    def test_first_pull_and_run_ends_before_recurring_offer(self) -> None:
+        skill = (Path(__file__).resolve().parents[2] / "SKILL.md").read_text()
+        normalized = skill.replace("\n", " ")
+
+        self.assertIn(
+            "Never offer it during the request that first pulls or replaces a remote Play",
+            normalized,
+        )
+        self.assertIn(
+            "end the turn without probing or mentioning scheduling",
+            normalized,
+        )
+        self.assertIn(
+            "only after a later successful run when that exact Play version was already local",
+            normalized,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

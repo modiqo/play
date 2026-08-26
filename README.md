@@ -639,8 +639,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.58/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.58 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.59/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.59 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -1213,10 +1213,12 @@ Recurring work is optional. During guided setup, Play checks for
 clock is not ready. Declining leaves recurring Plays off; unattended setup enables them only when
 `PLAY_INSTALL_TULVING=1` or `--enable-tulving` is explicit.
 
-After an eligible read-only Play finishes, Play checks the installed capability. A ready Tulving
-clock makes a per-run choice available: hourly, daily, another cadence, or not now. Play does not
-ask when Tulving is absent or unavailable. Accepted schedules pin the exact Play version and
-approved parameters, record the reason, and expire after 30 days by default:
+Play treats the first pull-and-run as a trial and ends that turn after the complete result. It offers
+recurrence only after a later successful run of the same already-local version.
+
+A ready Tulving clock makes a per-run choice available: hourly, daily, another cadence, or not now.
+Play does not ask when Tulving is absent or unavailable. Accepted schedules pin the exact Play
+version and approved parameters, record the reason, and expire after 30 days by default:
 
 ```bash
 play recurring probe
