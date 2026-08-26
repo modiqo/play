@@ -4,6 +4,10 @@ set -eu
 umask 077
 
 fail() {
+  if [ -n "${stage_label:-}" ] && [ -t 2 ]; then
+    printf '\r\033[2K✗ %s\n' "$stage_label" >&2
+    stage_label=""
+  fi
   printf '%s\n' "play install: $*" >&2
   exit 1
 }
@@ -97,10 +101,27 @@ stage_finish() {
   else
     printf '%s\n' "✓ $stage_label" >&2
   fi
+  stage_label=""
 }
 
-require_supported_os
-command -v python3 >/dev/null 2>&1 || fail "python3 is required"
+check_install_environment() {
+  stage_start "Checking OS and required tools"
+  require_supported_os
+  command -v python3 >/dev/null 2>&1 || fail "python3 is required"
+  python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
+    || fail "Python 3.10 or newer is required"
+  if [ -z "${PLAY_INSTALL_SOURCE:-}" ]; then
+    command -v curl >/dev/null 2>&1 || fail "curl is required"
+    command -v mktemp >/dev/null 2>&1 || fail "mktemp is required"
+  fi
+  if ! command -v uv >/dev/null 2>&1; then
+    python3 -c 'import jsonschema, statemachine, yaml' >/dev/null 2>&1 \
+      || fail "uv or the locked Play Python dependencies are required"
+  fi
+  stage_finish
+}
+
+check_install_environment
 
 print_banner
 choose_install_mode
@@ -117,7 +138,6 @@ if [ -n "${PLAY_INSTALL_SOURCE:-}" ]; then
   source_root=$PLAY_INSTALL_SOURCE
   printf '%s\n' "✓ Using local Play source"
 else
-  command -v curl >/dev/null 2>&1 || fail "curl is required"
   repository=${PLAY_INSTALL_REPOSITORY:-modiqo/play}
   reference=${PLAY_INSTALL_REF:-main}
   case "$repository" in

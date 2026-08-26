@@ -82,7 +82,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '{\"marketplaces\":[]}'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.53\",\"enabled\":true}],\"available\":[]}'\n"
+                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.54\",\"enabled\":true}],\"available\":[]}'\n"
                     "  else\n"
                     "    printf '%s\\n' '{\"installed\":[],\"available\":[]}'\n"
                     "  fi\n"
@@ -99,7 +99,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '[]'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.53\",\"enabled\":true,\"scope\":\"user\"}]'\n"
+                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.54\",\"enabled\":true,\"scope\":\"user\"}]'\n"
                     "  else\n"
                     "    printf '%s\\n' '[]'\n"
                     "  fi\n"
@@ -312,7 +312,7 @@ class InstallAllTest(unittest.TestCase):
 
         self.run_installer("install", "--copy")
         installed = (install_home / "skill").resolve()
-        self.assertEqual("0.4.53", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.54", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():
@@ -401,7 +401,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("◐ Checking the Play setup plan", result.stderr)
         self.assertIn("✓ Verifying Codex", result.stderr)
         self.assertIn("| Play setup plan", result.stdout)
-        self.assertIn("Version: 0.4.53", result.stdout)
+        self.assertIn("Version: 0.4.54", result.stdout)
         self.assertIn("| Play setup", result.stdout)
         self.assertIn("Status: READY", result.stdout)
         self.assertIn("OS:     ", result.stdout)
@@ -446,6 +446,37 @@ class InstallAllTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn('install "$@" < /dev/tty', installer)
+        self.assertIn(
+            "check_install_environment\n\nprint_banner\nchoose_install_mode",
+            installer,
+        )
+
+    def test_portable_installer_checks_dependencies_before_the_setup_ui(self) -> None:
+        fake_bin = self.home / "missing-python-bin"
+        fake_bin.mkdir()
+        uname = fake_bin / "uname"
+        uname.write_text("#!/bin/sh\nprintf '%s\\n' Darwin\n", encoding="utf-8")
+        uname.chmod(0o755)
+        environment = {
+            **self.environment,
+            "PATH": str(fake_bin),
+            "PLAY_INSTALL_SOURCE": str(ROOT),
+            "PLAY_INSTALL_YES": "1",
+        }
+
+        result = subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh")],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("Checking OS and required tools", result.stderr)
+        self.assertIn("python3 is required", result.stderr)
+        self.assertNotIn("Modiqo Rote", result.stdout)
 
     def test_portable_installer_rejects_native_windows_before_changes(self) -> None:
         fake_bin = self.home / "windows-bin"
@@ -472,6 +503,7 @@ class InstallAllTest(unittest.TestCase):
         )
 
         self.assertEqual(1, result.returncode)
+        self.assertIn("Checking OS and required tools", result.stderr)
         self.assertIn("native Windows is not supported yet", result.stderr)
         self.assertIn("WSL2", result.stderr)
         self.assertFalse(install_home.exists())
