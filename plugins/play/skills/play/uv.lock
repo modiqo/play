@@ -45,7 +45,7 @@ wheels = [
 
 [[package]]
 name = "modiqo-play-controller"
-version = "0.4.57"
+version = "0.4.58"
 source = { virtual = "." }
 dependencies = [
     { name = "jsonschema" },
