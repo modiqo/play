@@ -6,10 +6,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from scripts.lib.play.preflight import SCHEMA, harness_skill_roots, inspect
+from scripts.lib.play.preflight import SCHEMA, _has_skill, harness_skill_roots, inspect
 
 
 class PreflightTest(unittest.TestCase):
+    def test_missing_skill_root_is_empty_instead_of_crashing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            missing = Path(temporary) / "absent" / "skills"
+
+            self.assertFalse(_has_skill(missing, "rote"))
+
     def test_codex_marketplace_skill_caches_are_discovered(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             codex_home = Path(temporary) / ".codex"

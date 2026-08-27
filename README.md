@@ -644,8 +644,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.66/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.66 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.67/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.67 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -1213,9 +1213,12 @@ labels, tags, and each entry's tier when the registry exposes them; digest ackno
 separate state so refreshing never marks an item as viewed.
 
 Recurring work is optional. During guided setup, Play checks for
-[Tulving](https://github.com/modiqo/tulving) and asks before enabling it. With permission, setup runs
-`brew install modiqo/tap/tulving` only when the binary is absent, then runs `tulving init` when its
-clock is not ready. Declining leaves recurring Plays off; unattended setup enables them only when
+[Tulving](https://github.com/modiqo/tulving) and asks before enabling it. With permission, setup uses
+Homebrew when available or Tulving's official installer otherwise. It downloads Tulving only when
+the binary is absent, then runs `tulving init` when its clock is not ready.
+
+Declining leaves recurring Plays off.
+Unattended setup enables recurring Plays only when
 `PLAY_INSTALL_TULVING=1` or `--enable-tulving` is explicit.
 
 Play asks about recurrence after it presents the complete result and verified receipt. This
@@ -1262,7 +1265,7 @@ current `PATH` fingerprint without storing secrets:
 | Use case | Play command | Tulving binding |
 |---|---|---|
 | Validate readiness | `probe` | version plus `status` |
-| Install and start | `enable` | Homebrew when absent, then `init` |
+| Install and start | `enable` | Homebrew or the official installer when absent, then `init` |
 | Create a schedule | `schedule` | `add - --dry-run`, structured duplicate check, then `add -` |
 | List schedules | `list [--all] [--json]` | `list`; JSON uses the private MCP schedule tool |
 | Show terminal movement | `changed [--since …]` | `changed` |

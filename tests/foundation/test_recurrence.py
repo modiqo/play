@@ -71,7 +71,8 @@ class RecurrenceTest(unittest.TestCase):
         self.assertEqual(
             "play-recurring: Tulving is not installed; Play scheduling is unavailable.\n\n"
             "Install and enable Tulving:\n"
-            "  brew install modiqo/tap/tulving\n"
+            "  curl --proto '=https' --tlsv1.2 -fsSL "
+            "https://raw.githubusercontent.com/modiqo/tulving/main/install.sh | sh\n"
             "  tulving init\n\n"
             "Learn more: https://github.com/modiqo/tulving\n",
             result.stderr,
@@ -140,6 +141,50 @@ class RecurrenceTest(unittest.TestCase):
             calls,
         )
         self.assertIn(["/opt/homebrew/bin/tulving", "init"], calls)
+        self.assertEqual("homebrew", payload["installer"])
+
+    def test_enable_uses_official_installer_without_homebrew(self) -> None:
+        installed = False
+        initialized = False
+        calls: list[list[str]] = []
+
+        def resolver(name: str) -> str | None:
+            if name == "curl":
+                return "/usr/bin/curl"
+            if name == "sh":
+                return "/bin/sh"
+            if name == "tulving" and installed:
+                return "/root/.local/bin/tulving"
+            return None
+
+        def runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+            nonlocal installed, initialized
+            calls.append(list(command))
+            if command[0] == "/bin/sh":
+                installed = True
+            elif command[-1] == "init":
+                initialized = True
+            elif command[-1] == "--version":
+                return completed(command, stdout="tulving 0.1.0\n")
+            elif command[-1] == "status":
+                clock = "✓ clock" if initialized else "! clock"
+                return completed(command, stdout=f"{clock}\n")
+            return completed(command)
+
+        payload = enable_tulving(resolver=resolver, runner=runner)
+
+        self.assertTrue(payload["installed"])
+        self.assertTrue(payload["initialized"])
+        self.assertTrue(payload["ready"])
+        self.assertEqual("official-script", payload["installer"])
+        download = next(command for command in calls if command[0] == "/usr/bin/curl")
+        self.assertIn("--proto", download)
+        self.assertIn("=https", download)
+        self.assertIn(
+            "https://raw.githubusercontent.com/modiqo/tulving/main/install.sh",
+            download,
+        )
+        self.assertIn(["/root/.local/bin/tulving", "init"], calls)
 
     def test_schedule_invokes_nothing_when_tulving_is_absent(self) -> None:
         calls: list[list[str]] = []
@@ -158,7 +203,8 @@ class RecurrenceTest(unittest.TestCase):
         self.assertEqual(
             "Tulving is not installed; Play scheduling is unavailable.\n\n"
             "Install and enable Tulving:\n"
-            "  brew install modiqo/tap/tulving\n"
+            "  curl --proto '=https' --tlsv1.2 -fsSL "
+            "https://raw.githubusercontent.com/modiqo/tulving/main/install.sh | sh\n"
             "  tulving init\n\n"
             "Learn more: https://github.com/modiqo/tulving",
             str(raised.exception),

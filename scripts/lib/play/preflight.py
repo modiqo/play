@@ -203,14 +203,13 @@ def _has_skill(root: Path, name: str) -> bool:
     if name == "play":
         return (root / "play" / "SKILL.md").is_file()
     try:
-        children = root.iterdir()
+        return any(
+            (child.name == "rote" or child.name.startswith("rote-"))
+            and (child / "SKILL.md").is_file()
+            for child in root.iterdir()
+        )
     except OSError:
         return False
-    return any(
-        (child.name == "rote" or child.name.startswith("rote-"))
-        and (child / "SKILL.md").is_file()
-        for child in children
-    )
 
 
 def inspect_harnesses(active: str) -> list[dict[str, object]]:

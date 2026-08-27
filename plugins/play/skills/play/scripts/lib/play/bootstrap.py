@@ -3539,7 +3539,7 @@ def _render_plan(plan: dict[str, Any]) -> str:
         lines.append("    Choice:    Enable during setup or leave scheduling off")
     else:
         lines.append("    Tulving:   NOT INSTALLED")
-        lines.append("    Choice:    Install with Homebrew or leave scheduling off")
+        lines.append("    Choice:    Install Tulving or leave scheduling off")
     lines.extend(["", "  Apps"])
     skill_states = {
         str(item["provider"]): item
@@ -4163,8 +4163,12 @@ def apply(
                     "completed" if changed else "unchanged",
                     (
                         "Tulving was installed with Homebrew and its clock is ready."
-                        if tulving_result.get("installed")
-                        else "Tulving is installed and its clock is ready."
+                        if tulving_result.get("installer") == "homebrew"
+                        else (
+                            "Tulving was installed with its official installer and its clock is ready."
+                            if tulving_result.get("installer") == "official-script"
+                            else "Tulving is installed and its clock is ready."
+                        )
                     ),
                     changed=changed,
                     evidence=str(tulving_result.get("executable") or ""),
@@ -4324,7 +4328,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_parser.add_argument(
         "--enable-tulving",
         action="store_true",
-        help="install Tulving with Homebrew when needed and initialize its clock",
+        help="install Tulving when needed and initialize its clock",
     )
     install_parser.add_argument(
         "--approve-remote-installer",
@@ -4449,7 +4453,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     isinstance(tulving, dict) and tulving.get("ready") is True
                 ):
                     enable_tulving = _confirm(
-                        "Enable recurring Plays with Tulving? Homebrew installs it only if needed.",
+                        "Enable recurring Plays with Tulving? Setup installs it only if needed.",
                         default=False,
                     )
             payload = apply(

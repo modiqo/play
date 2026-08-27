@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 
@@ -17,11 +20,12 @@ SCHEDULE_SCHEMA = "play.tulving-schedule/v1"
 SCHEDULES_SCHEMA = "play.tulving-schedules/v1"
 TULVING_FORMULA = "modiqo/tap/tulving"
 TULVING_REPOSITORY = "https://github.com/modiqo/tulving"
+TULVING_INSTALLER = "https://raw.githubusercontent.com/modiqo/tulving/main/install.sh"
 DEFAULT_DURATION = "30d"
 TULVING_INSTALL_GUIDANCE = (
     "Tulving is not installed; Play scheduling is unavailable.\n\n"
     "Install and enable Tulving:\n"
-    f"  brew install {TULVING_FORMULA}\n"
+    f"  curl --proto '=https' --tlsv1.2 -fsSL {TULVING_INSTALLER} | sh\n"
     "  tulving init\n\n"
     f"Learn more: {TULVING_REPOSITORY}"
 )
@@ -57,12 +61,25 @@ def _detail(result: subprocess.CompletedProcess[str]) -> str:
     return (result.stderr or result.stdout or "unknown command error").strip()
 
 
+def _resolve_tulving(resolver: Resolver) -> str | None:
+    executable = resolver("tulving")
+    if executable is not None or resolver is not shutil.which:
+        return executable
+    install_root = Path(
+        os.environ.get("TULVING_INSTALL_DIR", Path.home() / ".local" / "bin")
+    ).expanduser()
+    candidate = install_root / "tulving"
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return str(candidate)
+    return None
+
+
 def probe_tulving(
     *, resolver: Resolver = shutil.which, runner: Runner = _run
 ) -> dict[str, Any]:
     """Inspect Tulving without invoking anything when the binary is absent."""
 
-    executable = resolver("tulving")
+    executable = _resolve_tulving(resolver)
     if executable is None:
         return {
             "schema": CAPABILITY_SCHEMA,
@@ -114,21 +131,54 @@ def probe_tulving(
 def enable_tulving(
     *, resolver: Resolver = shutil.which, runner: Runner = _run
 ) -> dict[str, Any]:
-    """Install Tulving with Homebrew when needed, then initialize its clock."""
+    """Install Tulving when needed, then initialize its clock."""
 
     before = probe_tulving(resolver=resolver, runner=runner)
     installed = False
+    installer = None
     if not before["available"]:
         brew = resolver("brew")
-        if brew is None:
-            raise RecurrenceError(
-                "Tulving is absent and Homebrew is unavailable; recurring Play support was not enabled"
-            )
-        result = runner([brew, "install", TULVING_FORMULA])
-        if result.returncode != 0:
-            raise RecurrenceError(f"Homebrew could not install Tulving: {_detail(result)}")
+        if brew is not None:
+            result = runner([brew, "install", TULVING_FORMULA])
+            if result.returncode != 0:
+                raise RecurrenceError(
+                    f"Homebrew could not install Tulving: {_detail(result)}"
+                )
+            installer = "homebrew"
+        else:
+            curl = resolver("curl")
+            shell = resolver("sh")
+            if curl is None or shell is None:
+                raise RecurrenceError(
+                    "Tulving is absent, and its official installer needs curl and sh"
+                )
+            with tempfile.TemporaryDirectory(prefix="play-tulving-") as temporary:
+                script = Path(temporary) / "install.sh"
+                download = runner(
+                    [
+                        curl,
+                        "--proto",
+                        "=https",
+                        "--tlsv1.2",
+                        "-fsSL",
+                        TULVING_INSTALLER,
+                        "-o",
+                        str(script),
+                    ]
+                )
+                if download.returncode != 0:
+                    raise RecurrenceError(
+                        "Tulving's official installer could not be downloaded: "
+                        + _detail(download)
+                    )
+                result = runner([shell, str(script)])
+                if result.returncode != 0:
+                    raise RecurrenceError(
+                        f"Tulving's official installer failed: {_detail(result)}"
+                    )
+            installer = "official-script"
         installed = True
-    executable = resolver("tulving")
+    executable = _resolve_tulving(resolver)
     if executable is None:
         raise RecurrenceError("Tulving installation completed but no executable is on PATH")
     current = probe_tulving(resolver=resolver, runner=runner)
@@ -147,6 +197,7 @@ def enable_tulving(
         "available": True,
         "ready": True,
         "installed": installed,
+        "installer": installer,
         "initialized": initialized,
         "executable": after["executable"],
         "version": after["version"],
