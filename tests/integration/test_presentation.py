@@ -63,7 +63,7 @@ class PresentationTest(unittest.TestCase):
             normalized,
         )
         self.assertIn(
-            "The complete result must be visible before you run `play recurring probe` or open the picker",
+            "Place the literal primary payload and receipt in chat before you run `play recurring probe` or open the picker",
             normalized,
         )
         self.assertIn(
@@ -71,6 +71,32 @@ class PresentationTest(unittest.TestCase):
             normalized,
         )
         self.assertNotIn("Tip: To repeat this Play automatically with Tulving", skill)
+
+    def test_result_delivery_is_user_visible_before_recurring_tools(self) -> None:
+        skill = (Path(__file__).resolve().parents[2] / "SKILL.md").read_text()
+        normalized = skill.replace("\n", " ")
+
+        self.assertIn(
+            "Tool, shell, and model-context output does not count as delivery",
+            normalized,
+        )
+        self.assertIn(
+            "Copy the exact Markdown for each presentation into a message the user can see",
+            normalized,
+        )
+        self.assertIn(
+            "Do not claim that the result was “shown above” unless its literal payload appears in chat",
+            normalized,
+        )
+        self.assertIn(
+            "Finish delivery before you call another tool. This includes `play recurring probe` and structured elicitation",
+            normalized,
+        )
+        self.assertIn(
+            "If opening a picker could hide the assistant message, end with the complete result and verified receipt",
+            normalized,
+        )
+        self.assertIn("A summary is not delivery", normalized)
 
     def test_pre_receipt_scheduling_barrier_precedes_every_execution_path(self) -> None:
         skill = (Path(__file__).resolve().parents[2] / "SKILL.md").read_text()

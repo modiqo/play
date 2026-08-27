@@ -644,8 +644,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.64/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.64 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.65/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.65 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -1221,6 +1221,13 @@ clock is not ready. Declining leaves recurring Plays off; unattended setup enabl
 Play asks about recurrence after it presents the complete result and verified receipt. This
 order applies to first pulls, replacements, and already-local Plays. The picker offers hourly,
 daily, custom timing, or not now. It creates nothing until the user selects a cadence.
+
+Result delivery is an atomic checkpoint. Play copies the exact Markdown for the result into chat before
+it probes Tulving or opens a picker. A tool response, internal context, or recap does not count as
+delivery.
+
+If opening a picker could hide the result, Play ends with the result. The user can request
+scheduling later.
 
 Accepted schedules pin the exact Play version and approved parameters. Every schedule records a
 reason and defaults to a 30-day lifetime. The facade validates the spec with Tulving before writing.

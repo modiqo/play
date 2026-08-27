@@ -217,6 +217,16 @@ the tool response as truncated, or the result is absent from chat, offer or sele
 again**; the replay turn contains the unchanged result without activation guidance or next actions.
 Never infer confirmation, choose **Yes, continue** for the user, or summarize a missing result.
 
+Tool, shell, and model-context output does not count as delivery. Copy the exact Markdown for each
+presentation into a message the user can see. Do not replace the primary payload with a
+recap or totals. Do not claim that the result was “shown above” unless its literal payload appears
+in chat.
+
+Finish delivery before you call another tool. This includes `play recurring probe` and structured
+elicitation. If opening a picker could hide the assistant message, end with the complete result and
+verified receipt. Omit the recurrence picker; the user can request scheduling later without a new
+run.
+
 - `model`: reason over only `instruction.input` and the projected policy; return one declared
   event by filling `event_template` according to its complete `payload_schema`; never guess field
   types, enum values, or nested object shapes from the field names alone. For
@@ -239,9 +249,11 @@ the user wants it to repeat. This includes a first remote pull or replacement an
 already-local exact version.
 
 Do not use the choice for the onboarding starter, a failed or blocked run, or an interactive Play.
-Do not use it for an inspection with writes or unverified effects. The complete result must be
-visible before you run `play recurring probe` or open the picker. Continue only when its `tulving`
-capability is `ready`.
+Do not use it for an inspection with writes or unverified effects.
+
+Result delivery is an atomic checkpoint. Place the literal primary payload and receipt in chat
+before you run `play recurring probe` or open the picker. A summary is not delivery. Continue only
+when its `tulving` capability is `ready`.
 
 Offer **Hourly**, **Daily**, **Choose cadence**, or **Not now** for that exact completed Play. Treat
 the choice as per-run consent. On acceptance, invoke `play recurring schedule` with the exact
