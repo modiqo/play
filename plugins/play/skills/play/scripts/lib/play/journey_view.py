@@ -579,7 +579,9 @@ def _handler_type(
             if selected_capture is None:
                 self._send_json({"error": "workspace_unavailable"}, status=HTTPStatus.NOT_FOUND)
                 return
-            if load_graph(selected_capture, root=root) is not None:
+            graph_ready = load_graph(selected_capture, root=root) is not None
+            refresh_requested = query.get("refresh", [""])[0] == "1"
+            if graph_ready and not refresh_requested:
                 self._send_json({"status": "ready", "workspace": requested_workspace})
                 return
             selected_item = next(
@@ -592,14 +594,37 @@ def _handler_type(
                 else None
             )
             if capture is None:
+                if graph_ready:
+                    self._send_json({"status": "ready", "workspace": requested_workspace})
+                    return
                 self._send_json({"error": "workspace_unavailable"}, status=HTTPStatus.NOT_FOUND)
                 return
             registered = _capture(selected_capture)
-            started = (
+            already_running = bool(
+                registered is not None
+                and selected_item is not None
+                and selected_item.get("live")
+            )
+            started = already_running or (
                 schedule_worker(capture)
                 if registered is not None
                 else _schedule_workspace_projection(capture, root=root)
             )
+            if graph_ready:
+                if not started:
+                    self._send_json(
+                        {"error": "projector_unavailable"},
+                        status=HTTPStatus.SERVICE_UNAVAILABLE,
+                    )
+                    return
+                self._send_json(
+                    {
+                        "status": "ready",
+                        "workspace": requested_workspace,
+                        "projector": "running" if already_running else "started",
+                    }
+                )
+                return
             if not started:
                 self._send_json(
                     {"error": "projector_unavailable"}, status=HTTPStatus.SERVICE_UNAVAILABLE

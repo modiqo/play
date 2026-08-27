@@ -353,21 +353,26 @@ See the [Journey viewer guide](docs/journey-viewer.md) for the Start Here tutori
 Atlas, the spatial vocabulary, interaction bubbles, live tracking, model telemetry, and
 troubleshooting.
 
-The command synchronizes with the current Rote workspace first (the workspace containing the current
-directory when applicable, otherwise Rote's most recently updated workspace), overlays matching
-active Play capture metadata when available, stops older Journey HTTP servers, then starts one
-owner-private loopback viewer on the stable default `127.0.0.1:52050`. The viewer continues polling
-that workspace's bounded fingerprint and projects new commands automatically, so Play registry drift
-cannot strand a live Rote exploration. Override that
-single port with `--port <n>` or `PLAY_JOURNEY_PORT=<n>`; repeated launches replace the singleton
-instead of accumulating listeners. Every Play capture registered in
-`~/.rote-play/standby.json` appears in the Journey rail; the rail is not a raw directory listing of
-every Rote workspace. **Live · updating** means an active capture has a recent Rote heartbeat,
-**Live · quiet** means it can still grow but has no recent command, and **Recorded** cannot grow.
-At the live head, incoming generations advance to the new call site; an inspected or frozen vantage
-keeps its exact site while the map refreshes. Selecting an older pre-projector capture starts its isolated read-only
-projection and switches after the first graph is ready. A capture whose source workspace and graph
-are both unavailable remains visible but disabled rather than disappearing from its history.
+The command first synchronizes the current Rote workspace. It prefers the workspace containing the
+current directory, then falls back to Rote's most recently updated workspace. The command overlays
+matching capture metadata, stops older Journey HTTP servers, and starts one owner-private viewer on
+`127.0.0.1:52050`.
+
+Selecting a live exploration wakes its projector every five seconds for two minutes. Each wake
+reloads the selected workspace's projected snapshot. The viewer then returns to its ten-second calm
+cadence and still reacts to later activity.
+
+Override the port with `--port <n>` or `PLAY_JOURNEY_PORT=<n>`. Repeated launches replace the
+singleton instead of accumulating listeners.
+
+Every Play capture registered in `~/.rote-play/standby.json` appears in the Journey rail. The rail
+is not a raw directory listing of every Rote workspace. **Live · updating** means an active capture
+has a recent Rote heartbeat. **Live · quiet** can still grow, while **Recorded** cannot grow.
+
+At the live head, incoming generations advance to the new call site. An inspected or frozen vantage
+keeps its exact site while the map refreshes. Selecting an older capture starts its isolated
+read-only projection, then switches after the first graph is ready. A capture stays visible but
+disabled when both its source workspace and graph are unavailable.
 
 The Journey viewer does not draw Rote commands as anonymous boxes. It consumes the deterministic
 [`play.journey-story/v1`](references/explore/journey-story.schema.json) projection and uses semantic
@@ -639,8 +644,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.63/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.63 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.64/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.64 sh
 ```
 
 To inspect the small bootstrap before running it:

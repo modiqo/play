@@ -3,6 +3,11 @@ import {api, trackWorkspaceLocation, workspaceFromLocation} from './api.js'
 import {useJourneyPlayback} from './use-journey-playback.js'
 import {chooseWorkspace} from './workspace-choice.mjs'
 import {reconcileJourneyPosition} from './journey-position.mjs'
+import {
+  liveWorkspaceRefreshActive,
+  startLiveWorkspaceRefresh,
+  workspaceRefreshSeconds,
+} from './live-workspace-refresh.mjs'
 
 export function useJourneyRuntime() {
   const [index, setIndex] = useState(null)
@@ -35,6 +40,7 @@ export function useJourneyRuntime() {
   const wasPlayingRef = useRef(false)
   const loadRequestRef = useRef(0)
   const startingWorkspaceRef = useRef('')
+  const liveRefreshLeaseRef = useRef(null)
   const setTrackingLive = useCallback((value) => {
     const next = Boolean(value)
     trackingLiveRef.current = next
@@ -94,6 +100,14 @@ export function useJourneyRuntime() {
       followHead: trackingLiveRef.current,
     }))
     if (nextStory.state !== 'active') setTrackingLive(false)
+    if (nextStory.state === 'active') {
+      const currentLease = liveRefreshLeaseRef.current
+      if (!currentLease || currentLease.workspace !== id) {
+        liveRefreshLeaseRef.current = startLiveWorkspaceRefresh(id)
+      }
+    } else if (liveRefreshLeaseRef.current?.workspace === id) {
+      liveRefreshLeaseRef.current = null
+    }
     storyRef.current = nextStory
     setStory(nextStory)
     setInteractions(nextInteractions)
@@ -112,6 +126,7 @@ export function useJourneyRuntime() {
       setPlaying(false)
       setObserving(true)
       setTrackingLive(false)
+      liveRefreshLeaseRef.current = null
       playback.current = null
       setSelected(null)
       setMode('follow')
@@ -260,21 +275,50 @@ export function useJourneyRuntime() {
 
   useEffect(() => {
     if (!workspace) return undefined
-    let remaining = 10
+    let refreshInFlight = false
+    let remaining = workspaceRefreshSeconds({
+      lease: liveRefreshLeaseRef.current,
+      workspace,
+      storyState: storyRef.current?.state,
+    })
     setSnapshotCountdown(remaining)
     const interval = window.setInterval(() => {
+      const cadence = workspaceRefreshSeconds({
+        lease: liveRefreshLeaseRef.current,
+        workspace,
+        storyState: storyRef.current?.state,
+      })
+      remaining = Math.min(remaining, cadence)
       remaining -= 1
       if (remaining <= 0) {
-        remaining = 10
+        remaining = cadence
+        if (refreshInFlight) {
+          setSnapshotCountdown(remaining)
+          return
+        }
+        refreshInFlight = true
         loadIndex()
-          .then((nextIndex) => {
+          .then(async (nextIndex) => {
             const currentWorkspace = nextIndex.workspaces.find((item) => item.id === workspace)
+            const fastRefresh = liveWorkspaceRefreshActive({
+              lease: liveRefreshLeaseRef.current,
+              workspace,
+              storyState: storyRef.current?.state,
+            })
+            if (fastRefresh && currentWorkspace?.journey_mode === 'live') {
+              await fetch(api('/api/project', {workspace, refresh: '1'}), {
+                method: 'POST',
+                cache: 'no-store',
+              })
+              return loadJourney(workspace, true)
+            }
             if (currentWorkspace?.active_recently) {
               return loadJourney(workspace, true)
             }
             return undefined
           })
           .catch(() => {})
+          .finally(() => { refreshInFlight = false })
       }
       setSnapshotCountdown(remaining)
     }, 1000)

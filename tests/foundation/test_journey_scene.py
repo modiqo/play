@@ -708,6 +708,50 @@ class JourneySceneTest(unittest.TestCase):
                 )
                 with urllib.request.urlopen(project_request, timeout=2) as projected:
                     self.assertEqual("ready", json.loads(projected.read())["status"])
+                live_refresh_request = urllib.request.Request(
+                    f"{base}/api/project?token=viewer-secret&workspace={selected['id']}&refresh=1",
+                    method="POST",
+                )
+                with patch(
+                    "scripts.lib.play.journey_view._workspace_catalog",
+                    return_value=(
+                        [{**selected, "live": False}],
+                        {selected["id"]: self.capture["reference"]},
+                    ),
+                ), patch(
+                    "scripts.lib.play.journey_view._catalog_capture",
+                    return_value=self.capture,
+                ), patch(
+                    "scripts.lib.play.journey_view._capture",
+                    return_value=self.capture,
+                ), patch(
+                    "scripts.lib.play.journey_view.schedule_worker",
+                    return_value=True,
+                ) as schedule:
+                    with urllib.request.urlopen(live_refresh_request, timeout=2) as refreshed:
+                        refresh_status = json.loads(refreshed.read())
+                        self.assertEqual("ready", refresh_status["status"])
+                        self.assertEqual("started", refresh_status["projector"])
+                    schedule.assert_called_once_with(self.capture)
+                with patch(
+                    "scripts.lib.play.journey_view._workspace_catalog",
+                    return_value=(
+                        [{**selected, "live": True}],
+                        {selected["id"]: self.capture["reference"]},
+                    ),
+                ), patch(
+                    "scripts.lib.play.journey_view._catalog_capture",
+                    return_value=self.capture,
+                ), patch(
+                    "scripts.lib.play.journey_view._capture",
+                    return_value=self.capture,
+                ), patch(
+                    "scripts.lib.play.journey_view.schedule_worker",
+                ) as schedule:
+                    with urllib.request.urlopen(live_refresh_request, timeout=2) as refreshed:
+                        refresh_status = json.loads(refreshed.read())
+                        self.assertEqual("running", refresh_status["projector"])
+                    schedule.assert_not_called()
                 refresh_request = urllib.request.Request(
                     f"{base}/api/refresh?token=viewer-secret",
                     method="POST",

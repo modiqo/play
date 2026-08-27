@@ -68,6 +68,10 @@ deterministic isometric map, prints its local URL, and returns immediately. It m
 capture, invoke Rote, expose the capture reference, or authorize an effect. If no active Journey is
 ready, present the CLI's exact blocker and leave the exploration unchanged.
 
+The viewer wakes a selected live workspace's projector every five seconds for two minutes. It then
+returns to the ten-second calm cadence. The read-only refresh stops following the old workspace
+when selection changes.
+
 If the unchanged trimmed request is `play what's new`, `$play what's new`, or `/play what's new`
 (also accept `whats new`, `popular Plays`, or `trending Plays`), do not enter the state machine, run
 preflight, or create a continuation. Run the bundled
@@ -131,9 +135,9 @@ lines and `list --json` for reasoning. Keep other list output, `changed`, and `d
 views; never parse them. Keep Tulving's `every` and `add` writes behind `play recurring schedule`;
 never call its OS-owned `tick` or transport-owned `mcp` process directly.
 
-For an explicit request to schedule a known or completed Play, use the installed `play recurring`
-facade. Do not enter the state machine again. Run `play recurring probe` first. Continue only when
-its Tulving capability is `ready`.
+If the request explicitly asks to schedule a known or completed Play, use the installed
+`play recurring` facade. Do not enter the state machine again. Run `play recurring probe` first.
+Continue only when its Tulving capability is `ready`.
 
 If Tulving is unavailable, report that recurring Plays are off and do not invoke `tulving add`.
 Schedule only an exact versioned reference from a verified receipt. Preserve approved parameters as
