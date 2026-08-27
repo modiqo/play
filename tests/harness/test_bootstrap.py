@@ -20,6 +20,7 @@ from scripts.lib.play.bootstrap import (
     Progress,
     _accept_identity_only_preflight,
     _browser_mode,
+    _choose_detected_harnesses,
     _choose_login_method,
     _parallel_harness_work,
     _os_snapshot,
@@ -309,6 +310,39 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("[3] Hermes Agent", picker)
         self.assertIn("~/.agents/skills", picker)
         self.assertIn("updates only Play-owned entries", picker)
+
+    @patch("scripts.lib.play.bootstrap.shutil.which", return_value=None)
+    def test_no_harness_advisory_guides_ubuntu_install_and_retry(
+        self, _which: MagicMock
+    ) -> None:
+        with self.assertRaises(BootstrapError) as raised:
+            _choose_detected_harnesses(top_k=3)
+
+        advisory = str(raised.exception)
+        self.assertIn("Play supports Linux, including Ubuntu.", advisory)
+        self.assertIn("https://chatgpt.com/codex/install.sh", advisory)
+        self.assertIn("https://claude.ai/install.sh", advisory)
+        self.assertIn("command -v codex && codex --version", advisory)
+        self.assertIn("command -v claude && claude --version", advisory)
+        self.assertIn("--harness codex --harness claude", advisory)
+        self.assertIn(
+            "The --harness option selects an installed harness. It does not install one.",
+            advisory,
+        )
+
+    @patch("scripts.lib.play.bootstrap.shutil.which", return_value=None)
+    def test_missing_explicit_harness_uses_the_same_advisory(
+        self, _which: MagicMock
+    ) -> None:
+        with self.assertRaises(BootstrapError) as raised:
+            build_plan(requested=["claude"])
+
+        advisory = str(raised.exception)
+        self.assertIn(
+            "Play could not find the selected harnesses on PATH: Claude Code.",
+            advisory,
+        )
+        self.assertIn("https://claude.ai/install.sh", advisory)
 
     def test_shared_agents_plan_discloses_create_and_update_behavior(self) -> None:
         plan = _shared_agents_plan(["codex", "kimi", "opencode"])
@@ -831,7 +865,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.68",
+                                "version": "0.4.69",
                                 "enabled": True,
                             }
                         ]
@@ -842,7 +876,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.68", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.69", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -1868,7 +1902,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.68 is installed and enabled.",
+                "Play 0.4.69 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -1960,7 +1994,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.68", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.69", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 

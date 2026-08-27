@@ -1045,6 +1045,50 @@ def _render_harness_picker(detected: Sequence[HarnessTarget]) -> str:
     return "\n".join(lines)
 
 
+def _missing_harness_advisory(requested: Sequence[str] | None = None) -> str:
+    requested_labels = [
+        LABELS[name]
+        for name in dict.fromkeys(requested or ())
+        if name in LABELS
+    ]
+    if requested_labels:
+        opening = (
+            "Play could not find the selected harnesses on PATH: "
+            + ", ".join(requested_labels)
+            + "."
+        )
+    else:
+        opening = "Play could not find a supported harness on PATH."
+    return "\n".join(
+        [
+            opening,
+            "Play supports Linux, including Ubuntu.",
+            "",
+            "Install Codex, Claude Code, or another supported harness first.",
+            "Run these commands as your normal user, without sudo.",
+            "",
+            "Install Codex:",
+            "  curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+            "",
+            "Install Claude Code:",
+            "  curl -fsSL https://claude.ai/install.sh | bash",
+            "",
+            "Open a new terminal, then verify the harnesses you installed:",
+            "  command -v codex && codex --version",
+            "  command -v claude && claude --version",
+            "",
+            "Retry Play and let it detect the installed harnesses:",
+            "  curl -fsSL https://getrote.dev/playoffs/install.sh | sh",
+            "",
+            "To select both explicitly, repeat --harness:",
+            "  curl -fsSL https://getrote.dev/playoffs/install.sh \\",
+            "    | sh -s -- --harness codex --harness claude",
+            "",
+            "The --harness option selects an installed harness. It does not install one.",
+        ]
+    )
+
+
 def _choose_detected_harnesses(*, top_k: int) -> list[str]:
     detected = [
         target
@@ -1052,9 +1096,7 @@ def _choose_detected_harnesses(*, top_k: int) -> list[str]:
         if target.detected
     ]
     if not detected:
-        raise BootstrapError(
-            "no supported harnesses were detected; use --harness after installing one"
-        )
+        raise BootstrapError(_missing_harness_advisory())
     stream = None
     close_stream = False
     output = sys.stderr
@@ -1111,7 +1153,7 @@ def build_plan(
     recovery_catalog = list_play_backups()
     selected = [target.id for target in targets if target.selected]
     if not selected:
-        raise BootstrapError("no supported harnesses were detected or selected")
+        raise BootstrapError(_missing_harness_advisory(requested))
     if "codex" in selected:
         # Fail before identity, cache, backup, or harness mutations. The same
         # parser protects later Codex enablement and rollback operations.
