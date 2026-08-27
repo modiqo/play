@@ -100,14 +100,63 @@ when policy matches; “route Cloudflare directly in this repo” manages policy
 invoke Rote, capture work, update preferences, handle credentials, or claim that routing changes
 harness permissions or safety checks.
 
-If the request explicitly asks to schedule a known Play or keep the completed Play running, use the
-installed `play recurring` facade for the bundled CLI. Do not enter the state machine again. Run
-`play recurring probe` first. Continue only when its Tulving capability is `ready`.
+For recurring Play inspection or management, use the installed `play recurring` facade. Do not
+enter the state machine for these owner-private operations:
+
+- “What is running?” maps to `play recurring list --json`. Add `--all` when retired schedules matter.
+
+- “What changed?” maps to `play recurring recall --since <checkpoint> --changed`.
+
+- “What failed?” maps to `play recurring recall --since <checkpoint> --failed`.
+
+- “Check my inbox” runs both recall views, then `play recurring list --all --json` for retirements.
+  Use the caller's owner-private last-checked time and advance it only after display. Compare schedule
+  status with the prior view when one exists. Surface movement, failures, misses, and retirements;
+  when nothing moved, say so once.
+
+- “Why does this run?” maps to `play recurring why <id>`. New reason text changes stored intent.
+
+- “Run it now” maps to `play recurring now <id>` and returns the new envelope unchanged.
+
+- “Stop it” maps to `play recurring stop <id>`. Use `--all` only when the user names every schedule.
+
+- “Quiet it” maps to `play recurring snooze <id> <duration>`. Prefer snooze for temporary pauses.
+
+- Clock health maps to `status`; clock control maps to `clock on` or `clock off`.
+
+- A ledger backup maps to `export <path>`. An update check maps to `update`.
+
+`play recurring update` checks only; `--apply` requires explicit update approval. Use `recall` JSON
+lines and `list --json` for reasoning. Keep other list output, `changed`, and `digest` as terminal
+views; never parse them. Keep Tulving's `every` and `add` writes behind `play recurring schedule`;
+never call its OS-owned `tick` or transport-owned `mcp` process directly.
+
+For an explicit request to schedule a known or completed Play, use the installed `play recurring`
+facade. Do not enter the state machine again. Run `play recurring probe` first. Continue only when
+its Tulving capability is `ready`.
 
 If Tulving is unavailable, report that recurring Plays are off and do not invoke `tulving add`.
 Schedule only an exact versioned reference from a verified receipt. Preserve approved parameters as
 repeated `--parameter name=value` arguments. Require `--why`, default to `--for 30d`, and reject
 bare or latest references.
+
+Translate recurring intent into Tulving fields:
+
+- A fixed lifetime uses `--for`, `--max-runs`, or `--expires-at`.
+
+- “Until it resolves” uses `--until` with a result predicate.
+
+- A threshold alert uses `--on` and an approved `--notify` command.
+
+- A value watch uses `--on-change`; add its JSON pointer when the user names one field.
+
+- A catalog watch adds `--key <pointer>` so additions, removals, and changes become deltas.
+
+- Context uses repeatable `--tag`, plus `--session` and `--cwd` when the verified run supplies them.
+
+Play validates one unchanged spec through `tulving add - --dry-run`. It checks
+`play recurring list --all --json` before committing. An active schedule with the same Play and
+parameters blocks creation. Offer `play recurring now <id>` when the user wants a first envelope.
 
 ## Enter or resume
 
@@ -190,10 +239,10 @@ Do not use it for an inspection with writes or unverified effects. The complete 
 visible before you run `play recurring probe` or open the picker. Continue only when its `tulving`
 capability is `ready`.
 
-Ask whether to repeat that exact Play: **Hourly**, **Daily**, **Choose cadence**, or **Not now**.
-This is a per-run choice, never standing consent. On acceptance, invoke `play recurring schedule`
-with the exact versioned reference and approved parameters. Add a concise reason, `--for 30d`, and
-then present Tulving's schedule receipt.
+Offer **Hourly**, **Daily**, **Choose cadence**, or **Not now** for that exact completed Play. Treat
+the choice as per-run consent. On acceptance, invoke `play recurring schedule` with the exact
+version, parameters, reason, cadence, and stop condition. Add supported use-case fields, then present
+Tulving's schedule receipt.
 
 If the capability is not ready, end with the Play receipt. Do not mention or invoke scheduling.
 A later scheduling request uses the explicit path above. Do not require another Play run.

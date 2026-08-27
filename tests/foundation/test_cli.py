@@ -37,6 +37,11 @@ class PlayCliTest(unittest.TestCase):
         self.assertIn("play cheat-sheet", result.stdout)
         self.assertIn(FIELD_GUIDE, result.stdout)
         self.assertIn("play recurring probe", result.stdout)
+        self.assertIn("play recurring list", result.stdout)
+        self.assertIn("play recurring recall", result.stdout)
+        self.assertIn("play recurring status", result.stdout)
+        self.assertIn("play recurring clock on|off", result.stdout)
+        self.assertIn("play recurring update", result.stdout)
         self.assertIn("play schedule", result.stdout)
         for journey_operation in (
             "snapshot",

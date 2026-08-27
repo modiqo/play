@@ -48,7 +48,12 @@ RECALL & REFERENCE
 
 RECURRING PLAYS · OPTIONAL TULVING
   play recurring probe          Check whether Tulving's clock is ready
-  play recurring schedule ...   Schedule one exact versioned Play
+  play recurring schedule ...   Validate, then schedule one exact Play
+  play recurring list           List active schedules
+  play recurring recall ...     Read run envelopes as JSON lines
+  play recurring status         Show clock and ledger health
+  play recurring clock on|off   Start or stop the OS timer
+  play recurring update         Check for a Tulving update
   play schedule ...             Alias: play recurring schedule ...
 
 ROUTING

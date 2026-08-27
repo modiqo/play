@@ -5,12 +5,15 @@ import os
 import subprocess
 import sys
 import unittest
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 from scripts.lib.play.recurrence import (
     RecurrenceError,
     enable_tulving,
+    main,
     probe_tulving,
     schedule_play,
 )
@@ -26,6 +29,21 @@ def completed(
     returncode: int = 0,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(command, returncode, stdout, stderr)
+
+
+def schedules_response(
+    command: Sequence[str], schedules: Sequence[Mapping[str, object]] = ()
+) -> subprocess.CompletedProcess[str]:
+    response = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "content": [{"type": "text", "text": f"{len(schedules)} schedule(s)."}],
+            "structuredContent": {"schedules": list(schedules)},
+            "isError": False,
+        },
+    }
+    return completed(command, stdout=json.dumps(response) + "\n")
 
 
 class RecurrenceTest(unittest.TestCase):
@@ -147,13 +165,19 @@ class RecurrenceTest(unittest.TestCase):
         )
 
     def test_schedule_pins_reference_parameters_reason_and_expiry(self) -> None:
-        submitted: list[dict[str, object]] = []
+        submitted: list[tuple[list[str], dict[str, object]]] = []
 
         def runner(
             command: Sequence[str], *, input: str
         ) -> subprocess.CompletedProcess[str]:
-            submitted.append(json.loads(input))
-            return completed(command, stdout='{"id":"watch-123","status":"active"}\n')
+            if command[-1] == "mcp":
+                return schedules_response(command)
+            submitted.append((list(command), json.loads(input)))
+            schedule_id = "plan-123" if "--dry-run" in command else "watch-123"
+            return completed(
+                command,
+                stdout=f'{{"id":"{schedule_id}","status":"active"}}\n',
+            )
 
         payload = schedule_play(
             reference="https://play.modiqo.ai/modiqo/check-registry@1.2.3",
@@ -173,7 +197,17 @@ class RecurrenceTest(unittest.TestCase):
         )
 
         self.assertEqual("scheduled", payload["status"])
-        spec = submitted.pop()
+        self.assertEqual(2, len(submitted))
+        self.assertEqual(
+            ["/usr/local/bin/tulving", "add", "-", "--dry-run"],
+            submitted[0][0],
+        )
+        self.assertEqual(
+            ["/usr/local/bin/tulving", "add", "-"],
+            submitted[1][0],
+        )
+        self.assertEqual(submitted[0][1], submitted[1][1])
+        spec = submitted[1][1]
         self.assertEqual("every morning", spec["cadence"])
         self.assertEqual("Notice new Plays", spec["why"])
         self.assertEqual("30d", spec["for"])
@@ -182,7 +216,7 @@ class RecurrenceTest(unittest.TestCase):
                 "rote",
                 "play",
                 "run",
-                "https://play.modiqo.ai/modiqo/check-registry@1.2.3",
+                "modiqo/check-registry@1.2.3",
                 "limit=10",
                 "org=modiqo",
                 "--yes",
@@ -192,10 +226,252 @@ class RecurrenceTest(unittest.TestCase):
         self.assertEqual(
             {
                 "harness": "play",
-                "ref": "https://play.modiqo.ai/modiqo/check-registry@1.2.3",
+                "ref": "modiqo/check-registry@1.2.3",
             },
             spec["origin"],
         )
+
+    def test_schedule_binds_tulving_predicates_change_detection_and_mortality(self) -> None:
+        submitted: list[dict[str, object]] = []
+
+        def runner(
+            command: Sequence[str], *, input: str
+        ) -> subprocess.CompletedProcess[str]:
+            if command[-1] == "mcp":
+                return schedules_response(command)
+            submitted.append(json.loads(input))
+            return completed(command, stdout='{"id":"plan-123","status":"active"}\n')
+
+        payload = schedule_play(
+            reference="modiqo/watch-catalog@2.0.0",
+            cadence="every 6h",
+            why="Notice catalog movement",
+            max_runs=40,
+            until='.done == true',
+            on='.added | length > 0',
+            notify=["play", "notify-me"],
+            on_change="*",
+            key="/name",
+            tags=["catalog", "play"],
+            session="session-123",
+            cwd="/work/catalog",
+            dry_run_only=True,
+            resolver=lambda name: "/usr/local/bin/tulving" if name == "tulving" else None,
+            runner=runner,
+            probe_runner=lambda command: completed(
+                command,
+                stdout=(
+                    "tulving 0.1.2\n"
+                    if command[-1] == "--version"
+                    else "✓ clock    launchd agent\n"
+                ),
+            ),
+        )
+
+        self.assertEqual("planned", payload["status"])
+        self.assertEqual(1, len(submitted))
+        spec = submitted[0]
+        self.assertNotIn("for", spec)
+        self.assertEqual(40, spec["max_runs"])
+        self.assertEqual('.done == true', spec["until"])
+        self.assertEqual('.added | length > 0', spec["on"])
+        self.assertEqual(["play", "notify-me"], spec["notify"])
+        self.assertEqual("*", spec["on_change"])
+        self.assertEqual("/name", spec["key"])
+        self.assertEqual(["play", "scheduled-play", "catalog"], spec["tags"])
+        self.assertEqual(
+            {
+                "harness": "play",
+                "ref": "modiqo/watch-catalog@2.0.0",
+                "session": "session-123",
+            },
+            spec["origin"],
+        )
+        self.assertEqual("/work/catalog", spec["cwd"])
+
+    def test_schedule_does_not_commit_when_tulving_rejects_the_dry_run(self) -> None:
+        calls: list[list[str]] = []
+
+        def runner(
+            command: Sequence[str], *, input: str
+        ) -> subprocess.CompletedProcess[str]:
+            del input
+            calls.append(list(command))
+            return completed(command, stderr="bad predicate", returncode=1)
+
+        with self.assertRaisesRegex(RecurrenceError, "rejected the schedule plan"):
+            schedule_play(
+                reference="modiqo/check-registry@1.2.3",
+                cadence="daily",
+                why="Notice new Plays",
+                resolver=lambda _name: "/usr/local/bin/tulving",
+                runner=runner,
+                probe_runner=lambda command: completed(
+                    command,
+                    stdout=(
+                        "tulving 0.1.2\n"
+                        if command[-1] == "--version"
+                        else "✓ clock    launchd agent\n"
+                    ),
+                ),
+            )
+
+        self.assertEqual(
+            [["/usr/local/bin/tulving", "add", "-", "--dry-run"]],
+            calls,
+        )
+
+    def test_schedule_rejects_an_active_duplicate_after_validation(self) -> None:
+        calls: list[list[str]] = []
+        argv = [
+            "rote",
+            "play",
+            "run",
+            "modiqo/check-registry@1.2.3",
+            "--yes",
+        ]
+
+        def runner(
+            command: Sequence[str], *, input: str
+        ) -> subprocess.CompletedProcess[str]:
+            del input
+            calls.append(list(command))
+            if command[-1] == "mcp":
+                return schedules_response(
+                    command,
+                    [{"id": "existing-1", "status": "active", "argv": argv}],
+                )
+            return completed(command, stdout='{"id":"plan-123","status":"active"}\n')
+
+        with self.assertRaisesRegex(RecurrenceError, "existing-1.*duplicate"):
+            schedule_play(
+                reference="modiqo/check-registry@1.2.3",
+                cadence="daily",
+                why="Notice new Plays",
+                resolver=lambda _name: "/usr/local/bin/tulving",
+                runner=runner,
+                probe_runner=lambda command: completed(
+                    command,
+                    stdout=(
+                        "tulving 0.1.2\n"
+                        if command[-1] == "--version"
+                        else "✓ clock    launchd agent\n"
+                    ),
+                ),
+            )
+
+        self.assertEqual(
+            [
+                ["/usr/local/bin/tulving", "add", "-", "--dry-run"],
+                ["/usr/local/bin/tulving", "mcp"],
+            ],
+            calls,
+        )
+
+    def test_facade_maps_tulving_read_lifecycle_clock_and_update_commands(self) -> None:
+        cases = [
+            (["list", "--all"], ["list", "--all"]),
+            (["changed", "--since", "2d"], ["changed", "--since", "2d"]),
+            (["digest"], ["digest", "--since", "today"]),
+            (
+                ["recall", "--since", "6h", "--changed", "--schedule", "abc"],
+                ["recall", "--since", "6h", "--changed", "--schedule", "abc"],
+            ),
+            (["why", "abc"], ["why", "abc"]),
+            (["why", "abc", "weekly", "review"], ["why", "abc", "weekly", "review"]),
+            (["run", "abc"], ["now", "abc"]),
+            (["retire", "abc"], ["stop", "abc"]),
+            (["snooze", "abc", "2d"], ["snooze", "abc", "2d"]),
+            (["snooze", "--all", "1w"], ["snooze", "--all", "1w"]),
+            (["status"], ["status"]),
+            (["clock", "on"], ["init"]),
+            (["clock", "off"], ["uninit"]),
+            (["init"], ["init"]),
+            (["uninit"], ["uninit"]),
+            (["export", "/tmp/tulving.db"], ["export", "/tmp/tulving.db"]),
+            (["update"], ["update", "--check"]),
+            (["update", "--apply"], ["update"]),
+        ]
+
+        for facade, expected in cases:
+            with self.subTest(facade=facade):
+                calls: list[list[str]] = []
+                output = StringIO()
+                with redirect_stdout(output):
+                    result = main(
+                        facade,
+                        resolver=lambda _name: "/usr/local/bin/tulving",
+                        runner=lambda command: calls.append(list(command))
+                        or completed(command, stdout="ok\n"),
+                    )
+                self.assertEqual(0, result)
+                self.assertEqual([["/usr/local/bin/tulving", *expected]], calls)
+                self.assertEqual("ok\n", output.getvalue())
+
+    def test_facade_rejects_ambiguous_bulk_lifecycle_requests(self) -> None:
+        for arguments, message in (
+            (["stop"], "one schedule id or --all"),
+            (["stop", "abc", "--all"], "one schedule id or --all"),
+            (["snooze", "--all", "abc", "1w"], "one duration"),
+        ):
+            with self.subTest(arguments=arguments):
+                errors = StringIO()
+                with redirect_stderr(errors):
+                    result = main(
+                        arguments,
+                        resolver=lambda _name: "/usr/local/bin/tulving",
+                    )
+                self.assertEqual(1, result)
+                self.assertIn(message, errors.getvalue())
+
+    def test_structured_list_uses_tulving_mcp_without_exposing_the_transport(self) -> None:
+        calls: list[list[str]] = []
+        output = StringIO()
+        schedules = [{"id": "abc", "status": "active"}]
+
+        with redirect_stdout(output):
+            result = main(
+                ["list", "--all", "--json"],
+                resolver=lambda _name: "/usr/local/bin/tulving",
+                input_runner=lambda command, **_kwargs: calls.append(list(command))
+                or schedules_response(command, schedules),
+            )
+
+        self.assertEqual(0, result)
+        self.assertEqual([["/usr/local/bin/tulving", "mcp"]], calls)
+        payload = json.loads(output.getvalue())
+        self.assertEqual("play.tulving-schedules/v1", payload["schema"])
+        self.assertEqual(schedules, payload["schedules"])
+
+    def test_help_covers_every_public_binding_and_names_internal_boundaries(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/bin/play-recurring"), "--help"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        for command in (
+            "schedule",
+            "list",
+            "changed",
+            "digest",
+            "recall",
+            "why",
+            "now",
+            "stop",
+            "snooze",
+            "status",
+            "clock",
+            "init",
+            "uninit",
+            "export",
+            "update",
+        ):
+            self.assertIn(command, result.stdout)
+        self.assertIn("'every' and 'add' write paths", result.stdout)
+        self.assertIn("'tick' and transport-only 'mcp'", result.stdout)
 
     def test_schedule_rejects_an_unversioned_reference_before_invocation(self) -> None:
         calls: list[list[str]] = []

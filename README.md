@@ -639,8 +639,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.62/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.62 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.63/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.63 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -1213,20 +1213,15 @@ Recurring work is optional. During guided setup, Play checks for
 clock is not ready. Declining leaves recurring Plays off; unattended setup enables them only when
 `PLAY_INSTALL_TULVING=1` or `--enable-tulving` is explicit.
 
-Play treats the first pull-and-run as a trial. It delivers the complete result, then shows one
-passive hint:
+Play asks about recurrence after it presents the complete result and verified receipt. This
+order applies to first pulls, replacements, and already-local Plays. The picker offers hourly,
+daily, custom timing, or not now. It creates nothing until the user selects a cadence.
 
-> **Tip: To repeat this Play automatically with Tulving, say “schedule this” and choose hourly,
-> daily, or custom timing.**
+Accepted schedules pin the exact Play version and approved parameters. Every schedule records a
+reason and defaults to a 30-day lifetime. The facade validates the spec with Tulving before writing.
+It also rejects an active schedule with the same Play and parameters.
 
-The hint does not probe Tulving or open a picker.
-
-An explicit scheduling request uses the verified receipt without rerunning the Play. Play offers the
-picker only after a later successful run of the same already-local version.
-
-A ready Tulving clock makes a per-run choice available: hourly, daily, another cadence, or not now.
-Play does not ask when Tulving is absent or unavailable. Accepted schedules pin the exact Play
-version and approved parameters, record the reason, and expire after 30 days by default:
+This command validates the schedule, creates it, and prints its JSON receipt:
 
 ```bash
 play recurring probe
@@ -1234,6 +1229,49 @@ play schedule --reference modiqo/check-registry@1.2.3 \
   --cadence daily --why "Notice registry changes" --for 30d \
   --parameter org=modiqo
 ```
+
+The schedule command supports every user-supplied Tulving producer field. Tulving captures the
+current `PATH` fingerprint without storing secrets:
+
+- `--for`, `--max-runs`, `--expires-at`, and `--until` define when the schedule retires.
+
+- `--on` and `--notify` define threshold alerts.
+
+- `--on-change` watches a result or one JSON pointer.
+
+- `--key` turns array results into added, removed, and changed deltas.
+
+- `--tag`, `--session`, and `--cwd` preserve context from the verified run.
+
+- `--dry-run` validates and normalizes without creating a schedule.
+
+`play recurring` maps every Tulving command to a Play use case:
+
+| Use case | Play command | Tulving binding |
+|---|---|---|
+| Validate readiness | `probe` | version plus `status` |
+| Install and start | `enable` | Homebrew when absent, then `init` |
+| Create a schedule | `schedule` | `add - --dry-run`, structured duplicate check, then `add -` |
+| List schedules | `list [--all] [--json]` | `list`; JSON uses the private MCP schedule tool |
+| Show terminal movement | `changed [--since …]` | `changed` |
+| Show a terminal rollup | `digest [--since …]` | `digest` |
+| Read agent data | `recall [filters]` | `recall` JSON lines |
+| Explain or rename intent | `why <id> [text]` | `why` |
+| Run immediately | `now <id>` | `now` |
+| Retire without erasing history | `stop <id>` | `stop` |
+| Pause temporarily | `snooze <id> <duration>` | `snooze` |
+| Inspect health | `status` | `status` |
+| Start or stop the clock | `clock on\|off` | `init` or `uninit` |
+| Back up the ledger | `export <path>` | `export` |
+| Check or install updates | `update [--apply]` | `update --check` or `update` |
+
+Play keeps Tulving's `every` and raw `add` writes behind `schedule`. Tulving owns `tick` as an OS
+operation. Play uses `mcp` internally for structured data and never exposes its long-running process.
+
+Agents read `recall` and `list --json`; the human `changed`, `digest`, and plain `list` views remain
+terminal output. An inbox check uses an owner-private last-checked time and advances it only after
+display. It reads changed and failed envelopes, then compares retired schedules with the prior view
+when one exists. Empty inboxes produce one calm line.
 
 The existing host-neutral two-phase delivery contract remains available for scheduler-driven
 digests:
