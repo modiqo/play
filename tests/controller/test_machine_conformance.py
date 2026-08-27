@@ -611,7 +611,7 @@ class MachineConformanceTest(unittest.TestCase):
 
     def test_unified_search_is_actionable(self) -> None:
         self.assertEqual(
-            "scripts/bin/play-search <request.intent> --limit 5 --json",
+            "scripts/bin/play-search <request.intent> --also <request.original> --limit 5 --json",
             ACTIONS["search_authorized_plays"]["command"],
         )
         self.assertEqual("deterministic", ACTIONS["classify_adequacy"]["kind"])

@@ -462,8 +462,8 @@ actions:
     kind: deterministic
     owner: play
     effect: read
-    input_required: [request.intent, request.requested_outcome, modality_policy]
-    command: scripts/bin/play-search <request.intent> --json
+    input_required: [request.original, request.intent, request.requested_outcome, modality_policy]
+    command: scripts/bin/play-search <request.intent> --also <request.original> --json
     events:
       creator_search_ready: [search.complete, search.query, search.sources, search.result_refs, search.results]
 
@@ -506,10 +506,11 @@ actions:
     kind: deterministic
     owner: play
     effect: read
-    input_required: [request.intent, modality_policy]
-    command: scripts/bin/play-search <request.intent> --limit 5 --json
+    input_required: [request.original, request.intent, modality_policy]
+    command: scripts/bin/play-search <request.intent> --also <request.original> --limit 5 --json
     command_policy:
-      - Normalize once, derive one bounded outcome query, then search local and authorized registry indexes concurrently.
+      - Search the harness's intent paraphrase and the user's original words together; strip argument values (URLs, paths, handles, dates) and stop words so only outcome vocabulary reaches the AND-of-terms registry search, and add one OR-relaxed registry query so phrasing differences cannot hide an adequate Play.
+      - Normalize once, derive bounded outcome queries, then search local and authorized registry indexes concurrently.
       - Partition authorized registry matches into private organizations and the public hub.
       - Rank adequate matches local first, remote private second, and remote public third.
       - Deduplicate aliases and versions by canonical Play reference and return bounded execution metadata.

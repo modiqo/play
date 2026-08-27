@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -23,11 +24,16 @@ SCHEMA = "play.search/v1"
 MAX_DESCRIPTION_CHARS = 480
 _DISCOVERY_STOP_WORDS = {
     "a",
+    "about",
     "an",
     "and",
     "are",
+    "at",
     "available",
     "can",
+    "conduct",
+    "could",
+    "do",
     "fetch",
     "find",
     "for",
@@ -35,21 +41,68 @@ _DISCOVERY_STOP_WORDS = {
     "get",
     "help",
     "in",
+    "into",
+    "is",
     "me",
     "month",
     "my",
     "of",
+    "on",
+    "perform",
     "please",
     "play",
     "plays",
     "related",
     "retrieve",
+    "run",
+    "that",
     "the",
+    "this",
     "to",
+    "using",
+    "via",
     "want",
     "what",
+    "with",
+    "would",
     "you",
 }
+# Concrete request values are Play *arguments*, never outcome vocabulary. A URL,
+# path, e-mail, handle, or quoted literal can never appear in Play metadata, so
+# leaving it in the query both dilutes coverage scoring and makes the registry's
+# AND-of-terms search fail on tokens such as a target host name.
+_ARGUMENT_VALUE = re.compile(
+    r"""
+    (?:[a-z][a-z0-9+.-]*://\S+)            # scheme URLs
+    | (?:\bwww\.\S+)                       # bare www hosts
+    | (?:\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b) # e-mail addresses
+    | (?:(?<![\w/])~?/[\w./+-]+)           # absolute or home-relative paths
+    | (?:(?<!\w)@[\w./-]+)                 # @handles and @refs
+    | (?:"[^"]*"|'[^']*'|`[^`]*`)          # quoted literals
+    | (?:\b\d{4}-\d{2}-\d{2}(?:T[\d:.+Z-]*)?\b) # ISO dates
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def strip_argument_values(text: str) -> str:
+    """Remove concrete argument values so only outcome vocabulary remains."""
+
+    stripped = _ARGUMENT_VALUE.sub(" ", text)
+    return " ".join(stripped.split())
+
+
+def outcome_query(text: str) -> str:
+    """Normalize a request into its searchable outcome vocabulary.
+
+    Falls back to the complete normalized text when stripping argument values
+    would leave nothing searchable (for example a bare URL request).
+    """
+
+    try:
+        return normalize_query(strip_argument_values(text))
+    except NormalizationError:
+        return normalize_query(text)
 _MONTHS = {
     "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december",
@@ -77,14 +130,49 @@ def discovery_queries(query: str) -> list[str]:
     return list(dict.fromkeys(candidate for candidate in (query, broad) if candidate))
 
 
+def relaxed_registry_query(query: str) -> str | None:
+    """Return an OR-joined outcome query for the registry's AND-of-terms search.
+
+    Registry search requires every term to match. Once argument values and stop
+    words are gone, joining the remaining outcome tokens with OR lets a Play
+    surface when the request phrases the outcome differently from the card;
+    coverage scoring in merge_results still decides whether it is adequate.
+    """
+
+    broad = discovery_queries(query)[-1]
+    tokens = broad.split()
+    if len(tokens) < 2:
+        return None
+    return " OR ".join(tokens)
+
+
 def search_both(
-    query: str,
+    query: str | list[str],
     limit: int,
     *,
     flow_root: Path | None = None,
 ) -> tuple[dict, list]:
     fetch_limit = min(50, max(20, limit * 10))
-    queries = discovery_queries(query)
+    query_texts = [query] if isinstance(query, str) else list(query)
+    queries = list(
+        dict.fromkeys(
+            candidate
+            for text in query_texts
+            for candidate in discovery_queries(text)
+        )
+    )
+    registry_queries = list(
+        dict.fromkeys(
+            [
+                *queries,
+                *(
+                    relaxed
+                    for text in query_texts
+                    if (relaxed := relaxed_registry_query(text)) is not None
+                ),
+            ]
+        )
+    )
     catalog_items, catalog_complete = _catalog_snapshot()
     local_commands = {}
     for index, candidate in enumerate(queries):
@@ -109,7 +197,7 @@ def search_both(
     for index in range(len(queries)):
         local = results.get(("local", index))
         if local is not None:
-            flows = local.get("flows") if isinstance(local, dict) else None
+            flows = _local_search_flows(local)
             if not isinstance(flows, list):
                 source_errors[("local", index)] = "local search result has no flows array"
             else:
@@ -128,7 +216,7 @@ def search_both(
         catalog_items,
         resolved_flow_root,
         limit,
-        query,
+        query_texts,
     )
     cache_hit = any(
         result.get("match_classification") == "full" for result in cached_results
@@ -150,7 +238,7 @@ def search_both(
                 str(fetch_limit),
                 "--json",
             ]
-            for index, candidate in enumerate(queries)
+            for index, candidate in enumerate(registry_queries)
         }
         with ThreadPoolExecutor(max_workers=len(registry_commands)) as executor:
             pending = {
@@ -187,7 +275,7 @@ def search_both(
             "live_errors": [
                 {
                     "source": source,
-                    "query": queries[index],
+                    "query": (registry_queries if source == "registry" else queries)[index],
                     "error": message,
                 }
                 for (source, index), message in sorted(source_errors.items())
@@ -198,12 +286,44 @@ def search_both(
     )
 
 
+def _unwrap_result(payload: object) -> object:
+    """Unwrap Rote's machine envelope (``{"data": {"result": ...}}``) when present."""
+
+    if isinstance(payload, dict):
+        data = payload.get("data")
+        if isinstance(data, dict) and "result" in data:
+            return data["result"]
+        if "result" in payload and isinstance(payload["result"], (dict, list)):
+            return payload["result"]
+    return payload
+
+
+def _local_search_flows(payload: object) -> list | None:
+    """Return the local flows array, treating a typed empty result as no flows."""
+
+    result = _unwrap_result(payload)
+    if isinstance(result, dict):
+        flows = result.get("flows")
+        if isinstance(flows, list):
+            return flows
+        fields = result.get("fields")
+        if isinstance(fields, dict) and str(fields.get("total", "")).strip() == "0":
+            return []
+    return None
+
+
 def _remote_search_items(payload: object) -> list[dict]:
     """Normalize both current and legacy Rote registry search responses."""
 
+    payload = _unwrap_result(payload)
     if isinstance(payload, list):
         return payload
-    if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+    if not isinstance(payload, dict):
+        raise SearchError("registry search result has no items array")
+    if not isinstance(payload.get("items"), list):
+        page = payload.get("page")
+        if isinstance(page, dict) and page.get("count") == 0:
+            return []
         raise SearchError("registry search result has no items array")
     normalized: list[dict] = []
     for raw_item in payload["items"]:
@@ -427,7 +547,7 @@ def merge_results(
     registry_payload: list,
     flow_root: Path,
     limit: int,
-    normalized_query: str = "",
+    normalized_query: str | list[str] = "",
 ) -> list[dict]:
     local_flows = local_payload.get("flows") if isinstance(local_payload, dict) else None
     if not isinstance(local_flows, list):
@@ -545,9 +665,22 @@ def merge_results(
     # Current DAG Plays must be addressable by canonical reference; never hand a
     # filesystem path to inspection or execution.
     hits = [*canonical.values()]
-    discovery = discovery_queries(normalized_query)
-    semantic_query = discovery[-1] if discovery else normalized_query
-    query_tokens = set(semantic_query.split())
+    query_texts = (
+        [normalized_query] if isinstance(normalized_query, str) else list(normalized_query)
+    )
+    query_token_sets: list[set[str]] = []
+    for text in query_texts:
+        try:
+            outcome = outcome_query(text) if text.strip() else ""
+        except NormalizationError:
+            outcome = ""
+        discovery = discovery_queries(outcome)
+        semantic_query = discovery[-1] if discovery else outcome
+        tokens = set(semantic_query.split())
+        if tokens and tokens not in query_token_sets:
+            query_token_sets.append(tokens)
+    if not query_token_sets:
+        query_token_sets.append(set())
     for hit in hits:
         searchable = set(
             normalize_query(
@@ -561,7 +694,20 @@ def merge_results(
                 )
             ).split()
         )
-        coverage = len(query_tokens & searchable) / len(query_tokens) if query_tokens else 0.0
+        # Several phrasings of one request (the harness's intent paraphrase and
+        # the user's own words) may be searched together; the best one counts.
+        coverage = 0.0
+        query_tokens: set[str] = query_token_sets[0]
+        for candidate_tokens in query_token_sets:
+            candidate_coverage = (
+                sum(1 for token in candidate_tokens if token_is_covered(token, searchable))
+                / len(candidate_tokens)
+                if candidate_tokens
+                else 0.0
+            )
+            if candidate_coverage > coverage or not query_tokens:
+                coverage = candidate_coverage
+                query_tokens = candidate_tokens
         rank_fusion = sum(1.0 / (60 + rank) for rank in hit["source_ranks"].values())
         hit["combined_score"] = coverage + rank_fusion
         hit["coverage"] = coverage
@@ -766,6 +912,16 @@ def build_play_choices(results: list[dict]) -> list[dict]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("query", nargs="+", help="natural-language Play search query")
+    parser.add_argument(
+        "--also",
+        action="append",
+        default=[],
+        metavar="TEXT",
+        help=(
+            "another phrasing of the same request (for example the user's original words) "
+            "searched alongside the query; the best-matching phrasing scores each Play"
+        ),
+    )
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
@@ -773,19 +929,24 @@ def main() -> int:
         parser.error("--limit must be at least 1")
     original = " ".join(args.query)
     try:
-        normalized = normalize_query(original)
+        normalized = outcome_query(original)
+        phrasings = list(
+            dict.fromkeys(
+                [normalized, *(outcome_query(text) for text in args.also if text.strip())]
+            )
+        )
         flow_root = Path(
             os.environ.get("ROTE_FLOW_DIR", Path.home() / ".rote" / "flows")
         )
         local_payload, registry_payload = search_both(
-            normalized, args.limit, flow_root=flow_root
+            phrasings, args.limit, flow_root=flow_root
         )
         results = merge_results(
             local_payload,
             registry_payload,
             flow_root,
             args.limit,
-            normalized,
+            phrasings,
         )
     except (SearchError, NormalizationError) as error:
         print(f"play-search: {error}", file=sys.stderr)
@@ -794,6 +955,7 @@ def main() -> int:
         "schema": SCHEMA,
         "query": original,
         "normalized_query": normalized,
+        "phrasings": phrasings,
         "complete": True,
         "sources": [
             "local",

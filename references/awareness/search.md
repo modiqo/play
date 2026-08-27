@@ -7,6 +7,10 @@ into one deterministic result set.
 
 ## Normalize before searching
 
+0. Strip concrete argument values first: URLs, `www.` hosts, e-mail addresses, absolute or
+   `~/` paths, `@handles`, quoted literals, and ISO dates. They are Play parameters, never
+   outcome vocabulary, and the registry's AND-of-terms search fails on any token it cannot find
+   (for example a target host name). If nothing searchable remains, fall back to the full text.
 1. Apply Unicode NFKD normalization and case folding.
 2. Keep Unicode letters and numbers, discard combining marks, and replace punctuation, symbols,
    control characters, and separators with spaces.
@@ -17,6 +21,13 @@ Build one additional bounded discovery query by removing request verbs, conversa
 month names, and standalone numbers. This keeps outcome identity (for example `rideshare receipts`)
 while leaving dates and other values for Play parameters. Never pass the raw user description to an
 underlying query parser.
+
+Pass every available phrasing of the same request with `--also <text>` (the runtime passes the
+harness's `request.intent` as the query and the user's `request.original` as `--also`). Each Play
+is scored by its best-covered phrasing, so a harness that paraphrases the intent poorly cannot hide
+a Play the user's own words would have found. Registry queries also include one OR-joined
+relaxation of the outcome tokens; coverage scoring still decides adequacy. Coverage treats
+inflections of one word (`assess`/`assessment`, `receipt`/`receipts`) as the same token.
 
 ## Search concurrently and completely
 

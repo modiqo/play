@@ -229,7 +229,11 @@ run.
 
 - `model`: reason over only `instruction.input` and the projected policy; return one declared
   event by filling `event_template` according to its complete `payload_schema`; never guess field
-  types, enum values, or nested object shapes from the field names alone. For
+  types, enum values, or nested object shapes from the field names alone. Keep `request.intent`
+  a short outcome phrase (`pricing page assessment`), never a sentence carrying URLs, paths,
+  handles, or dates; those are parameters. Search runs the intent and the user's original words
+  together and strips argument values itself, but a lean intent keeps every harness on the same
+  footing. For
   `route_inspected_play`, resolve every parameter the
   user already supplied against the inspected frontmatter in one pass, normalize it to the declared
   type/description/example/valid values/input choices, and return the complete canonical

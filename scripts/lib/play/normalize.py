@@ -49,6 +49,29 @@ def token_is_covered(expected: str, actual_tokens: set[str]) -> bool:
         return False
     return any(
         len(actual) >= 4
-        and difflib.SequenceMatcher(None, expected, actual).ratio() >= 0.88
+        and (
+            difflib.SequenceMatcher(None, expected, actual).ratio() >= 0.88
+            or _shares_stem(expected, actual)
+        )
         for actual in actual_tokens
     )
+
+
+def _shares_stem(left: str, right: str) -> bool:
+    """Return whether two long tokens are inflections of one word.
+
+    ``assess``/``assessment``, ``summary``/``summarize`` and ``receipt``/``receipts``
+    describe the same outcome. A shared prefix that is at least five characters
+    and covers most of the shorter token counts; unrelated words that merely
+    start alike (``inter``/``internal``) fail the ratio.
+    """
+
+    if len(left) < 5 or len(right) < 5:
+        return False
+    shared = 0
+    for a, b in zip(left, right):
+        if a != b:
+            break
+        shared += 1
+    shorter = min(len(left), len(right))
+    return shared >= 5 and shared >= 0.75 * shorter

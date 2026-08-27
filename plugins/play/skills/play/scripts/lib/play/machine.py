@@ -664,7 +664,7 @@ def validate_bundle(
         and first_choices.get("done", {}).get("event") == "onboarding_dismissed",
         "first use must recommend inspection of Hello while preserving a clear dismissal",
     )
-    check(actions.get("search_authorized_plays", {}).get("command") == "scripts/bin/play-search <request.intent> --limit 5 --json", "Play discovery must invoke the bounded local and registry search")
+    check(actions.get("search_authorized_plays", {}).get("command") == "scripts/bin/play-search <request.intent> --also <request.original> --limit 5 --json", "Play discovery must invoke the bounded local and registry search")
     check(_target(states, "qualify", "play_awareness_request") == "awareness_collect", "an awareness request must enter the digest path")
     check(actions.get("collect_awareness_digest", {}).get("effect") == "local-write", "awareness collection may write only remembered local state")
     check(actions.get("collect_awareness_digest", {}).get("command") == "scripts/bin/play-digest --remember --days <awareness.window_days> --json", "awareness must invoke the remembered digest command")

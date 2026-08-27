@@ -758,6 +758,204 @@ class SearchTest(unittest.TestCase):
             ),
         )
 
+    def test_argument_values_are_stripped_before_search(self):
+        self.assertEqual(
+            "assess the pricing page at",
+            PLAY_SEARCH.outcome_query(
+                "Assess the pricing page at https://modiqo.ai/pricing"
+            ),
+        )
+        self.assertEqual(
+            "summarize prs for in since",
+            PLAY_SEARCH.outcome_query(
+                "summarize PRs for @octocat in ~/src/repo since 2026-08-01 \"urgent\""
+            ),
+        )
+        self.assertEqual(
+            "email receipts for",
+            PLAY_SEARCH.outcome_query("email receipts for person@example.com"),
+        )
+        # A request that is only an argument still yields a searchable query.
+        self.assertEqual(
+            "https modiqo ai pricing",
+            PLAY_SEARCH.outcome_query("https://modiqo.ai/pricing"),
+        )
+
+    def test_relaxed_registry_query_joins_outcome_tokens_with_or(self):
+        self.assertEqual(
+            "assess OR pricing OR page",
+            PLAY_SEARCH.relaxed_registry_query("assess the pricing page at"),
+        )
+        self.assertIsNone(PLAY_SEARCH.relaxed_registry_query("pricing"))
+
+    def test_intent_paraphrase_with_target_url_still_finds_the_play(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        registry = [
+            {
+                "owner_slug": "heavybit-crucible",
+                "skill_name": "pricing-page-assessment",
+                "skill_description": "Is my pricing page helping or hurting?",
+                "visibility": "public",
+                "version": "0.4.2",
+                "status": "approved",
+            }
+        ]
+        for query in (
+            "Assess the pricing page at https://modiqo.ai/pricing",
+            "assess the pricing page at https modiqo ai pricing",
+            "can you conduct pricing page assessment on https://modiqo.ai/pricing",
+        ):
+            results = PLAY_SEARCH.merge_results(
+                {"flows": []}, registry, flow_root, 10, query
+            )
+            self.assertEqual(
+                ["heavybit-crucible/pricing-page-assessment"],
+                [result["reference"] for result in results],
+                query,
+            )
+            self.assertEqual("full", results[0]["match_classification"], query)
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []}, registry, flow_root, 10, "list something unrelated entirely"
+        )
+        self.assertEqual([], results)
+
+    def test_best_of_several_phrasings_scores_each_play(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        registry = [
+            {
+                "owner_slug": "heavybit-crucible",
+                "skill_name": "pricing-page-assessment",
+                "skill_description": "Is my pricing page helping or hurting?",
+                "visibility": "public",
+                "version": "0.4.2",
+            }
+        ]
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []},
+            registry,
+            flow_root,
+            10,
+            ["evaluate the plans grid", "pricing page assessment for https://modiqo.ai/pricing"],
+        )
+        self.assertEqual("full", results[0]["match_classification"])
+        self.assertEqual(1.0, results[0]["coverage"])
+
+    def test_live_search_unwraps_rote_machine_envelope_and_empty_pages(self):
+        import subprocess
+
+        def typed_result(command, **_kwargs):
+            if "--source" not in command:
+                payload = (
+                    '{"schema":1,"ok":true,"data":{"status":{"ok":true},'
+                    '"result":{"fields":{"query":"x","reason":"no_plays_directory","total":"0"}}}}'
+                )
+            elif "OR" in " ".join(command):
+                payload = (
+                    '{"schema":1,"ok":true,"data":{"result":{"schema":"rote.remote-play-search.v1",'
+                    '"page":{"count":1,"next_cursor":null},"items":[{"reference":'
+                    '"heavybit-crucible/pricing-page-assessment@0.4.2","name":"pricing-page-assessment",'
+                    '"description":"Is my pricing page helping or hurting?","visibility":"public",'
+                    '"version":"0.4.2","status":"approved","owner":{"slug":"heavybit-crucible"}}]}}}'
+                )
+            else:
+                payload = (
+                    '{"schema":1,"ok":true,"data":{"result":{"schema":"rote.remote-play-search.v1",'
+                    '"page":{"count":0,"next_cursor":null},"items":[]}}}'
+                )
+            return subprocess.CompletedProcess(command, 0, payload, "")
+
+        with mock.patch(
+            "play.commands.subprocess.run", side_effect=typed_result
+        ), mock.patch.dict(
+            os.environ, {"PLAY_INBOX_CACHE_PATH": "/nonexistent/inbox.json"}
+        ):
+            local, registry = PLAY_SEARCH.search_both("assess the pricing page at", 5)
+        self.assertEqual([], local["flows"])
+        self.assertEqual([], local["source_health"]["live_errors"])
+        self.assertEqual("live_after_cache_miss", local["source_health"]["mode"])
+        self.assertEqual(
+            ["heavybit-crucible"], [item["owner_slug"] for item in registry]
+        )
+
+    def test_argument_values_never_create_a_match(self):
+        """A URL, e-mail, or handle that happens to contain Play vocabulary is not intent."""
+        flow_root = pathlib.Path("/tmp/example-flows")
+        registry = [
+            {
+                "owner_slug": "heavybit-crucible",
+                "skill_name": "pricing-page-assessment",
+                "skill_description": "Is my pricing page helping or hurting?",
+                "visibility": "public",
+                "version": "0.4.2",
+            }
+        ]
+        for query in (
+            "https://modiqo.ai/pricing",
+            "send a note to pricing@example.com",
+            "open ~/docs/pricing-page-assessment.md",
+            "ping @pricing-page on slack",
+        ):
+            results = PLAY_SEARCH.merge_results(
+                {"flows": []}, registry, flow_root, 10, query
+            )
+            self.assertEqual([], results, query)
+
+    def test_or_relaxed_registry_hits_are_still_filtered_by_coverage(self):
+        """OR-joined registry queries widen recall; scoring must still reject weak hits."""
+        flow_root = pathlib.Path("/tmp/example-flows")
+        registry = [
+            {
+                "owner_slug": "acme",
+                "skill_name": "page-speed-audit",
+                "skill_description": "Audits page load performance.",
+                "visibility": "public",
+                "version": "1.0.0",
+            },
+            {
+                "owner_slug": "acme",
+                "skill_name": "competitor-pricing-scrape",
+                "skill_description": "Scrapes competitor pricing tables.",
+                "visibility": "public",
+                "version": "1.0.0",
+            },
+        ]
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []},
+            registry,
+            flow_root,
+            10,
+            "Assess the pricing page at https://modiqo.ai/pricing",
+        )
+        self.assertEqual([], results)
+
+    def test_stem_sharing_is_bounded_to_real_inflections(self):
+        from play.normalize import token_is_covered
+
+        self.assertTrue(token_is_covered("assessment", {"assess"}))
+        self.assertTrue(token_is_covered("assess", {"assessment"}))
+        self.assertTrue(token_is_covered("summarize", {"summary"}))
+        self.assertTrue(token_is_covered("receipts", {"receipt"}))
+        self.assertFalse(token_is_covered("internal", {"interval"}))
+        self.assertFalse(token_is_covered("assess", {"asset"}))
+        self.assertFalse(token_is_covered("pricing", {"price"}))
+        self.assertFalse(token_is_covered("page", {"pages"}))  # short tokens stay exact
+
+    def test_filler_only_intent_matches_nothing(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        registry = [
+            {
+                "owner_slug": "heavybit-crucible",
+                "skill_name": "pricing-page-assessment",
+                "skill_description": "Is my pricing page helping or hurting?",
+                "visibility": "public",
+                "version": "0.4.2",
+            }
+        ]
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []}, registry, flow_root, 10, "can you do this for me please"
+        )
+        self.assertEqual([], results)
+
     def test_scope_priority_is_local_then_private_then_public_then_baseline(self):
         flow_root = pathlib.Path("/tmp/example-flows")
         description = "Retrieve rideshare receipts"
