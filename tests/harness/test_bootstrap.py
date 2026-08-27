@@ -15,9 +15,12 @@ from unittest.mock import ANY, MagicMock, patch
 
 from scripts.lib.play.bootstrap import (
     BootstrapError,
+    REMOTE_AUTH_EVIDENCE,
     Step,
     Progress,
     _accept_identity_only_preflight,
+    _browser_mode,
+    _choose_login_method,
     _parallel_harness_work,
     _os_snapshot,
     _require_supported_os,
@@ -83,6 +86,35 @@ class BootstrapTest(unittest.TestCase):
             _require_supported_os(platform="win32", os_name="nt")
 
         _require_supported_os(platform="linux", os_name="posix")
+
+    def test_browser_mode_detects_headless_linux_and_honors_overrides(self) -> None:
+        self.assertEqual("headless", _browser_mode(environ={}, system="Linux"))
+        self.assertEqual(
+            "headed",
+            _browser_mode(environ={"DISPLAY": ":0"}, system="Linux"),
+        )
+        self.assertEqual(
+            "headed",
+            _browser_mode("headed", environ={}, system="Linux"),
+        )
+        self.assertEqual(
+            "headless",
+            _browser_mode(
+                environ={"SSH_TTY": "/dev/pts/1"}, system="Darwin"
+            ),
+        )
+
+    def test_headless_login_prompt_recommends_remote_machine(self) -> None:
+        stream = MagicMock()
+        stream.readline.return_value = "\n"
+
+        method = _choose_login_method("headless", stream=stream)
+
+        self.assertEqual("remote", method)
+        prompt = "".join(call.args[0] for call in stream.write.call_args_list)
+        self.assertIn("No browser session was detected", prompt)
+        self.assertIn("Sign in from another machine (recommended)", prompt)
+        self.assertIn("SSH-forwarded callback", prompt)
 
     @patch("scripts.lib.play.bootstrap._linux_release")
     @patch("scripts.lib.play.bootstrap.platform_module.machine", return_value="x86_64")
@@ -799,7 +831,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.67",
+                                "version": "0.4.68",
                                 "enabled": True,
                             }
                         ]
@@ -810,7 +842,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.67", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.68", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -1264,6 +1296,29 @@ class BootstrapTest(unittest.TestCase):
         self.assertNotIn("rote login --provider", rendered)
         self.assertNotIn("INCOMPLETE", rendered)
 
+    def test_status_card_explains_remote_machine_authentication(self) -> None:
+        rendered = _render_status_card(
+            {
+                "status": "onboarding_required",
+                "run_id": "headless-sign-in",
+                "selected_harnesses": ["claude"],
+                "steps": [
+                    {
+                        "id": "rote_identity",
+                        "status": "onboarding_required",
+                        "detail": "Authenticate from another machine.",
+                        "evidence": REMOTE_AUTH_EVIDENCE,
+                    }
+                ],
+            }
+        )
+
+        self.assertIn("Sign in from another machine", rendered)
+        self.assertIn("rote provision --ttl 30", rendered)
+        self.assertIn("rote claim <dxp_...>", rendered)
+        self.assertIn("Play-owned harness state has not been changed", rendered)
+        self.assertNotIn("pass PLAY_LOGIN_PROVIDER", rendered)
+
     def test_identity_gate_requires_provider_before_play_mutation(self) -> None:
         runner = MagicMock(
             return_value=MagicMock(returncode=0, stdout="error: Not logged in\n", stderr="")
@@ -1274,6 +1329,30 @@ class BootstrapTest(unittest.TestCase):
         ):
             _identity_gate("/bin/rote", login_provider=None, runner=runner)
 
+        runner.assert_called_once_with(["/bin/rote", "whoami"])
+
+    def test_identity_gate_pauses_for_remote_machine_without_receiving_token(self) -> None:
+        runner = MagicMock(
+            return_value=MagicMock(
+                returncode=1, stdout="error: Not logged in\n", stderr=""
+            )
+        )
+
+        step, ready = _identity_gate(
+            "/bin/rote",
+            login_provider=None,
+            remote_auth=True,
+            runner=runner,
+        )
+
+        self.assertFalse(ready)
+        self.assertEqual("onboarding_required", step.status)
+        self.assertEqual(REMOTE_AUTH_EVIDENCE, step.evidence)
+        self.assertEqual(
+            ["/bin/rote", "claim", "<provision-token>"], step.command
+        )
+        self.assertIn("rote provision --ttl 30", step.detail)
+        self.assertIn("did not receive or record it", step.detail)
         runner.assert_called_once_with(["/bin/rote", "whoami"])
 
     def test_identity_gate_explains_network_restrictions_during_login(self) -> None:
@@ -1536,6 +1615,115 @@ class BootstrapTest(unittest.TestCase):
         runner.assert_not_called()
         backup.assert_not_called()
 
+    @patch("scripts.lib.play.bootstrap.backup_play_state")
+    @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
+    def test_apply_remote_auth_pauses_before_backup(
+        self, _resolve_rote: MagicMock, backup: MagicMock
+    ) -> None:
+        plan = {
+            "plan_id": "sha256:headless-identity",
+            "selected_harnesses": ["claude"],
+            "targets": [],
+            "rote": {
+                "path": "/bin/rote",
+                "version": "1.0.0",
+                "identity": "required",
+                "update": {
+                    "status": "current",
+                    "detail": "Rote is current.",
+                    "recommended_action": "keep",
+                },
+            },
+            "rote_skills": [],
+        }
+
+        def runner(command: Sequence[str]) -> MagicMock:
+            if command[1:] == ["version"]:
+                return MagicMock(
+                    returncode=0, stdout="version: 1.0.0\n", stderr=""
+                )
+            if command[1:] == ["whoami"]:
+                return MagicMock(
+                    returncode=1, stdout="error: Not logged in\n", stderr=""
+                )
+            if command[1:] == ["self-update", "--check"]:
+                return MagicMock(
+                    returncode=0,
+                    stdout="You are on the latest version!\n",
+                    stderr="",
+                )
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        report = apply(
+            ROOT,
+            requested=["claude"],
+            remote_auth=True,
+            runner=runner,
+            run_id="headless-identity-run",
+            prepared_plan=plan,
+        )
+
+        self.assertEqual("onboarding_required", report["status"])
+        identity = next(
+            step for step in report["steps"] if step["id"] == "rote_identity"
+        )
+        self.assertEqual(REMOTE_AUTH_EVIDENCE, identity["evidence"])
+        backup.assert_not_called()
+
+    @patch("scripts.lib.play.bootstrap.backup_play_state")
+    @patch(
+        "scripts.lib.play.bootstrap.resolve_rote",
+        side_effect=[None, "/bin/rote", "/bin/rote"],
+    )
+    def test_apply_remote_auth_installs_only_rote_before_pausing(
+        self, _resolve_rote: MagicMock, backup: MagicMock
+    ) -> None:
+        plan = {
+            "plan_id": "sha256:headless-install",
+            "selected_harnesses": ["claude"],
+            "targets": [],
+            "rote": {
+                "path": None,
+                "version": None,
+                "identity": "unavailable",
+                "update": {
+                    "status": "not_installed",
+                    "detail": "Rote is not installed.",
+                    "recommended_action": "install",
+                },
+            },
+            "rote_skills": [],
+        }
+        commands: list[list[str]] = []
+
+        def runner(command: Sequence[str]) -> MagicMock:
+            commands.append(list(command))
+            if command[1:] == ["version"]:
+                return MagicMock(
+                    returncode=0, stdout="version: 1.0.0\n", stderr=""
+                )
+            if command[1:] == ["whoami"]:
+                return MagicMock(
+                    returncode=1, stdout="error: Not logged in\n", stderr=""
+                )
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        report = apply(
+            ROOT,
+            requested=["claude"],
+            approve_remote_installer=True,
+            remote_auth=True,
+            runner=runner,
+            run_id="headless-install-run",
+            prepared_plan=plan,
+        )
+
+        self.assertEqual("onboarding_required", report["status"])
+        self.assertEqual("install_rote", report["steps"][0]["id"])
+        self.assertEqual("completed", report["steps"][0]["status"])
+        self.assertIn(_official_rote_install_command(), commands)
+        backup.assert_not_called()
+
     def test_status_card_keeps_structured_command_output_in_report(self) -> None:
         verbose = json.dumps(
             {
@@ -1680,7 +1868,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.67 is installed and enabled.",
+                "Play 0.4.68 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -1772,7 +1960,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.67", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.68", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 
@@ -1780,7 +1968,7 @@ class BootstrapTest(unittest.TestCase):
         "scripts.lib.play.bootstrap._choose_detected_harnesses",
         return_value=["codex"],
     )
-    @patch("scripts.lib.play.bootstrap._choose_login_provider", return_value="google")
+    @patch("scripts.lib.play.bootstrap._choose_login_method", return_value="google")
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
     @patch("scripts.lib.play.bootstrap.apply")
     @patch("scripts.lib.play.bootstrap.build_plan")
@@ -1789,7 +1977,7 @@ class BootstrapTest(unittest.TestCase):
         build: MagicMock,
         apply_plan: MagicMock,
         confirm: MagicMock,
-        choose_provider: MagicMock,
+        choose_login: MagicMock,
         choose_harnesses: MagicMock,
     ) -> None:
         build.return_value = {
@@ -1837,7 +2025,7 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertEqual(0, result)
         self.assertEqual(2, confirm.call_count)
-        choose_provider.assert_called_once_with()
+        choose_login.assert_called_once_with("headed")
         choose_harnesses.assert_called_once_with(top_k=3)
         build.assert_called_once_with(top_k=3, requested=["codex"])
         self.assertIn("Install Rote and Play", confirm.call_args_list[0].args[0])
@@ -1852,6 +2040,7 @@ class BootstrapTest(unittest.TestCase):
             approve_remote_installer=True,
             enable_tulving=True,
             login_provider="google",
+            remote_auth=False,
             run_id="guided-run",
             expected_plan_id="sha256:guided",
             prepared_plan=build.return_value,

@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from .recurrence import (
     RecurrenceError,
@@ -37,6 +37,8 @@ RESTORE_PLAN_SCHEMA = "play.install-restore-plan/v1"
 RESTORE_REPORT_SCHEMA = "play.install-restore-report/v1"
 BACKUP_RETENTION = 10
 LOGIN_PROVIDERS = ("google", "github")
+BROWSER_MODES = ("auto", "headed", "headless")
+REMOTE_AUTH_EVIDENCE = "auth:remote-machine"
 REGISTRY_NETWORK_MARKERS = (
     "network error",
     "error sending request",
@@ -650,21 +652,69 @@ def _registry_network_blocker(action: str) -> str:
 def _registry_credentials_blocker() -> str:
     return (
         "Rote registry credentials are required before Play can be installed. "
-        "Re-run setup in a normal terminal and choose Google or GitHub. "
-        "For unattended setup, set PLAY_LOGIN_PROVIDER=google or github."
+        "On a machine with a browser, choose Google or GitHub. On a headless "
+        "machine, authenticate Rote with `rote provision` and `rote claim`, then retry. "
+        "For unattended browser sign-in, set PLAY_LOGIN_PROVIDER=google or github."
     )
+
+
+def _remote_auth_guidance() -> str:
+    return (
+        "No browser session was detected. On a machine with a browser, run "
+        "`rote login --provider google` or `rote login --provider github`, then "
+        "`rote provision --ttl 30`. On this machine, run `rote claim <dxp_...>`, "
+        "verify with `rote whoami`, and rerun the Play installer. Treat the claim "
+        "token as a password; Play did not receive or record it."
+    )
+
+
+def _browser_mode(
+    requested: str = "auto",
+    *,
+    environ: Mapping[str, str] | None = None,
+    system: str | None = None,
+) -> str:
+    """Resolve whether this process can reasonably launch a graphical browser."""
+
+    if requested not in BROWSER_MODES:
+        raise BootstrapError(
+            f"browser mode must be one of: {', '.join(BROWSER_MODES)}"
+        )
+    if requested != "auto":
+        return requested
+    environment = os.environ if environ is None else environ
+    platform_name = platform_module.system() if system is None else system
+    if any(environment.get(name) for name in ("DISPLAY", "WAYLAND_DISPLAY")):
+        return "headed"
+    if platform_name == "Linux" or any(
+        environment.get(name) for name in ("SSH_TTY", "SSH_CONNECTION")
+    ):
+        return "headless"
+    return "headed"
 
 
 def _identity_gate(
     rote: str,
     *,
     login_provider: str | None,
+    remote_auth: bool = False,
     runner: Runner,
 ) -> tuple[Step, bool]:
     """Verify identity or complete one explicit OAuth provider flow before setup mutates Play."""
 
     if _probe_identity(rote, runner) == "authenticated":
         return Step("rote_identity", "completed", "Rote identity verified."), True
+    if remote_auth:
+        return (
+            Step(
+                "rote_identity",
+                "onboarding_required",
+                _remote_auth_guidance(),
+                command=[rote, "claim", "<provision-token>"],
+                evidence=REMOTE_AUTH_EVIDENCE,
+            ),
+            False,
+        )
     if login_provider is None:
         raise BootstrapError(_registry_credentials_blocker())
     if login_provider not in LOGIN_PROVIDERS:
@@ -1122,7 +1172,7 @@ def build_plan(
         rote_action,
         {
             "id": "verify_rote_identity",
-            "effect": "requires an authenticated Rote identity through Google or GitHub before changing Play-owned state",
+            "effect": "requires an authenticated Rote identity before changing Play-owned state; headless machines can claim credentials provisioned elsewhere",
             "recommended": True,
         },
         {
@@ -3399,15 +3449,36 @@ def _render_status_card(report: dict[str, Any]) -> str:
         in {"failed", "approval_required", "human_action_required", "review_required"}
     ]
     if onboarding_steps:
-        lines.extend(
-            [
-                "",
-                "  Sign in to finish setup",
-                "    Re-run this installer in a terminal and choose Google or GitHub.",
-                "    For unattended setup, pass PLAY_LOGIN_PROVIDER=google or github.",
-                "    Play-owned harness state has not been changed.",
-            ]
+        remote_handoff = any(
+            step.get("evidence") == REMOTE_AUTH_EVIDENCE
+            for step in onboarding_steps
         )
+        if remote_handoff:
+            lines.extend(
+                [
+                    "",
+                    "  Sign in from another machine",
+                    "    On a machine with a browser:",
+                    "      1. Run `rote login --provider google` or `rote login --provider github`.",
+                    "      2. Run `rote provision --ttl 30` and copy the generated claim token.",
+                    "    On this machine:",
+                    "      3. Run `rote claim <dxp_...>`, then verify with `rote whoami`.",
+                    "      4. Re-run this Play installer.",
+                    "    Treat the claim token as a password; never paste it into chat or logs.",
+                    "    Play-owned harness state has not been changed.",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "",
+                    "  Sign in to finish setup",
+                    "    Re-run this installer in a terminal and choose Google or GitHub.",
+                    "    Headless machine? Use `rote provision` elsewhere, then `rote claim` here.",
+                    "    For unattended browser sign-in, pass PLAY_LOGIN_PROVIDER=google or github.",
+                    "    Play-owned harness state has not been changed.",
+                ]
+            )
     if action_steps:
         lines.extend(["", "  Before you start"])
         for step in action_steps:
@@ -3636,7 +3707,7 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
             "",
             "  What happens next",
             "",
-            "    1. Verify your Rote identity with Google or GitHub",
+            "    1. Verify your Rote identity; headless machines can claim credentials provisioned elsewhere",
             "    2. Cache a verified public Play catalog for What’s New",
             f"    3. Prepare Rote and its skills for {app_count} {app_word}",
             "    4. Back up and replace Play-owned harness state while preserving unrelated settings",
@@ -3707,27 +3778,39 @@ def _confirm(question: str, *, default: bool) -> bool:
     raise BootstrapError("approval must be yes or no")
 
 
-def _choose_login_provider() -> str:
-    """Choose the OAuth identity provider from the controlling terminal."""
+def _choose_login_method(browser_mode: str, *, stream=None) -> str:
+    """Choose browser OAuth or a secure handoff from the controlling terminal."""
 
-    stream = None
     close_stream = False
-    if sys.stdin.isatty():
-        stream = sys.stdin
+    if stream is None:
+        if sys.stdin.isatty():
+            stream = sys.stdin
+        else:
+            try:
+                stream = open("/dev/tty", "r+", encoding="utf-8")
+                close_stream = True
+            except OSError as error:
+                raise BootstrapError(
+                    "sign-in needs an interactive terminal, a pre-claimed Rote identity, "
+                    "or --login-provider google|github"
+                ) from error
+    if browser_mode == "headless":
+        prompt = (
+            "\nNo browser session was detected on this machine.\n"
+            "Sign in or create your Rote account before Play is activated:\n"
+            "  1. Sign in from another machine (recommended)\n"
+            "  2. Continue with Google using an SSH-forwarded callback\n"
+            "  3. Continue with GitHub using an SSH-forwarded callback\n"
+            "Choose 1, 2, or 3 [1]: "
+        )
     else:
-        try:
-            stream = open("/dev/tty", "r+", encoding="utf-8")
-            close_stream = True
-        except OSError as error:
-            raise BootstrapError(
-                "sign-in needs an interactive terminal or --login-provider google|github"
-            ) from error
-    prompt = (
-        "\nSign in or create your Rote account before Play is activated:\n"
-        "  1. Continue with Google (recommended)\n"
-        "  2. Continue with GitHub\n"
-        "Choose 1 or 2 [1]: "
-    )
+        prompt = (
+            "\nSign in or create your Rote account before Play is activated:\n"
+            "  1. Continue with Google (recommended)\n"
+            "  2. Continue with GitHub\n"
+            "  3. Sign in from another machine\n"
+            "Choose 1, 2, or 3 [1]: "
+        )
     try:
         if stream is sys.stdin:
             print(prompt, end="", file=sys.stderr, flush=True)
@@ -3741,11 +3824,21 @@ def _choose_login_provider() -> str:
     if not answer:
         raise BootstrapError("interactive sign-in selection ended before a choice was received")
     normalized = answer.strip().lower()
-    if normalized in {"", "1", "google", "continue with google"}:
-        return "google"
-    if normalized in {"2", "github", "continue with github"}:
-        return "github"
-    raise BootstrapError("sign-in provider must be Google or GitHub")
+    if browser_mode == "headless":
+        if normalized in {"", "1", "remote", "another", "another machine"}:
+            return "remote"
+        if normalized in {"2", "google", "continue with google"}:
+            return "google"
+        if normalized in {"3", "github", "continue with github"}:
+            return "github"
+    else:
+        if normalized in {"", "1", "google", "continue with google"}:
+            return "google"
+        if normalized in {"2", "github", "continue with github"}:
+            return "github"
+        if normalized in {"3", "remote", "another", "another machine"}:
+            return "remote"
+    raise BootstrapError("sign-in method must be Google, GitHub, or another machine")
 
 
 def write_report(report: dict[str, Any]) -> tuple[Path, Path]:
@@ -3768,6 +3861,7 @@ def apply(
     approve_remote_installer: bool = False,
     enable_tulving: bool = False,
     login_provider: str | None = None,
+    remote_auth: bool = False,
     runner: Runner = run,
     run_id: str | None = None,
     expected_plan_id: str | None = None,
@@ -3782,6 +3876,8 @@ def apply(
         "Checking the install plan",
         lambda: build_plan(top_k=top_k, requested=requested, runner=runner),
     )
+    if login_provider is not None and remote_auth:
+        raise BootstrapError("choose either browser OAuth or remote authentication")
     if expected_plan_id is not None and expected_plan_id != plan["plan_id"]:
         raise BootstrapError(
             f"plan changed: expected {expected_plan_id}, got {plan['plan_id']}"
@@ -3790,7 +3886,11 @@ def apply(
     planned_identity = (
         rote_plan.get("identity") if isinstance(rote_plan, dict) else None
     )
-    if planned_identity != "authenticated" and login_provider is None:
+    if (
+        planned_identity != "authenticated"
+        and login_provider is None
+        and not remote_auth
+    ):
         raise BootstrapError(_registry_credentials_blocker())
     selected = list(plan["selected_harnesses"])
     steps: list[Step] = []
@@ -3855,6 +3955,7 @@ def apply(
     identity_step, identity_ready = _identity_gate(
         rote,
         login_provider=login_provider,
+        remote_auth=remote_auth,
         runner=runner,
     )
     steps.append(identity_step)
@@ -4317,6 +4418,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     apply_parser.add_argument("--approve-remote-installer", action="store_true")
     apply_parser.add_argument("--enable-tulving", action="store_true")
     apply_parser.add_argument("--login-provider", choices=LOGIN_PROVIDERS)
+    apply_parser.add_argument("--remote-auth", action="store_true")
     apply_parser.add_argument("--run-id")
     apply_parser.add_argument("--plan-id")
     install_parser = subparsers.choices["install"]
@@ -4339,6 +4441,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--login-provider",
         choices=LOGIN_PROVIDERS,
         help="complete first-run Rote sign-in with this OAuth provider",
+    )
+    install_parser.add_argument(
+        "--remote-auth",
+        action="store_true",
+        help="install Rote, then pause for a provision token claimed outside Play",
+    )
+    install_parser.add_argument(
+        "--browser-mode",
+        choices=BROWSER_MODES,
+        default="auto",
+        help="override automatic browser-session detection",
     )
     install_parser.add_argument(
         "--mode",
@@ -4409,6 +4522,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 approve_remote_installer=args.approve_remote_installer,
                 enable_tulving=args.enable_tulving,
                 login_provider=args.login_provider,
+                remote_auth=args.remote_auth,
                 run_id=args.run_id,
                 expected_plan_id=args.plan_id,
                 progress=progress,
@@ -4430,6 +4544,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             approve_remote_installer = args.approve_remote_installer
             enable_tulving = args.enable_tulving
             login_provider = args.login_provider
+            remote_auth = args.remote_auth
+            if login_provider is not None and remote_auth:
+                raise BootstrapError(
+                    "choose either --login-provider or --remote-auth, not both"
+                )
+            browser_mode = _browser_mode(args.browser_mode)
             renderer = _render_guided_plan if args.mode == "guided" else _render_plan
             print(renderer(plan), file=sys.stderr if args.json else sys.stdout)
             if not args.yes:
@@ -4446,8 +4566,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if (
                     plan["rote"].get("identity") != "authenticated"
                     and login_provider is None
+                    and not remote_auth
                 ):
-                    login_provider = _choose_login_provider()
+                    login_method = _choose_login_method(browser_mode)
+                    if login_method == "remote":
+                        remote_auth = True
+                    else:
+                        login_provider = login_method
                 tulving = plan.get("tulving", {})
                 if not (
                     isinstance(tulving, dict) and tulving.get("ready") is True
@@ -4456,6 +4581,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "Enable recurring Plays with Tulving? Setup installs it only if needed.",
                         default=False,
                     )
+            elif (
+                plan["rote"].get("identity") != "authenticated"
+                and login_provider is None
+                and not remote_auth
+                and browser_mode == "headless"
+            ):
+                remote_auth = True
             payload = apply(
                 source,
                 top_k=args.top_k,
@@ -4463,6 +4595,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 approve_remote_installer=approve_remote_installer,
                 enable_tulving=enable_tulving,
                 login_provider=login_provider,
+                remote_auth=remote_auth,
                 run_id=args.run_id,
                 expected_plan_id=plan["plan_id"],
                 prepared_plan=plan,

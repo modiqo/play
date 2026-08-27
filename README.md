@@ -519,16 +519,43 @@ Install also creates owner-private journal settings with sparse exploration puls
 logging enabled. The defaults are five new workspace steps, at most one pulse every two minutes,
 and 30 days of recall history. Existing explicit journal choices survive reinstall.
 
-Identity is an early setup gate. If Rote is unsigned, the terminal wizard offers Google and GitHub
-before any Play-owned backup, plugin, skill, or hook is changed. OAuth login also creates a new
-account when the provider identity has not been seen before. A non-interactive install without an
-authenticated profile or explicit provider exits with an error because registry credentials are
-required. Rerun it in a terminal or provide `PLAY_LOGIN_PROVIDER=google|github`. A registry network
-failure now points to Codex sandbox access, Claude Code permissions, proxies, or firewalls before
-the user reaches a broken Play command. The harness identity lane remains an
-authentication path for sessions that expire or are revoked later. Managed activation also restores a
-launcher whose recorded Play source no longer exists; it will not take over a different source that
-is still present.
+Identity is an early setup gate. Play checks `rote whoami` before it creates a backup or changes a
+plugin, skill, or hook. If that check finds no identity, a browser-capable terminal offers Google
+and GitHub. OAuth login also creates an account for a new provider identity.
+
+On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, setup recommends **Sign in from another machine**.
+It installs Rote when needed, prints the provision-and-claim steps, and pauses without changing
+Play-owned harness state. Set `PLAY_BROWSER_MODE=headed` or `headless` to override detection.
+
+A non-interactive browser-capable install needs an authenticated profile or
+`PLAY_LOGIN_PROVIDER=google|github`. A non-interactive headless install pauses for remote-machine
+authentication instead of starting an unreachable OAuth callback.
+
+If registry access fails, check sandbox access, harness permissions, proxies, and firewalls before
+running Play. Later, use the harness identity lane if credentials expire. Managed activation also
+restores a launcher if its recorded Play source no longer exists. It will not take over a different
+source that is still present.
+
+### Authenticate Play on a headless machine
+
+Generate a short-lived claim token on a machine where Rote can open a browser:
+
+```bash
+rote login --provider github
+# Or: rote login --provider google
+rote provision --ttl 30
+```
+
+On the headless machine, claim it and verify the resulting identity:
+
+```bash
+rote claim '<dxp_...>'
+rote whoami
+```
+
+Rerun the Play installer without `PLAY_LOGIN_PROVIDER`. The claim token expires after 30 minutes by
+default and contains a refresh token. Treat it as a password; never paste it into chat, logs, or a
+Docker image layer.
 
 Invocation differs by app:
 
@@ -568,9 +595,12 @@ developer preview upstream.
 ### Run unattended
 
 The simple command above is the only command people need. CI has no controlling terminal, so
-automation must record both approvals explicitly: the displayed Play plan and, when Rote may be
-missing, its official installer. A first-time unattended installation must also select the OAuth
-provider explicitly.
+automation must record the displayed Play plan approval. If Rote may be missing, it must also
+approve the official installer.
+
+A first-time unattended installation on a browser-capable machine must select the OAuth provider
+explicitly. A headless machine should claim an identity first. Otherwise, setup pauses with the
+remote-machine instructions above.
 
 ```bash
 curl -fsSL https://getrote.dev/playoffs/install.sh \
@@ -644,8 +674,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.67/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.67 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.68/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.68 sh
 ```
 
 To inspect the small bootstrap before running it:

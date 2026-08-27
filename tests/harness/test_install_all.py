@@ -82,7 +82,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '{\"marketplaces\":[]}'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.67\",\"enabled\":true}],\"available\":[]}'\n"
+                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.68\",\"enabled\":true}],\"available\":[]}'\n"
                     "  else\n"
                     "    printf '%s\\n' '{\"installed\":[],\"available\":[]}'\n"
                     "  fi\n"
@@ -99,7 +99,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '[]'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.67\",\"enabled\":true,\"scope\":\"user\"}]'\n"
+                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.68\",\"enabled\":true,\"scope\":\"user\"}]'\n"
                     "  else\n"
                     "    printf '%s\\n' '[]'\n"
                     "  fi\n"
@@ -312,7 +312,7 @@ class InstallAllTest(unittest.TestCase):
 
         self.run_installer("install", "--copy")
         installed = (install_home / "skill").resolve()
-        self.assertEqual("0.4.67", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.68", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():
@@ -401,7 +401,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("◐ Checking the Play setup plan", result.stderr)
         self.assertIn("✓ Verifying Codex", result.stderr)
         self.assertIn("| Play setup plan", result.stdout)
-        self.assertIn("Version: 0.4.67", result.stdout)
+        self.assertIn("Version: 0.4.68", result.stdout)
         self.assertIn("| Play setup", result.stdout)
         self.assertIn("Status: READY", result.stdout)
         self.assertIn("OS:     ", result.stdout)
@@ -529,6 +529,29 @@ class InstallAllTest(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn("PLAY_LOGIN_PROVIDER must be google or github", result.stderr)
 
+    def test_portable_installer_rejects_unknown_browser_mode(self) -> None:
+        environment = {
+            **self.environment,
+            "PLAY_INSTALL_SOURCE": str(ROOT),
+            "PLAY_INSTALL_YES": "1",
+            "PLAY_BROWSER_MODE": "sometimes",
+        }
+
+        result = subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh")],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn(
+            "PLAY_BROWSER_MODE must be auto, headed, or headless",
+            result.stderr,
+        )
+
     def test_portable_installer_rejects_unknown_tulving_choice(self) -> None:
         environment = {
             **self.environment,
@@ -579,13 +602,43 @@ class InstallAllTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("test", (destination / "VERSION").read_text().strip())
 
-    def test_local_bootstrap_requires_first_time_sign_in_choice(self) -> None:
+    def test_local_bootstrap_pauses_for_remote_auth_on_headless_first_use(self) -> None:
         install_home = self.home / "curl-first-use"
         environment = {
             **self.environment,
             "PLAY_INSTALL_HOME": str(install_home),
             "PLAY_INSTALL_SOURCE": str(ROOT),
             "PLAY_INSTALL_YES": "1",
+            "PLAY_BROWSER_MODE": "headless",
+            "ROTE_TEST_LOGGED_OUT": "1",
+        }
+
+        result = subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh")],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertIn("Status: SETUP PAUSED — SIGN IN REQUIRED", result.stdout)
+        self.assertIn("Sign in from another machine", result.stdout)
+        self.assertIn("rote provision --ttl 30", result.stdout)
+        self.assertIn("rote claim <dxp_...>", result.stdout)
+        self.assertIn("Play-owned harness state has not been changed", result.stdout)
+        self.assertNotIn("Status: READY", result.stdout)
+        self.assertFalse((install_home / "skill").exists())
+
+    def test_local_bootstrap_requires_provider_for_unattended_headed_first_use(self) -> None:
+        install_home = self.home / "curl-headed-first-use"
+        environment = {
+            **self.environment,
+            "PLAY_INSTALL_HOME": str(install_home),
+            "PLAY_INSTALL_SOURCE": str(ROOT),
+            "PLAY_INSTALL_YES": "1",
+            "PLAY_BROWSER_MODE": "headed",
             "ROTE_TEST_LOGGED_OUT": "1",
         }
 
@@ -600,7 +653,6 @@ class InstallAllTest(unittest.TestCase):
 
         self.assertEqual(1, result.returncode, result.stderr + result.stdout)
         self.assertIn("Rote registry credentials are required", result.stderr)
-        self.assertIn("choose Google or GitHub", result.stderr)
         self.assertIn("PLAY_LOGIN_PROVIDER=google or github", result.stderr)
         self.assertNotIn("Status: READY", result.stdout)
         self.assertFalse((install_home / "skill").exists())
