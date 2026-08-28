@@ -45,6 +45,7 @@ from scripts.lib.play.bootstrap import (
     build_plan,
     codex_disabled_play_entries,
     codex_play_enablement_step,
+    converge_claude_tulving_mcp,
     converge_play_marketplace,
     discover_targets,
     install_hooks,
@@ -572,6 +573,82 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("unchanged", step.status)
         self.assertFalse(path.with_name("hooks.json.play-backup-dedupe-current").exists())
 
+    def test_claude_tulving_mcp_replaces_a_stale_binary_path(self) -> None:
+        calls: list[list[str]] = []
+
+        def runner(command: Sequence[str]) -> MagicMock:
+            argv = list(command)
+            calls.append(argv)
+            if argv[2:4] == ["get", "tulving"]:
+                return MagicMock(
+                    returncode=0,
+                    stdout=(
+                        "tulving:\n"
+                        "  Scope: User config (available in all your projects)\n"
+                        "  Command: /Users/example/.local/bin/tulving\n"
+                        "  Args: mcp\n"
+                    ),
+                    stderr="",
+                )
+            return MagicMock(returncode=0, stdout="ok\n", stderr="")
+
+        step = converge_claude_tulving_mcp(
+            "/usr/local/bin/claude",
+            "/opt/homebrew/bin/tulving",
+            runner=runner,
+        )
+
+        self.assertEqual("completed", step.status)
+        self.assertEqual(
+            [
+                ["/usr/local/bin/claude", "mcp", "get", "tulving"],
+                [
+                    "/usr/local/bin/claude",
+                    "mcp",
+                    "remove",
+                    "tulving",
+                    "--scope",
+                    "user",
+                ],
+                [
+                    "/usr/local/bin/claude",
+                    "mcp",
+                    "add",
+                    "tulving",
+                    "--scope",
+                    "user",
+                    "--",
+                    "/opt/homebrew/bin/tulving",
+                    "mcp",
+                ],
+            ],
+            calls,
+        )
+
+    def test_claude_tulving_mcp_keeps_the_resolved_binary_path(self) -> None:
+        runner = MagicMock(
+            return_value=MagicMock(
+                returncode=0,
+                stdout=(
+                    "tulving:\n"
+                    "  Command: /opt/homebrew/bin/tulving\n"
+                    "  Args: mcp\n"
+                ),
+                stderr="",
+            )
+        )
+
+        step = converge_claude_tulving_mcp(
+            "/usr/local/bin/claude",
+            "/opt/homebrew/bin/tulving",
+            runner=runner,
+        )
+
+        self.assertEqual("unchanged", step.status)
+        runner.assert_called_once_with(
+            ["/usr/local/bin/claude", "mcp", "get", "tulving"]
+        )
+
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value=None)
     def test_apply_without_remote_approval_stops_and_writes_both_reports(
         self, _resolve_rote: MagicMock
@@ -865,7 +942,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.70",
+                                "version": "0.4.71",
                                 "enabled": True,
                             }
                         ]
@@ -876,7 +953,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.70", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.71", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -1907,7 +1984,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.70 is installed and enabled.",
+                "Play 0.4.71 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -1999,7 +2076,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.70", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.71", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 

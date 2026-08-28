@@ -1609,6 +1609,88 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def converge_claude_tulving_mcp(
+    claude_executable: str,
+    tulving_executable: str,
+    *,
+    runner: Runner = run,
+) -> Step:
+    """Point Claude's user-scoped Tulving MCP server at the resolved binary."""
+
+    inspect_command = [claude_executable, "mcp", "get", "tulving"]
+    inspected = runner(inspect_command)
+    current = inspected.stdout if inspected.returncode == 0 else ""
+    expected_command = f"  Command: {tulving_executable}"
+    if (
+        expected_command in current.splitlines()
+        and "  Args: mcp" in current.splitlines()
+    ):
+        return Step(
+            "configure_tulving_mcp",
+            "unchanged",
+            f"Claude Code already uses {tulving_executable} for Tulving recall.",
+            command=inspect_command,
+            target="claude",
+            evidence=tulving_executable,
+        )
+
+    if inspected.returncode == 0:
+        remove_command = [
+            claude_executable,
+            "mcp",
+            "remove",
+            "tulving",
+            "--scope",
+            "user",
+        ]
+        removed = runner(remove_command)
+        if removed.returncode != 0:
+            return Step(
+                "configure_tulving_mcp",
+                "review_required",
+                "Claude Code could not remove its stale Tulving MCP registration: "
+                + (
+                    removed.stderr
+                    or removed.stdout
+                    or f"exit {removed.returncode}"
+                ).strip(),
+                command=remove_command,
+                target="claude",
+            )
+
+    add_command = [
+        claude_executable,
+        "mcp",
+        "add",
+        "tulving",
+        "--scope",
+        "user",
+        "--",
+        tulving_executable,
+        "mcp",
+    ]
+    added = runner(add_command)
+    if added.returncode != 0:
+        return Step(
+            "configure_tulving_mcp",
+            "review_required",
+            "Claude Code could not register the resolved Tulving binary: "
+            + (added.stderr or added.stdout or f"exit {added.returncode}").strip(),
+            command=add_command,
+            target="claude",
+            changed=inspected.returncode == 0,
+        )
+    return Step(
+        "configure_tulving_mcp",
+        "completed",
+        f"Mapped Claude Code's Tulving MCP server to {tulving_executable}.",
+        command=add_command,
+        target="claude",
+        changed=True,
+        evidence=tulving_executable,
+    )
+
+
 def _command_json(
     result: subprocess.CompletedProcess[str], command: Sequence[str]
 ) -> Any:
@@ -4326,12 +4408,14 @@ def apply(
                 "verify", verification_results[harness], command, target=harness
             )
         )
+    tulving_state = plan.get("tulving", {})
     if enable_tulving:
         try:
             tulving_result = active_progress.call(
                 "Enabling recurring Plays with Tulving",
                 lambda: enable_tulving_support(runner=runner),
             )
+            tulving_state = tulving_result
             changed = bool(
                 tulving_result.get("installed") or tulving_result.get("initialized")
             )
@@ -4358,6 +4442,24 @@ def apply(
                     "enable_tulving",
                     "review_required",
                     f"Play is installed, but recurring Plays remain off: {error}",
+                )
+            )
+    if (
+        "claude" in selected
+        and isinstance(tulving_state, dict)
+        and tulving_state.get("ready") is True
+    ):
+        claude_executable = plan_targets.get("claude", {}).get("command")
+        tulving_executable = tulving_state.get("executable")
+        if isinstance(claude_executable, str) and isinstance(tulving_executable, str):
+            steps.append(
+                active_progress.call(
+                    "Connecting Tulving recall to Claude Code",
+                    lambda: converge_claude_tulving_mcp(
+                        claude_executable,
+                        tulving_executable,
+                        runner=runner,
+                    ),
                 )
             )
     if any(step.status in {"failed", "approval_required"} for step in steps):
