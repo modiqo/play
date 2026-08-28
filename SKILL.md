@@ -284,6 +284,17 @@ Only after the user confirms the out-of-band command and the named token is veri
 the exact approved run. An older Play without `adapter.auth.ensure` may also enter the explicit
 compatibility path after its run reports authentication is required.
 
+Play keeps registry sign-in recovery inside the pending request. When `rote play run` reports that
+Rote is signed out, show the Google, GitHub, and **Not now** choices.
+
+The bundled runtime runs only the selected `rote login --provider ...` command and one `rote whoami`
+check. A verified login returns Play to the exact inspected reference, parameters, disclosure, and
+run approval.
+
+Do not invoke the general `rote-setup` wizard. Do not discuss adapters, ask the user to retry the
+Play, or start a new request. A failed login shows the same provider choice without running the
+Play.
+
 Never run full Play preflight during a normal request. Install-time convergence owns cross-harness
 readiness; the normal runtime owns its exact dependency and authentication states and projects a
 targeted setup or login handoff only when one is actually required. `play-machine preflight` is a
@@ -306,6 +317,12 @@ the login provider. Re-run interactively when a browser sign-in or harness permi
 needed. A successful install prints a tutorial for automatic discovery, non-blocking suggestions,
 silent no-match behavior, explicit Explore commands, and approval before pull or execution.
 Never collect credentials in bootstrap context, backups, or reports.
+
+Treat Play, Rote, and Tulving as independent release cycles under one setup receipt. The plan checks
+Rote's own update channel and refreshes its installed skills after a Rote update. It checks
+Tulving's own update channel and requires separate default-no approval before installation, update,
+or clock initialization. Play replacement remains its own restorable transaction. Never claim that
+Play rollback downgrades Rote or Tulving; report every component's before and after version.
 
 ## Stay out of the way
 

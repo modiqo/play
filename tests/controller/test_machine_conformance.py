@@ -230,10 +230,27 @@ class MachineConformanceTest(unittest.TestCase):
             [choice["id"] for choice in login_prompt["choices"]],
         )
         self.assertTrue(login_prompt["choices"][0]["recommended"])
-        login_policy = " ".join(ACTIONS["handoff_rote_login"]["command_policy"])
+        login_policy = " ".join(ACTIONS["login_rote_identity"]["command_policy"])
+        self.assertEqual("deterministic", ACTIONS["login_rote_identity"]["kind"])
+        self.assertEqual(
+            "scripts/bin/play-onboarding login --stdin --json",
+            ACTIONS["login_rote_identity"]["command"],
+        )
         self.assertIn("login --provider", login_policy)
         self.assertIn("exactly one", login_policy)
         self.assertIn("Never ask for", login_policy)
+        self.assertEqual(
+            "use_registry_login_offer",
+            MACHINE["states"]["use_run"]["on"]["play_registry_login_required"][0][
+                "target"
+            ],
+        )
+        self.assertEqual(
+            "use_prepare",
+            MACHINE["states"]["use_registry_login"]["on"]["rote_login_completed"][0][
+                "target"
+            ],
+        )
         result_prompt = PROMPTS["confirm_onboarding_result"]
         self.assertEqual(
             ["continue", "replay", "done"],
@@ -841,7 +858,13 @@ class MachineConformanceTest(unittest.TestCase):
             if branch["target"] == "use_prepare"
         }
         self.assertEqual(
-            {"use_decide", "use_offer", "use_authentication_offer"}, incoming
+            {
+                "use_decide",
+                "use_offer",
+                "use_authentication_offer",
+                "use_registry_login",
+            },
+            incoming,
         )
         self.assertEqual(
             "use_run",

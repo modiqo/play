@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ from play.onboarding import (
     check_onboarding_experience,
     classify_invocation,
     inspect_identity,
+    login_rote_identity,
     normalize_card,
     prepare_exploration_welcome,
     prepare_first_play_activation,
@@ -267,6 +269,88 @@ class RoteGreetingProbeTest(unittest.TestCase):
         self.assertIsNone(result["email"])
         self.assertIsNone(result["email_handle"])
         popen.assert_not_called()
+
+    @patch("play.onboarding.subprocess.Popen")
+    @patch("play.onboarding.subprocess.run")
+    @patch("play.onboarding.os.access", return_value=True)
+    @patch("play.onboarding.Path.is_file", return_value=True)
+    def test_selected_login_stops_after_verified_identity(
+        self, _is_file, _access, run, popen
+    ) -> None:
+        run.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="OAuth complete", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="@@status\nok: Chetan@Modiqo.ai\n", stderr=""
+            ),
+        ]
+
+        result = login_rote_identity(
+            {
+                "onboarding": {
+                    "rote_command": "/opt/bin/rote",
+                    "login_provider": "google",
+                }
+            }
+        )
+
+        self.assertEqual("rote_login_completed", result["event"])
+        self.assertEqual("authenticated", result["onboarding"]["login_status"])
+        self.assertEqual("google", result["onboarding"]["login_provider"])
+        self.assertEqual(
+            ["/opt/bin/rote", "login", "--provider", "google"],
+            run.call_args_list[0].args[0],
+        )
+        self.assertEqual(["/opt/bin/rote", "whoami"], run.call_args_list[1].args[0])
+        self.assertNotIn("email", str(result))
+        popen.assert_called_once()
+
+    @patch("play.onboarding.subprocess.run")
+    @patch("play.onboarding.os.access", return_value=True)
+    @patch("play.onboarding.Path.is_file", return_value=True)
+    def test_incomplete_login_returns_to_provider_choice(
+        self, _is_file, _access, run
+    ) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="browser closed"
+        )
+
+        result = login_rote_identity(
+            {
+                "onboarding": {
+                    "rote_command": "/opt/bin/rote",
+                    "login_provider": "github",
+                }
+            }
+        )
+
+        self.assertEqual("rote_login_paused", result["event"])
+        self.assertTrue(result["recoverable"])
+        self.assertIn("pending Play has not run", result["reason"])
+
+    @patch("play.onboarding.subprocess.run")
+    @patch("play.onboarding.os.access", return_value=True)
+    @patch("play.onboarding.Path.is_file", return_value=True)
+    def test_login_timeout_keeps_the_pending_play_recoverable(
+        self, _is_file, _access, run
+    ) -> None:
+        run.side_effect = subprocess.TimeoutExpired(
+            cmd=["/opt/bin/rote", "login"], timeout=600
+        )
+
+        result = login_rote_identity(
+            {
+                "onboarding": {
+                    "rote_command": "/opt/bin/rote",
+                    "login_provider": "google",
+                }
+            }
+        )
+
+        self.assertEqual("rote_login_paused", result["event"])
+        self.assertTrue(result["recoverable"])
+        self.assertIn("pending Play has not run", result["reason"])
 
 
 class ExplorationWelcomeTest(unittest.TestCase):

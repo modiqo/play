@@ -812,11 +812,19 @@ def _failed(reason: str) -> dict[str, Any]:
             "evidence_refs": [f"sha256:{digest}"],
         }
     if any(marker in lowered for marker in _LOGIN_MARKERS):
-        bounded = (
-            "rote registry login is required before this Play can be pulled and run. "
-            "Sign in with `rote login` (or the rote-setup skill), then retry this exact "
-            "Play. Original error: " + bounded
-        )[:20_000]
+        rote_command = shutil.which("rote")
+        if rote_command is not None:
+            return {
+                "schema": "play.run-result/v1",
+                "ok": False,
+                "event": "play_registry_login_required",
+                "authentication": {
+                    "source": "rote_registry_login_required",
+                    "recoverable": True,
+                    "evidence_refs": [f"sha256:{digest}"],
+                },
+                "onboarding": {"rote_command": rote_command},
+            }
     return {
         "schema": "play.run-result/v1",
         "ok": False,

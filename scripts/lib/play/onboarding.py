@@ -404,6 +404,83 @@ def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _paused_rote_login(
+    provider: str, evidence_refs: list[str], started: int
+) -> dict[str, Any]:
+    reason = (
+        f"{provider.title()} sign-in did not complete. Choose a provider to retry; "
+        "the pending Play has not run."
+    )
+    return {
+        "schema": SCHEMA,
+        "kind": "login",
+        "ok": True,
+        "event": "rote_login_paused",
+        "onboarding": {
+            "login_status": "paused",
+            "login_provider": provider,
+        },
+        "reason": reason,
+        "recoverable": True,
+        "evidence_refs": evidence_refs,
+        "presentation_markdown": f"🔐 **Sign-in incomplete**\n\n{reason}",
+        "login_ns": time.perf_counter_ns() - started,
+    }
+
+
+def login_rote_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Run one selected Rote OAuth login and stop after identity verification."""
+
+    started = time.perf_counter_ns()
+    onboarding = _object(payload.get("onboarding"), "onboarding")
+    command = _validated_rote_command(onboarding.get("rote_command"))
+    provider = _string(onboarding.get("login_provider"), "onboarding.login_provider")
+    if provider not in {"google", "github"}:
+        raise OnboardingError("Rote login provider must be google or github")
+    try:
+        completed = subprocess.run(
+            [command, "login", "--provider", provider],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=600,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        evidence = f"sha256:{hashlib.sha256(str(error).encode()).hexdigest()}"
+        return _paused_rote_login(provider, [evidence], started)
+
+    combined = "\n".join(
+        part for part in (completed.stdout, completed.stderr) if part
+    )
+    evidence_refs = [f"sha256:{hashlib.sha256(combined.encode()).hexdigest()}"]
+    if completed.returncode == 0:
+        try:
+            identity = inspect_identity(payload)
+        except OnboardingError as error:
+            evidence_refs.append(
+                f"sha256:{hashlib.sha256(str(error).encode()).hexdigest()}"
+            )
+        else:
+            identity_ref = identity.get("identity_ref")
+            if isinstance(identity_ref, str) and identity_ref:
+                evidence_refs.append(identity_ref)
+            if identity.get("identity_status") == "authenticated":
+                return {
+                    "schema": SCHEMA,
+                    "kind": "login",
+                    "ok": True,
+                    "event": "rote_login_completed",
+                    "onboarding": {
+                        "login_status": "authenticated",
+                        "login_provider": provider,
+                    },
+                    "evidence_refs": evidence_refs,
+                    "login_ns": time.perf_counter_ns() - started,
+                }
+
+    return _paused_rote_login(provider, evidence_refs, started)
+
+
 def _onboarding_identity_key(email: object) -> str:
     normalized = _string(email, "onboarding.email").lower()
     return hashlib.sha256(normalized.encode()).hexdigest()
@@ -965,6 +1042,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "classify",
             "probe",
             "identity",
+            "login",
             "experience",
             "present-first",
             "mark-first",
@@ -989,6 +1067,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 result = classify_payload(payload)
             elif args.mode == "identity":
                 result = inspect_identity(payload)
+            elif args.mode == "login":
+                result = login_rote_identity(payload)
             elif args.mode == "experience":
                 result = check_onboarding_experience(payload)
             elif args.mode == "present-first":

@@ -13,6 +13,19 @@ prompts:
       onboarding_github_login_selected: [prompt_version, selected_at]
       onboarding_login_deferred: [prompt_version, selected_at]
 
+  choose_registry_login_provider:
+    question: Rote is signed out. How would you like to sign in and resume {match.reference}?
+    template_fields: [match.reference]
+    selection: single
+    choices:
+      - {id: google, label: Continue with Google, description: Opens Google sign-in, then resumes this exact Play., event: registry_google_login_selected, recommended: true}
+      - {id: github, label: Continue with GitHub, description: Opens GitHub sign-in, then resumes this exact Play., event: registry_github_login_selected}
+      - {id: defer, label: Not now, description: Keep the Play unchanged and stop without running it., event: registry_login_deferred}
+    events:
+      registry_google_login_selected: [prompt_version, selected_at]
+      registry_github_login_selected: [prompt_version, selected_at]
+      registry_login_deferred: [prompt_version, selected_at]
+
   welcome_play_request:
     question: How are you, {onboarding.email_handle}? What can I help you with?
     template_fields: [onboarding.email_handle]

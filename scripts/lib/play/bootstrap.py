@@ -431,6 +431,39 @@ def _play_version() -> str:
     ).strip()
 
 
+def _installed_play_version() -> str | None:
+    candidate = _portable_play_path() / "VERSION"
+    try:
+        version = candidate.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return version or None
+
+
+def _play_update_snapshot() -> dict[str, str | None]:
+    installed = _installed_play_version()
+    target = _play_version()
+    if installed is None:
+        status = "not_installed"
+        detail = f"Play {target} will be installed."
+        recommended_action = "install"
+    elif installed == target:
+        status = "current"
+        detail = f"Play {installed} is current and will be verified."
+        recommended_action = "verify"
+    else:
+        status = "available"
+        detail = f"Play {target} will replace {installed}."
+        recommended_action = "update"
+    return {
+        "installed_version": installed,
+        "target_version": target,
+        "update_status": status,
+        "detail": detail,
+        "recommended_action": recommended_action,
+    }
+
+
 def _roots() -> dict[str, tuple[Path, ...]]:
     home = _home()
     codex = Path(os.environ.get("CODEX_HOME", home / ".codex")).expanduser()
@@ -1160,7 +1193,8 @@ def build_plan(
         # parser protects later Codex enablement and rollback operations.
         codex_disabled_play_entries()
     shared_agents = _shared_agents_plan(selected)
-    tulving = probe_tulving(resolver=shutil.which)
+    play_state = _play_update_snapshot()
+    tulving = probe_tulving(resolver=shutil.which, check_update=True)
     rote_state = _rote_snapshot(runner)
     rote = rote_state["path"]
     update = rote_state["update"]
@@ -1190,6 +1224,41 @@ def build_plan(
             "effect": f"Update availability could not be determined: {update['detail']}",
             "recommended": False,
         }
+    tulving_update = tulving.get("update", {})
+    if tulving.get("available") is not True:
+        tulving_action = {
+            "id": "install_tulving",
+            "effect": "installs Tulving and initializes its clock after Play verification",
+            "approval_required": True,
+            "recommended": False,
+        }
+    elif isinstance(tulving_update, dict) and tulving_update.get("status") == "available":
+        tulving_action = {
+            "id": "update_tulving",
+            "effect": str(tulving_update.get("detail") or "updates Tulving"),
+            "command": ["tulving", "update"],
+            "approval_required": True,
+            "recommended": False,
+        }
+    elif tulving.get("ready") is not True:
+        tulving_action = {
+            "id": "initialize_tulving",
+            "effect": "initializes Tulving's clock after Play verification",
+            "approval_required": True,
+            "recommended": False,
+        }
+    elif isinstance(tulving_update, dict) and tulving_update.get("status") == "check_failed":
+        tulving_action = {
+            "id": "review_tulving_update",
+            "effect": str(tulving_update.get("detail") or "Tulving update check failed"),
+            "recommended": False,
+        }
+    else:
+        tulving_action = {
+            "id": "keep_tulving_current",
+            "effect": str(tulving_update.get("detail") or "Tulving is current"),
+            "recommended": False,
+        }
     rote_targets = list(dict.fromkeys(TARGET_IDS[name] for name in selected))
     rote_skills = _rote_skills_snapshot(rote_targets)
     missing_skill_roots = [item["provider"] for item in rote_skills if not item["installed"]]
@@ -1213,6 +1282,7 @@ def build_plan(
     ]
     actions = [
         rote_action,
+        tulving_action,
         {
             "id": "verify_rote_identity",
             "effect": "requires an authenticated Rote identity before changing Play-owned state; headless machines can claim credentials provisioned elsewhere",
@@ -1297,9 +1367,11 @@ def build_plan(
             "effect": "runs preflight checks, automatically rolls back an unverified replacement, and writes JSON and Markdown receipts",
         },
     ]
+    play_version = str(play_state["target_version"])
     body = {
         "schema": PLAN_SCHEMA,
-        "play_version": _play_version(),
+        "play_version": play_version,
+        "play": play_state,
         "os": _os_snapshot(),
         "top_k": top_k,
         "max_selected_harnesses": MAX_SELECTED_HARNESSES,
@@ -3504,11 +3576,24 @@ def _markdown(report: dict[str, Any]) -> str:
             else:
                 state = "skipped, not installed"
             lines.append(f"- **{label}**: {state}")
+    play = report.get("play", {})
+    rote = report.get("rote", {})
+    tulving = report.get("tulving", {})
+    if isinstance(play, dict):
+        lines.extend(
+            [
+                "",
+                "## Component versions",
+                "",
+                f"- Play: {_version_transition(play.get('before'), play.get('after'))}",
+                f"- Rote: {_version_transition(rote.get('before'), rote.get('after'))}",
+                f"- Tulving: {_version_transition(tulving.get('before'), tulving.get('after'))}",
+            ]
+        )
     lines.extend(["", "## Steps", ""])
     for step in report["steps"]:
         target = f" ({step['target']})" if step.get("target") else ""
         lines.append(f"- **{step['status']}** `{step['id']}`{target}: {step['detail']}")
-    tulving = report.get("tulving", {})
     if isinstance(tulving, dict) and isinstance(tulving.get("after"), dict):
         after = tulving["after"]
         if after.get("ready") is True:
@@ -3585,6 +3670,28 @@ def _post_install_tutorial(selected_harnesses: list[str]) -> list[str]:
     return lines
 
 
+def _reported_version(snapshot: object) -> str | None:
+    if not isinstance(snapshot, dict):
+        return None
+    value = snapshot.get("version")
+    if not isinstance(value, str) or not value:
+        return None
+    match = re.search(r"(?<!\d)(\d+\.\d+\.\d+)(?!\d)", value)
+    return match.group(1) if match is not None else value
+
+
+def _version_transition(before: object, after: object) -> str:
+    previous = _reported_version(before)
+    current = _reported_version(after)
+    if previous and current and previous != current:
+        return f"{previous} → {current}"
+    if current:
+        return current
+    if previous:
+        return f"{previous} preserved"
+    return "not installed"
+
+
 def _render_status_card(report: dict[str, Any]) -> str:
     """Render the curl installer's concise, action-oriented final screen."""
 
@@ -3639,7 +3746,20 @@ def _render_status_card(report: dict[str, Any]) -> str:
             state = "READY"
         lines.append(f"    {LABELS.get(harness, harness):<14} {state}")
 
+    play = report.get("play", {})
+    rote = report.get("rote", {})
     tulving = report.get("tulving", {})
+    if isinstance(play, dict):
+        lines.extend(
+            [
+                "",
+                "  Components",
+                f"    Play      {_version_transition(play.get('before'), play.get('after'))}",
+                f"    Rote      {_version_transition(rote.get('before'), rote.get('after'))}",
+                f"    Tulving   {_version_transition(tulving.get('before'), tulving.get('after'))}",
+            ]
+        )
+
     after = tulving.get("after", {}) if isinstance(tulving, dict) else {}
     if isinstance(after, dict) and after.get("ready") is True:
         recurring_state = "READY"
@@ -3812,8 +3932,21 @@ def _render_plan(plan: dict[str, Any]) -> str:
         f"  Version: {plan.get('play_version', 'unknown')}",
         f"  Plan:    {plan['plan_id']}",
         "",
-        "  Rote",
+        "  Play",
     ]
+    play = plan.get("play", {})
+    if isinstance(play, dict):
+        lines.append(
+            f"    Installed: {play.get('installed_version') or 'not installed'}"
+        )
+        lines.append(f"    Target:    {play.get('target_version') or 'unknown'}")
+        lines.append(f"    Update:    {str(play.get('update_status') or 'unknown').upper()}")
+    lines.extend(
+        [
+            "",
+        "  Rote",
+        ]
+    )
     rote = plan["rote"]
     if rote["path"]:
         lines.append(f"    Installed: {rote['version'] or 'unknown version'}")
@@ -3823,6 +3956,7 @@ def _render_plan(plan: dict[str, Any]) -> str:
     update = rote["update"]
     lines.append(f"    Update:    {str(update['status']).upper()}")
     tulving = plan.get("tulving", {})
+    tulving_update = tulving.get("update", {}) if isinstance(tulving, dict) else {}
     lines.extend(["", "  Recurring Plays (optional)"])
     if isinstance(tulving, dict) and tulving.get("ready") is True:
         lines.append("    Tulving:   READY")
@@ -3833,6 +3967,13 @@ def _render_plan(plan: dict[str, Any]) -> str:
     else:
         lines.append("    Tulving:   NOT INSTALLED")
         lines.append("    Choice:    Install Tulving or leave scheduling off")
+    if isinstance(tulving_update, dict):
+        update_status = str(tulving_update.get("status") or "unknown").upper()
+        lines.append(f"    Update:    {update_status}")
+        if tulving_update.get("status") == "available":
+            lines.append(
+                f"    Version:   {tulving_update.get('installed')} → {tulving_update.get('latest')}"
+            )
     lines.extend(["", "  Apps"])
     skill_states = {
         str(item["provider"]): item
@@ -3876,14 +4017,27 @@ def _render_plan(plan: dict[str, Any]) -> str:
     approvals = [action for action in plan["actions"] if action.get("approval_required")]
     if approvals:
         lines.extend(["", "  Safety check"])
-        lines.append(
-            "    Installing Rote uses its official remote installer; approval is checked before execution."
-        )
+        if any(action.get("id") == "install_rote" for action in approvals):
+            lines.append(
+                "    Installing Rote uses its official remote installer; approval is checked before execution."
+            )
+        if any(str(action.get("id", "")).endswith("tulving") for action in approvals):
+            lines.append(
+                "    Tulving installation, update, or clock initialization requires separate approval."
+            )
     lines.extend(["+------------------------------------------------------------+", ""])
     return "\n".join(lines)
 
 
 def _render_guided_plan(plan: dict[str, Any]) -> str:
+    play = plan.get("play", {})
+    play_status = str(play.get("update_status") or "unknown") if isinstance(play, dict) else "unknown"
+    if play_status == "not_installed":
+        play_summary = f"Install Play {plan.get('play_version', 'unknown')}"
+    elif play_status == "available":
+        play_summary = f"Update Play to {plan.get('play_version', 'unknown')}"
+    else:
+        play_summary = f"Verify Play {plan.get('play_version', 'unknown')}"
     rote = plan["rote"]
     update_status = str(rote["update"]["status"]).lower()
     if rote["path"] is None:
@@ -3902,11 +4056,24 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
             "",
             "  Your setup",
             "",
+            f"    Play   {play_summary}",
             f"    Rote   {rote_summary}",
             f"    Apps   {apps}",
     ]
     tulving = plan.get("tulving", {})
-    if isinstance(tulving, dict) and tulving.get("ready") is True:
+    tulving_update = tulving.get("update", {}) if isinstance(tulving, dict) else {}
+    if (
+        isinstance(tulving, dict)
+        and tulving.get("ready") is True
+        and isinstance(tulving_update, dict)
+        and tulving_update.get("status") == "available"
+    ):
+        lines.append(
+            "    Repeat Update Tulving "
+            f"{tulving_update.get('installed')} → {tulving_update.get('latest')} "
+            "after separate approval"
+        )
+    elif isinstance(tulving, dict) and tulving.get("ready") is True:
         lines.append("    Repeat Tulving is ready for optional recurring Plays")
     else:
         lines.append("    Repeat Optional; setup asks before enabling Tulving")
@@ -4486,28 +4653,49 @@ def apply(
     if enable_tulving:
         try:
             tulving_result = active_progress.call(
-                "Enabling recurring Plays with Tulving",
-                lambda: enable_tulving_support(runner=runner),
+                "Synchronizing recurring Plays with Tulving",
+                lambda: enable_tulving_support(
+                    runner=runner,
+                    synchronize_update=True,
+                ),
             )
             tulving_state = tulving_result
             changed = bool(
-                tulving_result.get("installed") or tulving_result.get("initialized")
+                tulving_result.get("installed")
+                or tulving_result.get("updated")
+                or tulving_result.get("initialized")
             )
+            update_error = tulving_result.get("update_error")
+            if isinstance(update_error, str) and update_error:
+                detail = (
+                    "Tulving is ready, but its independent update cycle needs attention: "
+                    + update_error
+                )
+                step_status = "review_required"
+            elif tulving_result.get("updated") is True:
+                detail = (
+                    f"Tulving was updated from {tulving_result.get('previous_version') or 'an earlier version'} "
+                    f"to {tulving_result.get('version') or 'the current version'}; its clock is ready."
+                )
+                step_status = "completed"
+            else:
+                detail = (
+                    "Tulving was installed with Homebrew and its clock is ready."
+                    if tulving_result.get("installer") == "homebrew"
+                    else (
+                        "Tulving was installed with its official installer and its clock is ready."
+                        if tulving_result.get("installer") == "official-script"
+                        else "Tulving is current and its clock is ready."
+                    )
+                )
+                step_status = "completed" if changed else "unchanged"
             steps.append(
                 Step(
                     "enable_tulving",
-                    "completed" if changed else "unchanged",
-                    (
-                        "Tulving was installed with Homebrew and its clock is ready."
-                        if tulving_result.get("installer") == "homebrew"
-                        else (
-                            "Tulving was installed with its official installer and its clock is ready."
-                            if tulving_result.get("installer") == "official-script"
-                            else "Tulving is installed and its clock is ready."
-                        )
-                    ),
+                    step_status,
+                    detail,
                     changed=changed,
-                    evidence=str(tulving_result.get("executable") or ""),
+                    evidence=json.dumps(tulving_result, sort_keys=True),
                 )
             )
         except RecurrenceError as error:
@@ -4586,6 +4774,25 @@ def _finish_report(
     status: str,
     runner: Runner,
 ) -> dict[str, Any]:
+    planned_play = plan.get("play", {})
+    installed_play_version = (
+        planned_play.get("installed_version")
+        if isinstance(planned_play, dict)
+        else None
+    )
+    target_play_version = (
+        planned_play.get("target_version")
+        if isinstance(planned_play, dict)
+        else plan.get("play_version")
+    )
+    replacement_completed = any(
+        step.id == "install_play" and step.status == "completed" for step in steps
+    )
+    active_play_version = (
+        target_play_version
+        if replacement_completed and status != "rolled_back"
+        else installed_play_version
+    )
     report = {
         "schema": REPORT_SCHEMA,
         "run_id": run_id,
@@ -4596,6 +4803,11 @@ def _finish_report(
         "os": plan.get("os") or _os_snapshot(),
         "selected_harnesses": plan["selected_harnesses"],
         "targets": plan["targets"],
+        "play": {
+            "before": {"version": installed_play_version},
+            "after": {"version": active_play_version},
+            "target_version": target_play_version,
+        },
         "rote": {
             "before": plan["rote"],
             "after": _rote_snapshot(runner, check_update=False),
@@ -4684,7 +4896,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_parser.add_argument(
         "--enable-tulving",
         action="store_true",
-        help="install Tulving when needed and initialize its clock",
+        help="install, update, or initialize Tulving after Play verification",
     )
     install_parser.add_argument(
         "--approve-remote-installer",
@@ -4828,11 +5040,35 @@ def main(argv: Sequence[str] | None = None) -> int:
                     else:
                         login_provider = login_method
                 tulving = plan.get("tulving", {})
+                tulving_update = (
+                    tulving.get("update", {}) if isinstance(tulving, dict) else {}
+                )
+                update_available = (
+                    isinstance(tulving_update, dict)
+                    and tulving_update.get("status") == "available"
+                )
                 if not (
-                    isinstance(tulving, dict) and tulving.get("ready") is True
+                    isinstance(tulving, dict)
+                    and tulving.get("ready") is True
+                    and not update_available
                 ):
+                    if update_available and tulving.get("ready") is True:
+                        tulving_question = (
+                            "Update Tulving to "
+                            f"{tulving_update.get('latest')}? Tulving keeps its own release cycle."
+                        )
+                    elif update_available:
+                        tulving_question = (
+                            "Update and enable recurring Plays with Tulving? "
+                            "Setup also initializes its clock."
+                        )
+                    else:
+                        tulving_question = (
+                            "Enable recurring Plays with Tulving? "
+                            "Setup installs it only if needed."
+                        )
                     enable_tulving = _confirm(
-                        "Enable recurring Plays with Tulving? Setup installs it only if needed.",
+                        tulving_question,
                         default=False,
                     )
             elif (

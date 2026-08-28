@@ -105,6 +105,94 @@ class RecurrenceTest(unittest.TestCase):
         self.assertTrue(payload["ready"])
         self.assertEqual("tulving 0.1.0", payload["version"])
 
+    def test_probe_reports_tulving_independent_update_cycle(self) -> None:
+        def runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+            if command[-1] == "--version":
+                return completed(command, stdout="tulving 0.1.2\n")
+            if command[-1] == "status":
+                return completed(command, stdout="✓ clock    launchd agent\n")
+            return completed(
+                command,
+                stdout=json.dumps(
+                    {
+                        "installed": "0.1.2",
+                        "latest": "0.1.3",
+                        "update_available": True,
+                    }
+                ),
+            )
+
+        payload = probe_tulving(
+            resolver=lambda name: "/usr/local/bin/tulving" if name == "tulving" else None,
+            runner=runner,
+            check_update=True,
+        )
+
+        self.assertEqual("available", payload["update"]["status"])
+        self.assertEqual("0.1.2", payload["update"]["installed"])
+        self.assertEqual("0.1.3", payload["update"]["latest"])
+
+    def test_enable_synchronizes_available_tulving_update_after_consent(self) -> None:
+        updated = False
+        calls: list[list[str]] = []
+
+        def runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+            nonlocal updated
+            calls.append(list(command))
+            if command[-1] == "--version":
+                version = "0.1.3" if updated else "0.1.2"
+                return completed(command, stdout=f"tulving {version}\n")
+            if command[-1] == "status":
+                return completed(command, stdout="✓ clock    launchd agent\n")
+            if command[-2:] == ["update", "--check"]:
+                return completed(
+                    command,
+                    stdout=json.dumps(
+                        {
+                            "installed": "0.1.2",
+                            "latest": "0.1.3",
+                            "update_available": True,
+                        }
+                    ),
+                )
+            if command[-1] == "update":
+                updated = True
+            return completed(command)
+
+        payload = enable_tulving(
+            resolver=lambda name: "/usr/local/bin/tulving" if name == "tulving" else None,
+            runner=runner,
+            synchronize_update=True,
+        )
+
+        self.assertTrue(payload["updated"])
+        self.assertEqual("tulving 0.1.2", payload["previous_version"])
+        self.assertEqual("tulving 0.1.3", payload["version"])
+        self.assertIn(["/usr/local/bin/tulving", "update"], calls)
+
+    def test_tulving_update_failure_does_not_disable_a_ready_clock(self) -> None:
+        def runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+            if command[-1] == "--version":
+                return completed(command, stdout="tulving 0.1.2\n")
+            if command[-1] == "status":
+                return completed(command, stdout="✓ clock    launchd agent\n")
+            if command[-2:] == ["update", "--check"]:
+                return completed(
+                    command,
+                    stdout='{"installed":"0.1.2","latest":"0.1.3","update_available":true}',
+                )
+            return completed(command, returncode=1, stderr="download failed")
+
+        payload = enable_tulving(
+            resolver=lambda name: "/usr/local/bin/tulving" if name == "tulving" else None,
+            runner=runner,
+            synchronize_update=True,
+        )
+
+        self.assertTrue(payload["ready"])
+        self.assertFalse(payload["updated"])
+        self.assertIn("download failed", payload["update_error"])
+
     def test_enable_installs_with_brew_then_initializes_resolved_binary(self) -> None:
         installed = False
         initialized = False

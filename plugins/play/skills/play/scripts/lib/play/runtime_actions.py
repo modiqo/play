@@ -34,6 +34,7 @@ _SELECTOR_ACTIONS = {
     "probe_rote_for_onboarding",
     "inspect_onboarding_identity",
     "inspect_onboarding_experience",
+    "login_rote_identity",
     "inspect_registry_play",
     "collect_awareness_digest",
     "resolve_public_owner",

@@ -30,6 +30,9 @@ check: package-check
     scripts/bin/play-question choose_login_provider --harness codex --check
     scripts/bin/play-question choose_login_provider --harness claude --check
     scripts/bin/play-question choose_login_provider --harness kimi --check
+    scripts/bin/play-question choose_registry_login_provider --harness codex --context-json '{"match":{"reference":"modiqo/hello"}}' --check
+    scripts/bin/play-question choose_registry_login_provider --harness claude --context-json '{"match":{"reference":"modiqo/hello"}}' --check
+    scripts/bin/play-question choose_registry_login_provider --harness kimi --context-json '{"match":{"reference":"modiqo/hello"}}' --check
     scripts/bin/play-question confirm_onboarding_result --harness codex --check
     scripts/bin/play-question confirm_onboarding_result --harness claude --check
     scripts/bin/play-question confirm_onboarding_result --harness kimi --check

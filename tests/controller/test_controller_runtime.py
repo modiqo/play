@@ -64,7 +64,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(82, len(self.runtime.bundle.states))
+        self.assertEqual(84, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -480,6 +480,85 @@ class ControllerRuntimeTest(unittest.TestCase):
             if choice["id"] == "authenticate"
         )
         self.assertIn("without rebuilding the adapter", authentication_choice["description"])
+
+    def test_registry_login_resumes_the_same_approved_play(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-registry-login",
+            task_key="task-registry-login",
+            request_original="Run hello",
+        )
+        context = dict(session.context)
+        context["state"] = "use_run"
+        context["match"] = {**context["match"], "reference": "modiqo/hello"}
+        context["inspection"] = {
+            **context["inspection"],
+            "exact_reference": "modiqo/hello@0.2.2",
+            "disclosure_sha256": "a" * 64,
+        }
+        bound = replace(
+            session,
+            cursor=replace(session.cursor, state=StateId("use_run")),
+            context=context,
+        )
+
+        offered = self.runtime.advance_session(
+            bound,
+            ControllerEvent(
+                id=EventId("play_registry_login_required"),
+                payload={
+                    "authentication": {
+                        "source": "rote_registry_login_required",
+                        "recoverable": True,
+                        "evidence_refs": ["sha256:signed-out"],
+                    },
+                    "onboarding": {"rote_command": "/usr/bin/rote"},
+                },
+                guards={},
+            ),
+        )
+
+        self.assertEqual("use_registry_login_offer", offered.session.cursor.state)
+        prompt = offered.projection.as_dict()["instruction"]
+        self.assertEqual("choose_registry_login_provider", prompt["id"])
+        self.assertIn("modiqo/hello", prompt["question"])
+        self.assertNotIn("adapter", str(prompt).casefold())
+
+        selected = self.runtime.advance_session(
+            offered.session,
+            ControllerEvent(
+                id=EventId("registry_google_login_selected"),
+                payload={
+                    "prompt_version": "choose_registry_login_provider",
+                    "selected_at": "2026-08-28T00:00:00Z",
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("use_registry_login", selected.session.cursor.state)
+        instruction = selected.projection.as_dict()["instruction"]
+        self.assertEqual("runtime", instruction["executor"])
+        self.assertEqual("login_rote_identity", instruction["id"])
+
+        resumed = self.runtime.advance_session(
+            selected.session,
+            ControllerEvent(
+                id=EventId("rote_login_completed"),
+                payload={
+                    "onboarding": {
+                        "login_status": "authenticated",
+                        "login_provider": "google",
+                    },
+                    "evidence_refs": ["sha256:identity"],
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("use_prepare", resumed.session.cursor.state)
+        self.assertEqual("modiqo/hello", resumed.session.context["match"]["reference"])
+        self.assertEqual(
+            "modiqo/hello@0.2.2",
+            resumed.session.context["inspection"]["exact_reference"],
+        )
 
     def test_static_token_done_verifies_before_retry_without_specialist(self) -> None:
         session = self.runtime.initial_session(
@@ -2522,7 +2601,10 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("github", selected.session.context["onboarding"]["login_provider"])
         self.assertEqual("in_progress", selected.session.context["onboarding"]["login_status"])
         instruction = selected.projection.as_dict()["instruction"]
-        self.assertEqual("rote-setup", instruction["specialist"])
+        self.assertEqual("runtime", instruction["executor"])
+        self.assertEqual(
+            "scripts/bin/play-onboarding login --stdin --json", instruction["command"]
+        )
 
     def test_advance_until_yield_builds_a_content_bound_receipt(self) -> None:
         session = self.runtime.initial_session(

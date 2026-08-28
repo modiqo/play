@@ -256,6 +256,14 @@
       "orb": "connecting",
       "label": "Running the approved Play…"
     },
+    "use_registry_login_offer": {
+      "orb": "listening",
+      "label": "Waiting for your Rote sign-in choice…"
+    },
+    "use_registry_login": {
+      "orb": "connecting",
+      "label": "Signing into Rote before resuming the Play…"
+    },
     "use_authentication_offer": {
       "orb": "listening",
       "label": "Waiting for Play authentication approval…"

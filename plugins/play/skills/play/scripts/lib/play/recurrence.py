@@ -61,6 +61,62 @@ def _detail(result: subprocess.CompletedProcess[str]) -> str:
     return (result.stderr or result.stdout or "unknown command error").strip()
 
 
+def _probe_tulving_update(executable: str, runner: Runner) -> dict[str, Any]:
+    command = [executable, "update", "--check"]
+    result = runner(command)
+    output = (result.stdout or result.stderr).strip()
+    if result.returncode != 0:
+        return {
+            "status": "check_failed",
+            "installed": None,
+            "latest": None,
+            "update_available": None,
+            "detail": output or f"update check exited {result.returncode}",
+            "recommended_action": "review",
+        }
+    try:
+        payload = json.loads(result.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return {
+            "status": "check_failed",
+            "installed": None,
+            "latest": None,
+            "update_available": None,
+            "detail": "Tulving returned an invalid update receipt.",
+            "recommended_action": "review",
+        }
+    installed = payload.get("installed") if isinstance(payload, dict) else None
+    latest = payload.get("latest") if isinstance(payload, dict) else None
+    available = payload.get("update_available") if isinstance(payload, dict) else None
+    if (
+        not isinstance(installed, str)
+        or not installed
+        or not isinstance(latest, str)
+        or not latest
+        or not isinstance(available, bool)
+    ):
+        return {
+            "status": "check_failed",
+            "installed": None,
+            "latest": None,
+            "update_available": None,
+            "detail": "Tulving returned an incomplete update receipt.",
+            "recommended_action": "review",
+        }
+    return {
+        "status": "available" if available else "current",
+        "installed": installed,
+        "latest": latest,
+        "update_available": available,
+        "detail": (
+            f"Tulving {latest} is available; {installed} is installed."
+            if available
+            else f"Tulving {installed} is current."
+        ),
+        "recommended_action": "update" if available else "keep",
+    }
+
+
 def _resolve_tulving(resolver: Resolver) -> str | None:
     executable = resolver("tulving")
     if executable is not None or resolver is not shutil.which:
@@ -75,13 +131,16 @@ def _resolve_tulving(resolver: Resolver) -> str | None:
 
 
 def probe_tulving(
-    *, resolver: Resolver = shutil.which, runner: Runner = _run
+    *,
+    resolver: Resolver = shutil.which,
+    runner: Runner = _run,
+    check_update: bool = False,
 ) -> dict[str, Any]:
     """Inspect Tulving without invoking anything when the binary is absent."""
 
     executable = _resolve_tulving(resolver)
     if executable is None:
-        return {
+        payload: dict[str, Any] = {
             "schema": CAPABILITY_SCHEMA,
             "status": "not_installed",
             "available": False,
@@ -90,9 +149,19 @@ def probe_tulving(
             "version": None,
             "clock": "unavailable",
         }
+        if check_update:
+            payload["update"] = {
+                "status": "not_installed",
+                "installed": None,
+                "latest": None,
+                "update_available": None,
+                "detail": "Tulving is not installed.",
+                "recommended_action": "install",
+            }
+        return payload
     version_result = runner([executable, "--version"])
     if version_result.returncode != 0:
-        return {
+        payload = {
             "schema": CAPABILITY_SCHEMA,
             "status": "unhealthy",
             "available": True,
@@ -102,10 +171,13 @@ def probe_tulving(
             "clock": "unknown",
             "reason": _detail(version_result),
         }
+        if check_update:
+            payload["update"] = _probe_tulving_update(executable, runner)
+        return payload
     version = version_result.stdout.strip() or "unknown"
     status_result = runner([executable, "status"])
     if status_result.returncode != 0:
-        return {
+        payload = {
             "schema": CAPABILITY_SCHEMA,
             "status": "unhealthy",
             "available": True,
@@ -115,9 +187,12 @@ def probe_tulving(
             "clock": "unknown",
             "reason": _detail(status_result),
         }
+        if check_update:
+            payload["update"] = _probe_tulving_update(executable, runner)
+        return payload
     status_text = status_result.stdout
     clock_ready = "✓ clock" in status_text
-    return {
+    payload = {
         "schema": CAPABILITY_SCHEMA,
         "status": "ready" if clock_ready else "needs_init",
         "available": True,
@@ -126,14 +201,24 @@ def probe_tulving(
         "version": version,
         "clock": "ready" if clock_ready else "not_initialized",
     }
+    if check_update:
+        payload["update"] = _probe_tulving_update(executable, runner)
+    return payload
 
 
 def enable_tulving(
-    *, resolver: Resolver = shutil.which, runner: Runner = _run
+    *,
+    resolver: Resolver = shutil.which,
+    runner: Runner = _run,
+    synchronize_update: bool = False,
 ) -> dict[str, Any]:
-    """Install Tulving when needed, then initialize its clock."""
+    """Install Tulving when needed, optionally update it, then initialize its clock."""
 
-    before = probe_tulving(resolver=resolver, runner=runner)
+    before = probe_tulving(
+        resolver=resolver,
+        runner=runner,
+        check_update=synchronize_update,
+    )
     installed = False
     installer = None
     if not before["available"]:
@@ -181,6 +266,22 @@ def enable_tulving(
     executable = _resolve_tulving(resolver)
     if executable is None:
         raise RecurrenceError("Tulving installation completed but no executable is on PATH")
+    updated = False
+    update_error = None
+    update = before.get("update") if isinstance(before, dict) else None
+    if (
+        synchronize_update
+        and before.get("available") is True
+        and isinstance(update, dict)
+    ):
+        if update.get("status") == "available":
+            result = runner([executable, "update"])
+            if result.returncode == 0:
+                updated = True
+            else:
+                update_error = f"Tulving update failed: {_detail(result)}"
+        elif update.get("status") == "check_failed":
+            update_error = f"Tulving update check failed: {update.get('detail')}"
     current = probe_tulving(resolver=resolver, runner=runner)
     initialized = False
     if not current["ready"]:
@@ -191,18 +292,23 @@ def enable_tulving(
     after = probe_tulving(resolver=resolver, runner=runner)
     if not after["ready"]:
         raise RecurrenceError("Tulving is installed but its clock is not ready")
-    return {
+    payload = {
         "schema": CAPABILITY_SCHEMA,
         "status": "ready",
         "available": True,
         "ready": True,
         "installed": installed,
+        "updated": updated,
         "installer": installer,
         "initialized": initialized,
         "executable": after["executable"],
         "version": after["version"],
+        "previous_version": before.get("version"),
         "clock": after["clock"],
     }
+    if update_error is not None:
+        payload["update_error"] = update_error
+    return payload
 
 
 def _parameter(value: object) -> str:

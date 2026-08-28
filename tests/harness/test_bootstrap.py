@@ -23,6 +23,7 @@ from scripts.lib.play.bootstrap import (
     _choose_detected_harnesses,
     _choose_login_method,
     _parallel_harness_work,
+    _play_update_snapshot,
     _prepare_derived_play_caches,
     _os_snapshot,
     _require_supported_os,
@@ -241,12 +242,27 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("unchanged", current.status)
         self.assertIn("in-place credential reauthorization", current.detail)
 
+    @patch("scripts.lib.play.bootstrap.probe_tulving")
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
     @patch("scripts.lib.play.bootstrap.shutil.which")
     def test_plan_selects_top_k_and_skips_current_skill_providers(
-        self, which: MagicMock, _resolve_rote: MagicMock
+        self,
+        which: MagicMock,
+        _resolve_rote: MagicMock,
+        tulving_probe: MagicMock,
     ) -> None:
         which.side_effect = lambda name: f"/bin/{name}" if name in {"codex", "claude", "kimi"} else None
+        tulving_probe.return_value = {
+            "available": True,
+            "ready": True,
+            "version": "tulving 0.1.2",
+            "update": {
+                "status": "available",
+                "installed": "0.1.2",
+                "latest": "0.1.3",
+                "detail": "Tulving 0.1.3 is available; 0.1.2 is installed.",
+            },
+        }
         runner = MagicMock()
         runner.side_effect = [
             MagicMock(returncode=0, stdout="version: 1.2.3\n", stderr=""),
@@ -262,10 +278,18 @@ class BootstrapTest(unittest.TestCase):
         plan = build_plan(top_k=2, runner=runner)
 
         self.assertEqual(["codex", "claude"], plan["selected_harnesses"])
+        self.assertEqual("not_installed", plan["play"]["update_status"])
+        self.assertEqual("0.4.75", plan["play"]["target_version"])
         convergence = next(action for action in plan["actions"] if action["id"] == "converge_rote_skills")
         self.assertIsNone(convergence["command"])
         self.assertEqual([], convergence["targets"])
         self.assertEqual("keep_rote_current", plan["actions"][0]["id"])
+        self.assertEqual("update_tulving", plan["actions"][1]["id"])
+        self.assertTrue(plan["actions"][1]["approval_required"])
+        tulving_probe.assert_called_once_with(
+            resolver=ANY,
+            check_update=True,
+        )
         marketplace = next(
             action
             for action in plan["actions"]
@@ -287,6 +311,23 @@ class BootstrapTest(unittest.TestCase):
         skill_status = {item["provider"]: item for item in plan["rote_skills"]}
         self.assertEqual("keep", skill_status["codex"]["recommended_action"])
         self.assertEqual("keep", skill_status["claude-code"]["recommended_action"])
+
+    def test_play_update_cycle_compares_installed_and_target_versions(self) -> None:
+        install_home = self.home / "play-install"
+        skill = install_home / "skill"
+        skill.mkdir(parents=True)
+        version = skill / "VERSION"
+        version.write_text("0.4.74\n", encoding="utf-8")
+
+        with patch.dict(os.environ, {"PLAY_INSTALL_HOME": str(install_home)}):
+            available = _play_update_snapshot()
+            version.write_text("0.4.75\n", encoding="utf-8")
+            current = _play_update_snapshot()
+
+        self.assertEqual("available", available["update_status"])
+        self.assertEqual("0.4.74", available["installed_version"])
+        self.assertEqual("0.4.75", available["target_version"])
+        self.assertEqual("current", current["update_status"])
 
     @patch("scripts.lib.play.bootstrap.shutil.which")
     def test_detected_harness_picker_uses_explicit_numbered_selection(
@@ -995,7 +1036,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.74",
+                                "version": "0.4.75",
                                 "enabled": True,
                             }
                         ]
@@ -1006,7 +1047,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.74", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.75", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -1367,6 +1408,35 @@ class BootstrapTest(unittest.TestCase):
         )
         self.assertIn("Previous version restored", rendered)
         self.assertNotIn("Congratulations", rendered)
+
+    def test_status_card_reports_independent_component_versions(self) -> None:
+        rendered = _render_status_card(
+            {
+                "status": "completed",
+                "run_id": "component-versions",
+                "selected_harnesses": [],
+                "targets": [],
+                "steps": [],
+                "play": {
+                    "before": {"version": "0.4.74"},
+                    "after": {"version": "0.4.75"},
+                },
+                "rote": {
+                    "before": {"version": "1.2.3"},
+                    "after": {"version": "1.2.4"},
+                },
+                "tulving": {
+                    "requested": True,
+                    "before": {"version": "tulving 0.1.2"},
+                    "after": {"version": "tulving 0.1.3", "ready": True},
+                },
+            }
+        )
+
+        self.assertIn("Components", rendered)
+        self.assertIn("Play      0.4.74 → 0.4.75", rendered)
+        self.assertIn("Rote      1.2.3 → 1.2.4", rendered)
+        self.assertIn("Tulving   0.1.2 → 0.1.3", rendered)
 
     def test_codex_play_override_removal_preserves_unrelated_toml(self) -> None:
         config = self.home / ".codex" / "config.toml"
@@ -2077,7 +2147,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.74 is installed and enabled.",
+                "Play 0.4.75 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -2173,7 +2243,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.74", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.75", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 
@@ -2259,6 +2329,64 @@ class BootstrapTest(unittest.TestCase):
             prepared_plan=build.return_value,
             progress=ANY,
         )
+
+    @patch(
+        "scripts.lib.play.bootstrap._choose_detected_harnesses",
+        return_value=["codex"],
+    )
+    @patch("scripts.lib.play.bootstrap._confirm", side_effect=[True, True])
+    @patch("scripts.lib.play.bootstrap.apply")
+    @patch("scripts.lib.play.bootstrap.build_plan")
+    def test_guided_install_offers_available_tulving_update_separately(
+        self,
+        build: MagicMock,
+        apply_plan: MagicMock,
+        confirm: MagicMock,
+        _choose_harnesses: MagicMock,
+    ) -> None:
+        build.return_value = {
+            "plan_id": "sha256:tulving-update",
+            "selected_harnesses": ["codex"],
+            "targets": [],
+            "shared_agents": {},
+            "rote": {
+                "path": "/bin/rote",
+                "version": "1.2.3",
+                "identity": "authenticated",
+                "update": {"status": "current", "detail": "Rote is current."},
+            },
+            "rote_skills": [],
+            "tulving": {
+                "available": True,
+                "ready": True,
+                "version": "tulving 0.1.2",
+                "update": {
+                    "status": "available",
+                    "installed": "0.1.2",
+                    "latest": "0.1.3",
+                },
+            },
+            "actions": [],
+        }
+        apply_plan.return_value = {
+            "run_id": "tulving-update-run",
+            "status": "completed",
+            "plan_id": "sha256:tulving-update",
+            "selected_harnesses": ["codex"],
+            "targets": [],
+            "steps": [],
+            "tulving": {"requested": True, "after": {"ready": True}},
+            "restart": "Restart Codex.",
+        }
+
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            result = main(["install", "--run-id", "tulving-update-run"])
+
+        self.assertEqual(0, result)
+        self.assertEqual(2, confirm.call_count)
+        self.assertIn("Update Tulving to 0.1.3", confirm.call_args_list[1].args[0])
+        self.assertFalse(confirm.call_args_list[1].kwargs["default"])
+        self.assertTrue(apply_plan.call_args.kwargs["enable_tulving"])
 
 
 if __name__ == "__main__":

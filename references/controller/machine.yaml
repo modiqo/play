@@ -60,10 +60,10 @@ states:
       onboarding_login_deferred: [{target: completed, mutate: record_onboarding_login_deferred}]
 
   onboarding_login:
-    owner: rote-specialist
+    owner: play
     checkpoint: both
     requires: [onboarding.rote_command, onboarding.login_provider, onboarding.login_status]
-    entry: {action: handoff_rote_login}
+    entry: {action: login_rote_identity}
     "on":
       rote_login_completed: [{target: onboarding_identity, mutate: record_onboarding_login}]
       rote_login_paused: [{target: blocked, mutate: record_onboarding_login_pause}]
@@ -443,7 +443,28 @@ states:
     "on":
       play_run_ready: [{target: use_verify, mutate: record_controller_run}]
       play_drifted: [{target: standby_exit, mutate: record_failed_receipt}]
+      play_registry_login_required: [{target: use_registry_login_offer, mutate: require_registry_login}]
       play_authentication_required: [{target: use_authentication_offer, mutate: record_use_authentication_required}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  use_registry_login_offer:
+    owner: play
+    checkpoint: after
+    requires: [match.reference, onboarding.rote_command, onboarding.login_status]
+    prompt: choose_registry_login_provider
+    "on":
+      registry_google_login_selected: [{target: use_registry_login, mutate: select_registry_google_login}]
+      registry_github_login_selected: [{target: use_registry_login, mutate: select_registry_github_login}]
+      registry_login_deferred: [{target: completed, mutate: record_registry_login_deferred}]
+
+  use_registry_login:
+    owner: play
+    checkpoint: both
+    requires: [match.reference, onboarding.rote_command, onboarding.login_provider, onboarding.login_status]
+    entry: {action: login_rote_identity}
+    "on":
+      rote_login_completed: [{target: use_prepare, mutate: record_registry_login}]
+      rote_login_paused: [{target: use_registry_login_offer, mutate: record_registry_login_pause}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_authentication_offer:

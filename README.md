@@ -674,8 +674,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.74/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.74 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.75/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.75 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -728,10 +728,16 @@ already active pinned environment), a missing Rote CLI, missing Rote skills in t
 authentication, and `rote play` capability; it also reports cross-harness coverage and
 multi-select restoration targets. An empty `$play` or `/play` probes
 the local binary and identity. If either
-is missing, Play invokes `rote-setup`; that specialist asks before downloaded installer code, login,
-credentials, or optional onboarding. Ordinary requests are lexically classified and qualified
-first; only Play-bound evaluator events run the full preflight, so excluded conversation and
-repository work do not pay the identity/capability probe.
+is missing, Play handles the exact gap. A missing binary invokes `rote-setup`, which asks before
+downloaded installer code or optional onboarding. An installed but signed-out Rote shows only the
+Google, GitHub, and **Not now** choices. Play runs the selected OAuth login and verifies
+`rote whoami`; it does not enter Rote's adapter setup menu.
+
+A signed-out Play run keeps its exact reference, parameters, disclosure, and approval. After login,
+Play resumes that run automatically instead of asking the user to issue the command again. A failed
+or deferred login leaves the Play unchanged and does not execute it. Ordinary requests are
+lexically classified and qualified first; only Play-bound evaluator events run the full preflight,
+so excluded conversation and repository work do not pay the identity/capability probe.
 Public Play URIs can still show their read-only public card before the CLI exists.
 
 Marketplace installs restore this launcher automatically from Play's session-start hook. If a
@@ -1242,14 +1248,21 @@ maintenance refresh cannot reach the registry. The cache stores exact references
 labels, tags, and each entry's tier when the registry exposes them; digest acknowledgment remains a
 separate state so refreshing never marks an item as viewed.
 
-Recurring work is optional. During guided setup, Play checks for
-[Tulving](https://github.com/modiqo/tulving) and asks before enabling it. With permission, setup uses
-Homebrew when available or Tulving's official installer otherwise. It downloads Tulving only when
-the binary is absent, then runs `tulving init` when its clock is not ready.
+Recurring work is optional. Guided setup treats Play, Rote, and
+[Tulving](https://github.com/modiqo/tulving) as independent release cycles under one receipt.
+Play checks Tulving's native update channel and asks separately before changing it.
 
-Declining leaves recurring Plays off.
-Unattended setup enables recurring Plays only when
+With permission, setup runs `tulving update` when an installed version has an update.
+When Tulving is absent, setup uses Homebrew or Tulving's official installer.
+Setup runs `tulving init` only when the clock is not ready.
+
+Declining preserves an existing Tulving installation. Recurring Plays remain off when Tulving is
+absent or its clock is not ready. Unattended setup changes Tulving only when
 `PLAY_INSTALL_TULVING=1` or `--enable-tulving` is explicit.
+
+The setup receipt lists Play, Rote, and Tulving versions before and after the run. Play's recovery
+point covers Play-owned state. It does not downgrade Rote or Tulving after their own successful
+updates.
 
 Play asks about recurrence after it presents the complete result and verified receipt. This
 order applies to first pulls, replacements, and already-local Plays. The picker offers hourly,

@@ -567,7 +567,8 @@ def validate_bundle(
         == "onboarding_login_offer"
         and states.get("onboarding_login_offer", {}).get("prompt")
         == "choose_login_provider"
-        and actions.get("handoff_rote_login", {}).get("specialist") == "rote-setup",
+        and actions.get("login_rote_identity", {}).get("command")
+        == "scripts/bin/play-onboarding login --stdin --json",
         "an installed but unauthenticated Rote must enter the harness login state machine",
     )
     check(
@@ -784,9 +785,9 @@ def validate_bundle(
         check(forbidden not in states, f"{forbidden} must stay inside the rote play run controller")
     check(
         predecessors["use_prepare"]
-        == {"use_decide", "use_offer", "use_authentication_offer"},
+        == {"use_decide", "use_offer", "use_authentication_offer", "use_registry_login"},
         "run handoff preparation may follow only local readiness, remote pull approval, "
-        "or exact static-credential verification",
+        "verified registry login, or exact static-credential verification",
     )
     check(predecessors["use_run"] == {"use_prepare"}, "execution may follow only a prepared run handoff")
     check("use_inspect" in dominators["use_run"], "inspection must dominate execution")

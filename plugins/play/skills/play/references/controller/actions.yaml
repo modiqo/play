@@ -52,6 +52,12 @@ mutations:
   - record_onboarding_login
   - record_onboarding_login_pause
   - record_onboarding_login_deferred
+  - require_registry_login
+  - select_registry_google_login
+  - select_registry_github_login
+  - record_registry_login
+  - record_registry_login_pause
+  - record_registry_login_deferred
   - record_onboarding_experience
   - record_first_use_orientation
   - record_first_use_marker
@@ -237,18 +243,19 @@ actions:
       onboarding_identity_ready: [onboarding.identity_status, onboarding.email, onboarding.email_handle, onboarding.identity_ref, onboarding.whoami_ns]
       onboarding_identity_setup_required: [onboarding.identity_status, onboarding.email, onboarding.email_handle, onboarding.identity_ref, onboarding.whoami_ns]
 
-  handoff_rote_login:
-    kind: delegated
-    owner: rote-specialist
-    specialist: rote-setup
+  login_rote_identity:
+    kind: deterministic
+    owner: play
     effect: external-write
+    timeout_seconds: 660
     input_required: [onboarding.rote_command, onboarding.login_provider, onboarding.login_status]
+    command: scripts/bin/play-onboarding login --stdin --json
     command_policy:
-      - Handle only the selected Rote identity login; do not install or update binaries, install skills, configure adapters, collect credentials, or run a demonstration Play.
-      - Run exactly `<onboarding.rote_command> login --provider <onboarding.login_provider>` and let its OAuth browser flow own credentials and consent.
+      - Handle only the selected Rote identity login. Do not install or update binaries, install skills, configure adapters, or run another Play.
+      - Run exactly `<onboarding.rote_command> login --provider <onboarding.login_provider>` and let Rote's OAuth browser flow own credentials and consent.
       - After the browser flow, run exactly one `<onboarding.rote_command> whoami`; return success only when it reports an authenticated identity.
       - Never ask for or place OAuth codes, tokens, cookies, or credentials in chat or controller context.
-      - Return paused when the user defers or the browser flow is not completed; preserve the provider and a recoverable reason.
+      - Return paused when the browser flow does not complete; preserve the provider and the pending Play continuation.
     events:
       rote_login_completed: [onboarding.login_status, onboarding.login_provider, evidence_refs]
       rote_login_paused: [onboarding.login_status, onboarding.login_provider, reason, recoverable, evidence_refs]
@@ -689,6 +696,7 @@ actions:
     events:
       play_run_ready: [play.version, resolution.local_state, resolution.pull_performed, result_ref, response_refs, artifact_refs, effects, execution.workspace, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
       play_drifted: [reason, evidence_refs]
+      play_registry_login_required: [authentication.source, authentication.recoverable, authentication.evidence_refs, onboarding.rote_command]
       play_authentication_required: [authentication.source, authentication.owner, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.evidence_refs]
 
   execute_authentication:

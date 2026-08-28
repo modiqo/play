@@ -258,9 +258,12 @@ class UniversalPlayRunTest(unittest.TestCase):
 
         result = execute(payload())
 
-        self.assertEqual("action_blocked", result["event"])
-        self.assertIn("rote login", result["reason"])
-        self.assertIn("retry this exact Play", result["reason"])
+        self.assertEqual("play_registry_login_required", result["event"])
+        self.assertEqual(
+            "rote_registry_login_required", result["authentication"]["source"]
+        )
+        self.assertEqual("/usr/bin/rote", result["onboarding"]["rote_command"])
+        self.assertNotIn("reason", result)
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run._invoke_authenticated")

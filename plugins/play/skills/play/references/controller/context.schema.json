@@ -1806,6 +1806,7 @@
           "enum": [
             "rote_authentication_required",
             "rote_authentication_result",
+            "rote_registry_login_required",
             null
           ]
         },

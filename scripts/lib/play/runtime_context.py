@@ -16,7 +16,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "becac6f35da8acd6f904a517e0a7ebe941703dd04d1edaf7742484d741e342f0"
+SUPPORTED_MUTATION_SET_SHA256 = "6798c1579a17e1d474c245c0c581086ebb30cd0626ea8ccb6bc52e9c84866096"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -408,6 +408,34 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "record_onboarding_login": {"onboarding.login_status": "authenticated"},
     "record_onboarding_login_pause": {"onboarding.login_status": "paused"},
     "record_onboarding_login_deferred": {"onboarding.login_status": "deferred"},
+    "require_registry_login": {
+        "onboarding.login_provider": None,
+        "onboarding.login_status": "choice_required",
+        "authentication.source": "rote_registry_login_required",
+        "authentication.status": "required",
+    },
+    "select_registry_google_login": {
+        "onboarding.login_provider": "google",
+        "onboarding.login_status": "in_progress",
+        "authentication.status": "approved",
+    },
+    "select_registry_github_login": {
+        "onboarding.login_provider": "github",
+        "onboarding.login_status": "in_progress",
+        "authentication.status": "approved",
+    },
+    "record_registry_login": {
+        "onboarding.login_status": "authenticated",
+        "authentication.status": "authenticated",
+    },
+    "record_registry_login_pause": {
+        "onboarding.login_status": "paused",
+        "authentication.status": "failed",
+    },
+    "record_registry_login_deferred": {
+        "onboarding.login_status": "deferred",
+        "authentication.status": "declined",
+    },
     "enter_uri_setup": {"onboarding.setup_status": "required"},
     "enter_onboarding_uri_use": {"mode": "use"},
     "enter_onboarding_starter_use": {
