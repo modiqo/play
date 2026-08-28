@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.digest import (
+    _fresh_cached_digest,
     _upgrade_cached_discovery,
     build_digest,
     classify_updates,
@@ -336,6 +337,34 @@ class DigestTest(unittest.TestCase):
         assert upgraded is not None
         self.assertTrue(supports_play_discovery(upgraded))
         self.assertEqual("modiqo/hello", upgraded["public_sample"][0]["reference"])
+
+    def test_fresh_cache_is_rejected_after_authorized_org_scope_changes(self) -> None:
+        digest = build_digest(
+            [Organization("alpha", "Alpha", "org-alpha")],
+            {"alpha": []},
+            [],
+            start=self.start,
+            end=self.end,
+            public_limit=10,
+        )
+        cache = {
+            "schema": "play.inbox-cache/v1",
+            "window_days": 7,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "authority_sha256": "sha256:" + "0" * 64,
+            "digest": digest,
+        }
+
+        with patch("play.inbox_cache.read_cache", return_value=cache):
+            cached = _fresh_cached_digest(
+                days=7,
+                organizations=[
+                    Organization("alpha", "Alpha", "org-alpha"),
+                    Organization("new-org", "New Org", "org-new"),
+                ],
+            )
+
+        self.assertIsNone(cached)
 
     def test_cached_digest_with_version_pinned_catalog_choice_is_refreshed(self) -> None:
         digest = build_digest(

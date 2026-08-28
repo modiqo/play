@@ -1028,13 +1028,13 @@ class SearchTest(unittest.TestCase):
             [
                 {
                     "reference": "alpha/mail@1.0.0",
-                    "label": "mail — private",
+                    "label": "alpha/mail",
                     "description": "Inspect mail.",
                     "parameters": {},
                 },
                 {
                     "reference": "/tmp/local/main.ts",
-                    "label": "local — local",
+                    "label": "/tmp/local/main.ts",
                     "description": "Run local.",
                     "parameters": {},
                 },

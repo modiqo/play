@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .digest_state import (
+    authority_fingerprint,
     default_state_path,
     DigestStateError,
     compare_digest,
@@ -599,7 +600,12 @@ def collect_digest(
     )
 
 
-def _fresh_cached_digest(*, days: int, max_age_hours: float = 6.0) -> dict[str, Any] | None:
+def _fresh_cached_digest(
+    *,
+    days: int,
+    organizations: list[Organization],
+    max_age_hours: float = 6.0,
+) -> dict[str, Any] | None:
     """Serve the interactive digest from the background inbox cache when fresh.
 
     The what's-new surface tolerates the stale-while-revalidate window; a live
@@ -611,7 +617,11 @@ def _fresh_cached_digest(*, days: int, max_age_hours: float = 6.0) -> dict[str, 
     from .inbox_cache import read_cache  # local import: inbox_cache imports this module
 
     cache = read_cache()
-    if cache is None or cache.get("window_days") != days:
+    if (
+        cache is None
+        or cache.get("window_days") != days
+        or cache.get("authority_sha256") != authority_fingerprint(organizations)
+    ):
         return None
     try:
         fetched = datetime.fromisoformat(str(cache.get("fetched_at")))
@@ -771,7 +781,11 @@ def main() -> int:
             if previous is not None:
                 since = previous["checkpoint"]["last_seen_at"]
             remembered = (key, scope)
-        digest = _fresh_cached_digest(days=args.days) if remember and not args.org else None
+        digest = (
+            _fresh_cached_digest(days=args.days, organizations=organizations)
+            if remember and not args.org and organizations is not None
+            else None
+        )
         served_from = "cache" if digest is not None else "live"
         if digest is None:
             digest = collect_digest(

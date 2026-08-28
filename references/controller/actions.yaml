@@ -191,6 +191,8 @@ actions:
       - Treat only a trimmed `$play` or `/play` with no arguments as an empty greeting invocation.
       - Treat the harness's exact Play activation-without-a-task boilerplate as the same greeting; never send it to model qualification.
       - Bind `run hello`, `run the Hello Play`, and `$play run hello` directly to the unversioned canonical Hello URI without model qualification or search.
+      - Route `play run <unqualified name>`, `$play run <unqualified name>`, and `/play run <unqualified name>` directly to qualified catalog search.
+      - Present every match by its canonical owner/name and require the user to select one before inspection.
       - Bind exact what's-new, popular, and trending Play aliases directly to the seven-day awareness digest without model qualification or preflight.
       - Treat a bare or prefixed canonical HTTPS play.modiqo.ai owner/name URI, optionally followed by unique key=value parameters, as a Play URI invocation.
       - Route unambiguous retrieve, fetch, get, find, collect, download, export, list, summarize, check, monitor, calculate, and compare outcomes directly to search.
@@ -201,6 +203,7 @@ actions:
       empty_play_invocation: [onboarding.intent, onboarding.classify_ns]
       play_uri_invocation: [onboarding.intent, onboarding.play_uri, match.reference, request.parameters, onboarding.classify_ns]
       outcome_play_invocation: [request.intent, request.requested_outcome, modality_policy, preferences.policies, onboarding.classify_ns]
+      play_search_invocation: [request.intent, preferences.policies, onboarding.classify_ns]
       play_awareness_invocation: [request.intent, awareness.window_days, preferences.policies, onboarding.classify_ns]
       settled_task_invocation: [standby.armed, standby.task_class, standby.hook_ref, standby.settle_summary, capture.decision, capture.reason, capture.task_class, capture.reference, capture.workspace, capture.status, capture.trajectory_ref, execution.workspace, evidence_refs, request.intent, request.requested_outcome, preferences.policies, onboarding.classify_ns]
       settled_task_rejected: [reason]
@@ -384,6 +387,8 @@ actions:
     command_policy:
       - Classify explicit or inferred requests for what is new, popular public Plays, or trending Plays as play_awareness_request; the digest owns truthful metric labels and must not call cumulative totals a time-window trend.
       - For exact_play_request, preserve the complete canonical owner/name reference supplied by the activation hook or cached catalog; never emit a bare Play name.
+      - When no complete canonical owner/name is available, emit play_search_request with the Play name as the intent.
+      - Never emit exact_play_request with a null or bare reference.
       - Treat explicit `$play explore ...` and `/play explore ...` requests as play_creation_request, never play_search_request; the creator path still searches local and authorized registry Plays before offering a captured exploration.
       - Distinguish setup-led exploration from goal-bound exploration. "Connect to PostHog" is setup_led with exploration.goal_status=required; "connect to PostHog and retrieve DAU" is goal_bound with the useful DAU outcome already ready. Never invent a useful outcome from authentication, connection, probes, or taxonomy reads.
       - Classify an explicit request to publish an already saved or locally released Play as play_publication_request. Preserve the local Play reference, requested visibility, and requested owner; never search for another Play, offer a new exploration, or recommend `direct:` for this lifecycle action.

@@ -32,6 +32,16 @@ def stable_sha(payload: object) -> str:
     return hashlib.sha256(canonical_json(payload).encode()).hexdigest()
 
 
+def authority_fingerprint(organizations: list[Organization]) -> str:
+    """Fingerprint the authorized registry scope without storing credentials."""
+
+    scope = [
+        {"id": org.id, "slug": org.slug}
+        for org in sorted(organizations, key=lambda item: item.slug.casefold())
+    ]
+    return "sha256:" + stable_sha(scope)
+
+
 def scope_contract(
     organizations: list[Organization],
     *,

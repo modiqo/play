@@ -185,6 +185,21 @@ cases:
     terminal: completed
     excludes: [classify, use_inspect, use_run, standby_exit]
 
+  - name: unqualified named Play run asks the user to select a qualified reference
+    steps:
+      - {state: invoke, event: play_search_invocation, target: search}
+      - state: search
+        event: search_ready
+        guards: {search_only_requested: true, search_is_complete: true}
+        target: search_present
+      - {state: search_present, event: search_presented, target: search_offer}
+      - {state: search_offer, event: search_play_selected, target: use_inspect}
+      - {state: use_inspect, event: play_inspected, target: use_decide}
+      - {state: use_decide, event: remote_pull_required, target: use_offer}
+      - {state: use_offer, event: play_run_declined, target: completed}
+    terminal: completed
+    excludes: [qualify, classify, use_run, standby_exit]
+
   - name: explicit Play search inspects an organization result before approval
     steps:
       - {state: qualify, event: play_search_request, target: search}

@@ -922,11 +922,19 @@ _EVENT_ALIAS_SCHEMAS: dict[str, Mapping[str, Any]] = {
     "verification_refs": _STRING_ARRAY,
     "visibility": {"enum": ["private", "public"]},
 }
+_EVENT_PATH_SCHEMAS: dict[tuple[str, ...], Mapping[str, Any]] = {
+    # Context fields remain nullable before selection. Events that claim a
+    # selected Play must carry the concrete identity required by the target
+    # state, so the projected contract cannot advertise null as valid.
+    ("match", "reference"): _STRING,
+}
 
 
 def _context_schema_at_path(
     context_schema: Mapping[str, Any], path: tuple[str, ...]
 ) -> Mapping[str, Any]:
+    if path in _EVENT_PATH_SCHEMAS:
+        return _EVENT_PATH_SCHEMAS[path]
     if path and path[0] in _EVENT_ALIAS_SCHEMAS:
         node = _EVENT_ALIAS_SCHEMAS[path[0]]
         remaining = path[1:]
@@ -1161,7 +1169,8 @@ def _derive_session_guards(
         _path_value(event.payload, "search.complete") is True
     )
     values[GuardId("search_only_requested")] = (
-        _path_value(context, "last_event.id") == "play_search_request"
+        _path_value(context, "last_event.id")
+        in {"play_search_request", "play_search_invocation"}
     )
     values[GuardId("capture_is_active")] = (
         _path_value(event.payload, "capture.status") == "active"

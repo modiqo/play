@@ -532,6 +532,10 @@ def validate_bundle(
         "unambiguous outcomes must bypass model qualification",
     )
     check(
+        _target(states, "invoke", "play_search_invocation") == "search",
+        "unqualified named Play runs must enter qualified search",
+    )
+    check(
         _target(states, "use_decide", "play_parameter_required")
         == "use_parameter_offer",
         "missing required Play parameters must reach typed elicitation",

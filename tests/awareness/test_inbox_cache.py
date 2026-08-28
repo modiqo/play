@@ -422,6 +422,20 @@ class InboxCacheTest(unittest.TestCase):
         self.assertEqual(previous["catalog_sha256"], retained["catalog_sha256"])
         self.assertEqual(before, self.cache_path.read_bytes())
 
+    def test_maintenance_failure_never_returns_snapshot_from_prior_org_scope(self) -> None:
+        self._refresh(_digest(1, 0))
+
+        with self.assertRaisesRegex(RuntimeError, "registry unavailable"):
+            refresh_cache(
+                cache_path=self.cache_path,
+                state_path=self.state_path,
+                collect=lambda **_: _digest(2, 0),
+                load_flows=lambda _: (_ for _ in ()).throw(
+                    RuntimeError("registry unavailable")
+                ),
+                organizations=[Organization("new-org", "New Org", "org-new")],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

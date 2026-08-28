@@ -818,6 +818,126 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("classify_play_invocation", yielded.trace[0].action)
         self.assertEqual("ordinary_play_invocation", yielded.trace[0].event)
 
+    def test_named_run_reaches_search_without_model_qualification(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-named-run-classify",
+            task_key="named-run-classify",
+            request_original="play run weekly-report",
+        )
+
+        projection = self.runtime.project_session(session).as_dict()
+        instruction = projection["instruction"]
+        event, presentation = _execute_instruction(
+            instruction,
+            projection=projection,
+            context=session.context,
+            root=ROOT,
+        )
+        advanced = self.runtime.advance_session(session, event)
+
+        self.assertIsNone(presentation)
+        self.assertEqual("play_search_invocation", event.id)
+        self.assertEqual("search", advanced.projection.state["id"])
+        self.assertEqual("runtime", advanced.projection.state["boundary"])
+        assert advanced.projection.instruction is not None
+        self.assertEqual("search_authorized_plays", advanced.projection.instruction["id"])
+        self.assertEqual("weekly-report", advanced.session.context["request"]["intent"])
+        self.assertNotIn("qualify_request", str(advanced.projection.as_dict()))
+
+    def test_unqualified_named_run_presents_qualified_matches_for_selection(
+        self,
+    ) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-named-run",
+            task_key="named-run",
+            request_original="play run weekly-report",
+        )
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("play_search_invocation"),
+                payload={
+                    "request": {"intent": "weekly-report"},
+                    "preferences": {"policies": []},
+                    "onboarding": {"classify_ns": 1},
+                },
+                guards={},
+            ),
+        ).session
+        self.assertEqual("search", session.cursor.state)
+
+        def candidate(reference: str, scope: str) -> dict[str, Any]:
+            owner, name = reference.split("/", 1)
+            return {
+                "name": name,
+                "description": f"Weekly report from {owner}.",
+                "reference": reference,
+                "exact_reference": f"{reference}@1.0.0",
+                "version": "1.0.0",
+                "status": "approved",
+                "sources": [scope],
+                "score": 1.0,
+                "coverage": 1.0,
+                "match_classification": "full",
+                "primary_scope": scope,
+                "uri": f"https://play.modiqo.ai/{reference}@1.0.0",
+                "run_command": f"rote play run {reference}@1.0.0",
+                "inspect_command": f"rote play inspect {reference}@1.0.0 --json",
+                "hint_kind": "play",
+                "local_availability": "not_found",
+                "execution_resolution": "pull_required",
+                "selection_description": "Inspect before pull approval.",
+            }
+
+        references = ["alpha/weekly-report", "beta/weekly-report"]
+        results = [
+            candidate(references[0], "remote_private"),
+            candidate(references[1], "remote_public"),
+        ]
+        choices = [
+            {
+                "reference": reference,
+                "label": reference,
+                "description": "Inspect before pull approval.",
+                "parameters": {},
+            }
+            for reference in references
+        ]
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("search_ready"),
+                payload={
+                    "search": {
+                        "complete": True,
+                        "query": "weekly report",
+                        "sources": ["remote_private", "remote_public"],
+                        "result_refs": references,
+                        "results": results,
+                        "play_choices": choices,
+                    }
+                },
+                guards={},
+            ),
+        ).session
+        self.assertEqual("search_present", session.cursor.state)
+
+        yielded = advance_until_yield(self.runtime, session, root=ROOT)
+
+        self.assertEqual("search_offer", yielded.projection["state"]["id"])
+        self.assertEqual("human", yielded.projection["state"]["boundary"])
+        self.assertEqual("choose_search_result", yielded.projection["instruction"]["id"])
+        self.assertEqual(
+            references,
+            [
+                choice["label"]
+                for choice in yielded.projection["instruction"]["choices"][:-1]
+            ],
+        )
+        self.assertEqual(1, len(yielded.presentations))
+        self.assertIn("alpha/weekly-report", yielded.presentations[0])
+        self.assertIn("beta/weekly-report", yielded.presentations[0])
+
     def test_search_transition_accepts_public_baseline_scope(self) -> None:
         candidate = {
             "name": "retrieve-rideshare-receipts",
@@ -3131,6 +3251,53 @@ class ControllerRuntimeTest(unittest.TestCase):
             "modiqo/retrieve-recent-emails",
             advanced.context["match"]["reference"],
         )
+
+    def test_exact_request_requires_a_non_null_reference_at_the_model_boundary(
+        self,
+    ) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-exact-reference",
+            task_key="exact-reference",
+            request_original="play run report",
+        )
+        session = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                id=EventId("ordinary_play_invocation"),
+                payload={
+                    "onboarding": {"classify_ns": 1},
+                    "preferences": {"policies": []},
+                },
+                guards={},
+            ),
+        ).session
+
+        projection = self.runtime.project(session.cursor, session.context).as_dict()
+        reference_schema = projection["accepted_events"]["exact_play_request"][
+            "payload_schema"
+        ]["properties"]["match"]["properties"]["reference"]
+        self.assertEqual({"type": "string", "minLength": 1}, reference_schema)
+
+        with self.assertRaisesRegex(
+            ControllerRuntimeError,
+            "event payload violates schema at match.reference",
+        ):
+            self.runtime.advance_session(
+                session,
+                ControllerEvent(
+                    id=EventId("exact_play_request"),
+                    payload={
+                        "request": {
+                            "intent": "run report",
+                            "requested_outcome": "report result",
+                            "parameters": {},
+                        },
+                        "match": {"reference": None},
+                        "modality_policy": session.context["modality_policy"],
+                    },
+                    guards={},
+                ),
+            )
 
     def test_executes_an_unconditional_transition(self) -> None:
         result = self.runtime.step(

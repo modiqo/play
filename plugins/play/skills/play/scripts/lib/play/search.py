@@ -893,15 +893,10 @@ def build_play_choices(results: list[dict]) -> list[dict]:
         reference = result.get("reference")
         if not isinstance(reference, str) or not reference:
             continue
-        owner = (
-            result.get("primary_scope", "local").replace("remote_", "")
-            if result.get("primary_scope") != "local"
-            else "local"
-        )
         choices.append(
             {
                 "reference": reference,
-                "label": f"{result['name']} — {owner}",
+                "label": reference.partition("@")[0],
                 "description": result["selection_description"],
                 "parameters": {},
             }

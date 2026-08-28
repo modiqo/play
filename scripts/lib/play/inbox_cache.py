@@ -23,6 +23,7 @@ from typing import Any
 
 from .digest import collect_digest, render_markdown, supports_play_discovery
 from .digest_state import (
+    authority_fingerprint,
     default_state_path,
     load_entry,
     scope_contract,
@@ -167,16 +168,6 @@ def _snapshot_sha(payload: object) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
-def _authority_sha(organizations: list[Organization]) -> str:
-    """Fingerprint the authorized registry scope without storing user credentials."""
-
-    scope = [
-        {"id": org.id, "slug": org.slug}
-        for org in sorted(organizations, key=lambda item: item.slug.casefold())
-    ]
-    return _snapshot_sha(scope)
-
-
 def refresh_cache(
     *,
     days: int = DEFAULT_WINDOW_DAYS,
@@ -195,7 +186,7 @@ def refresh_cache(
     resolved_organizations = (
         organizations if organizations is not None else load_organizations()
     )
-    authority_sha256 = _authority_sha(resolved_organizations)
+    authority_sha256 = authority_fingerprint(resolved_organizations)
     if if_older_than_hours is not None:
         existing = read_cache(cache_path=target)
         if existing is not None:
@@ -250,7 +241,10 @@ def refresh_cache(
         if require_complete_catalog:
             raise
         existing = read_cache(cache_path=target)
-        if existing is not None:
+        if (
+            existing is not None
+            and existing.get("authority_sha256") == authority_sha256
+        ):
             return {**existing, "refreshed": False}
         raise
     collector = collect or collect_digest

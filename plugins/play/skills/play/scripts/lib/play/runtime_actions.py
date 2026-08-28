@@ -578,6 +578,9 @@ def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, An
             "forbidden": [],
             "widening_requires_approval": True,
         }
+    elif event_id == "play_search_invocation":
+        derived["onboarding"] = {"classify_ns": raw.get("classify_ns")}
+        derived["request"] = {"intent": raw.get("intent")}
     elif event_id == "play_awareness_invocation":
         intent = raw.get("intent")
         derived["onboarding"] = {"classify_ns": raw.get("classify_ns")}
@@ -717,6 +720,7 @@ def _select_event(
             "greeting": "empty_play_invocation",
             "play_uri": "play_uri_invocation",
             "outcome": "outcome_play_invocation",
+            "search": "play_search_invocation",
             "awareness": "play_awareness_invocation",
             "settled": "settled_task_invocation",
             "settle_rejected": "settled_task_rejected",

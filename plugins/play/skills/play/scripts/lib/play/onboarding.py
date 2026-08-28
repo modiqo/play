@@ -43,6 +43,10 @@ _STARTER_RUN = re.compile(
     r"^(?:(?:please\s+)?run\s+(?:the\s+)?hello(?:\s+play)?|(?:\$play|/play)\s+run\s+hello)[.!]?$",
     re.IGNORECASE,
 )
+_NAMED_PLAY_RUN = re.compile(
+    r"^(?:\$play|/play|play)\s+run\s+(.+?)[.!]?$",
+    re.IGNORECASE | re.DOTALL,
+)
 _ACTIVATION_ONLY = {
     'user activated the skill "play". follow the loaded skill instructions.',
     "user activated the skill 'play'. follow the loaded skill instructions.",
@@ -173,6 +177,8 @@ def classify_invocation(original: str) -> dict[str, Any]:
         )
     match = _PLAY_PREFIX.fullmatch(stripped)
     candidate = (match.group(1) or "").strip() if match is not None else stripped
+    named_run = _NAMED_PLAY_RUN.fullmatch(stripped)
+    named_selector = (named_run.group(1) or "").strip() if named_run else None
     uri_request = _play_uri_request(candidate)
     parameters: dict[str, str] = {}
     if stripped.casefold() in _ACTIVATION_ONLY:
@@ -181,6 +187,10 @@ def classify_invocation(original: str) -> dict[str, Any]:
     elif _STARTER_RUN.fullmatch(stripped):
         kind = "play_uri"
         play_uri = STARTER_PLAY_URI
+    elif named_selector is not None and "/" not in named_selector:
+        kind = "search"
+        play_uri = None
+        candidate = named_selector
     elif match is not None:
         remainder = (match.group(1) or "").strip()
         if not remainder:
