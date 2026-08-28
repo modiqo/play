@@ -3403,6 +3403,46 @@ def _markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _post_install_tutorial(selected_harnesses: list[str]) -> list[str]:
+    """Render the first-use contract after a successful local installation."""
+
+    lines = [
+        "",
+        "  How Play helps without getting in the way",
+        "",
+        "    Rote turns a successful agent run into an inspectable, repeatable Play that can travel across harnesses, models, machines, and teams.",
+        "",
+        "    1. Ask your agent for normal work",
+        '       Try: "Check the status of PR 2021."',
+        "       Play checks installed Plays and the refreshed authorized catalog.",
+        "",
+        "    2. Use a suggestion only when it helps",
+        "       Play found     A strong match appears as one quiet line.",
+        "       Possible Play  A weaker match appears as a passive option.",
+        "       No match       Play stays silent; your agent continues normally.",
+        "",
+        "    3. Explore on purpose when no Play covers the outcome",
+    ]
+    commands = {
+        "codex": "$play explore create a repeatable release check",
+        "claude": "/play explore create a repeatable release check",
+    }
+    for harness in selected_harnesses:
+        command = commands.get(harness)
+        if command is not None:
+            lines.append(f"       {LABELS[harness]:<12} {command}")
+    lines.extend(
+        [
+            "       Explore searches existing Plays first, then records new work from the start.",
+            "",
+            "    Your control",
+            "       Search is automatic. Pull and run always require approval.",
+            "       Ignore a suggestion and normal work continues without Play.",
+        ]
+    )
+    return lines
+
+
 def _render_status_card(report: dict[str, Any]) -> str:
     """Render the curl installer's concise, action-oriented final screen."""
 
@@ -3544,20 +3584,15 @@ def _render_status_card(report: dict[str, Any]) -> str:
         )
 
     if status not in {"blocked", "onboarding_required", "rolled_back"}:
-        lines.extend(
-            [
-                "",
-                "  Congratulations — step 1",
-                "    You are on your way to becoming a Playmaster.",
-            ]
-        )
         if status == "action_required":
-            lines.append(
-                "    Complete the action above, then begin the mind-meld with your agent."
+            lines.extend(
+                [
+                    "",
+                    "  Complete the action above before trying the tutorial.",
+                ]
             )
-        else:
-            lines.append("    Begin the mind-meld with your agent of choice.")
-        lines.extend(["", "  Fire up your harness and begin the journey"])
+        lines.extend(_post_install_tutorial(report["selected_harnesses"]))
+        lines.extend(["", "  Browse Plays"])
         for harness in report["selected_harnesses"]:
             launch = HARNESS_LAUNCH.get(str(harness))
             if launch is None:

@@ -64,7 +64,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(83, len(self.runtime.bundle.states))
+        self.assertEqual(82, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -1621,17 +1621,53 @@ class ControllerRuntimeTest(unittest.TestCase):
 
         yielded = advance_until_yield(self.runtime, projected, root=ROOT)
 
-        self.assertEqual("search_empty_offer", yielded.projection["state"]["id"])
-        self.assertEqual("human", yielded.projection["state"]["boundary"])
+        self.assertEqual("completed", yielded.projection["state"]["id"])
+        self.assertEqual("terminal", yielded.projection["state"]["boundary"])
         self.assertEqual("present_search_results", yielded.trace[0].action)
         self.assertEqual("search_empty", yielded.trace[0].event)
         self.assertEqual(1, len(yielded.presentations))
         self.assertIn("Search: `release notes`", yielded.presentations[0])
-        self.assertEqual("choose_empty_search_path", yielded.projection["instruction"]["id"])
-        self.assertEqual("Explore and create", yielded.projection["instruction"]["choices"][0]["label"])
-        self.assertTrue(yielded.projection["instruction"]["choices"][0]["recommended"])
+        self.assertIsNone(yielded.projection["instruction"])
 
-    def test_empty_search_approval_converts_original_outcome_to_capture(self) -> None:
+    def test_ordinary_no_match_returns_to_normal_harness_work(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-no-match",
+            task_key="task-no-match",
+            request_original="implement a repository-specific change",
+        )
+        context: dict[str, Any] = copy.deepcopy(dict(session.context))
+        context["state"] = "classify"
+        context["request"]["intent"] = "repository-specific change"
+        context["request"]["requested_outcome"] = "implement the change"
+        context["capture"]["decision"] = "capture"
+        context["capture"]["status"] = "unclassified"
+        context["search"].update(
+            {
+                "complete": True,
+                "query": "repository-specific change",
+                "sources": ["local", "authorized_registry"],
+                "result_refs": [],
+                "results": [],
+                "play_choices": [],
+            }
+        )
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("classify")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("exited", yielded.projection["state"]["id"])
+        self.assertEqual("terminal", yielded.projection["state"]["boundary"])
+        self.assertEqual("no_match", yielded.trace[0].event)
+        self.assertEqual("normal", yielded.session.context["capture"]["decision"])
+        self.assertEqual("normal", yielded.session.context["capture"]["status"])
+        self.assertEqual((), yielded.presentations)
+
+    def test_explicit_explore_no_match_converts_original_outcome_to_capture(self) -> None:
         from play.runtime_context import apply_event, initial_context
 
         context = initial_context(
@@ -1643,8 +1679,8 @@ class ControllerRuntimeTest(unittest.TestCase):
         context["request"]["intent"] = "retrieve PostHog daily active users"
         updated = apply_event(
             context,
-            event_id="search_explore_selected",
-            payload={"prompt_version": "v1", "selected_at": "2026-08-18T00:00:00Z"},
+            event_id="creator_no_match",
+            payload={"match": {"covered": [], "uncovered": []}, "confidence": 0.0},
             state="standby_exit",
             transition_seq=1,
             mutation="start_empty_search_exploration",
@@ -1658,7 +1694,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("goal_bound", updated["exploration"]["intent_kind"])
         self.assertEqual("ready", updated["exploration"]["goal_status"])
 
-    def test_empty_search_approval_preserves_setup_led_exploration(self) -> None:
+    def test_explicit_explore_no_match_preserves_setup_led_exploration(self) -> None:
         from play.runtime_context import apply_event, initial_context
 
         context = initial_context(
@@ -1679,8 +1715,8 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         updated = apply_event(
             context,
-            event_id="search_explore_selected",
-            payload={"prompt_version": "v1", "selected_at": "2026-08-18T00:00:00Z"},
+            event_id="creator_no_match",
+            payload={"match": {"covered": [], "uncovered": []}, "confidence": 0.0},
             state="standby_exit",
             transition_seq=1,
             mutation="start_empty_search_exploration",

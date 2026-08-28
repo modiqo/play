@@ -196,10 +196,6 @@
       "orb": "listening",
       "label": "Waiting for a Play selection…"
     },
-    "search_empty_offer": {
-      "orb": "listening",
-      "label": "Waiting to explore and create…"
-    },
     "exploration_begin": {
       "orb": "connecting",
       "label": "Opening the captured exploration…"

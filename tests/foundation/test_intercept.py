@@ -20,6 +20,7 @@ from play.intercept import (
     is_direct_request,
     load_index,
     milestone_nudge,
+    possible_match,
     recall_journal_day,
     settle_nudge,
 )
@@ -135,7 +136,9 @@ class InterceptTest(unittest.TestCase):
         line = intercept_prompt("can you check status on PR 1701 in modiqo/rote")
         assert line is not None
         self.assertIn("pr-status-check", line)
-        self.assertIn("play skill", line)
+        self.assertIn("high-confidence match", line)
+        self.assertIn("non-blocking", line)
+        self.assertIn("continue the original request normally", line)
 
     def test_conversation_is_silent(self) -> None:
         self.assertIsNone(intercept_prompt("why did you pick that module name"))
@@ -275,13 +278,25 @@ class InterceptTest(unittest.TestCase):
         self.assertIsNotNone(intercept_prompt(prompt, session_id="session-open"))
         self.assertIsNone(intercept_prompt(prompt, session_id="session-quiet"))
 
-    def test_generic_advice_fires_once_per_cooldown(self) -> None:
-        first = intercept_prompt("export the quarterly numbers into a spreadsheet")
-        assert first is not None
-        self.assertIn("search", first)
-        self.assertIsNone(
-            intercept_prompt("export the quarterly numbers into a spreadsheet")
-        )
+    def test_no_match_is_always_silent(self) -> None:
+        prompt = "export the quarterly numbers into a spreadsheet"
+        self.assertIsNone(intercept_prompt(prompt))
+        self.assertIsNone(intercept_prompt(prompt))
+
+    def test_possible_match_is_passive_and_does_not_activate_play(self) -> None:
+        prompt = "review github comments before merge"
+        entries = load_index()
+
+        match = possible_match(prompt, entries)
+        assert match is not None
+        self.assertEqual("pr-status-check", match["reference"])
+
+        line = intercept_prompt(prompt)
+        assert line is not None
+        self.assertIn("possible match", line)
+        self.assertIn("Possible Play", line)
+        self.assertIn("Do not enter the Play state machine", line)
+        self.assertIn("continue the original request normally", line)
 
     def test_no_match_no_verb_is_silent(self) -> None:
         self.assertIsNone(intercept_prompt("refactor the widget renderer for clarity"))
@@ -378,10 +393,10 @@ class InterceptTest(unittest.TestCase):
         )
         line = intercept_prompt("list top committers for modiqo/rote")
         assert line is not None
-        self.assertIn("available in your hub", line)
+        self.assertIn("high-confidence match", line)
         self.assertIn("modiqo/list-top-committers", line)
-        self.assertIn("inspects first", line)
-        self.assertIn("never pull plays or adapters manually", line)
+        self.assertIn("use Play modiqo/list-top-committers", line)
+        self.assertIn("do not pause", line)
 
     def test_unpublished_local_play_precedes_same_named_catalog_play(self) -> None:
         from play.private_store import atomic_write_json
@@ -405,8 +420,8 @@ class InterceptTest(unittest.TestCase):
         line = intercept_prompt("check status on PR 1701")
 
         assert line is not None
-        self.assertIn("saved Play `pr-status-check`", line)
-        self.assertNotIn("available in your hub", line)
+        self.assertIn("high-confidence match `pr-status-check`", line)
+        self.assertNotIn("modiqo/pr-status-check", line)
 
     def test_followup_adverb_does_not_silence_cached_rideshare_match(self) -> None:
         from play.private_store import atomic_write_json
@@ -455,7 +470,7 @@ class InterceptTest(unittest.TestCase):
         line = intercept_prompt(prompt)
         assert line is not None
         self.assertIn("modiqo/retrieve-recent-emails", line)
-        self.assertIn("available in your hub", line)
+        self.assertIn("high-confidence match", line)
 
     def test_prefixed_discussion_stays_silent_with_strong_catalog_overlap(self) -> None:
         from play.private_store import atomic_write_json

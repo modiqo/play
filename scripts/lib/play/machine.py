@@ -484,9 +484,7 @@ def validate_bundle(
     check(_target(states, "qualify", "play_search_request") == "search", "an explicit Play search must use the unified search action")
     check(_target(states, "search", "search_ready") == "search_present", "a search-only request must present results before selection")
     check(_target(states, "search_present", "search_presented") == "search_offer", "presented search results must offer read-only inspection")
-    check(_target(states, "search_present", "search_empty") == "search_empty_offer", "empty local and registry search results must offer captured exploration")
-    check(states.get("search_empty_offer", {}).get("prompt") == "choose_empty_search_path", "empty search must ask before creating a workflow")
-    check(_target(states, "search_empty_offer", "search_explore_selected") == "standby_exit", "approved empty-search exploration must create its captured handoff")
+    check(_target(states, "search_present", "search_empty") == "completed", "an explicit empty search must present its result and finish without offering exploration")
     check(_target(states, "classify", "full_match") == "use_inspect", "an adequate discovered Play must enter read-only inspection")
     check(states.get("use_inspect", {}).get("entry", {}).get("action") == "inspect_registry_play", "Use must start with reusable Play inspection")
     check(_target(states, "use_inspect", "play_inspected") == "use_decide", "inspection must route by local readiness")
@@ -683,18 +681,18 @@ def validate_bundle(
         "an existing local Play publication request must inspect that release without search",
     )
     check(
-        _target(states, "creator_classify", "creator_no_match") == "search_empty_offer",
-        "creator intent without a match must ask before starting captured exploration",
+        _target(states, "creator_classify", "creator_no_match") == "standby_exit",
+        "explicit creator intent without a match must start its captured exploration",
     )
     check(
         _target(states, "invoke", "settled_task_invocation") == "save_judge",
         "a settled-task re-entry must reach the save-worthiness judge directly",
     )
     check(
-        _target(states, "classify", "no_match") == "search_empty_offer"
-        and _target(states, "classify", "partial_match") == "standby_exit"
-        and _target(states, "classify", "uncertain_match") == "standby_exit",
-        "empty discovery must ask before exploration while inadequate matches step aside",
+        _target(states, "classify", "no_match") == "exited"
+        and _target(states, "classify", "partial_match") == "exited"
+        and _target(states, "classify", "uncertain_match") == "exited",
+        "inadequate discovery must return the unchanged request to normal harness work",
     )
     check(
         _target(states, "qualify", "play_excluded") == "standby_exit",

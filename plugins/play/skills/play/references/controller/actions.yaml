@@ -386,7 +386,7 @@ actions:
       - For exact_play_request, preserve the complete canonical owner/name reference supplied by the activation hook or cached catalog; never emit a bare Play name.
       - Treat explicit `$play explore ...` and `/play explore ...` requests as play_creation_request, never play_search_request; the creator path still searches local and authorized registry Plays before offering a captured exploration.
       - Distinguish setup-led exploration from goal-bound exploration. "Connect to PostHog" is setup_led with exploration.goal_status=required; "connect to PostHog and retrieve DAU" is goal_bound with the useful DAU outcome already ready. Never invent a useful outcome from authentication, connection, probes, or taxonomy reads.
-      - Classify an explicit request to publish an already saved or locally released Play as play_publication_request. Preserve the local Play reference, requested visibility, and requested owner; never search for another Play, offer Explore and create, or recommend `direct:` for this lifecycle action.
+      - Classify an explicit request to publish an already saved or locally released Play as play_publication_request. Preserve the local Play reference, requested visibility, and requested owner; never search for another Play, offer a new exploration, or recommend `direct:` for this lifecycle action.
       - Honor the scoped preference ledger; a request whose task class is ledgered silent must emit play_excluded without search, narration, or any mention of Play.
       - When the user states a scoped intervention preference (for example no Plays during prototyping, or always offer Plays for deploy chores), return the statement with its task class and policy on play_excluded so the ledger can record it; otherwise return null preference fields.
       - Classify every novel outcome before execution as capture or normal. Capture only when the likely multi-step, parameterizable work may become reusable and therefore must begin through Rote; normal means no trajectory is created and the task can never be settled post hoc.
@@ -526,7 +526,7 @@ actions:
       - State whether each registry Play was found locally or is expected to need a pull/install.
       - Use search.play_choices from the reusable search output; local-only Flow gaps remain informational.
       - A selection identifies a Play for read-only inspection and never authorizes execution.
-      - When both local and authorized registry results are empty, emit search_empty so Play can offer a captured exploration instead of presenting an empty result picker.
+      - When both local and authorized registry results are empty, emit search_empty so an explicit search can show the empty result and finish without offering exploration.
     events:
       search_presented: [search.query, search.sources, search.result_refs, search.results, search.play_choices]
       search_empty: [search.query, search.sources, search.result_refs, search.results, search.play_choices]

@@ -15,9 +15,6 @@ check: package-check
     scripts/bin/play-question choose_search_result --harness codex --check
     scripts/bin/play-question choose_search_result --harness claude --check
     scripts/bin/play-question choose_search_result --harness kimi --check
-    scripts/bin/play-question choose_empty_search_path --harness codex --check
-    scripts/bin/play-question choose_empty_search_path --harness claude --check
-    scripts/bin/play-question choose_empty_search_path --harness kimi --check
     scripts/bin/play-question describe_exploration_goal --harness codex --context-json '{"exploration":{"provider":"PostHog"}}' --check
     scripts/bin/play-question describe_exploration_goal --harness claude --context-json '{"exploration":{"provider":"PostHog"}}' --check
     scripts/bin/play-question describe_exploration_goal --harness kimi --context-json '{"exploration":{"provider":"PostHog"}}' --check

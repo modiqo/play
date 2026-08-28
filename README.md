@@ -121,16 +121,17 @@ checks, or tool approvals. A later explicit `$play` invocation works normally.
 
 | You do this | Play does this | You stay in control of |
 |---|---|---|
-| A hook detects a relevant Play or repeatable outcome | Searches your local and authorized Play collections | Whether to inspect or ignore a match |
+| A hook detects a relevant Play | Searches installed Plays and the refreshed authorized catalog cache, then shows one non-blocking line | Whether to invoke the suggested Play later |
 | Prefix a request with `direct:` | Bypasses Play and Rote for the whole turn: no machine, search, adapter, workspace, capture, or preference write | The direct task and its normal harness permissions |
 | Inspect a matching Play | Shows inputs, setup, credentials by name, and declared effects | Whether the exact version may run |
-| No matching Play exists | Offers **Explore and create**, then creates a captured Rote workspace before execution | Whether to begin the new workflow or stop |
+| No matching Play exists | Says nothing and lets the harness continue normally | The original task, with no Play interruption |
+| Invoke `$play explore <outcome>` or `/play explore <outcome>` | Searches local and authorized registry Plays, then starts captured exploration only when none fits | The exploration goal, route, effects, and whether to crystallize the result |
 | Finish repeatable work | Checks whether the recorded steps are worth saving | Team, Community, or Skip |
 | Ask “what’s new” | Shows new and revised Plays grouped by organization | Whether to inspect one |
 
-Play is designed to be quiet. The prompt hook is the proactive activation gate: conversation,
-creative work, one-off tasks, and requests that receive no Play activation line continue without
-entering the Play machine. You can also teach it scoped preferences such as “no Plays while I’m
+Play is designed to be quiet. The prompt hook searches automatically, but its suggestions do not
+enter the Play machine or pause normal work. Conversation, creative work, one-off tasks, and empty
+searches continue without Play. You can also teach scoped preferences such as “no Plays while I’m
 prototyping” or “always offer Plays for deploy chores.”
 
 ## Safety and privacy at a glance
@@ -219,15 +220,12 @@ stateDiagram-v2
     qualify --> exited : conversation
 
     %% ── Search and adequacy ──
-    search --> classify : results complete
+    search --> classify : outcome search complete
     search --> search_offer : search-only request with results
-    search --> search_empty_offer : no local or authorized match
+    search --> completed : explicit search has no match
     search_offer --> use_inspect : result selected
-    search_empty_offer --> standby_exit : Explore and create approved
-    search_empty_offer --> completed : Not now
     classify --> use_inspect : full match (arguments do not dilute)
-    classify --> standby_exit : partial / uncertain
-    classify --> search_empty_offer : no match
+    classify --> exited : partial / uncertain / no match
 
     %% ── Use (run a saved Play) ──
     use_inspect --> use_decide : read-only inspection
@@ -287,7 +285,7 @@ stateDiagram-v2
     awareness_present --> awareness_offer : catalog summary + random 10
     awareness_offer --> use_inspect : sampled Play selected
     creator_search --> creator_offer : related Play exists
-    creator_search --> search_empty_offer : no match — ask to explore and create
+    creator_search --> standby_exit : explicit Explore has no match
     creator_offer --> use_inspect : use existing
     creator_offer --> standby_exit : adapt / create outside the machine
     management --> completed
@@ -413,9 +411,10 @@ defaults without silently re-enabling a journal the user explicitly disabled.
 
 There is deliberately **no Play-owned Explore execution lane**. Earlier versions orchestrated
 modality routing, adapter discovery, and effect approvals inside Play, re-implementing what the
-Rote skills already own. Today, an empty local and authorized search reaches one consent boundary:
-**Explore and create** starts a dedicated captured Rote workspace and yields a typed specialist
-instruction to the `rote` orchestrator; **Not now** stops. Rote invokes `rote-task-routing`, then
+Rote skills already own. Today, normal work exits quietly after an inadequate search. An explicit
+`$play explore <outcome>` or `/play explore <outcome>` searches first. When no Play fits, it starts
+a dedicated captured Rote workspace and yields a typed specialist instruction to the `rote`
+orchestrator. Rote invokes `rote-task-routing`, then
 `rote-adapter-create` for API adaptation, `rote-shell` for validated CLI/`rote proc` work, and
 `rote-workspace` for adapter execution and cached evidence. Play resumes only with a verified
 result and capture-bound trajectory, then owns the save-worthiness and crystallization path.
@@ -569,8 +568,9 @@ Invocation differs by app:
 | OpenCode | `opencode` | `/play` (installed as a managed command bridge) |
 | DeepSeek Harness (developer preview) | `dsh web` | `/play` |
 
-A successful guided install ends at **step 1** on the path to becoming a Playmaster and prints a
-copy-paste first prompt. Start the mind-meld with either supported interactive CLI directly:
+A successful guided install prints a short tutorial. It explains automatic search, quiet
+suggestions, silent no-match behavior, explicit Explore, and approval before pull or execution.
+Browse available Plays from either supported interactive CLI:
 
 ```bash
 codex "\$play what's new"
@@ -674,8 +674,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.69/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.69 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.70/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.70 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -982,20 +982,20 @@ $play list plays
 $play list
 ```
 
-Create, save, and share without memorizing lifecycle commands:
+Explore, save, and share without memorizing lifecycle commands:
 
 ```text
-$play create a reusable weekly customer report
+$play explore create a reusable weekly customer report
 $play settle cap_xxxxxxxxxxxxxxxx built the weekly customer report end to end
 direct: deploy this worker with wrangler
 ```
 
-Play always searches before creating. If an adequate Play exists it offers **Inspect existing**.
-If none exists locally or in the authorized registry, it offers **Explore and create**. Approval
+Explicit Explore always searches before creating. If an adequate Play exists it offers
+**Inspect existing**. If none exists locally or in the authorized registry, the explicit command
 starts a capture, binds a Rote workspace, and hands the unchanged outcome to Rote. For an API,
 Rote searches installed adapters and the adapter catalog, then lets the user adapt a candidate;
 for a user-supplied CLI, `rote-shell` verifies the executable with `rote deps check` and records
-discovery/use with `rote proc`. **Not now** stops without creating anything. A later explicit
+discovery/use with `rote proc`. A later explicit
 `$play settle <capture-handle> <summary>` can
 re-enter the save path, and the save-worthiness judge examines the **bound trace, not the
 conversation**: at least two effect-bearing steps, at least one input that would vary on reuse,

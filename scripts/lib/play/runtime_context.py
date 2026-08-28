@@ -471,10 +471,30 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
         "capture.decision": "normal",
         "capture.status": "normal",
     },
-    "downgrade_inadequate_match": {"match.classification": "partial"},
-    "record_partial_match": {"match.classification": "partial"},
-    "record_uncertain_match": {"match.classification": "uncertain"},
-    "record_no_match": {"match.classification": "none"},
+    "downgrade_inadequate_match": {
+        "mode": "exited",
+        "match.classification": "partial",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
+    "record_partial_match": {
+        "mode": "exited",
+        "match.classification": "partial",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
+    "record_uncertain_match": {
+        "mode": "exited",
+        "match.classification": "uncertain",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
+    "record_no_match": {
+        "mode": "exited",
+        "match.classification": "none",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
     "enter_direct_use": {
         "mode": "use",
         "capture.decision": "normal",
@@ -528,8 +548,8 @@ def _apply_mutation_semantics(
             context["request"]["requested_outcome"] = outcome
         context["capture"]["decision"] = "capture"
         context["capture"]["reason"] = (
-            "The user approved exploration after no saved Play matched locally "
-            "or in the authorized registry."
+            "The user explicitly requested exploration and no saved Play matched "
+            "locally or in the authorized registry."
         )
         context["capture"]["task_class"] = None
         context["capture"]["status"] = "unclassified"

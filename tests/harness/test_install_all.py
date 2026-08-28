@@ -82,7 +82,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '{\"marketplaces\":[]}'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.69\",\"enabled\":true}],\"available\":[]}'\n"
+                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.70\",\"enabled\":true}],\"available\":[]}'\n"
                     "  else\n"
                     "    printf '%s\\n' '{\"installed\":[],\"available\":[]}'\n"
                     "  fi\n"
@@ -99,7 +99,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '[]'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.69\",\"enabled\":true,\"scope\":\"user\"}]'\n"
+                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.70\",\"enabled\":true,\"scope\":\"user\"}]'\n"
                     "  else\n"
                     "    printf '%s\\n' '[]'\n"
                     "  fi\n"
@@ -312,7 +312,7 @@ class InstallAllTest(unittest.TestCase):
 
         self.run_installer("install", "--copy")
         installed = (install_home / "skill").resolve()
-        self.assertEqual("0.4.69", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.70", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():
@@ -401,13 +401,15 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("◐ Checking the Play setup plan", result.stderr)
         self.assertIn("✓ Verifying Codex", result.stderr)
         self.assertIn("| Play setup plan", result.stdout)
-        self.assertIn("Version: 0.4.69", result.stdout)
+        self.assertIn("Version: 0.4.70", result.stdout)
         self.assertIn("| Play setup", result.stdout)
         self.assertIn("Status: READY", result.stdout)
         self.assertIn("OS:     ", result.stdout)
-        self.assertIn("Congratulations — step 1", result.stdout)
-        self.assertIn("becoming a Playmaster", result.stdout)
-        self.assertIn("mind-meld with your agent of choice", result.stdout)
+        self.assertIn("How Play helps without getting in the way", result.stdout)
+        self.assertIn("Rote turns a successful agent run into an inspectable, repeatable Play", result.stdout)
+        self.assertIn("Play found     A strong match appears as one quiet line", result.stdout)
+        self.assertIn("No match       Play stays silent", result.stdout)
+        self.assertIn("Search is automatic. Pull and run always require approval", result.stdout)
         self.assertIn('Codex: codex "\\$play what\'s new"', result.stdout)
         self.assertIn('Claude Code: claude "/play what\'s new"', result.stdout)
         installed = install_home / "skill"

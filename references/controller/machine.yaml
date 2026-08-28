@@ -294,7 +294,7 @@ states:
     entry: {action: classify_creator_options}
     "on":
       creator_match_ready: [{target: creator_offer, mutate: record_creator_match}]
-      creator_no_match: [{target: search_empty_offer, mutate: record_no_match}]
+      creator_no_match: [{target: standby_exit, mutate: start_empty_search_exploration}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   creator_offer:
@@ -359,7 +359,7 @@ states:
     entry: {action: present_search_results}
     "on":
       search_presented: [{target: search_offer, mutate: record_search_presentation}]
-      search_empty: [{target: search_empty_offer, mutate: record_search_presentation}]
+      search_empty: [{target: completed, mutate: record_search_presentation}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   search_offer:
@@ -370,15 +370,6 @@ states:
       search_play_selected: [{target: use_inspect, mutate: enter_search_use}]
       search_dismissed: [{target: completed, mutate: record_search_dismissal}]
 
-  search_empty_offer:
-    owner: play
-    checkpoint: after
-    requires: [request.original, request.intent, search.complete]
-    prompt: choose_empty_search_path
-    "on":
-      search_explore_selected: [{target: standby_exit, mutate: start_empty_search_exploration}]
-      search_dismissed: [{target: completed, mutate: record_search_dismissal}]
-
   classify:
     owner: play
     checkpoint: both
@@ -387,10 +378,10 @@ states:
     "on":
       full_match:
         - {guard: match_satisfies_constraints, target: use_inspect, mutate: enter_use}
-        - {target: standby_exit, mutate: downgrade_inadequate_match}
-      partial_match: [{target: standby_exit, mutate: record_partial_match}]
-      uncertain_match: [{target: standby_exit, mutate: record_uncertain_match}]
-      no_match: [{target: search_empty_offer, mutate: record_no_match}]
+        - {target: exited, mutate: downgrade_inadequate_match}
+      partial_match: [{target: exited, mutate: record_partial_match}]
+      uncertain_match: [{target: exited, mutate: record_uncertain_match}]
+      no_match: [{target: exited, mutate: record_no_match}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_inspect:
@@ -402,7 +393,7 @@ states:
       play_inspected: [{target: use_decide, mutate: record_play_inspection}]
       play_not_runnable:
         - {guard: search_has_remaining_choices, target: search_present, mutate: record_unrunnable_inspection}
-        - {target: standby_exit, mutate: record_unrunnable_inspection}
+        - {target: exited, mutate: record_unrunnable_inspection}
       play_reference_unresolved: [{target: search, mutate: recover_unresolved_reference}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 

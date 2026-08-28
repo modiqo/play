@@ -637,7 +637,7 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertNotIn("awareness_domain_offer", MACHINE["states"])
         self.assertEqual("select_awareness_play", MACHINE["states"]["awareness_offer"]["prompt"])
 
-    def test_creator_intent_searches_before_offering_captured_exploration(self) -> None:
+    def test_explicit_creator_intent_searches_then_starts_captured_exploration(self) -> None:
         self.assertEqual(
             "creator_search",
             MACHINE["states"]["qualify"]["on"]["play_creation_request"][0]["target"],
@@ -647,16 +647,15 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["creator_search"]["on"]["creator_search_ready"][0]["target"],
         )
         self.assertEqual(
-            "search_empty_offer",
+            "standby_exit",
             MACHINE["states"]["creator_classify"]["on"]["creator_no_match"][0]["target"],
         )
         self.assertEqual(
-            "choose_empty_search_path", MACHINE["states"]["search_empty_offer"]["prompt"]
+            "start_empty_search_exploration",
+            MACHINE["states"]["creator_classify"]["on"]["creator_no_match"][0]["mutate"],
         )
-        self.assertEqual(
-            "standby_exit",
-            MACHINE["states"]["search_empty_offer"]["on"]["search_explore_selected"][0]["target"],
-        )
+        self.assertNotIn("search_empty_offer", MACHINE["states"])
+        self.assertNotIn("choose_empty_search_path", PROMPTS)
 
     def test_exploration_intent_and_existing_release_publication_are_typed(self) -> None:
         qualify = ACTIONS["qualify_request"]
@@ -698,9 +697,6 @@ class MachineConformanceTest(unittest.TestCase):
 
     def test_unserved_outcomes_capture_or_step_aside_by_recorded_decision(self) -> None:
         for state, event, branch in (
-            ("classify", "partial_match", 0),
-            ("classify", "uncertain_match", 0),
-            ("classify", "full_match", 1),
             ("creator_offer", "creator_adapt_selected", 0),
             ("creator_offer", "creator_create_selected", 0),
             ("use_run", "play_drifted", 0),
@@ -711,6 +707,17 @@ class MachineConformanceTest(unittest.TestCase):
                 self.assertEqual(
                     "standby_exit",
                     MACHINE["states"][state]["on"][event][branch]["target"],
+                )
+        for event, branch in (
+            ("partial_match", 0),
+            ("uncertain_match", 0),
+            ("full_match", 1),
+            ("no_match", 0),
+        ):
+            with self.subTest(event=event):
+                self.assertEqual(
+                    "exited",
+                    MACHINE["states"]["classify"]["on"][event][branch]["target"],
                 )
         self.assertEqual(
             "record_standby", MACHINE["states"]["standby_exit"]["entry"]["action"]
@@ -1026,7 +1033,7 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["search_offer"]["on"]["search_play_selected"][0]["target"],
         )
         self.assertEqual(
-            "search_empty_offer",
+            "completed",
             MACHINE["states"]["search_present"]["on"]["search_empty"][0]["target"],
         )
 

@@ -865,7 +865,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.69",
+                                "version": "0.4.70",
                                 "enabled": True,
                             }
                         ]
@@ -876,7 +876,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.69", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.70", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -1277,9 +1277,14 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("Status: READY — ACTION REQUIRED", rendered)
         self.assertIn("Codex          ACTION REQUIRED", rendered)
         self.assertIn("Claude Code    READY", rendered)
-        self.assertIn("Congratulations — step 1", rendered)
-        self.assertIn("becoming a Playmaster", rendered)
-        self.assertIn("Complete the action above", rendered)
+        self.assertIn("How Play helps without getting in the way", rendered)
+        self.assertIn("Rote turns a successful agent run into an inspectable, repeatable Play", rendered)
+        self.assertIn("Complete the action above before trying the tutorial", rendered)
+        self.assertIn("Play found     A strong match appears as one quiet line", rendered)
+        self.assertIn("No match       Play stays silent", rendered)
+        self.assertIn("Codex        $play explore", rendered)
+        self.assertIn("Claude Code  /play explore", rendered)
+        self.assertIn("Search is automatic. Pull and run always require approval", rendered)
         self.assertIn('Codex: codex "\\$play what\'s new"', rendered)
         self.assertIn('Claude Code: claude "/play what\'s new"', rendered)
         self.assertNotIn("run <Play name>", rendered)
@@ -1295,9 +1300,9 @@ class BootstrapTest(unittest.TestCase):
             }
         )
 
-        self.assertIn("Congratulations — step 1", rendered)
-        self.assertIn("becoming a Playmaster", rendered)
-        self.assertIn("mind-meld with your agent", rendered)
+        self.assertIn("How Play helps without getting in the way", rendered)
+        self.assertIn("Ignore a suggestion and normal work continues without Play", rendered)
+        self.assertNotIn("mind-meld", rendered)
         self.assertIn("Kimi: start `kimi`, then type `/skill:play what's new`", rendered)
         self.assertIn("Hermes Agent: start `hermes`, then type `/play what's new`", rendered)
         self.assertIn("OpenCode: start `opencode`, then type `/play what's new`", rendered)
@@ -1902,7 +1907,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.69 is installed and enabled.",
+                "Play 0.4.70 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -1994,7 +1999,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.69", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.70", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 

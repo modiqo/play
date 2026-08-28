@@ -23,6 +23,12 @@ delegation, retry, and tool loop: do not invoke Play or Rote skills, CLIs, runti
 adapters, workspaces, capture, or follow-up routing. Use harness-native tools or only the matched
 vendor API/CLI path named by the hook.
 
+A hook line beginning `Play suggestion:` is also not Play activation. The hook has already searched
+installed Plays and the refreshed authorized catalog cache. Present only the exact quiet or passive
+one-line suggestion quoted by the hook. Do not pause, enter the state machine, search again, pull,
+inspect, run, or invoke Rote. Continue the original request through the normal harness route. The
+user may explicitly invoke the named Play or ask to search later.
+
 ### Scheduling begins only after the result
 
 Treat scheduling as a post-result action. Before Play returns a verified successful receipt, never
@@ -297,25 +303,33 @@ plugin, skill, hook, launcher, portable-copy, and activation-profile state while
 unrelated harness settings. Installation requires an authenticated Rote identity. A logged-out
 non-interactive install exits before changing Play-owned state unless it names Google or GitHub as
 the login provider. Re-run interactively when a browser sign-in or harness permission change is
-needed.
+needed. A successful install prints a tutorial for automatic discovery, non-blocking suggestions,
+silent no-match behavior, explicit Explore commands, and approval before pull or execution.
 Never collect credentials in bootstrap context, backups, or reports.
 
 ## Stay out of the way
 
-Play interrupts only for an adequate saved Play or a projected approval. When qualification
-returns conversation or exclusion, Play exits quietly. When the completed local and authorized
-registry search has no matching Play, present the runtime's single **Explore and create** choice.
-If the user accepts, the next deterministic transition creates the capture and Rote workspace
-before any work begins, then yields directly to the `rote` specialist. That specialist must invoke
+Automatic hook discovery searches installed Plays and the refreshed authorized catalog cache.
+Strong matches produce one quiet suggestion. Possible matches produce one passive suggestion. Both
+continue the normal harness route without entering Play. No match produces no Play output.
+
+When an explicitly activated outcome search finds no adequate Play, the runtime exits quietly and
+the harness continues the unchanged request normally. An explicit Play search may show an empty
+result, then stops without offering creation. Only `$play explore <outcome>` or
+`/play explore <outcome>` authorizes the creator path. That path searches local and authorized
+registry Plays first. If none matches, the next deterministic transition creates the capture and
+Rote workspace before any work begins, then yields directly to the `rote` specialist without a
+second exploration prompt. That specialist must invoke
 `rote-task-routing`; API adaptation belongs to `rote-adapter-create`, existing CLI discovery and
 validation belong to `rote-shell` using `rote deps` and `rote proc`, and adapter execution belongs
 to `rote-workspace`. Present the discovered routes, always allow another tool, wait for the user's
 selection, verify that selection, and announce the first outcome-bearing step before execution.
-Continue the original outcome through that returned workspace. If the user
-declines, stop without creating a workspace. Never invent a second search picker or ask for the
-outcome again. Before novel outcome work starts, the runtime classifies it as `capture` or `normal`;
-the explicit empty-search approval always selects `capture`. Capture creates a Rote workspace and
-handle; normal creates neither.
+Continue the original outcome through that returned workspace. Never invent a second search picker
+or ask for the outcome again. Before novel outcome work starts, the runtime classifies it as
+`capture` or `normal`; explicit Explore selects `capture` after an empty search. Capture creates a
+Rote workspace and handle; normal creates neither. A terminal `exited` state with no Play result is
+a typed handoff back to the harness: continue the unchanged original request normally and never
+offer a future settle action for that work.
 Adapter installation, authentication, token verification, capability probes, and connection smoke
 tests are prerequisites rather than completed exploration outcomes. Continue from them to the
 original requested outcome inside the same capture. Classify `connect to <provider>` as setup-led:
@@ -345,7 +359,7 @@ context, packets, logs, or responses.
 Publishing an already saved, locally released Play is a lifecycle continuation, not a new workflow
 request. Route it to the read-only local-release inspection state, recover and verify its originating
 workspace trajectory, capture its birth, then enter the requested Rote registry publication path.
-Do not search for another Play, offer **Explore and create**, or recommend `direct:`; direct mode
+Do not search for another Play, offer a new exploration, or recommend `direct:`; direct mode
 bypasses both Play and Rote and therefore cannot complete the governed publication lifecycle.
 
 ## Fail closed

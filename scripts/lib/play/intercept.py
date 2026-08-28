@@ -2,13 +2,12 @@
 
 `play-intercept prompt` runs on every UserPromptSubmit. It is local-only and
 must stay far under 100ms: action-shaped prompts pass through trusted user and
-project routing policy, then an mtime-keyed index of saved Plays (built from
-`~/.rote/flows` frontmatter) is matched lexically. A direct prefix or validated
-route injects a whole-turn Play-and-Rote bypass contract before catalog access;
-discussion or scoped silence produces nothing. On a specific hit it injects one
-context line naming the Play; on an outcome-shaped prompt with no local hit it
-injects, at most once per cooldown window, one line advising the agent to search
-preexisting Plays through the play skill.
+project routing policy, then an mtime-keyed index of installed Plays and the
+refreshed authorized catalog cache are matched lexically. A direct prefix or
+validated route injects a whole-turn Play-and-Rote bypass contract before
+catalog access; discussion or scoped silence produces nothing. A strong match
+adds one non-blocking suggestion. A possible match adds one passive hint. No
+match produces no output, so the harness continues normally.
 
 `play-intercept milestone-nudge` runs on Stop. During captured exploration it
 claims at most one due Rote-backed progress pulse; otherwise it claims at most
@@ -24,7 +23,6 @@ import json
 import os
 import re
 import sys
-import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -40,18 +38,9 @@ from .sidekick import coarse_task_class, preference_policy
 
 
 INDEX_SCHEMA = "play.intercept-index/v1"
-STATE_SCHEMA = "play.intercept-state/v1"
-ADVICE_COOLDOWN_SECONDS = 3600
 FRONTMATTER_BYTES = 4096
 MIN_PROMPT_CHARS = 8
 
-_FAST_OUTCOME = re.compile(
-    r"^(?:(?:please|kindly)\s+)?(?:(?:can|could|would)\s+you(?:\s+(?:now|please)){0,2}\s+)?"
-    r"(?:(?:help\s+me|help)\s+)?"
-    r"(?:retrieve|fetch|get|find|collect|download|export|list|summarize|check|"
-    r"monitor|calculate|compare|deploy|publish|ship)\b",
-    re.IGNORECASE,
-)
 _DIRECT_REQUEST = re.compile(
     r"^(?:direct|without\s+play)\s*:\s*\S",
     re.IGNORECASE,
@@ -112,11 +101,6 @@ def _flows_root() -> Path:
 def _index_path() -> Path:
     override = os.environ.get("PLAY_INTERCEPT_INDEX_PATH")
     return Path(override) if override else state_path("intercept-index.json")
-
-
-def _state_path() -> Path:
-    override = os.environ.get("PLAY_INTERCEPT_STATE_PATH")
-    return Path(override) if override else state_path("intercept-state.json")
 
 
 def _tokens(text: str) -> set[str]:
@@ -267,14 +251,17 @@ def _hub_entries(local_names: set[str]) -> list[dict[str, Any]]:
     return entries
 
 
-def best_match(prompt: str, entries: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Score prompt tokens against name/tag (weight 3) and description (weight 1)."""
+def _ranked_match(
+    prompt: str, entries: list[dict[str, Any]]
+) -> tuple[dict[str, Any], int, int] | None:
+    """Return the best entry with its weighted score and name-token hits."""
 
     prompt_tokens = _tokens(prompt)
     if not prompt_tokens:
         return None
     best: dict[str, Any] | None = None
     best_score = 0
+    best_name_hits = 0
     for entry in entries:
         name_tokens = set(entry.get("name_tokens", []))
         name_hits = sum(
@@ -284,11 +271,34 @@ def best_match(prompt: str, entries: list[dict[str, Any]]) -> dict[str, Any] | N
         text_hits = len(prompt_tokens & set(entry.get("text_tokens", [])))
         score = name_hits * 3 + text_hits
         if score > best_score:
-            best, best_score = entry, score
-    if best is not None and best_score >= 4 and sum(
-        token_is_covered(name_token, prompt_tokens)
-        for name_token in set(best.get("name_tokens", []))
-    ) >= 2:
+            best, best_score, best_name_hits = entry, score, name_hits
+    if best is not None:
+        return best, best_score, best_name_hits
+    return None
+
+
+def best_match(prompt: str, entries: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Return a high-confidence match backed by two name or tag tokens."""
+
+    ranked = _ranked_match(prompt, entries)
+    if ranked is None:
+        return None
+    best, score, name_hits = ranked
+    if score >= 4 and name_hits >= 2:
+        return best
+    return None
+
+
+def possible_match(prompt: str, entries: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Return a plausible match that is too weak to interrupt ordinary work."""
+
+    ranked = _ranked_match(prompt, entries)
+    if ranked is None:
+        return None
+    best, score, name_hits = ranked
+    if name_hits >= 2:
+        return None
+    if score >= 3 and name_hits == 1:
         return best
     return None
 
@@ -380,30 +390,6 @@ def _silenced(
     )
 
 
-def _advice_recently_given(state_path: Path) -> bool:
-    try:
-        state = load_json(state_path)
-    except (OSError, ValueError):
-        return False
-    if not isinstance(state, Mapping) or state.get("schema") != STATE_SCHEMA:
-        return False
-    last = state.get("advice_at_epoch")
-    return isinstance(last, (int, float)) and time.time() - last < ADVICE_COOLDOWN_SECONDS
-
-
-def _record(state_path: Path, **fields: Any) -> None:
-    try:
-        state = load_json(state_path)
-    except (OSError, ValueError):
-        state = None
-    merged = dict(state) if isinstance(state, Mapping) else {}
-    merged.update({"schema": STATE_SCHEMA, **fields})
-    try:
-        atomic_write_json(state_path, merged)
-    except OSError:
-        pass
-
-
 def intercept_prompt(
     prompt: str,
     *,
@@ -470,25 +456,22 @@ def intercept_prompt(
     match = best_match(stripped, entries)
     if match is not None:
         description = match.get("description") or "a saved Play"
-        if match.get("scope") == "hub":
-            return (
-                f"Play: Play `{match['reference']}` is available in your hub — {description} "
-                "Run it through the play skill: it inspects first, shows the Play card, and "
-                "asks approval before running — never pull plays or adapters manually."
-            )
         return (
-            f"Play: saved Play `{match['reference']}` looks relevant — {description} "
-            "Run it through the play skill: it inspects first and asks approval before "
-            "running — never decompose it into manual pull or adapter commands."
+            f"Play suggestion: high-confidence match `{match['reference']}` — {description} "
+            "Show one quiet, non-blocking line: "
+            f"\"Play found: `{match['reference']}` — say `use Play {match['reference']}` "
+            "to inspect it.\" Do not enter the Play state machine, do not pause, and "
+            "continue the original request normally."
         )
-    if action_request and _FAST_OUTCOME.match(stripped) and entries is not None:
-        state_path = _state_path()
-        if _advice_recently_given(state_path):
-            return None
-        _record(state_path, advice_at_epoch=time.time())
+    possible = possible_match(stripped, entries)
+    if possible is not None:
+        description = possible.get("description") or "a related Play"
         return (
-            "Play: this looks like a repeatable outcome — have the play skill search "
-            "preexisting saved Plays (local and authorized hubs) before doing it manually."
+            f"Play suggestion: possible match `{possible['reference']}` — {description} "
+            "Show one passive, non-blocking line: "
+            f"\"Possible Play: `{possible['reference']}` — say `search Plays` to review "
+            "matches.\" Do not enter the Play state machine, do not pause, and continue "
+            "the original request normally."
         )
     return None
 
