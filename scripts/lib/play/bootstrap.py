@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from .inbox_cache import public_cache_entries
 from .recurrence import (
     RecurrenceError,
     enable_tulving as enable_tulving_support,
@@ -1414,6 +1415,23 @@ def _portable_play_path() -> Path:
     return data_home / "modiqo" / "play" / "skill"
 
 
+def _derived_play_cache_paths() -> tuple[Path, Path]:
+    """Return the replaceable catalog and prompt-index cache paths."""
+
+    state_home = Path(
+        os.environ.get("PLAY_STATE_HOME", _home() / ".rote-play")
+    ).expanduser()
+    inbox_cache = Path(
+        os.environ.get("PLAY_INBOX_CACHE_PATH", state_home / "inbox-cache.json")
+    ).expanduser()
+    intercept_index = Path(
+        os.environ.get(
+            "PLAY_INTERCEPT_INDEX_PATH", state_home / "intercept-index.json"
+        )
+    ).expanduser()
+    return inbox_cache, intercept_index
+
+
 def _play_state_candidates(
     selected: Sequence[str], plan_targets: dict[str, dict[str, Any]]
 ) -> list[Path]:
@@ -1446,6 +1464,7 @@ def _play_state_candidates(
         ).expanduser(),
         play_home / "model-config.yaml",
         play_home / "cache" / "model_prices_and_context_window.json",
+        *_derived_play_cache_paths(),
     ]
     hooks = _hook_paths()
     for harness in selected:
@@ -2427,14 +2446,18 @@ def _verify_prompt_intercept(source: Path, *, verify_catalog: bool = False) -> N
         return
     cache = _load_json(cache_path)
     catalog = cache.get("catalog")
-    if cache.get("catalog_complete") is not True or not isinstance(catalog, list):
+    public_catalog = cache.get("public_catalog")
+    if cache.get("catalog_complete") is not True or not (
+        isinstance(catalog, list) or isinstance(public_catalog, list)
+    ):
         raise BootstrapError(
             "Play prompt hook catalog smoke check requires a verified complete inbox cache"
         )
+    safe_catalog = public_cache_entries(cache)
     candidate = next(
         (
             item
-            for item in catalog
+            for item in safe_catalog
             if isinstance(item, dict)
             and isinstance(item.get("reference"), str)
             and isinstance(item.get("name"), str)
@@ -2657,8 +2680,6 @@ def _warm_public_play_cache(
         "refresh",
         "--days",
         "7",
-        "--if-older-than",
-        "6",
         "--require-complete-catalog",
         "--json",
     ]
@@ -2747,6 +2768,40 @@ def _warm_public_play_cache(
         command=command,
         changed=payload.get("refreshed") is True,
         evidence=evidence,
+    )
+
+
+def _prepare_derived_play_caches() -> Step:
+    """Invalidate the prompt index before the target version rebuilds it."""
+
+    inbox_cache, intercept_index = _derived_play_cache_paths()
+    if (
+        intercept_index.exists()
+        and intercept_index.is_dir()
+        and not intercept_index.is_symlink()
+    ):
+        raise BootstrapError(
+            f"refusing to replace a directory at the Play prompt index path: {intercept_index}"
+        )
+    changed = intercept_index.exists() or intercept_index.is_symlink()
+    if changed:
+        intercept_index.unlink()
+    return Step(
+        "prepare_play_caches",
+        "completed" if changed else "unchanged",
+        (
+            "Cleared the derived Play prompt index; the target version will rebuild it."
+            if changed
+            else "The derived Play prompt index is ready for the target version to build."
+        ),
+        changed=changed,
+        evidence=json.dumps(
+            {
+                "catalog_cache": str(inbox_cache),
+                "prompt_index": str(intercept_index),
+            },
+            sort_keys=True,
+        ),
     )
 
 
@@ -3456,7 +3511,12 @@ def _markdown(report: dict[str, Any]) -> str:
     tulving = report.get("tulving", {})
     if isinstance(tulving, dict) and isinstance(tulving.get("after"), dict):
         after = tulving["after"]
-        recurring = "ready" if after.get("ready") is True else "off"
+        if after.get("ready") is True:
+            recurring = "ready"
+        elif tulving.get("requested") is True and report.get("status") == "rolled_back":
+            recurring = "not reached because the Play update rolled back"
+        else:
+            recurring = "off"
         lines.extend(["", "## Recurring Plays", "", f"- Tulving: **{recurring}**"])
     lines.extend(["", "## Restart", "", report["restart"]])
     backup = report.get("backup")
@@ -3581,9 +3641,12 @@ def _render_status_card(report: dict[str, Any]) -> str:
 
     tulving = report.get("tulving", {})
     after = tulving.get("after", {}) if isinstance(tulving, dict) else {}
-    recurring_state = (
-        "READY" if isinstance(after, dict) and after.get("ready") is True else "OFF"
-    )
+    if isinstance(after, dict) and after.get("ready") is True:
+        recurring_state = "READY"
+    elif tulving.get("requested") is True and status == "rolled_back":
+        recurring_state = "NOT REACHED — UPDATE ROLLED BACK"
+    else:
+        recurring_state = "OFF"
     lines.extend(["", f"  Recurring Plays   {recurring_state}"])
 
     targets = [
@@ -4041,6 +4104,7 @@ def apply(
         raise BootstrapError(
             f"plan changed: expected {expected_plan_id}, got {plan['plan_id']}"
         )
+    plan = {**plan, "enable_tulving_requested": enable_tulving}
     rote_plan = plan.get("rote")
     planned_identity = (
         rote_plan.get("identity") if isinstance(rote_plan, dict) else None
@@ -4129,13 +4193,6 @@ def apply(
             status="onboarding_required",
             runner=runner,
         )
-
-    cache_step = _warm_public_play_cache(
-        source,
-        runner=runner,
-        progress=active_progress,
-    )
-    steps.append(cache_step)
 
     root_step = active_progress.call(
         "Preparing selected harness skill roots",
@@ -4243,6 +4300,23 @@ def apply(
     def fail_update(step_id: str, error: Exception) -> dict[str, Any]:
         steps.append(Step(step_id, "failed", str(error)))
         return rollback_failed_update()
+
+    try:
+        steps.append(
+            active_progress.call(
+                "Preparing a clean Play cache rebuild",
+                _prepare_derived_play_caches,
+            )
+        )
+    except (BootstrapError, OSError) as error:
+        return fail_update("prepare_play_caches", error)
+
+    cache_step = _warm_public_play_cache(
+        source,
+        runner=runner,
+        progress=active_progress,
+    )
+    steps.append(cache_step)
 
     for harness in selected:
         target = plan_targets.get(harness, {})
@@ -4537,6 +4611,7 @@ def _finish_report(
             ),
         },
         "tulving": {
+            "requested": plan.get("enable_tulving_requested") is True,
             "before": plan.get("tulving", {}),
             "after": probe_tulving(),
         },

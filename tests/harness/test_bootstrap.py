@@ -23,6 +23,7 @@ from scripts.lib.play.bootstrap import (
     _choose_detected_harnesses,
     _choose_login_method,
     _parallel_harness_work,
+    _prepare_derived_play_caches,
     _os_snapshot,
     _require_supported_os,
     _fallback_skill_config_entries,
@@ -512,6 +513,58 @@ class BootstrapTest(unittest.TestCase):
 
         _verify_prompt_intercept(ROOT, verify_catalog=True)
 
+    def test_prompt_hook_catalog_probe_ignores_private_entries(self) -> None:
+        cache = self.home / ".rote-play" / "inbox-cache.json"
+        cache.parent.mkdir(parents=True)
+        cache.write_text(
+            json.dumps(
+                {
+                    "schema": "play.inbox-cache/v1",
+                    "catalog_complete": True,
+                    "catalog": [
+                        {
+                            "reference": "private-org/cloudflare-worker-details",
+                            "name": "cloudflare-worker-details",
+                            "description": "Inspect private Cloudflare worker details.",
+                            "visibility": "private",
+                        },
+                        {
+                            "reference": "modiqo/retrieve-rideshare-receipts",
+                            "name": "retrieve-rideshare-receipts",
+                            "description": "Retrieve Uber and Lyft receipts from email.",
+                            "visibility": "public",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        _verify_prompt_intercept(ROOT, verify_catalog=True)
+
+    def test_prompt_hook_catalog_probe_allows_private_only_cache(self) -> None:
+        cache = self.home / ".rote-play" / "inbox-cache.json"
+        cache.parent.mkdir(parents=True)
+        cache.write_text(
+            json.dumps(
+                {
+                    "schema": "play.inbox-cache/v1",
+                    "catalog_complete": True,
+                    "catalog": [
+                        {
+                            "reference": "private-org/cloudflare-worker-details",
+                            "name": "cloudflare-worker-details",
+                            "description": "Inspect private Cloudflare worker details.",
+                            "visibility": "private",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        _verify_prompt_intercept(ROOT, verify_catalog=True)
+
     def test_cursor_hooks_use_native_flat_schema(self) -> None:
         step = install_hooks("cursor", ROOT, run_id="cursor-run")
 
@@ -942,7 +995,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.73",
+                                "version": "0.4.74",
                                 "enabled": True,
                             }
                         ]
@@ -953,7 +1006,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.73", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.74", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -1128,6 +1181,11 @@ class BootstrapTest(unittest.TestCase):
         )
         model_catalog.parent.mkdir(parents=True)
         model_catalog.write_text("{}\n", encoding="utf-8")
+        inbox_cache = self.home / ".rote-play" / "inbox-cache.json"
+        inbox_cache.parent.mkdir(parents=True)
+        inbox_cache.write_text('{"catalog": []}\n', encoding="utf-8")
+        intercept_index = self.home / ".rote-play" / "intercept-index.json"
+        intercept_index.write_text('{"entries": []}\n', encoding="utf-8")
         targets = {"codex": {"skill_roots": [str(play.parent)]}}
 
         manifest_path = backup_play_state(
@@ -1142,8 +1200,23 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn(str(play), backed_up)
         self.assertIn(str(model_config), backed_up)
         self.assertIn(str(model_catalog), backed_up)
+        self.assertIn(str(inbox_cache), backed_up)
+        self.assertIn(str(intercept_index), backed_up)
         self.assertEqual(0o700, manifest_path.parent.stat().st_mode & 0o777)
         self.assertEqual(0o600, manifest_path.stat().st_mode & 0o777)
+
+    def test_clean_cache_preparation_preserves_catalog_and_clears_index(self) -> None:
+        inbox_cache = self.home / ".rote-play" / "inbox-cache.json"
+        inbox_cache.parent.mkdir(parents=True)
+        inbox_cache.write_text("catalog\n", encoding="utf-8")
+        intercept_index = self.home / ".rote-play" / "intercept-index.json"
+        intercept_index.write_text("index\n", encoding="utf-8")
+
+        step = _prepare_derived_play_caches()
+
+        self.assertEqual("completed", step.status)
+        self.assertTrue(inbox_cache.is_file())
+        self.assertFalse(intercept_index.exists())
 
     def test_install_backup_records_absent_paths_for_exact_restore(self) -> None:
         manifest_path = backup_play_state([], {}, run_id="absent-paths")
@@ -1268,6 +1341,10 @@ class BootstrapTest(unittest.TestCase):
                 "status": "rolled_back",
                 "run_id": "rolled-back-card",
                 "selected_harnesses": ["claude"],
+                "tulving": {
+                    "requested": True,
+                    "after": {"ready": False},
+                },
                 "steps": [
                     {
                         "id": "install_play",
@@ -1285,6 +1362,9 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertIn("UPDATE FAILED — PREVIOUS VERSION RESTORED", rendered)
         self.assertIn("Claude Code    RESTORED", rendered)
+        self.assertIn(
+            "Recurring Plays   NOT REACHED — UPDATE ROLLED BACK", rendered
+        )
         self.assertIn("Previous version restored", rendered)
         self.assertNotIn("Congratulations", rendered)
 
@@ -1566,7 +1646,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("47 public Plays", step.detail)
         assert step.command is not None
         self.assertIn("--require-complete-catalog", step.command)
-        self.assertEqual("6", step.command[step.command.index("--if-older-than") + 1])
+        self.assertNotIn("--if-older-than", step.command)
 
     def test_public_cache_warm_is_best_effort_on_restricted_network(self) -> None:
         runner = MagicMock(
@@ -1642,9 +1722,18 @@ class BootstrapTest(unittest.TestCase):
         portable.mkdir(parents=True)
         state = portable / "VERSION"
         state.write_text("0.4.44\n", encoding="utf-8")
-        warm_cache.return_value = Step(
-            "warm_public_play_cache", "completed", "Cache is ready."
-        )
+        inbox_cache = self.home / ".rote-play" / "inbox-cache.json"
+        inbox_cache.parent.mkdir(parents=True)
+        inbox_cache.write_text("old catalog\n", encoding="utf-8")
+        intercept_index = self.home / ".rote-play" / "intercept-index.json"
+        intercept_index.write_text("old index\n", encoding="utf-8")
+
+        def replace_caches(*_args: object, **_kwargs: object) -> Step:
+            inbox_cache.write_text("new catalog\n", encoding="utf-8")
+            intercept_index.write_text("new index\n", encoding="utf-8")
+            return Step("warm_public_play_cache", "completed", "Cache is ready.")
+
+        warm_cache.side_effect = replace_caches
         plan = {
             "plan_id": "sha256:auto-rollback",
             "selected_harnesses": [],
@@ -1680,13 +1769,17 @@ class BootstrapTest(unittest.TestCase):
             runner=runner,
             run_id="auto-rollback-run",
             prepared_plan=plan,
+            enable_tulving=True,
         )
 
         self.assertEqual("rolled_back", report["status"])
         self.assertEqual("0.4.44\n", state.read_text(encoding="utf-8"))
+        self.assertEqual("old catalog\n", inbox_cache.read_text(encoding="utf-8"))
+        self.assertEqual("old index\n", intercept_index.read_text(encoding="utf-8"))
         self.assertEqual("rollback_play_state", report["steps"][-1]["id"])
         self.assertEqual("completed", report["steps"][-1]["status"])
         self.assertTrue(report["backup"]["auto_restored"])
+        self.assertTrue(report["tulving"]["requested"])
 
     @patch("scripts.lib.play.bootstrap.backup_play_state")
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
@@ -1984,7 +2077,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.73 is installed and enabled.",
+                "Play 0.4.74 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -2005,6 +2098,7 @@ class BootstrapTest(unittest.TestCase):
             MagicMock(returncode=0, stdout="updated to 1.1.0\n", stderr=""),
             MagicMock(returncode=0, stdout="version: 1.1.0\n", stderr=""),
             MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
+            MagicMock(returncode=0, stdout="installed all skills\n", stderr=""),
             MagicMock(
                 returncode=0,
                 stdout=json.dumps(
@@ -2021,7 +2115,6 @@ class BootstrapTest(unittest.TestCase):
                 ),
                 stderr="",
             ),
-            MagicMock(returncode=0, stdout="installed all skills\n", stderr=""),
             MagicMock(returncode=0, stdout="Play ready\n", stderr=""),
             MagicMock(returncode=0, stdout='{"ready":true}\n', stderr=""),
             MagicMock(returncode=0, stdout="version: 1.1.0\n", stderr=""),
@@ -2071,12 +2164,16 @@ class BootstrapTest(unittest.TestCase):
             step_ids.index("rote_identity"), step_ids.index("backup_play_state")
         )
         self.assertLess(
-            step_ids.index("warm_public_play_cache"),
             step_ids.index("backup_play_state"),
+            step_ids.index("prepare_play_caches"),
+        )
+        self.assertLess(
+            step_ids.index("prepare_play_caches"),
+            step_ids.index("warm_public_play_cache"),
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.73", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.74", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 
