@@ -144,6 +144,9 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertIn("inference continuations, delegation, retries, and tool loops", SKILL_TEXT)
         self.assertIn("does not bypass", SKILL_TEXT)
         self.assertIn("harness permissions, authentication, safety checks", SKILL_TEXT)
+        self.assertIn("The harness-native prefix activates Play", SKILL_TEXT)
+        self.assertIn("`/skill:play` in Kimi Code", SKILL_TEXT)
+        self.assertIn("Bare `run hello` stays with the agent", SKILL_TEXT)
 
     def test_empty_invocation_uses_typed_live_identity_or_setup(self) -> None:
         self.assertEqual("invoke", MACHINE["initial"])
@@ -212,7 +215,7 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertEqual(["onboarding.email_handle"], prompt["template_fields"])
         self.assertIn("{onboarding.email_handle}", prompt["question"])
         first_prompt = PROMPTS["choose_first_use_path"]
-        self.assertEqual("Run Hello", first_prompt["choices"][0]["label"])
+        self.assertEqual("Run Hello with Play", first_prompt["choices"][0]["label"])
         self.assertTrue(first_prompt["choices"][0]["recommended"])
         self.assertEqual("Create team space", first_prompt["choices"][1]["label"])
         self.assertEqual(

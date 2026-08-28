@@ -474,7 +474,20 @@ def render_markdown(digest: dict[str, Any]) -> str:
         lines.append("")
     lines.extend(
         [
-            "**Recommended first move: Run Hello.** It is a low-risk proof using public data, no account credentials, and no declared writes. Inspect acts like an X-ray: it shows the exact method and effects before you approve Rote to run it locally.",
+            "**Recommended first move: run Hello through Play.** Hello is a low-risk proof that uses public data, needs no account credentials, and declares no writes.",
+            "",
+            "**Use the form for your harness:**",
+            "",
+            "- **Codex or Cursor:** `$play run hello`",
+            "- **Claude Code, Hermes, OpenCode, or DeepSeek Harness:** `/play run hello`",
+            "- **Kimi Code:** `/skill:play run hello`",
+            "- **Plain-language compatibility:** `play run hello`",
+            "",
+            "Each form activates Play. Play resolves qualified matches and asks which Play you want.",
+            "It shows the exact method and effects before approval. Rote then runs it locally.",
+            "",
+            "- **Use your agent normally:** `run hello`.",
+            "    Omit the Play prefix. Play stays out of the way. Your agent handles the request.",
             "",
             f"This is a random sample of {sample_contract.get('sampled_count', len(sample))} Plays from the current catalog. Choose one to inspect, search by outcome, or start with a useful outcome of your own.",
             "",

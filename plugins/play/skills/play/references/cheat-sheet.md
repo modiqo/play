@@ -31,15 +31,16 @@ are worth turning into shared know-how.
 | Claude Code, Hermes, OpenCode, or DeepSeek Harness | `/play` |
 | Kimi Code | `/skill:play` |
 
-The examples below use `$play`; substitute your app’s prefix. You often do not need a prefix at all:
-an ordinary request can activate Play when the local cached catalog contains a strong match.
+The examples below use `$play`; substitute your app's prefix from the table. Plain `play` is a
+natural-language compatibility form. Bare `run hello` does not activate Play. Automatic discovery
+may show one non-blocking suggestion, then the agent continues normally.
 
 ## Your first minute: become a Playrunner
 
 ```text
 You:   $play
-Play:  checks post-login setup and offers Run Hello
-You:   Run Hello
+Play:  checks post-login setup and offers Run Hello with Play
+You:   $play run hello
 Play:  shows the exact method, inputs, credentials by name, and declared effects
 You:   Pull and run
 Play:  prints the complete result and its verified receipt
@@ -48,6 +49,8 @@ Hook:  🎭 Playrunner unlocked
 
 Hello is the safest proof: public data, no account credentials, and no declared writes. After the
 first successful run, Play teaches the next useful move instead of sending you to a manual.
+
+Without the `play` prefix, `run hello` stays with your agent. Play stays silent and out of the way.
 
 ```text
 $play run hello

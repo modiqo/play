@@ -16,9 +16,11 @@ from play.intercept import (
     best_match,
     intercept_prompt,
     is_action_request,
+    is_bare_hello_request,
     is_cheat_sheet_request,
     is_digest_request,
     is_direct_request,
+    is_explicit_play_request,
     load_index,
     milestone_nudge,
     possible_match,
@@ -154,11 +156,34 @@ class InterceptTest(unittest.TestCase):
         self.assertIsNone(intercept_prompt("/play"))
         self.assertIsNone(intercept_prompt("ok"))
 
+    def test_plain_play_prefix_is_explicit_activation(self) -> None:
+        for prompt in ("play", "play run hello", "Play run weekly-report"):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(is_explicit_play_request(prompt))
+                line = intercept_prompt(prompt)
+                self.assertIsNotNone(line)
+                self.assertTrue((line or "").startswith("Play activation:"))
+                self.assertIn("unchanged user request", line or "")
+                self.assertIn("not a suggestion", line or "")
+
+    def test_bare_hello_stays_on_the_normal_agent_route(self) -> None:
+        self._write_flow(
+            "hello",
+            "Checks public service status and reports what is available.",
+            "status",
+            owner="modiqo",
+        )
+        for prompt in ("run hello", "Run the Hello Play", "please run hello."):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(is_bare_hello_request(prompt))
+                self.assertIsNone(intercept_prompt(prompt))
+
     def test_cheat_sheet_command_uses_the_pre_machine_help_path(self) -> None:
         for prompt in (
             "play cheat-sheet",
             "$play cheat sheet",
             "/play cheatsheet",
+            "/skill:play cheat-sheet",
         ):
             with self.subTest(prompt=prompt):
                 self.assertTrue(is_cheat_sheet_request(prompt))
@@ -185,6 +210,7 @@ class InterceptTest(unittest.TestCase):
             "play what's new",
             "$play whats new",
             "/play what's new",
+            "/skill:play what's new",
             "popular Plays",
             "trending Plays",
         ):

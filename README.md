@@ -76,9 +76,11 @@ $play         # Codex and Cursor
 /skill:play   # Kimi Code
 ```
 
-On first use, Play checks the local setup and guides you through Rote sign-in if needed. It then
-offers **Run Hello**, a low-risk example that uses public data, needs no account credentials, and
-declares no writes.
+On first use, Play checks the local setup. It guides you through Rote sign-in if needed. Play then
+offers a low-risk Hello example that uses public data and declares no writes. Use the form for your
+harness: `$play run hello`, `/play run hello`, or `/skill:play run hello`. Plain `play run hello`
+also works. Hello needs no account credentials. Bare `run hello` stays with your agent, and Play
+stays out of the way.
 
 ### 4. Try a real outcome
 
@@ -674,8 +676,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.75/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.75 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.76/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.76 sh
 ```
 
 To inspect the small bootstrap before running it:

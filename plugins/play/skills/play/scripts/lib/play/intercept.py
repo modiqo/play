@@ -45,17 +45,22 @@ _DIRECT_REQUEST = re.compile(
     r"^(?:direct|without\s+play)\s*:\s*\S",
     re.IGNORECASE,
 )
+_EXPLICIT_PLAY_REQUEST = re.compile(r"^play(?:\s+.*)?$", re.IGNORECASE | re.DOTALL)
+_BARE_HELLO_REQUEST = re.compile(
+    r"^(?:please\s+)?run\s+(?:the\s+)?hello(?:\s+play)?[.!]?$",
+    re.IGNORECASE,
+)
 _CHEAT_SHEET_REQUEST = re.compile(
-    r"^(?:\$play|/play|play)\s+cheat(?:[\s-]?sheet)[.!]?$",
+    r"^(?:\$play|/play|/skill:play|play)\s+cheat(?:[\s-]?sheet)[.!]?$",
     re.IGNORECASE,
 )
 _DIGEST_REQUEST = re.compile(
-    r"^(?:(?:\$play|/play|play)\s+(?:what'?s|whats)\s+new|"
+    r"^(?:(?:\$play|/play|/skill:play|play)\s+(?:what'?s|whats)\s+new|"
     r"(?:popular|trending)\s+plays)[.!]?$",
     re.IGNORECASE,
 )
 _JOURNAL_REQUEST = re.compile(
-    r"^(?:(?:\$play|/play|play)\s+(?:recall\s+)?journal|"
+    r"^(?:(?:\$play|/play|/skill:play|play)\s+(?:recall\s+)?journal|"
     r"show(?:\s+me)?(?:\s+my)?\s+play(?:\s+recall)?\s+journal)"
     r"(?:\s+(today|yesterday|\d{4}-\d{2}-\d{2}))?[.!]?$",
     re.IGNORECASE,
@@ -312,6 +317,18 @@ def is_direct_request(prompt: str) -> bool:
     return _DIRECT_REQUEST.match(prompt.strip()) is not None
 
 
+def is_explicit_play_request(prompt: str) -> bool:
+    """Return whether the user used the plain-language Play prefix."""
+
+    return _EXPLICIT_PLAY_REQUEST.fullmatch(prompt.strip()) is not None
+
+
+def is_bare_hello_request(prompt: str) -> bool:
+    """Keep an unprefixed Hello request on the normal agent route."""
+
+    return _BARE_HELLO_REQUEST.fullmatch(prompt.strip()) is not None
+
+
 def _direct_bypass_context(route: Mapping[str, Any] | None = None) -> str:
     """Stamp the complete inference turn with an explicit negative route."""
 
@@ -435,6 +452,15 @@ def intercept_prompt(
         )
     if is_direct_request(stripped):
         return _direct_bypass_context()
+    if is_explicit_play_request(stripped):
+        return (
+            "Play activation: explicit `play` prefix — invoke the Play skill and enter "
+            "its typed runtime with the unchanged user request. This is activation, not "
+            "a suggestion. Continue through the normal harness route only if the runtime "
+            "returns an exited handoff."
+        )
+    if is_bare_hello_request(stripped):
+        return None
     if (
         len(stripped) < MIN_PROMPT_CHARS
         or stripped.startswith(("$play", "/play", "!", "/"))

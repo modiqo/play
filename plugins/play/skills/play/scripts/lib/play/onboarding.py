@@ -29,22 +29,25 @@ CARD_SCHEMA = "rote.play.v1"
 PLAY_HOST = "play.modiqo.ai"
 MAX_CARD_BYTES = 200_000
 ONBOARDING_STATE_SCHEMA = "play.onboarding-state/v1"
-ONBOARDING_ORIENTATION_VERSION = 3
+ONBOARDING_ORIENTATION_VERSION = 4
 def default_onboarding_state_path() -> Path:
     return state_path("onboarding-state.json")
 
 STARTER_PLAY_REFERENCE = "modiqo/hello"
 STARTER_PLAY_URI = "https://play.modiqo.ai/modiqo/hello"
-_PLAY_PREFIX = re.compile(r"^(?:\$play|/play)(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL)
+_PLAY_PREFIX = re.compile(
+    r"^(?:\$play|/play|/skill:play|play)(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL
+)
 _SETTLE_REQUEST = re.compile(
-    r"^(?:\$play|/play)\s+settle\b(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL
+    r"^(?:\$play|/play|/skill:play)\s+settle\b(?:\s+(.*))?$",
+    re.IGNORECASE | re.DOTALL,
 )
 _STARTER_RUN = re.compile(
-    r"^(?:(?:please\s+)?run\s+(?:the\s+)?hello(?:\s+play)?|(?:\$play|/play)\s+run\s+hello)[.!]?$",
+    r"^(?:\$play|/play|/skill:play)\s+run\s+hello[.!]?$",
     re.IGNORECASE,
 )
 _NAMED_PLAY_RUN = re.compile(
-    r"^(?:\$play|/play|play)\s+run\s+(.+?)[.!]?$",
+    r"^(?:\$play|/play|/skill:play|play)\s+run\s+(.+?)[.!]?$",
     re.IGNORECASE | re.DOTALL,
 )
 _ACTIVATION_ONLY = {
@@ -543,7 +546,20 @@ def render_first_use_orientation(human_name: str) -> str:
             "",
             "A Play is a checked, reusable way to get a result. Rote inspects and runs it on your computer.",
             "",
-            "The recommended first step is **Run Hello**. It uses public data only, needs no account or credentials, and declares no writes. You will see the Play before it runs and then get a real result.",
+            "The recommended first step is Hello. It uses public data only, needs no account or credentials, and declares no writes.",
+            "",
+            "**Use the form for your harness:**",
+            "",
+            "- **Codex or Cursor:** `$play run hello`",
+            "- **Claude Code, Hermes, OpenCode, or DeepSeek Harness:** `/play run hello`",
+            "- **Kimi Code:** `/skill:play run hello`",
+            "- **Plain-language compatibility:** `play run hello`",
+            "",
+            "Each form activates Play. Play resolves qualified matches and asks which Play you want.",
+            "It shows the exact method and effects. Rote then runs it locally.",
+            "",
+            "- **Use your agent normally:** `run hello`.",
+            "    Omit the Play prefix. Play stays out of the way. Your agent handles the request.",
             "",
             "You can also tell me a goal, browse useful Plays, or leave. Nothing is downloaded or run without the approval required for that action.",
             "",

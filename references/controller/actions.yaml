@@ -196,8 +196,9 @@ actions:
     command_policy:
       - Treat only a trimmed `$play` or `/play` with no arguments as an empty greeting invocation.
       - Treat the harness's exact Play activation-without-a-task boilerplate as the same greeting; never send it to model qualification.
-      - Bind `run hello`, `run the Hello Play`, and `$play run hello` directly to the unversioned canonical Hello URI without model qualification or search.
-      - Route `play run <unqualified name>`, `$play run <unqualified name>`, and `/play run <unqualified name>` directly to qualified catalog search.
+      - Bind `$play run hello`, `/play run hello`, and `/skill:play run hello` directly to the unversioned canonical Hello URI without model qualification or search.
+      - Keep unprefixed `run hello` and `run the Hello Play` outside Play; the hook stays silent and the agent handles those requests normally.
+      - Route `play run <unqualified name>`, `$play run <unqualified name>`, `/play run <unqualified name>`, and `/skill:play run <unqualified name>` directly to qualified catalog search.
       - Present every match by its canonical owner/name and require the user to select one before inspection.
       - Bind exact what's-new, popular, and trending Play aliases directly to the seven-day awareness digest without model qualification or preflight.
       - Treat a bare or prefixed canonical HTTPS play.modiqo.ai owner/name URI, optionally followed by unique key=value parameters, as a Play URI invocation.

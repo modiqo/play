@@ -1,7 +1,7 @@
 # First-use Play orientation
 
-Use this guidance only after an empty `$play` or `/play` invocation has live-verified an installed,
-authenticated Rote identity. Keep canonical URI onboarding separate.
+Use this guidance only after an empty `$play`, `/play`, or `/skill:play` invocation has
+live-verified an installed, authenticated Rote identity. Keep canonical URI onboarding separate.
 
 ## Identity entrance
 
@@ -25,7 +25,9 @@ Explain these facts in plain language:
 - A Play is a checked, reusable way to get a result.
 - Rote inspects and runs Plays on the user's computer.
 - Hello is the recommended low-risk proof: public data, no account, no credentials, and no
-  declared writes.
+  declared writes. Teach the harness-native form: `$play run hello`, `/play run hello`, or
+  `/skill:play run hello`. Plain `play run hello` remains a compatibility form. Explain that bare
+  `run hello` leaves Play inactive so the agent handles the request normally.
 - Play searches for an existing method before starting new exploration.
 - If none fits, the human and agent work out the job together.
 - The agent brings broad knowledge, search, tool use, and testing.
@@ -44,7 +46,8 @@ knowledge becomes memory.
 
 After the orientation is presented and remembered, offer:
 
-1. **Run Hello** — use the latest-release canonical URI
+1. **Run Hello with Play** — show `$play run hello`, `/play run hello`, and
+   `/skill:play run hello`, then use the latest-release canonical URI
    `https://play.modiqo.ai/modiqo/hello`; disclose the version it currently resolves to, then run
    the unversioned reference locally or request remote pull approval.
 2. **Tell me your goal** — accept ordinary language and route it through normal Play invocation.

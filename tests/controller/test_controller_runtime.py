@@ -1782,7 +1782,10 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("onboarding_first_offer", yielded.projection["state"]["id"])
         self.assertEqual("human", yielded.projection["state"]["boundary"])
         self.assertEqual("choose_first_use_path", yielded.projection["instruction"]["id"])
-        self.assertEqual("Run Hello", yielded.projection["instruction"]["choices"][0]["label"])
+        self.assertEqual(
+            "Run Hello with Play",
+            yielded.projection["instruction"]["choices"][0]["label"],
+        )
         self.assertTrue(yielded.projection["instruction"]["choices"][0]["recommended"])
         self.assertEqual((orientation,), yielded.presentations)
         self.assertNotIn("qualify_request", str(yielded.projection))

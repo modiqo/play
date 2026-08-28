@@ -186,6 +186,12 @@ class DigestTest(unittest.TestCase):
         self.assertIn("# What’s new in Plays", rendered)
         self.assertIn("1 new or revised Play", rendered)
         self.assertIn("weekly-report", rendered)
+        self.assertIn("`play run hello`", rendered)
+        self.assertIn("`$play run hello`", rendered)
+        self.assertIn("`/play run hello`", rendered)
+        self.assertIn("`/skill:play run hello`", rendered)
+        self.assertIn("`run hello`", rendered)
+        self.assertIn("Play stays out of the way", rendered)
         self.assertNotIn("| Play |", rendered)
         self.assertEqual("unavailable", digest["capabilities"]["run_metrics"]["status"])
 

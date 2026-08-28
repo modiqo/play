@@ -279,7 +279,7 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertEqual(["codex", "claude"], plan["selected_harnesses"])
         self.assertEqual("not_installed", plan["play"]["update_status"])
-        self.assertEqual("0.4.75", plan["play"]["target_version"])
+        self.assertEqual("0.4.76", plan["play"]["target_version"])
         convergence = next(action for action in plan["actions"] if action["id"] == "converge_rote_skills")
         self.assertIsNone(convergence["command"])
         self.assertEqual([], convergence["targets"])
@@ -321,12 +321,12 @@ class BootstrapTest(unittest.TestCase):
 
         with patch.dict(os.environ, {"PLAY_INSTALL_HOME": str(install_home)}):
             available = _play_update_snapshot()
-            version.write_text("0.4.75\n", encoding="utf-8")
+            version.write_text("0.4.76\n", encoding="utf-8")
             current = _play_update_snapshot()
 
         self.assertEqual("available", available["update_status"])
         self.assertEqual("0.4.74", available["installed_version"])
-        self.assertEqual("0.4.75", available["target_version"])
+        self.assertEqual("0.4.76", available["target_version"])
         self.assertEqual("current", current["update_status"])
 
     @patch("scripts.lib.play.bootstrap.shutil.which")
@@ -1036,7 +1036,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.75",
+                                "version": "0.4.76",
                                 "enabled": True,
                             }
                         ]
@@ -1047,7 +1047,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.75", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.76", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -1419,7 +1419,7 @@ class BootstrapTest(unittest.TestCase):
                 "steps": [],
                 "play": {
                     "before": {"version": "0.4.74"},
-                    "after": {"version": "0.4.75"},
+                    "after": {"version": "0.4.76"},
                 },
                 "rote": {
                     "before": {"version": "1.2.3"},
@@ -1434,7 +1434,7 @@ class BootstrapTest(unittest.TestCase):
         )
 
         self.assertIn("Components", rendered)
-        self.assertIn("Play      0.4.74 → 0.4.75", rendered)
+        self.assertIn("Play      0.4.74 → 0.4.76", rendered)
         self.assertIn("Rote      1.2.3 → 1.2.4", rendered)
         self.assertIn("Tulving   0.1.2 → 0.1.3", rendered)
 
@@ -2147,7 +2147,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.75 is installed and enabled.",
+                "Play 0.4.76 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -2243,7 +2243,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.75", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.76", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 

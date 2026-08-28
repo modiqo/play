@@ -38,7 +38,7 @@ prompts:
     question: What would you like to do first?
     selection: single
     choices:
-      - {id: hello, label: Run Hello, description: "Low-risk proof: public data, no account, no credentials, and no declared writes.", event: onboarding_starter_selected, recommended: true}
+      - {id: hello, label: Run Hello with Play, description: "Select this option, or type the form for your harness: $play run hello, /play run hello, or /skill:play run hello.", event: onboarding_starter_selected, recommended: true}
       - {id: team, label: Create team space, description: "Claim a team handle, then invite colleagues to review and use shared Plays.", event: onboarding_team_selected}
       - {id: goal, label: Tell me your goal, description: Find an existing Play or work out a checked method together., event: onboarding_goal_selected}
       - {id: useful, label: Browse useful Plays, description: See available Plays before choosing whether to inspect one., event: onboarding_awareness_selected}

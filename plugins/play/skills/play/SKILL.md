@@ -23,6 +23,11 @@ delegation, retry, and tool loop: do not invoke Play or Rote skills, CLIs, runti
 adapters, workspaces, capture, or follow-up routing. Use harness-native tools or only the matched
 vendor API/CLI path named by the hook.
 
+The harness-native prefix activates Play: use `$play` in Codex or Cursor, `/play` in Claude Code,
+Hermes, OpenCode, or DeepSeek Harness, and `/skill:play` in Kimi Code. Plain `play` is the
+natural-language compatibility prefix. Bare `run hello` stays with the agent. Play stays silent and
+out of the agent's way.
+
 A hook line beginning `Play suggestion:` is also not Play activation. The hook has already searched
 installed Plays and the refreshed authorized catalog cache. Present only the exact quiet or passive
 one-line suggestion quoted by the hook. Do not pause, enter the state machine, search again, pull,
@@ -51,21 +56,22 @@ bypass includes inference continuations, delegation, retries, and tool loops; it
 harness permissions, authentication, safety checks, or tool approvals. Do not convert it into a
 persistent mode or infer it from vague dissatisfaction.
 
-If the unchanged trimmed request is `play cheat-sheet`, `$play cheat-sheet`, or
-`/play cheat-sheet` (also accept `cheat sheet` or `cheatsheet` spelling), do not enter the state
+If the unchanged trimmed request is `play cheat-sheet`, `$play cheat-sheet`, `/play cheat-sheet`, or
+`/skill:play cheat-sheet` (also accept `cheat sheet` or `cheatsheet` spelling), do not enter the state
 machine or run preflight. Run the bundled `scripts/bin/play-cheat-sheet`, present its Markdown
 verbatim, and stop. This read-only help path must not search, capture, update preferences, or create
 a settle nudge.
 
-If the unchanged request is `play journal`, `$play journal`, `/play journal`, or asks to show the
-Play recall journal, do not enter the state machine or run preflight. Run the bundled
+If the unchanged request is `play journal`, `$play journal`, `/play journal`,
+`/skill:play journal`, or asks to show the Play recall journal, do not enter the state machine or
+run preflight. Run the bundled
 `scripts/bin/play-journal show --day today` and present its Markdown verbatim. Accept `yesterday`
 or an explicit `YYYY-MM-DD` after `journal` and pass that value to `--day`. This owner-private,
 read-only view aggregates typed saved-Play match, selection, run, completion, and blocker events;
 it never searches the registry or stores prompt text or credentials.
 
-If the unchanged request is `play journey live`, `$play journey live`, `/play journey live`, or
-asks to open the active exploration's live Journey map, do not enter the state machine or run
+If the unchanged request is `play journey live`, `$play journey live`, `/play journey live`,
+`/skill:play journey live`, or asks to open the active exploration's live Journey map, do not enter the state machine or run
 preflight. Run the bundled `scripts/bin/play-journey view --active`. It resolves the current Rote
 workspace owner-privately, overlays its matching active capture when available, continuously syncs
 new workspace commands, and replaces older Journey HTTP
@@ -78,8 +84,8 @@ The viewer wakes a selected live workspace's projector every five seconds for tw
 returns to the ten-second calm cadence. The read-only refresh stops following the old workspace
 when selection changes.
 
-If the unchanged trimmed request is `play what's new`, `$play what's new`, or `/play what's new`
-(also accept `whats new`, `popular Plays`, or `trending Plays`), do not enter the state machine, run
+If the unchanged trimmed request is `play what's new`, `$play what's new`, `/play what's new`, or
+`/skill:play what's new` (also accept `whats new`, `popular Plays`, or `trending Plays`), do not enter the state machine, run
 preflight, or create a continuation. Run the bundled
 `scripts/bin/play-digest --remember --days 7`, present its Markdown verbatim, and stop. The digest
 uses the install-warmed catalog cache when fresh and performs its own bounded refresh otherwise. A
@@ -189,8 +195,8 @@ If activation restoration fails, run bundled
 failed checks and multi-select install targets, report that the Play installation is incomplete,
 and stop before normal Play control flow. Do not try `rtk` or `rtk proxy`: `play-machine` is a Python
 entrypoint installed through a small executable launcher, not an RTK subcommand or compiled Python
-artifact. An explicit `/play` or `$play` with no separate task is a complete
-onboarding request: set `request.original` to `/play`. When the terminal presentation returns a
+artifact. An explicit `$play`, `/play`, or `/skill:play` with no separate task is a complete
+onboarding request: preserve that exact form in `request.original`. When the terminal presentation returns a
 capture handle, do all subsequent work through its named Rote workspace. Only after that captured
 trajectory verifies may you re-enter with `$play settle <capture-handle> <one-line summary>`.
 Never settle normal/uncaptured work or reconstruct a trajectory after the fact.
@@ -332,8 +338,8 @@ continue the normal harness route without entering Play. No match produces no Pl
 
 When an explicitly activated outcome search finds no adequate Play, the runtime exits quietly and
 the harness continues the unchanged request normally. An explicit Play search may show an empty
-result, then stops without offering creation. Only `$play explore <outcome>` or
-`/play explore <outcome>` authorizes the creator path. That path searches local and authorized
+result, then stops without offering creation. Only `$play explore <outcome>`,
+`/play explore <outcome>`, or `/skill:play explore <outcome>` authorizes the creator path. That path searches local and authorized
 registry Plays first. If none matches, the next deterministic transition creates the capture and
 Rote workspace before any work begins, then yields directly to the `rote` specialist without a
 second exploration prompt. That specialist must invoke

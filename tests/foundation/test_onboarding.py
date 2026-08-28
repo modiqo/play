@@ -154,22 +154,30 @@ class InvocationClassificationTest(unittest.TestCase):
                 self.assertEqual("outcome", result["invocation_kind"])
                 self.assertTrue(result["intent"])
 
-    def test_run_hello_binds_the_pinned_uri_without_model_qualification(self) -> None:
+    def test_prefixed_skill_run_hello_binds_the_pinned_uri_without_model_qualification(self) -> None:
         for value in (
-            "run hello",
-            "Run the Hello Play",
             "$play run hello",
+            "/play run hello",
+            "/skill:play run hello",
         ):
             with self.subTest(value=value):
                 result = classify_invocation(value)
                 self.assertEqual("play_uri", result["invocation_kind"])
                 self.assertEqual(STARTER_PLAY_URI, result["play_uri"])
 
+    def test_bare_run_hello_stays_ordinary(self) -> None:
+        for value in ("run hello", "Run the Hello Play", "please run hello"):
+            with self.subTest(value=value):
+                result = classify_invocation(value)
+                self.assertEqual("ordinary", result["invocation_kind"])
+                self.assertIsNone(result["play_uri"])
+
     def test_unqualified_named_run_enters_qualified_search(self) -> None:
         for value, intent in (
             ("play run hello", "hello"),
             ("$play run weekly-report", "weekly-report"),
             ("/play run the weekly report", "the weekly report"),
+            ("/skill:play run monthly-report", "monthly-report"),
         ):
             with self.subTest(value=value):
                 result = classify_invocation(value)
@@ -454,7 +462,12 @@ class FirstUseOrientationTest(unittest.TestCase):
     def test_orientation_explains_creation_control_and_return_in_plain_words(self) -> None:
         rendered = render_first_use_orientation("Ada")
         self.assertIn("Start small. See what happens. Stay in control.", rendered)
-        self.assertIn("Run Hello", rendered)
+        self.assertIn("`play run hello`", rendered)
+        self.assertIn("`$play run hello`", rendered)
+        self.assertIn("`/play run hello`", rendered)
+        self.assertIn("`/skill:play run hello`", rendered)
+        self.assertIn("`run hello`", rendered)
+        self.assertIn("Play stays out of the way", rendered)
         self.assertIn("no account or credentials", rendered)
         self.assertIn("You provide the goals, rules, and exceptions", rendered)
         self.assertIn("Nothing is downloaded or run without", rendered)
