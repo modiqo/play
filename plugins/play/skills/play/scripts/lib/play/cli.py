@@ -42,7 +42,8 @@ EXPLORE & VISUALIZE
 
 RECALL & REFERENCE
   play journal [day]            Show today, yesterday, or YYYY-MM-DD
-  play digest                   Show the last seven days and remember the digest
+  play whats new                Show the last seven days and remember the digest
+  play digest                   Alias: play whats new
   play cheat-sheet              Print the complete bundled field guide
   {FIELD_GUIDE}
 
@@ -117,6 +118,10 @@ def main(
         day = tail[0] if tail and not tail[0].startswith("-") else "today"
         rest = tail[1:] if tail and not tail[0].startswith("-") else tail
         return _execute("play-journal", ["show", "--day", day, *rest], executor)
+
+    if command in {"what's", "whats"} and tail[:1] == ["new"]:
+        tail = tail[1:]
+        command = "whats-new"
 
     if command in {"digest", "whats-new", "what's-new"}:
         digest_arguments = tail or ["--remember", "--days", "7"]

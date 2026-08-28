@@ -22,10 +22,30 @@ from play.registry import (
     load_play_inspection,
     load_public_organization_flows,
     load_registry_flow_info,
+    registry_failure_guidance,
+    registry_failure_kind,
 )
 
 
 class RegistryTest(unittest.TestCase):
+    def test_registry_failure_classification_prefers_root_network_cause(self) -> None:
+        error = RegistryReadError(
+            "Invalid configuration: error sending request for url; "
+            "If authentication issue, run: rote login"
+        )
+
+        self.assertEqual("network", registry_failure_kind(error))
+        self.assertNotIn("login", registry_failure_guidance(error).casefold())
+
+    def test_registry_failure_classification_separates_auth_and_configuration(self) -> None:
+        authentication = RegistryReadError("401 unauthorized: session expired")
+        configuration = RegistryReadError("invalid configuration: registry URL is missing")
+
+        self.assertEqual("authentication", registry_failure_kind(authentication))
+        self.assertIn("rote login", registry_failure_guidance(authentication))
+        self.assertEqual("configuration", registry_failure_kind(configuration))
+        self.assertIn("configuration", registry_failure_guidance(configuration))
+
     @patch("play.commands.subprocess.run")
     def test_catalog_accepts_typed_rote_result_envelope(self, run) -> None:
         run.return_value = subprocess.CompletedProcess(

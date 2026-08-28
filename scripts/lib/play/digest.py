@@ -29,6 +29,8 @@ from .registry import (
     load_authorized_flows,
     load_registry_flow_infos,
     load_organizations,
+    registry_failure_guidance,
+    registry_failure_kind,
 )
 from .render import json_text
 from .timewindow import TimeWindowError, next_checkpoint, parse_timestamp, resolve_window
@@ -422,7 +424,14 @@ def render_markdown(digest: dict[str, Any]) -> str:
     public_count = ranking.get("eligible_count", 0)
     sample = digest.get("public_sample", [])
     sample_contract = digest.get("sample", {})
-    coverage_prefix = "" if ranking.get("complete") is True else "at least "
+    availability = digest.get("availability")
+    public_cache_only = (
+        isinstance(availability, dict)
+        and availability.get("status") == "public_cache_only"
+    )
+    coverage_prefix = (
+        "" if ranking.get("complete") is True or public_cache_only else "at least "
+    )
     public_noun = "Play" if public_count == 1 else "Plays"
     lines = []
     if isinstance(memory, dict) and memory.get("status") == "initial":
@@ -432,12 +441,25 @@ def render_markdown(digest: dict[str, Any]) -> str:
                 "",
             ]
         )
-    lines.extend([
-        "# What’s new in Plays",
-        "",
-        f"You can explore {coverage_prefix}**{public_count} runnable public {public_noun}** visible to you.",
-        "",
-    ])
+    lines.extend(["# What’s new in Plays", ""])
+    if public_cache_only:
+        assert isinstance(availability, dict)
+        lines.extend(
+            [
+                "Live organization data is unavailable. Play is showing the last verified public Play "
+                f"cache from `{availability.get('cache_fetched_at')}`.",
+                "",
+                "Private and organization-specific updates are unavailable. "
+                f"{availability.get('guidance')}",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            f"You can explore {coverage_prefix}**{public_count} runnable public {public_noun}** visible to you.",
+            "",
+        ]
+    )
     if isinstance(memory, dict) and memory.get("status") == "unchanged":
         lines.extend(["Nothing has changed since your last check; this is the current catalog.", ""])
     if isinstance(sample, list) and sample:
@@ -460,23 +482,33 @@ def render_markdown(digest: dict[str, Any]) -> str:
             "",
         ]
     )
-    if not digest["org_updates"]["revised_complete"]:
+    if not public_cache_only and not digest["org_updates"]["revised_complete"]:
         lines.append(
             "Revisions are unavailable: registry list lacks released-version timestamps."
         )
         lines.append("")
-    inbox_count = len(new_items) + len(revised_items)
-    if inbox_count:
-        lines.append(
-            f"There {'is' if inbox_count == 1 else 'are'} **{inbox_count} new or revised "
-            f"{'Play' if inbox_count == 1 else 'Plays'}** in this window."
+    if not public_cache_only:
+        inbox_count = len(new_items) + len(revised_items)
+        if inbox_count:
+            lines.append(
+                f"There {'is' if inbox_count == 1 else 'are'} **{inbox_count} new or revised "
+                f"{'Play' if inbox_count == 1 else 'Plays'}** in this window."
+            )
+        elif digest["org_updates"]["revised_complete"]:
+            lines.append("Your recent-publication inbox is clear.")
+        else:
+            lines.append("No new publications were found; revision coverage is unavailable.")
+    if public_cache_only:
+        lines.extend(
+            [
+                "",
+                "Counts come from the cached public catalog and may be stale. Play verifies every "
+                "selected Play again before use.",
+            ]
         )
-    elif digest["org_updates"]["revised_complete"]:
-        lines.append("Your recent-publication inbox is clear.")
     else:
-        lines.append("No new publications were found; revision coverage is unavailable.")
-    lines.extend(["", "Counts cover runnable public cards visible through your authorized organizations; they are not a claim about the global registry."])
-    if not ranking["complete"]:
+        lines.extend(["", "Counts cover runnable public cards visible through your authorized organizations; they are not a claim about the global registry."])
+    if not public_cache_only and not ranking["complete"]:
         lines.append("Coverage is partial because one or more public Plays could not be read.")
     return "\n".join(lines)
 
@@ -637,6 +669,147 @@ def _fresh_cached_digest(
     return _upgrade_cached_discovery(digest, cache.get("catalog"))
 
 
+def _cached_public_fallback(
+    *, days: int, error: RegistryReadError
+) -> dict[str, Any] | None:
+    """Return public-only cached discovery when live organization scope is unknown."""
+
+    from .inbox_cache import (  # local import: inbox_cache imports this module
+        public_cache_entries,
+        read_cache,
+    )
+
+    cache = read_cache()
+    if (
+        cache is None
+        or cache.get("window_days") != days
+        or cache.get("catalog_complete") is not True
+        or not isinstance(cache.get("catalog_sha256"), str)
+    ):
+        return None
+    try:
+        fetched_at = parse_timestamp(cache.get("fetched_at"), field="cache.fetched_at")
+    except TimeWindowError:
+        return None
+    cached_digest = cache.get("digest")
+    public_catalog = public_cache_entries(cache)
+    if not supports_play_discovery(cached_digest):
+        return None
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in public_catalog:
+        if not isinstance(entry, dict) or entry.get("visibility") != "public":
+            return None
+        reference = entry.get("reference")
+        name = entry.get("name")
+        if (
+            not isinstance(reference, str)
+            or reference.count("/") != 1
+            or "@" in reference
+            or reference in seen
+            or not isinstance(name, str)
+            or not name
+        ):
+            return None
+        seen.add(reference)
+        candidates.append(
+            {
+                "reference": reference,
+                "base_reference": reference,
+                "name": name,
+                "description": str(entry.get("description") or ""),
+                "parameters": {},
+                "recent_at": entry.get("latest_version_created_at")
+                or entry.get("created_at"),
+                "recent_kind": (
+                    "release" if entry.get("latest_version_created_at") else "publication"
+                ),
+            }
+        )
+    assert isinstance(cached_digest, dict)
+    fallback = copy.deepcopy(cached_digest)
+    public_sample = sample_public(candidates)
+    owners = sorted({reference.split("/", 1)[0] for reference in seen})
+    failure_kind = registry_failure_kind(error)
+    ranking = dict(fallback["ranking"])
+    ranking.update(
+        {
+            "label": "Public Plays from the last verified cache",
+            "scope": "cached_public_catalog",
+            "eligible_count": len(candidates),
+            "organization_count": len(owners),
+            "owner_counts": [
+                {
+                    "owner": owner,
+                    "count": sum(
+                        item["reference"].startswith(f"{owner}/")
+                        for item in candidates
+                    ),
+                }
+                for owner in owners
+            ],
+            "candidate_count": len(candidates),
+            "inspected_count": len(candidates),
+            "omitted_count": 0,
+            "complete": False,
+            "reason": "live registry unavailable; showing the last verified public cache",
+        }
+    )
+    fallback.update(
+        {
+            "complete": False,
+            "sources": ["verified_public_cache"],
+            "organizations": [],
+            "org_updates": {"new": [], "revised": [], "revised_complete": False},
+            "public_top": [],
+            "public_groups": [],
+            "public_sample": public_sample,
+            "sample": {
+                "strategy": "random",
+                "limit": PUBLIC_SAMPLE_LIMIT,
+                "available_count": len(candidates),
+                "sampled_count": len(public_sample),
+            },
+            "ranking": ranking,
+            "availability": {
+                "schema": "play.digest-availability/v1",
+                "status": "public_cache_only",
+                "reason": failure_kind,
+                "guidance": registry_failure_guidance(error),
+                "cache_fetched_at": fetched_at.isoformat(),
+                "public_catalog": "cached",
+                "organization_updates": "unavailable",
+            },
+            "memory": {
+                "schema": "play.digest-memory-result/v1",
+                "scope_key": None,
+                "status": "degraded",
+                "served_from": "public_cache",
+            },
+        }
+    )
+    capabilities = fallback.get("capabilities")
+    if isinstance(capabilities, dict):
+        capabilities["organization_updates"] = {
+            "new": {"status": "unavailable", "reason": failure_kind},
+            "revised": {"status": "unavailable", "reason": failure_kind},
+            "actionable": {"status": "unavailable", "reason": failure_kind},
+            "creator_metadata": {
+                "status": "unavailable",
+                "reason": failure_kind,
+            },
+        }
+        capabilities["public_ranking"] = {
+            "status": "cached",
+            "scope": "cached_public_catalog",
+            "stats_source": "verified_public_cache",
+        }
+    fallback["awareness_sha"] = stable_sha(
+        {"public_catalog": candidates, "cache_fetched_at": fetched_at.isoformat()}
+    )
+    return fallback
+
+
 def _upgrade_cached_discovery(
     digest: object, catalog: object
 ) -> dict[str, Any] | None:
@@ -700,7 +873,7 @@ def _upgrade_cached_discovery(
     return upgraded if supports_play_discovery(upgraded) else None
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=1)
     parser.add_argument("--since", help="ISO-8601 start timestamp supplied by the host")
@@ -741,7 +914,7 @@ def main() -> int:
         help="override the local digest memory path; implies --remember",
     )
     parser.add_argument("--json", action="store_true", dest="as_json")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if (
         args.days < 1
         or args.public_limit < 1
@@ -761,11 +934,22 @@ def main() -> int:
         organizations = None
         since = args.since
         if remember:
-            organizations = (
-                [Organization(slug, slug) for slug in sorted(set(args.org))]
-                if args.org
-                else load_organizations()
-            )
+            if args.org:
+                organizations = [
+                    Organization(slug, slug) for slug in sorted(set(args.org))
+                ]
+            else:
+                try:
+                    organizations = load_organizations()
+                except RegistryReadError as error:
+                    fallback = _cached_public_fallback(days=args.days, error=error)
+                    if fallback is None:
+                        raise
+                    print(
+                        json_text(fallback) if args.as_json else render_markdown(fallback),
+                        flush=True,
+                    )
+                    return 0
             scope = scope_contract(
                 organizations,
                 window_days=args.days,
@@ -807,7 +991,10 @@ def main() -> int:
                 "status": compare_digest(digest, previous),
                 "served_from": served_from,
             }
-    except (DigestStateError, RegistryReadError, TimeWindowError, ValueError) as error:
+    except RegistryReadError as error:
+        print(f"play-digest: {registry_failure_guidance(error)}", file=sys.stderr)
+        return 1
+    except (DigestStateError, TimeWindowError, ValueError) as error:
         print(f"play-digest: {error}", file=sys.stderr)
         return 1
     print(json_text(digest) if args.as_json else render_markdown(digest), flush=True)

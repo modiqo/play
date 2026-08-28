@@ -385,6 +385,20 @@ def read_cache(*, cache_path: Path | None = None) -> dict[str, Any] | None:
     return dict(payload)
 
 
+def public_cache_entries(cache: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Return only public rows that remain safe across authorization changes."""
+
+    preferred = cache.get("public_catalog")
+    source = preferred if isinstance(preferred, list) else cache.get("catalog")
+    if not isinstance(source, list):
+        return []
+    return [
+        dict(item)
+        for item in source
+        if isinstance(item, Mapping) and item.get("visibility") == "public"
+    ]
+
+
 def resolve_cached_reference(
     requested: str, *, cache_path: Path | None = None
 ) -> str | None:
@@ -399,9 +413,7 @@ def resolve_cached_reference(
     cache = read_cache(cache_path=cache_path)
     if cache is None or cache.get("catalog_complete") is not True:
         return None
-    catalog = cache.get("catalog")
-    if not isinstance(catalog, list):
-        return None
+    catalog = public_cache_entries(cache)
     matches: set[str] = set()
     for item in catalog:
         if not isinstance(item, Mapping):

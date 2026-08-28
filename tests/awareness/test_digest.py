@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.digest import (
+    _cached_public_fallback,
     _fresh_cached_digest,
     _upgrade_cached_discovery,
     build_digest,
@@ -18,8 +22,9 @@ from play.digest import (
     rank_public,
     render_markdown,
     supports_play_discovery,
+    main,
 )
-from play.registry import Organization
+from play.registry import Organization, RegistryReadError
 
 
 class DigestTest(unittest.TestCase):
@@ -365,6 +370,141 @@ class DigestTest(unittest.TestCase):
             )
 
         self.assertIsNone(cached)
+
+    def test_registry_network_failure_uses_only_verified_public_cache(self) -> None:
+        digest = build_digest(
+            [Organization("private-org", "Private Org", "org-private")],
+            {
+                "private-org": [
+                    {
+                        "name": "internal-report",
+                        "visibility": "private",
+                        "created_at": "2026-08-03T04:00:00+00:00",
+                        "latest_version_created_at": "2026-08-03T04:00:00+00:00",
+                    }
+                ]
+            },
+            [
+                (
+                    "public-owner",
+                    {
+                        "name": "hello",
+                        "description": "A safe public Play.",
+                        "visibility": "public",
+                        "status": "released",
+                        "download_count": 1,
+                    },
+                )
+            ],
+            start=self.start,
+            end=self.end,
+            public_limit=10,
+        )
+        cache = {
+            "schema": "play.inbox-cache/v1",
+            "window_days": 7,
+            "fetched_at": "2026-08-28T12:00:00+00:00",
+            "catalog_complete": True,
+            "catalog_sha256": "sha256:" + "a" * 64,
+            "digest": digest,
+            "public_catalog": [
+                {
+                    "reference": "public-owner/hello",
+                    "name": "hello",
+                    "visibility": "public",
+                }
+            ],
+        }
+        error = RegistryReadError(
+            "Invalid configuration: error sending request for url; "
+            "If authentication issue, run: rote login"
+        )
+
+        with patch("play.inbox_cache.read_cache", return_value=cache):
+            fallback = _cached_public_fallback(days=7, error=error)
+
+        self.assertIsNotNone(fallback)
+        assert fallback is not None
+        self.assertEqual([], fallback["organizations"])
+        self.assertEqual([], fallback["org_updates"]["new"])
+        self.assertEqual([], fallback["org_updates"]["revised"])
+        self.assertEqual("public_cache_only", fallback["availability"]["status"])
+        self.assertEqual("network", fallback["availability"]["reason"])
+        self.assertEqual("degraded", fallback["memory"]["status"])
+        rendered = render_markdown(fallback)
+        self.assertIn("last verified public Play cache", rendered)
+        self.assertIn("Private and organization-specific updates are unavailable", rendered)
+        self.assertNotIn("rote login", rendered)
+        self.assertNotIn("private-org", rendered)
+        self.assertNotIn("internal-report", rendered)
+
+    def test_public_cache_fallback_does_not_advance_digest_memory(self) -> None:
+        digest = build_digest(
+            [],
+            {},
+            [
+                (
+                    "public-owner",
+                    {
+                        "name": "hello",
+                        "visibility": "public",
+                        "status": "released",
+                        "download_count": 1,
+                    },
+                )
+            ],
+            start=self.start,
+            end=self.end,
+            public_limit=10,
+        )
+        cache = {
+            "schema": "play.inbox-cache/v1",
+            "window_days": 7,
+            "fetched_at": "2026-08-28T12:00:00+00:00",
+            "catalog_complete": True,
+            "catalog_sha256": "sha256:" + "b" * 64,
+            "digest": digest,
+            "public_catalog": [
+                {
+                    "reference": "public-owner/hello",
+                    "name": "hello",
+                    "visibility": "public",
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "digest-state.json"
+            stdout = StringIO()
+            stderr = StringIO()
+            with patch(
+                "play.digest.load_organizations",
+                side_effect=RegistryReadError("401 unauthorized: session expired"),
+            ), patch("play.inbox_cache.read_cache", return_value=cache), redirect_stdout(
+                stdout
+            ), redirect_stderr(stderr):
+                result = main(
+                    ["--remember", "--days", "7", "--state", str(state)]
+                )
+
+            self.assertEqual(0, result, stderr.getvalue())
+            self.assertFalse(state.exists())
+            self.assertIn("Run `rote login`", stdout.getvalue())
+
+    def test_registry_failure_without_public_cache_reports_specific_guidance(self) -> None:
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch(
+            "play.digest.load_organizations",
+            side_effect=RegistryReadError("error sending request for url"),
+        ), patch("play.inbox_cache.read_cache", return_value=None), redirect_stdout(
+            stdout
+        ), redirect_stderr(stderr):
+            result = main(["--remember", "--days", "7"])
+
+        self.assertEqual(1, result)
+        self.assertEqual("", stdout.getvalue())
+        self.assertIn("network", stderr.getvalue().casefold())
+        self.assertNotIn("rote login", stderr.getvalue())
 
     def test_cached_digest_with_version_pinned_catalog_choice_is_refreshed(self) -> None:
         digest = build_digest(

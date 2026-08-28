@@ -101,6 +101,24 @@ class PlayCliTest(unittest.TestCase):
         self.assertEqual(str(ROOT / "scripts/bin/play-journal"), executable)
         self.assertEqual([executable, "show", "--day", "today"], arguments)
 
+    def test_two_token_whats_new_alias_runs_the_remembered_digest(self) -> None:
+        for command in (["what's", "new"], ["whats", "new"]):
+            calls: list[tuple[str, list[str]]] = []
+
+            result = main(
+                command,
+                executor=lambda executable, arguments: calls.append(
+                    (executable, arguments)
+                ),
+            )
+
+            self.assertEqual(0, result)
+            executable, arguments = calls.pop()
+            self.assertEqual(str(ROOT / "scripts/bin/play-digest"), executable)
+            self.assertEqual(
+                [executable, "--remember", "--days", "7"], arguments
+            )
+
     def test_schedule_is_an_alias_for_recurring_schedule(self) -> None:
         calls: list[tuple[str, list[str]]] = []
 

@@ -17,6 +17,7 @@ from play.intercept import (
     intercept_prompt,
     is_action_request,
     is_cheat_sheet_request,
+    is_digest_request,
     is_direct_request,
     load_index,
     milestone_nudge,
@@ -177,6 +178,21 @@ class InterceptTest(unittest.TestCase):
                 line = intercept_prompt(prompt)
                 self.assertIsNotNone(line)
                 self.assertIn(f"play-journal show --day {day}", line or "")
+                self.assertIn("do not enter the Play state machine", line or "")
+
+    def test_whats_new_command_uses_the_pre_machine_digest_path(self) -> None:
+        for prompt in (
+            "play what's new",
+            "$play whats new",
+            "/play what's new",
+            "popular Plays",
+            "trending Plays",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(is_digest_request(prompt))
+                line = intercept_prompt(prompt)
+                self.assertIsNotNone(line)
+                self.assertIn("play-digest --remember --days 7", line or "")
                 self.assertIn("do not enter the Play state machine", line or "")
 
     def test_routing_management_uses_pre_machine_skill_path(self) -> None:
@@ -397,6 +413,26 @@ class InterceptTest(unittest.TestCase):
         self.assertIn("modiqo/list-top-committers", line)
         self.assertIn("use Play modiqo/list-top-committers", line)
         self.assertIn("do not pause", line)
+
+    def test_automatic_hook_ignores_private_rows_from_an_unverifiable_cache(self) -> None:
+        from play.private_store import atomic_write_json
+
+        atomic_write_json(
+            Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
+            {
+                "schema": "play.inbox-cache/v1",
+                "catalog": [
+                    {
+                        "reference": "former-org/private-report",
+                        "name": "private-report",
+                        "description": "Builds a private report from internal data.",
+                        "visibility": "private",
+                    }
+                ],
+            },
+        )
+
+        self.assertIsNone(intercept_prompt("build private report from internal data"))
 
     def test_unpublished_local_play_precedes_same_named_catalog_play(self) -> None:
         from play.private_store import atomic_write_json

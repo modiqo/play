@@ -441,15 +441,15 @@ def _catalog_snapshot() -> tuple[list[dict], bool]:
     """Authorized Plays from the verified inbox cache, registry-shaped."""
 
     try:
-        from .inbox_cache import read_cache
+        from .inbox_cache import public_cache_entries, read_cache
 
         cache = read_cache()
     except Exception:  # noqa: BLE001 - the backstop must never break live search
         return [], False
-    if cache is None or not isinstance(cache.get("catalog"), list):
+    if cache is None:
         return [], False
     items: list[dict] = []
-    for entry in cache["catalog"]:
+    for entry in public_cache_entries(cache):
         if not isinstance(entry, dict):
             continue
         reference = entry.get("reference")

@@ -376,6 +376,40 @@ class SearchTest(unittest.TestCase):
             self.assertEqual("modiqo/list-top-committers", results[0]["reference"])
             self.assertEqual("full", results[0]["match_classification"])
 
+    def test_cached_search_feed_excludes_private_rows_when_authority_is_unknown(self):
+        import json as json_module
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
+            cache_path.write_text(
+                json_module.dumps(
+                    {
+                        "schema": "play.inbox-cache/v1",
+                        "catalog_complete": True,
+                        "catalog": [
+                            {
+                                "reference": "former-org/private-report",
+                                "name": "private-report",
+                                "visibility": "private",
+                            },
+                            {
+                                "reference": "public-owner/public-report",
+                                "name": "public-report",
+                                "visibility": "public",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(
+                os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
+            ):
+                cached = PLAY_SEARCH._catalog_items()
+
+        self.assertEqual(["public-report"], [item["skill_name"] for item in cached])
+
     def test_verified_catalog_recovers_malformed_live_search_for_rideshare_query(self):
         import json as json_module
         import tempfile

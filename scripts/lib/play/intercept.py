@@ -27,7 +27,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from .inbox_cache import read_cache as read_inbox_cache
+from .inbox_cache import public_cache_entries, read_cache as read_inbox_cache
 from .journal import claim_exploration_pulse, render_pulse
 from .milestones import claim_nudge
 from .normalize import token_is_covered
@@ -47,6 +47,11 @@ _DIRECT_REQUEST = re.compile(
 )
 _CHEAT_SHEET_REQUEST = re.compile(
     r"^(?:\$play|/play|play)\s+cheat(?:[\s-]?sheet)[.!]?$",
+    re.IGNORECASE,
+)
+_DIGEST_REQUEST = re.compile(
+    r"^(?:(?:\$play|/play|play)\s+(?:what'?s|whats)\s+new|"
+    r"(?:popular|trending)\s+plays)[.!]?$",
     re.IGNORECASE,
 )
 _JOURNAL_REQUEST = re.compile(
@@ -212,9 +217,7 @@ def _hub_entries(local_names: set[str]) -> list[dict[str, Any]]:
     cache = read_inbox_cache()
     if cache is None:
         return []
-    catalog = cache.get("catalog")
-    if not isinstance(catalog, list):
-        return []
+    catalog = public_cache_entries(cache)
     entries: list[dict[str, Any]] = []
     for item in catalog:
         if not isinstance(item, Mapping):
@@ -343,6 +346,12 @@ def is_cheat_sheet_request(prompt: str) -> bool:
     return _CHEAT_SHEET_REQUEST.match(prompt.strip()) is not None
 
 
+def is_digest_request(prompt: str) -> bool:
+    """Return whether the prompt selected Play's deterministic digest surface."""
+
+    return _DIGEST_REQUEST.match(prompt.strip()) is not None
+
+
 def recall_journal_day(prompt: str) -> str | None:
     """Resolve an explicit fast-path recall-journal request to a safe day token."""
 
@@ -404,6 +413,12 @@ def intercept_prompt(
             "Play: explicit cheat-sheet request — use the play skill's bundled "
             "`scripts/bin/play-cheat-sheet`, present its Markdown verbatim, and do not "
             "enter the Play state machine."
+        )
+    if is_digest_request(stripped):
+        return (
+            "Play: explicit what's-new request — use the play skill's bundled "
+            "`scripts/bin/play-digest --remember --days 7`, present its Markdown "
+            "verbatim, and do not enter the Play state machine or run preflight."
         )
     journal_day = recall_journal_day(stripped)
     if journal_day is not None:

@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.inbox_cache import (
     cached_line,
+    public_cache_entries,
     read_cache,
     refresh_cache,
     resolve_cached_reference,
@@ -217,6 +218,7 @@ class InboxCacheTest(unittest.TestCase):
                     {
                         "reference": "modiqo/retrieve-recent-emails",
                         "name": "retrieve-recent-emails",
+                        "visibility": "public",
                     }
                 ],
             },
@@ -233,6 +235,39 @@ class InboxCacheTest(unittest.TestCase):
             resolve_cached_reference(
                 "retrieve-recent-emails@0.1.6", cache_path=self.cache_path
             ),
+        )
+
+    def test_offline_bare_name_resolution_never_uses_private_cache_rows(self) -> None:
+        from play.private_store import atomic_write_json
+
+        cache = {
+            "schema": "play.inbox-cache/v1",
+            "catalog_complete": True,
+            "catalog": [
+                {
+                    "reference": "former-org/private-report",
+                    "name": "private-report",
+                    "visibility": "private",
+                },
+                {
+                    "reference": "public-owner/public-report",
+                    "name": "public-report",
+                    "visibility": "public",
+                },
+            ],
+        }
+        atomic_write_json(self.cache_path, cache)
+
+        self.assertEqual(
+            ["public-owner/public-report"],
+            [item["reference"] for item in public_cache_entries(cache)],
+        )
+        self.assertIsNone(
+            resolve_cached_reference("private-report", cache_path=self.cache_path)
+        )
+        self.assertEqual(
+            "public-owner/public-report",
+            resolve_cached_reference("public-report", cache_path=self.cache_path),
         )
 
     def test_bare_name_resolution_fails_closed_for_ambiguous_catalog(self) -> None:

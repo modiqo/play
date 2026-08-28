@@ -17,6 +17,60 @@ class PlayNotFoundError(RegistryReadError):
     pass
 
 
+_NETWORK_FAILURE_MARKERS = (
+    "error sending request",
+    "connection refused",
+    "connection reset",
+    "could not resolve",
+    "dns error",
+    "network error",
+    "operation timed out",
+    "request timed out",
+    "tls error",
+)
+_AUTHENTICATION_FAILURE_MARKERS = (
+    "401 unauthorized",
+    "authentication required",
+    "login required",
+    "not authenticated",
+    "session expired",
+)
+_CONFIGURATION_FAILURE_MARKERS = (
+    "invalid configuration",
+    "invalid registry url",
+    "registry url is missing",
+)
+
+
+def registry_failure_kind(error: object) -> str:
+    """Classify the root registry failure without trusting generic CLI hints."""
+
+    detail = str(error).casefold()
+    if any(marker in detail for marker in _NETWORK_FAILURE_MARKERS):
+        return "network"
+    if any(marker in detail for marker in _AUTHENTICATION_FAILURE_MARKERS):
+        return "authentication"
+    if any(marker in detail for marker in _CONFIGURATION_FAILURE_MARKERS):
+        return "configuration"
+    return "unavailable"
+
+
+def registry_failure_guidance(error: object) -> str:
+    """Return one actionable explanation for a classified registry failure."""
+
+    kind = registry_failure_kind(error)
+    if kind == "network":
+        return (
+            "The registry network request failed. Check network access and the configured "
+            "registry URL. This error does not indicate an authentication problem."
+        )
+    if kind == "authentication":
+        return "Registry authentication is required. Run `rote login`, then retry."
+    if kind == "configuration":
+        return "The registry configuration is invalid. Check Rote's registry URL and configuration."
+    return "The registry request failed. Retry it or inspect Rote's registry diagnostics."
+
+
 @dataclass(frozen=True)
 class Organization:
     slug: str
