@@ -28,6 +28,7 @@ class PlayCliTest(unittest.TestCase):
             "RECALL & REFERENCE",
             "RECURRING PLAYS · OPTIONAL TULVING",
             "ROUTING",
+            "DELEGATED EXECUTION · OPTIONAL SPEWER",
             "RECOVERY & DIAGNOSTICS",
         ):
             self.assertIn(heading, result.stdout)
@@ -43,6 +44,8 @@ class PlayCliTest(unittest.TestCase):
         self.assertIn("play recurring clock on|off", result.stdout)
         self.assertIn("play recurring update", result.stdout)
         self.assertIn("play schedule", result.stdout)
+        self.assertIn("play spewer submit", result.stdout)
+        self.assertIn("play spewer complete", result.stdout)
         for journey_operation in (
             "snapshot",
             "graph",
