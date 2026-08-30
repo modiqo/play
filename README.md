@@ -162,7 +162,6 @@ play-journey view --active                  # Follow or map the active explorati
 play cheat-sheet                           # Learn Play through short example interactions
 direct: <request>                           # Bypass Play and Rote for one whole turn
 play-routing --project . list               # Inspect this repository's direct routes
-play spewer --help                           # Learn the durable delegation sequence
 ```
 
 That is enough for everyday use. Jump to the section that matches what you need next:
@@ -175,22 +174,6 @@ That is enough for everyday use. Jump to the section that matches what you need 
   world model, inspect evidence, and use Atlas.
 - [Architecture and internals](#architecture-and-internals)—the state machine and typed runtime.
 - [Development checks](#development-checks)—package, test, benchmark, and UI validation commands.
-
-### Spewer can run bounded work outside the frontier turn
-
-The optional Spewer adapter stores its state under `~/.rote-play/spewer`. It keeps Play's continuation reference owner-private.
-
-The adapter follows one durable sequence:
-
-```text
-submit -> poll or watch -> claim -> resume Play -> complete
-```
-
-`submit` persists intent before contacting Spewer. `claim` returns one receipt for a stable claim ID.
-
-The harness resumes Play through its native continuation mechanism. `complete` acknowledges Spewer only after that resume succeeds.
-
-Run `play spewer --help` for commands and state transitions. Spewer must already be serving on its owner-private local socket.
 
 ## Architecture and internals
 

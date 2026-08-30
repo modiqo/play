@@ -1092,11 +1092,7 @@ class JourneyProjectionTest(unittest.TestCase):
         }
         snapshot = build_snapshot(
             self.capture,
-            activities=normalize_entries(
-                rows,
-                response_metadata=metadata,
-                tool_resolver=lambda _adapter_id, _operation: {"method": "GET"},
-            ),
+            activities=normalize_entries(rows, response_metadata=metadata),
             dependencies=[],
             stats={"commands": 4, "responses": 4},
         )
@@ -1239,7 +1235,6 @@ class JourneyProjectionTest(unittest.TestCase):
             activities=normalize_entries(
                 rows,
                 response_metadata={sequence: self.metadata() for sequence in range(1, 201)},
-                tool_resolver=lambda _adapter_id, _operation: {"method": "GET"},
             ),
             dependencies=[],
             stats={"commands": 200, "responses": 200},
@@ -1711,7 +1706,6 @@ class JourneyProjectionTest(unittest.TestCase):
             activities=normalize_entries(
                 [adapter_command(1, "gmail.users.messages.list", 1)],
                 response_metadata={1: self.metadata(duration=31, tokens=41)},
-                tool_resolver=lambda _adapter_id, _operation: {"method": "GET"},
             ),
             dependencies=[],
             stats={"commands": 1, "responses": 1},

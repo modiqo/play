@@ -62,12 +62,6 @@ ROUTING
   direct: <request>             Bypass Play for one agent request
   continue exploration          Return to a paused exploration
 
-DELEGATED EXECUTION · OPTIONAL SPEWER
-  play spewer submit ...        Persist a Play handoff, then submit it
-  play spewer poll|watch ...    Replay progress until a receipt is durable
-  play spewer claim ...         Claim one receipt without exposing continuation state
-  play spewer complete ...      Acknowledge only after Play resumes successfully
-
 RECOVERY & DIAGNOSTICS
   play backup ...               Manage Play backups
   play restore ...              Restore a Play backup
@@ -146,7 +140,6 @@ def main(
 
     delegated = {
         "routing": "play-routing",
-        "spewer": "play-spewer",
         "backup": "play-bootstrap",
         "restore": "play-bootstrap",
         "preflight": "play-preflight",
