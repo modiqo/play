@@ -112,6 +112,7 @@ DOT_MATRIX_FRAMES = (
     "⢀",
 )
 DEFAULT_PROGRESS_HEARTBEAT_SECONDS = 0.12
+DOT_MATRIX_BUSY_GLYPH = "⠿"
 TERMINAL_CARD_WIDTH = 84
 
 
@@ -157,7 +158,7 @@ class ProgressToken:
 
 
 class Progress:
-    """Thread-safe install progress with in-place terminal redraws."""
+    """Thread-safe install progress with stable and opt-in animated rendering."""
 
     def __init__(
         self,
@@ -166,6 +167,7 @@ class Progress:
         enabled: bool = True,
         heartbeat_seconds: float = 0.0,
         interactive: bool | None = None,
+        stable: bool = False,
         insights: Sequence[str] = (),
         insight_seconds: float = 4.0,
     ) -> None:
@@ -178,6 +180,7 @@ class Progress:
             except (AttributeError, OSError):
                 interactive = False
         self.interactive = interactive
+        self.stable = stable
         self.insights = tuple(item.strip() for item in insights if item.strip())
         self.insight_seconds = max(0.001, insight_seconds)
         self._insight_offset = -1
@@ -206,7 +209,11 @@ class Progress:
         return text[: max(1, width - 1)].rstrip() + "…"
 
     def _render_active_locked(self) -> None:
-        if not self.interactive or (not self._active and self._phase_label is None):
+        if (
+            not self.interactive
+            or self.stable
+            or (not self._active and self._phase_label is None)
+        ):
             return
         now = time.monotonic()
         tokens = list(self._active.values())
@@ -284,7 +291,14 @@ class Progress:
                 self._finish_phase_locked()
                 self._phase_label = label
                 self._phase_started = time.monotonic()
-                self._render_active_locked()
+                if self.stable:
+                    print(
+                        f"{DOT_MATRIX_BUSY_GLYPH} {label} · working",
+                        file=self.stream,
+                        flush=True,
+                    )
+                else:
+                    self._render_active_locked()
             else:
                 print(f"◆ {label}", file=self.stream, flush=True)
 
@@ -310,10 +324,23 @@ class Progress:
                             1, len(self.insights)
                         )
                     self._active[id(token)] = token
-                    self._render_active_locked()
+                    if self.stable:
+                        if self._phase_label is None:
+                            print(
+                                f"{DOT_MATRIX_BUSY_GLYPH} {label} · working",
+                                file=self.stream,
+                                flush=True,
+                            )
+                    else:
+                        self._render_active_locked()
                 else:
                     print(f"› {label}", file=self.stream, flush=True)
-        if self.enabled and self.interactive and self.heartbeat_seconds:
+        if (
+            self.enabled
+            and self.interactive
+            and not self.stable
+            and self.heartbeat_seconds
+        ):
             token.stop = threading.Event()
 
             def heartbeat() -> None:
@@ -342,7 +369,8 @@ class Progress:
         with self._lock:
             if self.interactive:
                 self._active.pop(id(token), None)
-                self._clear_active_locked()
+                if not self.stable:
+                    self._clear_active_locked()
                 if self._phase_label is None:
                     print(
                         f"{glyph} {token.label}{elapsed_text}",
@@ -352,7 +380,8 @@ class Progress:
                 else:
                     self._phase_completed += 1
                     self._phase_failed = self._phase_failed or not ok
-                self._render_active_locked()
+                if not self.stable:
+                    self._render_active_locked()
             else:
                 print(f"{glyph} {token.label}{elapsed_text}", file=self.stream, flush=True)
 
@@ -387,6 +416,15 @@ class Progress:
 
 def _progress(progress: Progress | None) -> Progress:
     return progress if progress is not None else Progress(enabled=False)
+
+
+def _installer_progress() -> Progress:
+    animate = os.environ.get("PLAY_INSTALL_ANIMATE") == "1"
+    return Progress(
+        enabled=os.environ.get("PLAY_INSTALL_QUIET") != "1",
+        heartbeat_seconds=(DEFAULT_PROGRESS_HEARTBEAT_SECONDS if animate else 0.0),
+        stable=not animate,
+    )
 
 
 def _parallel_harness_work(
@@ -5519,10 +5557,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     restore_parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    progress = Progress(
-        enabled=os.environ.get("PLAY_INSTALL_QUIET") != "1",
-        heartbeat_seconds=DEFAULT_PROGRESS_HEARTBEAT_SECONDS,
-    )
+    progress = _installer_progress()
     try:
         _require_supported_os()
         if args.command == "backup":

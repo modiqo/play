@@ -36,6 +36,7 @@ from scripts.lib.play.bootstrap import (
     _update_harness_picker,
     _update_login_picker,
     _identity_gate,
+    _installer_progress,
     _official_rote_install_command,
     _render_status_card,
     _result_step,
@@ -1211,6 +1212,41 @@ class BootstrapTest(unittest.TestCase):
         self.assertRegex(rendered, r"[⠁⠃⠇⡇⣇⣧⣷⣿] Preparing Play")
         self.assertNotIn("\033[1A", rendered)
         self.assertEqual(1, rendered.count("✓ Preparing Play"))
+
+    def test_stable_terminal_progress_never_redraws_the_terminal(self) -> None:
+        stream = StringIO()
+        progress = Progress(
+            stream,
+            heartbeat_seconds=0.01,
+            interactive=True,
+            stable=True,
+        )
+
+        progress.start_phase("Preparing Play")
+        progress.call(
+            "Preparing selected harness skill roots", lambda: time.sleep(0.025)
+        )
+        progress.call("Converging Rote skills", lambda: None)
+        progress.complete_phase()
+
+        rendered = stream.getvalue()
+        self.assertIn("⠿ Preparing Play · working\n", rendered)
+        self.assertIn("✓ Preparing Play · 2 steps ·", rendered)
+        self.assertNotIn("Preparing selected harness skill roots", rendered)
+        self.assertNotIn("Converging Rote skills", rendered)
+        self.assertNotIn("\r", rendered)
+        self.assertNotIn("\033", rendered)
+
+    def test_installer_progress_is_stable_unless_animation_is_explicit(self) -> None:
+        with patch.dict(os.environ, {"PLAY_INSTALL_ANIMATE": "0"}):
+            stable = _installer_progress()
+        with patch.dict(os.environ, {"PLAY_INSTALL_ANIMATE": "1"}):
+            animated = _installer_progress()
+
+        self.assertTrue(stable.stable)
+        self.assertEqual(0.0, stable.heartbeat_seconds)
+        self.assertFalse(animated.stable)
+        self.assertGreater(animated.heartbeat_seconds, 0.0)
 
     def test_progress_cleans_up_terminal_line_when_interrupted(self) -> None:
         stream = StringIO()
