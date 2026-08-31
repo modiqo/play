@@ -266,6 +266,36 @@ class RoteGreetingProbeTest(unittest.TestCase):
     @patch("play.onboarding.subprocess.run")
     @patch("play.onboarding.os.access", return_value=True)
     @patch("play.onboarding.Path.is_file", return_value=True)
+    def test_silent_check_reads_identity_details_after_refresh(
+        self, _is_file, _access, run, popen
+    ) -> None:
+        run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="@@status\nok: Chetan@Modiqo.ai\n",
+                stderr="",
+            ),
+        ]
+
+        result = inspect_identity({"onboarding": {"rote_command": "/opt/bin/rote"}})
+
+        self.assertEqual("authenticated", result["identity_status"])
+        self.assertEqual("chetan", result["email_handle"])
+        self.assertEqual(
+            [
+                ["/opt/bin/rote", "whoami", "--check"],
+                ["/opt/bin/rote", "whoami"],
+            ],
+            [call.args[0] for call in run.call_args_list],
+        )
+        popen.assert_called_once()
+
+    @patch("play.onboarding.subprocess.Popen")
+    @patch("play.onboarding.subprocess.run")
+    @patch("play.onboarding.os.access", return_value=True)
+    @patch("play.onboarding.Path.is_file", return_value=True)
     def test_missing_identity_routes_to_setup_without_fabricating_handle(
         self, _is_file, _access, run, popen
     ) -> None:
@@ -278,12 +308,69 @@ class RoteGreetingProbeTest(unittest.TestCase):
         self.assertIsNone(result["email_handle"])
         popen.assert_not_called()
 
+    @patch("play.onboarding.last_login_provider", return_value="google")
+    @patch("play.onboarding.subprocess.Popen")
+    @patch("play.onboarding.subprocess.run")
+    @patch("play.onboarding.os.access", return_value=True)
+    @patch("play.onboarding.Path.is_file", return_value=True)
+    def test_expired_session_reuses_the_last_verified_provider(
+        self, _is_file, _access, run, popen, _last_provider
+    ) -> None:
+        run.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=77, stdout="", stderr="authentication required"
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="OAuth complete", stderr=""
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="@@status\nok: Chetan@Modiqo.ai\n", stderr=""
+            ),
+        ]
+
+        result = inspect_identity({"onboarding": {"rote_command": "/opt/bin/rote"}})
+
+        self.assertEqual("authenticated", result["identity_status"])
+        self.assertEqual("google", result["login_provider"])
+        self.assertEqual(
+            [
+                ["/opt/bin/rote", "whoami", "--check"],
+                ["/opt/bin/rote", "login", "--provider", "google"],
+                ["/opt/bin/rote", "whoami", "--check"],
+            ],
+            [call.args[0] for call in run.call_args_list],
+        )
+        popen.assert_called_once()
+
+    @patch("play.onboarding.last_login_provider", return_value="github")
+    @patch("play.onboarding.subprocess.run")
+    @patch("play.onboarding.os.access", return_value=True)
+    @patch("play.onboarding.Path.is_file", return_value=True)
+    def test_identity_network_failure_does_not_start_a_login(
+        self, _is_file, _access, run, _last_provider
+    ) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="network error"
+        )
+
+        with self.assertRaisesRegex(OnboardingError, "without requesting login"):
+            inspect_identity({"onboarding": {"rote_command": "/opt/bin/rote"}})
+
+        run.assert_called_once_with(
+            ["/opt/bin/rote", "whoami", "--check"],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=15,
+        )
+
+    @patch("play.onboarding.remember_login_provider")
     @patch("play.onboarding.subprocess.Popen")
     @patch("play.onboarding.subprocess.run")
     @patch("play.onboarding.os.access", return_value=True)
     @patch("play.onboarding.Path.is_file", return_value=True)
     def test_selected_login_stops_after_verified_identity(
-        self, _is_file, _access, run, popen
+        self, _is_file, _access, run, popen, remember_provider
     ) -> None:
         run.side_effect = [
             subprocess.CompletedProcess(
@@ -310,8 +397,12 @@ class RoteGreetingProbeTest(unittest.TestCase):
             ["/opt/bin/rote", "login", "--provider", "google"],
             run.call_args_list[0].args[0],
         )
-        self.assertEqual(["/opt/bin/rote", "whoami"], run.call_args_list[1].args[0])
+        self.assertEqual(
+            ["/opt/bin/rote", "whoami", "--check"],
+            run.call_args_list[1].args[0],
+        )
         self.assertNotIn("email", str(result))
+        remember_provider.assert_called_once_with("google")
         popen.assert_called_once()
 
     @patch("play.onboarding.subprocess.run")

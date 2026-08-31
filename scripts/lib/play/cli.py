@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+
+from .identity import recover_rote_session
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -32,6 +36,7 @@ AGENT · DISCOVER AND RUN
   $play                         Search for the best reusable procedure
   $play what's new              Show recent shared procedures
   $play <play URI>              Run a known procedure
+  play search <outcome>         Search local and authorized registry Plays
 
 EXPLORE & VISUALIZE
   $play explore <outcome>       Start a Playmaker exploration
@@ -41,6 +46,7 @@ EXPLORE & VISUALIZE
                                 refresh, rebuild, or worker
 
 RECALL & REFERENCE
+  play guide [topic]           Show the plain-language, harness-aware guide
   play journal [day]            Show today, yesterday, or YYYY-MM-DD
   play whats new                Show the last seven days and remember the digest
   play digest                   Alias: play whats new
@@ -52,6 +58,7 @@ RECURRING PLAYS · OPTIONAL TULVING
   play recurring schedule ...   Validate, then schedule one exact Play
   play recurring list           List active schedules
   play recurring recall ...     Read run envelopes as JSON lines
+  play recurring last [id]      Show the latest completed run envelope
   play recurring status         Show clock and ledger health
   play recurring clock on|off   Start or stop the OS timer
   play recurring update         Check for a Tulving update
@@ -63,6 +70,7 @@ ROUTING
   continue exploration          Return to a paused exploration
 
 RECOVERY & DIAGNOSTICS
+  play update ...               Download the latest Play and review its plan
   play backup ...               Manage Play backups
   play restore ...              Restore a Play backup
   play preflight ...            Check installation and runtime health
@@ -91,10 +99,62 @@ def _execute(
     return 0
 
 
+def _render_update_help() -> str:
+    return """Update Play through the same verified installer used for first setup.
+
+Usage:
+  play update [installer arguments]
+
+Examples:
+  play update
+  play update --harness codex --harness cursor
+  play update --yes
+
+The updater downloads the latest official Play source over HTTPS, snapshots
+Play-owned state, shows the convergence plan, and verifies or restores it.
+Rote and Tulving keep their independent update checks and approvals.
+"""
+
+
+def _recover_search_identity() -> bool:
+    rote = shutil.which("rote")
+    if rote is None:
+        return True
+    try:
+        status, provider = recover_rote_session(rote)
+    except (OSError, subprocess.TimeoutExpired):
+        print(
+            "play: Rote identity check could not complete; credentials were not changed.",
+            file=sys.stderr,
+        )
+        return False
+    if status in {"authenticated", "recovered"}:
+        return True
+    if status == "required":
+        if provider is None:
+            print(
+                "play: Rote login is required and no previous provider is recorded. "
+                "Run `rote login --provider google` or `rote login --provider github`.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"play: {provider.title()} sign-in did not complete; search has not run.",
+                file=sys.stderr,
+            )
+        return False
+    print(
+        "play: Rote identity check failed without requesting login; search has not run.",
+        file=sys.stderr,
+    )
+    return False
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     executor: Callable[[str, list[str]], object] = os.execv,
+    identity_recoverer: Callable[[], bool] = _recover_search_identity,
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments or arguments[0] in {"help", "-h", "--help"}:
@@ -131,6 +191,25 @@ def main(
         if tail:
             return _usage_error("'cheat-sheet' takes no arguments")
         return _execute("play-cheat-sheet", [], executor)
+
+    if command == "guide":
+        return _execute("play-guide", tail, executor)
+
+    if command == "search":
+        if not identity_recoverer():
+            return 1
+        return _execute("play-search", tail or ["--help"], executor)
+
+    if command == "update":
+        if tail[:1] in (["-h"], ["--help"]):
+            print(_render_update_help(), end="")
+            return 0
+        installer = ROOT / "install.sh"
+        if not installer.is_file():
+            print(f"play: bundled installer is missing: {installer}", file=sys.stderr)
+            return 1
+        executor("/bin/sh", ["/bin/sh", str(installer), *tail])
+        return 0
 
     if command in {"recurring", "schedule"}:
         recurring_arguments = tail if command == "recurring" else ["schedule", *tail]

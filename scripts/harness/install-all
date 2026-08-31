@@ -21,19 +21,18 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.lib.play.preflight import REQUIRED_PLAY_EXECUTABLES
 from scripts.lib.play.bootstrap import backup_play_state
+from scripts.lib.play.harnesses import (
+    HARNESS_BY_ID,
+    HARNESS_SPECS,
+    detect_harness,
+    skill_roots as configured_skill_roots,
+    supported_harnesses,
+)
 from scripts.lib.play.journal_settings import ensure_journal_settings
 
 COPY_MARKER_SCHEMA = "play.portable-install/v1"
 OPENCODE_COMMAND_MARKER = "<!-- managed-by: modiqo/play -->"
-SUPPORTED_HARNESSES = (
-    "codex",
-    "claude",
-    "kimi",
-    "cursor",
-    "hermes",
-    "opencode",
-    "deepseek",
-)
+SUPPORTED_HARNESSES = supported_harnesses()
 
 
 class InstallError(RuntimeError):
@@ -52,40 +51,13 @@ def _home() -> Path:
 
 
 def harness_catalog() -> dict[str, Harness]:
-    home = _home()
-    codex_home = Path(os.environ.get("CODEX_HOME", home / ".codex")).expanduser()
-    claude_home = Path(
-        os.environ.get("CLAUDE_CONFIG_DIR", home / ".claude")
-    ).expanduser()
-    kimi_home = Path(os.environ.get("KIMI_CONFIG_DIR", home / ".kimi")).expanduser()
-    cursor_home = Path(
-        os.environ.get("CURSOR_CONFIG_DIR", home / ".cursor")
-    ).expanduser()
-    hermes_home = Path(os.environ.get("HERMES_HOME", home / ".hermes")).expanduser()
-    opencode_home = Path(
-        os.environ.get("OPENCODE_CONFIG_DIR", home / ".config" / "opencode")
-    ).expanduser()
-    deepseek_home = Path(os.environ.get("DSH_HOME", home / ".dsh")).expanduser()
-    shared = Path(os.environ.get("AGENTS_HOME", home / ".agents")).expanduser()
-    shared_config = Path(
-        os.environ.get("AGENTS_CONFIG_HOME", home / ".config" / "agents")
-    ).expanduser()
     return {
-        "codex": Harness("codex", "codex", (codex_home / "skills",)),
-        "claude": Harness("claude", "claude", (claude_home / "skills",)),
-        "kimi": Harness(
-            "kimi",
-            "kimi",
-            (kimi_home / "skills", shared_config / "skills", shared / "skills"),
-        ),
-        "cursor": Harness("cursor", "cursor", (cursor_home / "skills",)),
-        "hermes": Harness("hermes", "hermes", (hermes_home / "skills",)),
-        "opencode": Harness(
-            "opencode", "opencode", (opencode_home / "skills", shared / "skills")
-        ),
-        "deepseek": Harness(
-            "deepseek", "dsh", (deepseek_home / "skills", shared / "skills")
-        ),
+        spec.id: Harness(
+            spec.id,
+            spec.command,
+            configured_skill_roots(spec, home=_home()),
+        )
+        for spec in HARNESS_SPECS
     }
 
 
@@ -110,8 +82,9 @@ def selected_harnesses(
         names = [
             name
             for name in SUPPORTED_HARNESSES
-            if shutil.which(catalog[name].command)
-            or any(root_has_rote_provider(root) for root in catalog[name].skill_roots)
+            if detect_harness(
+                HARNESS_BY_ID[name], resolver=shutil.which, home=_home()
+            )[0]
         ]
     unknown = sorted(set(names) - set(catalog))
     if unknown:
@@ -184,14 +157,79 @@ def atomic_json(path: Path, value: dict[str, object]) -> None:
     os.replace(temporary, path)
 
 
-def stage_portable_copy(source: Path) -> tuple[Path, Path | None]:
+def recognizable_play_install(path: Path) -> bool:
+    """Recognize a damaged Play-owned copy without trusting one marker alone."""
+
+    skill = path / "SKILL.md"
+    try:
+        skill_owned = "name: play" in skill.read_text(encoding="utf-8")
+    except OSError:
+        skill_owned = False
+    signals = (
+        skill_owned,
+        (path / "VERSION").is_file(),
+        (path / "scripts" / "harness" / "play-profile").is_file(),
+        (path / "scripts" / "bin" / "play-bootstrap").is_file(),
+    )
+    return sum(signals) >= 2
+
+
+def portable_copy_differences(source: Path, destination: Path) -> list[str]:
+    """List source-owned files that are missing or stale in a portable copy."""
+
+    differences: list[str] = []
+    for source_path in sorted(source.rglob("*"), key=str):
+        relative = source_path.relative_to(source)
+        target = destination / relative
+        if source_path.is_dir():
+            if not target.is_dir():
+                differences.append(str(relative) + "/")
+            continue
+        if not target.is_file():
+            differences.append(str(relative))
+            continue
+        try:
+            same_bytes = source_path.read_bytes() == target.read_bytes()
+            same_executable = bool(source_path.stat().st_mode & 0o111) == bool(
+                target.stat().st_mode & 0o111
+            )
+        except OSError:
+            differences.append(str(relative))
+            continue
+        if not same_bytes or not same_executable:
+            differences.append(str(relative))
+    return differences
+
+
+def stage_portable_copy(source: Path) -> tuple[Path, Path | None, str]:
     validate_source(source)
     destination = install_destination()
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists() and (destination.is_symlink() or not destination.is_dir()):
         raise InstallError(f"refusing to replace non-directory install path: {destination}")
-    if destination.exists() and marker(destination) is None:
+    source_version = version(source)
+    existing_marker = marker(destination) if destination.exists() else None
+    if (
+        destination.exists()
+        and existing_marker is None
+        and not recognizable_play_install(destination)
+    ):
         raise InstallError(f"refusing to replace unmanaged install path: {destination}")
+    if (
+        destination.exists()
+        and existing_marker is not None
+        and existing_marker.get("version") == source_version
+        and not portable_copy_differences(source, destination)
+    ):
+        print(f"  portable copy: {destination} (current)")
+        return destination, None, "current"
+
+    if not destination.exists():
+        disposition = "installed"
+    elif existing_marker is None or existing_marker.get("version") == source_version:
+        disposition = "repaired"
+    else:
+        disposition = "updated"
 
     staged = Path(tempfile.mkdtemp(prefix=".play-stage-", dir=destination.parent))
     backup: Path | None = None
@@ -201,7 +239,7 @@ def stage_portable_copy(source: Path) -> tuple[Path, Path | None]:
             staged / ".play-install.json",
             {
                 "schema": COPY_MARKER_SCHEMA,
-                "version": version(source),
+                "version": source_version,
                 "source": "portable-copy",
             },
         )
@@ -218,7 +256,8 @@ def stage_portable_copy(source: Path) -> tuple[Path, Path | None]:
         if backup is not None and backup.exists() and not destination.exists():
             backup.rename(destination)
         raise
-    return destination, backup
+    print(f"  portable copy: {destination} ({disposition})")
+    return destination, backup, disposition
 
 
 def restore_portable_copy(destination: Path, backup: Path | None) -> None:
@@ -476,26 +515,20 @@ def target_payload() -> dict[str, object]:
             for root in harness.skill_roots
             if (root / "play" / "SKILL.md").is_file()
         ]
-        command = shutil.which(harness.command)
+        detected, command = detect_harness(
+            HARNESS_BY_ID[harness.name], resolver=shutil.which, home=_home()
+        )
         targets.append(
             {
                 "id": harness.name,
-                "label": {
-                    "codex": "Codex",
-                    "claude": "Claude Code",
-                    "kimi": "Kimi",
-                    "cursor": "Cursor",
-                    "hermes": "Hermes Agent",
-                    "opencode": "OpenCode",
-                    "deepseek": "DeepSeek Harness (preview)",
-                }[harness.name],
+                "label": HARNESS_BY_ID[harness.name].label,
                 "harness_command": command,
                 "skill_roots": [str(root) for root in harness.skill_roots],
                 "rote_skills_installed": bool(rote_roots),
                 "rote_skill_roots": rote_roots,
                 "play_skill_installed": bool(play_roots),
                 "play_skill_roots": play_roots,
-                "selected": command is not None or bool(rote_roots) or bool(play_roots),
+                "selected": detected,
             }
         )
     return {
@@ -515,7 +548,7 @@ def render_targets(payload: dict[str, object]) -> None:
     for target in targets:
         if not isinstance(target, dict):
             raise InstallError("install target payload is malformed")
-        marker = "x" if target["selected"] else " "
+        marker = "✓" if target["selected"] else " "
         rote = "Rote ready" if target["rote_skills_installed"] else "needs rote-setup"
         installed = "Play installed" if target["play_skill_installed"] else "Play not installed"
         print(f"  [{marker}] {target['label']} ({target['id']}): {rote}; {installed}")
@@ -580,9 +613,10 @@ def execute(
     source = ROOT
     destination: Path | None = None
     backup: Path | None = None
+    copy_disposition: str | None = None
     profile_activated = False
     if copy_install:
-        destination, backup = stage_portable_copy(package_source())
+        destination, backup, copy_disposition = stage_portable_copy(package_source())
         source = destination
     try:
         if command == "install":
@@ -598,7 +632,7 @@ def execute(
             initialize_routing_policy(source)
             initialize_journals()
     except Exception:
-        if destination is not None:
+        if destination is not None and copy_disposition != "current":
             if profile_activated:
                 # The activation profile and launcher now own this stable source path.
                 # Retain it so a later verification failure cannot create a stale launcher.

@@ -10,6 +10,7 @@ are worth turning into shared know-how.
 
 | I want to… | Start with… | What happens |
 |---|---|---|
+| Understand Play in two minutes | `$play guide` | A local guide explains finding, running, creating, sharing, and later repetition |
 | Try Play for the first time | `$play` | Guided setup, then the low-risk Hello Play |
 | Get something done | Ask in English | The hook checks the cached catalog and activates Play only for a strong match |
 | Run a specific Play | `$play https://play.modiqo.ai/<owner>/<name>` | Search is skipped; inspection and approval are not |
@@ -27,8 +28,8 @@ are worth turning into shared know-how.
 
 | App | Play prefix |
 |---|---|
-| Codex or Cursor | `$play` |
-| Claude Code, Hermes, OpenCode, or DeepSeek Harness | `/play` |
+| Codex | `$play` |
+| Claude Code, Cursor, Hermes, OpenCode, or DeepSeek Harness | `/play` |
 | Kimi Code | `/skill:play` |
 
 The examples below use `$play`; substitute your app's prefix from the table. Plain `play` is a
@@ -350,12 +351,15 @@ $play journal                             # Today's deterministic recall command
 $play journal yesterday                   # A previous local day
 $play journey live                        # Live read-only isometric exploration map
 $play find a Play that <does something>   # Search by outcome
+play search "<outcome>"                   # Local + authorized registry search
 $play https://play.modiqo.ai/<owner>/<name>
 $play create a reusable <outcome>          # Search first, then capture if warranted
 $play settle <capture-handle> <summary>    # Re-enter a verified capture
 $play birth <name-or-reference>            # Show provenance
 $play list                                 # Browse authorized inventories
 play cheat-sheet                           # Open this page
+play update                                # Safely converge to the latest Play
+play recurring last [schedule-id]          # Latest completed scheduled run
 
 direct: <request>                          # Bypass Play + Rote for one whole turn
 without play: <request>                    # Equivalent spelling

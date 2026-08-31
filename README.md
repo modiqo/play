@@ -32,10 +32,16 @@ On macOS or Linux, run:
 curl -fsSL https://getrote.dev/playoffs/install.sh | sh
 ```
 
-Run the same command again to update an existing installation. The stable URL always retrieves the
-latest installer, which snapshots the current Play-owned state before replacement, verifies the new
-version in every selected harness, and automatically restores the verified snapshot if the update
-does not pass.
+After the first install, update with:
+
+```bash
+play update
+```
+
+`play update` retrieves the latest official source over HTTPS. It uses the stable installer's
+verified convergence flow. Before replacement, Play snapshots the current Play-owned state. It
+verifies every selected harness and restores the snapshot if verification fails. You do not need to
+paste the curl command again.
 
 That is the whole setup. The installer opens a small terminal wizard: press Enter for a concise
 guided walkthrough, or choose **Review details** to inspect every planned change. Play finds your
@@ -51,11 +57,15 @@ New** before activating any harness.
 For Codex and Claude Code, it keeps an already-current Play plugin and refreshes the marketplace
 plus reinstalls only when the installed plugin is missing or stale.
 
-The installer selects at most three apps per run. During execution, `◐ ◓ ◑ ◒` animate on one
-progress line, `✓` marks completion, and `✗` marks failure. A short workflow-design insight rotates
-above the progress line. Independent app integration and verification run in parallel. A warm
-install with current Rote skills and Play plugins has a tested budget below five seconds; first-time
-downloads and available updates remain bounded by network and provider CLI latency.
+The installer opens a checkbox menu with the top three detected apps checked. Use the arrow keys to
+move, Space to toggle an app, or Enter to confirm. Press `a` to select all detected apps.
+
+During execution, `›` marks the current operation, `✓` marks completion, and `✗` marks failure.
+The current line changes only when an operation starts or finishes, which avoids terminal redraw
+flicker. Independent app work runs in groups of three.
+
+A warm install with current Rote skills and Play plugins has a tested budget below five seconds.
+First-time downloads and available updates depend on network and provider CLI latency.
 
 When it finishes, Play verifies the setup and tells you where it saved the report. Restart your
 agent app, then continue to step 3. The installer requires Python 3.10+ and
@@ -68,11 +78,22 @@ shell.
 
 ### 3. Say hello
 
-Start a new conversation and invoke Play:
+Start a new conversation. If you want a two-minute explanation first, ask Play for its guide:
 
 ```text
-$play         # Codex and Cursor
-/play         # Claude Code, Hermes, OpenCode, and DeepSeek Harness
+$play guide         # Codex
+/play guide         # Claude Code, Cursor, Hermes, OpenCode, and DeepSeek Harness
+/skill:play guide   # Kimi Code
+```
+
+The guide explains where Plays come from, how to run someone else's Play, and how to create your
+own. It is a deterministic local read: no login, search, pull, or run.
+
+You can also invoke Play directly:
+
+```text
+$play         # Codex
+/play         # Claude Code, Cursor, Hermes, OpenCode, and DeepSeek Harness
 /skill:play   # Kimi Code
 ```
 
@@ -94,12 +115,20 @@ Before anything runs, Play shows the exact version, required inputs, local setup
 name, and declared effects. Choosing a search result is not approval to execute it; running is a
 separate confirmation.
 
-### 5. Capture useful work—or keep it normal
+### 5. Create useful work—or keep it normal
 
-When no saved Play matches locally or in the authorized registry, Play asks whether to **Explore
-and create**. Approval classifies the outcome as `capture` **before work starts**, creates a Rote
-workspace, and returns a capture handle; declining creates no trajectory and runs nothing. After
-captured work is verified, the agent may run:
+When no saved Play matches, Play steps aside and your agent continues the original request normally.
+It never starts creating a Play merely because search found nothing.
+
+Use explicit Explore when you want to create a reusable method:
+
+```text
+$play explore deploy staging and post the summary
+```
+
+Explore searches local and authorized registry Plays first. If none fits, Play records the work
+from the start, creates a Rote workspace, and returns a `cap_...` handle. After the result is verified,
+the agent may run:
 
 ```text
 $play settle cap_xxxxxxxxxxxxxxxx deployed staging and posted the summary
@@ -499,13 +528,28 @@ Nothing changes until you approve the selected view. The plan includes:
 - whether Rote skills need to be installed or refreshed in each selected app;
 - the Play installations and hooks it will configure.
 
-After approval, it performs that plan, verifies each selected app, and saves a JSON and Markdown
-report under `~/.local/state/play-bootstrap/runs/`. The final status card gives each app's launch
-command, exact Play invocation, any remaining action, and a few starter prompts. Full structured
-command output stays in the saved JSON report; the terminal shows bounded human summaries unless
-you explicitly pass `--json`. In a terminal, one short workflow-design insight rotates above one
-active progress line: `◐ ◓ ◑ ◒` animate while active, `✓` means completed, and `✗` means failed. The notes emphasize immediate
-value, real recurring needs, low review cost, and permission to redesign or retire experiments.
+The plan names one of four convergence modes before approval:
+
+| Mode | Existing state | Installer behavior |
+|---|---|---|
+| `FRESH` | No Play-owned install state | Installs the selected version |
+| `VERIFY` | Same version and complete managed state | Keeps byte-current files in place and verifies them |
+| `UPDATE` | A different version is installed | Snapshots the old version, updates, and rolls back on failed verification |
+| `REPAIR` | Managed files or metadata are missing | Snapshots the damaged state, restores missing parts, and verifies the repair |
+
+Planning checks both independent release channels. It runs `rote self-update --check` and
+`tulving update --check`, then shows each receipt before approval. A Rote update follows the main
+approval. A Tulving update remains optional and requires separate approval.
+
+After approval, Play verifies each selected app. It saves JSON and Markdown reports under
+`~/.local/state/play-bootstrap/runs/`.
+
+The final card gives each app's launch command, Play prefix, remaining action, and starter prompts.
+The JSON report keeps complete command output. The terminal keeps its summaries short unless you
+pass `--json`.
+
+In a terminal, one stable `›` line shows active work. It changes only at operation boundaries.
+`✓` means completed, and `✗` means failed. The final card includes one contextual pro tip.
 Redirected output gets one start and one finish record per phase without rotating copy or repeated
 elapsed-time heartbeats.
 
@@ -520,9 +564,17 @@ Install also creates owner-private journal settings with sparse exploration puls
 logging enabled. The defaults are five new workspace steps, at most one pulse every two minutes,
 and 30 days of recall history. Existing explicit journal choices survive reinstall.
 
-Identity is an early setup gate. Play checks `rote whoami` before it creates a backup or changes a
-plugin, skill, or hook. If that check finds no identity, a browser-capable terminal offers Google
+Identity is an early setup gate. Before creating a backup or changing managed files, Play runs
+`rote whoami --check`. If that check finds no identity, a browser-capable terminal offers Google
 and GitHub. OAuth login also creates an account for a new provider identity.
+
+Rote first refreshes and persists any usable authentication. Exit `77` means login is required, not
+that a network request should be retried.
+
+After a verified login, Play stores only the provider name (`google` or `github`) in owner-private
+state. A later expired login automatically reopens that provider and verifies the result before
+search or setup continues. Play asks when the provider is unknown. Transport failures never trigger
+an OAuth flow.
 
 On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, setup recommends **Sign in from another machine**.
 It installs Rote when needed, prints the provision-and-claim steps, and pauses without changing
@@ -558,14 +610,14 @@ Rerun the Play installer without `PLAY_LOGIN_PROVIDER`. The claim token expires 
 default and contains a refresh token. Treat it as a password; never paste it into chat, logs, or a
 Docker image layer.
 
-Invocation differs by app:
+Play prefixes differ by app:
 
 | App | Start | Invoke Play |
 |---|---|---|
 | Codex | `codex` | `$play` |
 | Claude Code | `claude` | `/play` |
 | Kimi Code | `kimi` | `/skill:play` |
-| Cursor | Open Cursor | `$play` |
+| Cursor | Open Cursor | `/play` |
 | Hermes Agent | `hermes` | `/play` |
 | OpenCode | `opencode` | `/play` (installed as a managed command bridge) |
 | DeepSeek Harness (developer preview) | `dsh web` | `/play` |
@@ -583,16 +635,33 @@ These launch a new harness conversation with the discovery request already enter
 
 ### Choose which apps receive Play
 
-By default, Play selects the top three detected apps. To choose explicitly:
+The interactive checklist recommends the top three detected apps but allows any detected
+combination. To choose explicitly:
 
 ```bash
 curl -fsSL https://getrote.dev/playoffs/install.sh \
   | sh -s -- --harness codex --harness claude
 ```
 
-Repeat `--harness` up to three times with any of `codex`, `claude`, `kimi`, `cursor`, `hermes`,
-`opencode`, or `deepseek`. A larger selection fails before changes. DeepSeek Harness is still a
-developer preview upstream.
+Repeat `--harness` with any combination of `codex`, `claude`, `kimi`, `cursor`, `hermes`,
+`opencode`, or `deepseek`. Play processes independent app work in groups of three. DeepSeek Harness
+is still a developer preview upstream.
+
+### How harness integrations are shaped
+
+[`HarnessSpec`](scripts/lib/play/harnesses.py) is the canonical registry used by discovery,
+installation, preflight, prompts, and interactive launch. It keeps detection separate from shared
+skill availability, so `~/.agents/skills` alone does not make an absent app appear installed.
+
+| App | Detection and skill roots | Play surface | Delivery |
+|---|---|---|---|
+| Cursor | `cursor`, Cursor.app, `~/.cursor/skills`, `~/.agents/skills` | `/play` | Cursor plugin or managed skill link |
+| Hermes Agent | `hermes`, `~/.hermes/skills` | `/play` | Managed skill link |
+| OpenCode | `opencode`, `~/.config/opencode/skills`, `~/.agents/skills` | `/play` | Managed skill link plus global command bridge |
+
+Adding another harness means defining its command, app-owned home, skill roots, and Rote target.
+The same spec defines its Play prefix, delivery, hook style, and prompt surface. Installer code
+consumes those capabilities instead of adding parallel constants.
 
 ### Run unattended
 
@@ -913,10 +982,11 @@ just update
 The links make source edits live immediately; a running harness must still be restarted to reload
 the revised skill.
 
-`install` detects Codex, Claude Code, Kimi, and Cursor, discovers their skill roots containing
-`rote` or `rote-*`, links this Play skill into each root, and makes every Rote skill model-invocable so specialist handoffs can
-continue without another user command. It snapshots the original Rote activation files so the
-change is reversible. Restart running harnesses after enabling the profile.
+`install` detects Codex, Claude Code, Kimi, Cursor, Hermes, OpenCode, and DeepSeek Harness. It
+discovers their skill roots containing `rote` or `rote-*`. It links this Play skill into each root.
+It also makes every Rote skill model-invocable for specialist handoffs. It snapshots the original
+Rote activation files so the change is reversible. Restart running harnesses after enabling the
+profile.
 
 It is also the convergence command after `rote harness setup`, a plugin refresh, or a newly added
 harness. If Rote replaced managed skill files, `just install` preserves those refreshed files as the
@@ -975,7 +1045,12 @@ Find by outcome across local and authorized remote indexes:
 $play find a Play that retrieves recent emails
 $play search live status for AI services
 $play run the PostHog DAU report
+play search "live status for AI services"
 ```
+
+The shell command uses Play's existing unified search: local Rote Plays are always considered, the
+verified authorized catalog cache is merged in, and the live registry is queried when the cache has
+no adequate match. Add `--json` for a stable agent-facing result.
 
 For a vague `run` request, Play searches and offers recognizable names. For an exact reference, it
 skips search but never skips inspection or approval. A registry-only result is labeled as available
@@ -1316,6 +1391,7 @@ current `PATH` fingerprint without storing secrets:
 | Show terminal movement | `changed [--since …]` | `changed` |
 | Show a terminal rollup | `digest [--since …]` | `digest` |
 | Read agent data | `recall [filters]` | `recall` JSON lines |
+| Read the latest completed run | `last [schedule-id]` | `recall` from the retained ledger; latest non-missed envelope |
 | Explain or rename intent | `why <id> [text]` | `why` |
 | Run immediately | `now <id>` | `now` |
 | Retire without erasing history | `stop <id>` | `stop` |
@@ -1328,10 +1404,14 @@ current `PATH` fingerprint without storing secrets:
 Play keeps Tulving's `every` and raw `add` writes behind `schedule`. Tulving owns `tick` as an OS
 operation. Play uses `mcp` internally for structured data and never exposes its long-running process.
 
-Agents read `recall` and `list --json`; the human `changed`, `digest`, and plain `list` views remain
-terminal output. An inbox check uses an owner-private last-checked time and advances it only after
-display. It reads changed and failed envelopes, then compares retired schedules with the prior view
-when one exists. Empty inboxes produce one calm line.
+`play recurring last` returns the newest completed envelope across all schedules. Add a schedule ID
+to narrow it, for example `play recurring last abc123`. Missed-run markers do not replace the last
+completed execution.
+
+Agents read `recall`, `last`, and `list --json`; the human `changed`, `digest`, and plain `list` views
+remain terminal output. An inbox check uses an owner-private last-checked time and advances it only
+after display. It reads changed and failed envelopes, then compares retired schedules with the prior
+view when one exists. Empty inboxes produce one calm line.
 
 The existing host-neutral two-phase delivery contract remains available for scheduler-driven
 digests:

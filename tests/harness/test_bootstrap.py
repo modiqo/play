@@ -22,15 +22,18 @@ from scripts.lib.play.bootstrap import (
     _browser_mode,
     _choose_detected_harnesses,
     _choose_login_method,
+    _decode_harness_picker_key,
     _parallel_harness_work,
     _play_update_snapshot,
     _prepare_derived_play_caches,
     _os_snapshot,
     _require_supported_os,
     _fallback_skill_config_entries,
-    _parse_harness_selection,
     _render_harness_picker,
+    _render_login_picker,
     _shared_agents_plan,
+    _update_harness_picker,
+    _update_login_picker,
     _identity_gate,
     _official_rote_install_command,
     _render_status_card,
@@ -108,17 +111,36 @@ class BootstrapTest(unittest.TestCase):
             ),
         )
 
-    def test_headless_login_prompt_recommends_remote_machine(self) -> None:
+    @patch("scripts.lib.play.bootstrap._run_login_picker", return_value="remote")
+    def test_headless_login_picker_recommends_remote_machine(
+        self, run_picker: MagicMock
+    ) -> None:
         stream = MagicMock()
-        stream.readline.return_value = "\n"
 
         method = _choose_login_method("headless", stream=stream)
 
         self.assertEqual("remote", method)
-        prompt = "".join(call.args[0] for call in stream.write.call_args_list)
-        self.assertIn("No browser session was detected", prompt)
-        self.assertIn("Sign in from another machine (recommended)", prompt)
-        self.assertIn("SSH-forwarded callback", prompt)
+        run_picker.assert_called_once_with("headless", stream, stream)
+        picker = _render_login_picker("headless")
+        self.assertIn("No browser session was detected", picker)
+        self.assertIn("❯ ● Sign in from another machine  recommended", picker)
+        self.assertIn("SSH-forwarded callback", picker)
+        self.assertIn("Space or Enter to choose", picker)
+        self.assertNotIn("Choose 1, 2, or 3", picker)
+
+    def test_login_picker_uses_radio_navigation(self) -> None:
+        picker = _render_login_picker("headed")
+        self.assertIn("❯ ● Continue with Google  recommended", picker)
+        self.assertIn("○ Continue with GitHub", picker)
+
+        cursor, outcome, message = _update_login_picker("down", 3, 0)
+        self.assertEqual((1, None, None), (cursor, outcome, message))
+        cursor, outcome, message = _update_login_picker("toggle", 3, cursor)
+        self.assertEqual((1, "confirm", None), (cursor, outcome, message))
+        cursor, outcome, message = _update_login_picker("up", 3, 0)
+        self.assertEqual((2, None, None), (cursor, outcome, message))
+        cursor, outcome, message = _update_login_picker("cancel", 3, cursor)
+        self.assertEqual((2, "cancel", None), (cursor, outcome, message))
 
     @patch("scripts.lib.play.bootstrap._linux_release")
     @patch("scripts.lib.play.bootstrap.platform_module.machine", return_value="x86_64")
@@ -284,6 +306,10 @@ class BootstrapTest(unittest.TestCase):
         self.assertIsNone(convergence["command"])
         self.assertEqual([], convergence["targets"])
         self.assertEqual("keep_rote_current", plan["actions"][0]["id"])
+        self.assertEqual(
+            ["/bin/rote", "self-update", "--check"],
+            plan["rote"]["update"]["check_command"],
+        )
         self.assertEqual("update_tulving", plan["actions"][1]["id"])
         self.assertTrue(plan["actions"][1]["approval_required"])
         tulving_probe.assert_called_once_with(
@@ -312,25 +338,52 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("keep", skill_status["codex"]["recommended_action"])
         self.assertEqual("keep", skill_status["claude-code"]["recommended_action"])
 
-    def test_play_update_cycle_compares_installed_and_target_versions(self) -> None:
+    def test_play_install_state_distinguishes_fresh_update_verify_and_repair(self) -> None:
         install_home = self.home / "play-install"
         skill = install_home / "skill"
-        skill.mkdir(parents=True)
-        version = skill / "VERSION"
-        version.write_text("0.4.74\n", encoding="utf-8")
 
         with patch.dict(os.environ, {"PLAY_INSTALL_HOME": str(install_home)}):
-            available = _play_update_snapshot()
-            version.write_text("0.4.76\n", encoding="utf-8")
-            current = _play_update_snapshot()
+            fresh = _play_update_snapshot()
+            skill.mkdir(parents=True)
+            version = skill / "VERSION"
+            version.write_text("0.4.74\n", encoding="utf-8")
+            update = _play_update_snapshot()
 
-        self.assertEqual("available", available["update_status"])
-        self.assertEqual("0.4.74", available["installed_version"])
-        self.assertEqual("0.4.76", available["target_version"])
+            required = (
+                skill / ".play-install.json",
+                skill / "SKILL.md",
+                skill / "scripts" / "harness" / "install-all",
+                skill / "scripts" / "harness" / "play-profile",
+                skill / "scripts" / "bin" / "play-bootstrap",
+                skill / "scripts" / "bin" / "play-machine",
+                skill / "scripts" / "bin" / "play-preflight",
+                skill / "scripts" / "bin" / "play-digest",
+                self.home / ".local" / "bin" / "play-machine",
+                self.home / ".local" / "bin" / "play-routing",
+                self.home / ".local" / "bin" / "play-journey",
+                self.home / ".local" / "bin" / "play",
+                self.home / ".local" / "state" / "play-skill" / "activation-profile.json",
+            )
+            for path in required:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("managed\n", encoding="utf-8")
+            version.write_text(f"{fresh['target_version']}\n", encoding="utf-8")
+            current = _play_update_snapshot()
+            (skill / "scripts" / "bin" / "play-digest").unlink()
+            repair = _play_update_snapshot()
+
+        self.assertEqual("fresh", fresh["install_state"])
+        self.assertEqual("available", update["update_status"])
+        self.assertEqual("update", update["install_state"])
+        self.assertEqual("0.4.74", update["installed_version"])
         self.assertEqual("current", current["update_status"])
+        self.assertEqual("verify", current["install_state"])
+        self.assertEqual("repair_required", repair["update_status"])
+        self.assertEqual("repair", repair["install_state"])
+        self.assertIn("play-digest", " ".join(repair["missing_paths"]))
 
     @patch("scripts.lib.play.bootstrap.shutil.which")
-    def test_detected_harness_picker_uses_explicit_numbered_selection(
+    def test_detected_harness_picker_uses_arrow_keys_and_space(
         self, which: MagicMock
     ) -> None:
         which.side_effect = (
@@ -342,15 +395,37 @@ class BootstrapTest(unittest.TestCase):
             if target.detected
         ]
 
-        self.assertEqual(["codex", "kimi"], _parse_harness_selection("", detected))
-        self.assertEqual(
-            ["kimi", "hermes"], _parse_harness_selection("2, 3", detected)
-        )
         picker = _render_harness_picker(detected)
-        self.assertIn("Harnesses detected", picker)
-        self.assertIn("[1] Codex", picker)
-        self.assertIn("[2] Kimi", picker)
-        self.assertIn("[3] Hermes Agent", picker)
+        self.assertIn("Select harnesses", picker)
+        self.assertIn("❯ [✓] ◆ Codex", picker)
+        self.assertIn("[✓] ● Kimi", picker)
+        self.assertIn("[ ] ◈ Hermes Agent", picker)
+        self.assertIn("Use ↑/↓ to move, Space to toggle", picker)
+        self.assertNotIn("1. ◆ Codex", picker)
+        self.assertEqual("down", _decode_harness_picker_key(b"\x1b[B"))
+        self.assertEqual("up", _decode_harness_picker_key(b"\x1b[A"))
+        self.assertEqual("toggle", _decode_harness_picker_key(b" "))
+        self.assertEqual("unknown", _decode_harness_picker_key(b"1"))
+        cursor, selected, outcome, _ = _update_harness_picker(
+            "down", detected, ["codex", "kimi"], 0
+        )
+        self.assertEqual((1, ["codex", "kimi"], None), (cursor, selected, outcome))
+        cursor, selected, outcome, _ = _update_harness_picker(
+            "toggle", detected, selected, cursor
+        )
+        self.assertEqual((1, ["codex"], None), (cursor, selected, outcome))
+        cursor, selected, outcome, _ = _update_harness_picker(
+            "down", detected, selected, cursor
+        )
+        cursor, selected, outcome, _ = _update_harness_picker(
+            "toggle", detected, selected, cursor
+        )
+        self.assertEqual((2, ["codex", "hermes"], None), (cursor, selected, outcome))
+        _, selected, outcome, _ = _update_harness_picker(
+            "confirm", detected, selected, cursor
+        )
+        self.assertEqual(["codex", "hermes"], selected)
+        self.assertEqual("confirm", outcome)
         self.assertIn("~/.agents/skills", picker)
         self.assertIn("updates only Play-owned entries", picker)
 
@@ -415,7 +490,7 @@ class BootstrapTest(unittest.TestCase):
             return entries()
 
         def probe(command: list[str]) -> MagicMock:
-            if command[-1] == "whoami":
+            if command[1:2] == ["whoami"]:
                 return MagicMock(
                     returncode=0, stdout="ok: person@example.com\n", stderr=""
                 )
@@ -1074,8 +1149,8 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("done", progress.call("Checking things", work))
 
         rendered = stream.getvalue()
-        self.assertIn("✦ Workflow fit first.\r\n◐ Checking things ·", rendered)
-        self.assertIn("✦ Immediate value wins.", rendered)
+        self.assertIn("✦ Pro tip · Workflow fit first.\r\n◐ Checking things ·", rendered)
+        self.assertIn("✦ Pro tip · Immediate value wins.", rendered)
         self.assertIn("\033[1A\r\033[2K", rendered)
         self.assertRegex(rendered, r"✓ Checking things \(\d+\.\ds\)")
         self.assertEqual(1, rendered.count("✓ Checking things"))
@@ -1092,10 +1167,41 @@ class BootstrapTest(unittest.TestCase):
         progress.call("Checking things", lambda: time.sleep(0.025))
 
         rendered = stream.getvalue()
-        self.assertEqual(1, rendered.count("◐ Checking things"))
+        self.assertEqual(1, rendered.count("› Checking things"))
         self.assertNotIn("Checking things ·", rendered)
         self.assertNotIn("redirected logs", rendered)
         self.assertEqual(2, rendered.count("\n"))
+
+    def test_default_terminal_progress_does_not_animate_or_move_up(self) -> None:
+        stream = StringIO()
+        progress = Progress(stream, interactive=True)
+
+        progress.call("Checking updates", lambda: time.sleep(0.02))
+
+        rendered = stream.getvalue()
+        self.assertEqual(1, rendered.count("› Checking updates"))
+        self.assertEqual(1, rendered.count("✓ Checking updates"))
+        self.assertNotIn("\033[1A", rendered)
+        self.assertNotRegex(rendered, r"[◐◓◑◒]")
+        self.assertNotIn("Pro tip", rendered)
+
+    def test_terminal_progress_compacts_detailed_work_into_phases(self) -> None:
+        stream = StringIO()
+        progress = Progress(stream, interactive=True)
+
+        progress.start_phase("Preparing Play")
+        progress.call("Preparing selected harness skill roots", lambda: None)
+        progress.call("Converging Rote skills", lambda: None)
+        progress.start_phase("Protecting existing setup")
+        progress.call("Creating a Play recovery snapshot", lambda: None)
+        progress.complete_phase()
+
+        rendered = stream.getvalue()
+        self.assertIn("✓ Preparing Play · 2 steps ·", rendered)
+        self.assertIn("✓ Protecting existing setup · 1 step ·", rendered)
+        self.assertNotIn("✓ Preparing selected harness skill roots", rendered)
+        self.assertNotIn("✓ Creating a Play recovery snapshot", rendered)
+        self.assertNotRegex(rendered, r"[◐◓◑◒]")
 
     def test_progress_cleans_up_terminal_line_when_interrupted(self) -> None:
         stream = StringIO()
@@ -1133,9 +1239,9 @@ class BootstrapTest(unittest.TestCase):
         rendered = stream.getvalue()
         self.assertRegex(
             rendered,
-            r"[◐◓◑◒] Integrating Codex; Integrating Claude Code · 0s",
+            r"› Integrating Codex; Integrating Claude Code",
         )
-        self.assertIn("✦ A workflow should pay rent quickly.", rendered)
+        self.assertIn("✦ Pro tip · A workflow should pay rent quickly.", rendered)
         self.assertEqual(1, rendered.count("✓ Integrating Codex"))
         self.assertEqual(1, rendered.count("✓ Integrating Claude Code"))
 
@@ -1155,19 +1261,21 @@ class BootstrapTest(unittest.TestCase):
             {"codex": "codex", "claude": "claude", "kimi": "kimi"}, results
         )
 
-    @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
     @patch("scripts.lib.play.bootstrap.shutil.which")
-    def test_plan_rejects_more_than_three_harnesses(
-        self, which: MagicMock, _resolve_rote: MagicMock
+    def test_discovery_allows_more_than_three_harnesses(
+        self, which: MagicMock
     ) -> None:
         which.return_value = "/bin/harness"
-        with self.assertRaisesRegex(Exception, "at most 3 harnesses"):
-            build_plan(
-                requested=["codex", "claude", "kimi", "hermes"],
-                runner=MagicMock(),
-            )
-        with self.assertRaisesRegex(Exception, "top-k cannot exceed 3"):
-            build_plan(top_k=4, runner=MagicMock())
+        targets = discover_targets(top_k=7)
+        self.assertEqual(7, sum(target.selected for target in targets))
+        requested = discover_targets(
+            top_k=3,
+            requested=["codex", "claude", "kimi", "hermes"],
+        )
+        self.assertEqual(
+            ["codex", "claude", "kimi", "hermes"],
+            [target.id for target in requested if target.selected],
+        )
 
     def test_codex_disabled_play_skill_override_is_detected(self) -> None:
         config = self.home / ".codex" / "config.toml"
@@ -1434,9 +1542,9 @@ class BootstrapTest(unittest.TestCase):
         )
 
         self.assertIn("Components", rendered)
-        self.assertIn("Play      0.4.74 → 0.4.76", rendered)
-        self.assertIn("Rote      1.2.3 → 1.2.4", rendered)
-        self.assertIn("Tulving   0.1.2 → 0.1.3", rendered)
+        self.assertIn("Play       0.4.74 → 0.4.76", rendered)
+        self.assertIn("Rote       1.2.3 → 1.2.4", rendered)
+        self.assertIn("Tulving    0.1.2 → 0.1.3", rendered)
 
     def test_codex_play_override_removal_preserves_unrelated_toml(self) -> None:
         config = self.home / ".codex" / "config.toml"
@@ -1504,14 +1612,16 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("Status: READY — ACTION REQUIRED", rendered)
         self.assertIn("Codex          ACTION REQUIRED", rendered)
         self.assertIn("Claude Code    READY", rendered)
-        self.assertIn("How Play helps without getting in the way", rendered)
+        self.assertIn("Understand Play — optional", rendered)
+        self.assertIn("Type `play guide` in any ready agent", rendered)
         self.assertIn("Rote turns a successful agent run into an inspectable, repeatable Play", rendered)
-        self.assertIn("Complete the action above before trying the tutorial", rendered)
-        self.assertIn("Play found     A strong match appears as one quiet line", rendered)
-        self.assertIn("No match       Play stays silent", rendered)
-        self.assertIn("Codex        $play explore", rendered)
-        self.assertIn("Claude Code  /play explore", rendered)
-        self.assertIn("Search is automatic. Pull and run always require approval", rendered)
+        self.assertIn("Complete the action above before asking for the guide", rendered)
+        self.assertIn("Codex                        $play guide", rendered)
+        self.assertIn("Claude Code                  /play guide", rendered)
+        self.assertIn("No match → Play steps aside", rendered)
+        self.assertIn("☕ Easter egg · Watch the agent's route unfold", rendered)
+        self.assertIn("play journey view --active", rendered)
+        self.assertIn("press Play, then grab a coffee", rendered)
         self.assertIn('Codex: codex "\\$play what\'s new"', rendered)
         self.assertIn('Claude Code: claude "/play what\'s new"', rendered)
         self.assertNotIn("run <Play name>", rendered)
@@ -1527,16 +1637,19 @@ class BootstrapTest(unittest.TestCase):
             }
         )
 
-        self.assertIn("How Play helps without getting in the way", rendered)
-        self.assertIn("Ignore a suggestion and normal work continues without Play", rendered)
+        self.assertIn("Understand Play — optional", rendered)
+        self.assertIn("Type `play guide` in any ready agent", rendered)
+        self.assertIn("Kimi                         /skill:play guide", rendered)
+        self.assertIn("Hermes Agent                 /play guide", rendered)
+        self.assertIn("OpenCode                     /play guide", rendered)
+        self.assertIn("DeepSeek Harness (preview)   /play guide", rendered)
+        self.assertIn("your agent continues normally", rendered)
         self.assertNotIn("mind-meld", rendered)
         self.assertIn("Kimi: start `kimi`, then type `/skill:play what's new`", rendered)
         self.assertIn("Hermes Agent: start `hermes`, then type `/play what's new`", rendered)
         self.assertIn("OpenCode: start `opencode`, then type `/play what's new`", rendered)
-        self.assertIn(
-            "DeepSeek Harness (preview): start `dsh web`, then type `/play what's new`",
-            rendered,
-        )
+        self.assertIn("DeepSeek Harness (preview): start `dsh web`", rendered)
+        self.assertIn("then type `/play what's", rendered)
 
     def test_status_card_frames_missing_identity_as_guided_onboarding(self) -> None:
         rendered = _render_status_card(
@@ -1595,7 +1708,21 @@ class BootstrapTest(unittest.TestCase):
         ):
             _identity_gate("/bin/rote", login_provider=None, runner=runner)
 
-        runner.assert_called_once_with(["/bin/rote", "whoami"])
+        runner.assert_called_once_with(["/bin/rote", "whoami", "--check"])
+
+    def test_identity_gate_accepts_a_silent_successful_refresh(self) -> None:
+        runner = MagicMock(
+            return_value=MagicMock(returncode=0, stdout="", stderr="")
+        )
+
+        step, ready = _identity_gate(
+            "/bin/rote", login_provider=None, runner=runner
+        )
+
+        self.assertTrue(ready)
+        self.assertEqual("completed", step.status)
+        self.assertEqual("Rote identity verified.", step.detail)
+        runner.assert_called_once_with(["/bin/rote", "whoami", "--check"])
 
     def test_identity_gate_pauses_for_remote_machine_without_receiving_token(self) -> None:
         runner = MagicMock(
@@ -1619,7 +1746,7 @@ class BootstrapTest(unittest.TestCase):
         )
         self.assertIn("rote provision --ttl 30", step.detail)
         self.assertIn("did not receive or record it", step.detail)
-        runner.assert_called_once_with(["/bin/rote", "whoami"])
+        runner.assert_called_once_with(["/bin/rote", "whoami", "--check"])
 
     def test_identity_gate_explains_network_restrictions_during_login(self) -> None:
         runner = MagicMock()
@@ -1662,12 +1789,56 @@ class BootstrapTest(unittest.TestCase):
         )
         self.assertEqual(
             [
-                ["/bin/rote", "whoami"],
+                ["/bin/rote", "whoami", "--check"],
                 ["/bin/rote", "login", "--provider", "github"],
-                ["/bin/rote", "whoami"],
+                ["/bin/rote", "whoami", "--check"],
             ],
             [call.args[0] for call in runner.call_args_list],
         )
+
+    @patch("scripts.lib.play.bootstrap.remember_login_provider")
+    @patch(
+        "scripts.lib.play.bootstrap.last_login_provider", return_value="google"
+    )
+    def test_identity_gate_reuses_the_last_verified_provider(
+        self, _last_provider: MagicMock, remember: MagicMock
+    ) -> None:
+        runner = MagicMock()
+        runner.side_effect = [
+            MagicMock(returncode=77, stdout="", stderr="authentication required"),
+            MagicMock(returncode=0, stdout="browser completed\n", stderr=""),
+            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
+        ]
+
+        step, ready = _identity_gate(
+            "/bin/rote", login_provider=None, runner=runner
+        )
+
+        self.assertTrue(ready)
+        self.assertTrue(step.changed)
+        self.assertEqual(
+            ["/bin/rote", "login", "--provider", "google"], step.command
+        )
+        remember.assert_called_once_with("google")
+
+    @patch(
+        "scripts.lib.play.bootstrap.last_login_provider", return_value="github"
+    )
+    def test_identity_network_failure_never_starts_a_login(
+        self, _last_provider: MagicMock
+    ) -> None:
+        runner = MagicMock(
+            return_value=MagicMock(
+                returncode=1,
+                stdout="",
+                stderr="Failed to refresh session: Network error sending request",
+            )
+        )
+
+        with self.assertRaisesRegex(BootstrapError, "could not reach"):
+            _identity_gate("/bin/rote", login_provider=None, runner=runner)
+
+        runner.assert_called_once_with(["/bin/rote", "whoami", "--check"])
 
     def test_visible_login_hides_typed_result_but_keeps_browser_guidance(self) -> None:
         stream = StringIO()
@@ -1921,7 +2092,7 @@ class BootstrapTest(unittest.TestCase):
                 return MagicMock(
                     returncode=0, stdout="version: 1.0.0\n", stderr=""
                 )
-            if command[1:] == ["whoami"]:
+            if command[1:] == ["whoami", "--check"]:
                 return MagicMock(
                     returncode=1, stdout="error: Not logged in\n", stderr=""
                 )
@@ -1981,7 +2152,7 @@ class BootstrapTest(unittest.TestCase):
                 return MagicMock(
                     returncode=0, stdout="version: 1.0.0\n", stderr=""
                 )
-            if command[1:] == ["whoami"]:
+            if command[1:] == ["whoami", "--check"]:
                 return MagicMock(
                     returncode=1, stdout="error: Not logged in\n", stderr=""
                 )
@@ -2033,7 +2204,8 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertNotIn("diagnostics", rendered)
         self.assertNotIn("plugin failed", rendered)
-        self.assertIn("see the detailed JSON report", rendered)
+        self.assertIn("Command output was captured", rendered)
+        self.assertIn("detailed JSON", rendered)
         self.assertIn("/tmp/quiet-card.json", rendered)
 
     def test_status_card_reports_absent_and_unselected_harnesses(self) -> None:
@@ -2248,6 +2420,9 @@ class BootstrapTest(unittest.TestCase):
         verify_prompt_intercept.assert_called_once()
 
     @patch(
+        "scripts.lib.play.bootstrap.last_login_provider", return_value=None
+    )
+    @patch(
         "scripts.lib.play.bootstrap._choose_detected_harnesses",
         return_value=["codex"],
     )
@@ -2262,6 +2437,7 @@ class BootstrapTest(unittest.TestCase):
         confirm: MagicMock,
         choose_login: MagicMock,
         choose_harnesses: MagicMock,
+        _last_provider: MagicMock,
     ) -> None:
         build.return_value = {
             "plan_id": "sha256:guided",
@@ -2314,7 +2490,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("Install Rote and Play", confirm.call_args_list[0].args[0])
         self.assertIn("Enable recurring Plays", confirm.call_args_list[1].args[0])
         self.assertFalse(confirm.call_args_list[1].kwargs["default"])
-        self.assertIn("Your setup", output.getvalue())
+        self.assertIn("Quick review", output.getvalue())
         self.assertNotIn("Play setup plan", output.getvalue())
         apply_plan.assert_called_once_with(
             ROOT,

@@ -9,6 +9,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -123,6 +124,7 @@ class InstallAllTest(unittest.TestCase):
                 "CODEX_HOME": str(self.home / ".codex"),
                 "CLAUDE_CONFIG_DIR": str(self.home / ".claude"),
                 "KIMI_CONFIG_DIR": str(self.home / ".kimi"),
+                "CURSOR_CONFIG_DIR": str(self.home / ".cursor"),
                 "HERMES_HOME": str(self.home / ".hermes"),
                 "OPENCODE_CONFIG_DIR": str(self.home / ".config" / "opencode"),
                 "DSH_HOME": str(self.home / ".dsh"),
@@ -162,6 +164,30 @@ class InstallAllTest(unittest.TestCase):
             capture_output=True,
             text=True,
         )
+
+    def run_curl_bootstrap(
+        self, install_home: Path
+    ) -> tuple[subprocess.CompletedProcess[str], dict[str, Any]]:
+        reports_root = self.home / "bootstrap-state" / "runs"
+        before = set(reports_root.glob("*.json"))
+        environment = {
+            **self.environment,
+            "PLAY_INSTALL_HOME": str(install_home),
+            "PLAY_INSTALL_SOURCE": str(ROOT),
+            "PLAY_INSTALL_YES": "1",
+        }
+        result = subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh")],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        created = set(reports_root.glob("*.json")) - before
+        self.assertEqual(1, len(created))
+        return result, json.loads(created.pop().read_text(encoding="utf-8"))
 
     def test_source_install_detects_and_verifies_every_harness(self) -> None:
         result = self.run_installer("install")
@@ -240,6 +266,38 @@ class InstallAllTest(unittest.TestCase):
         codex = payload["targets"][0]
         self.assertTrue(codex["selected"])
         self.assertTrue(codex["rote_skills_installed"])
+        targets = {target["id"]: target for target in payload["targets"]}
+        self.assertFalse(targets["cursor"]["selected"])
+        self.assertFalse(targets["opencode"]["selected"])
+        self.assertFalse(targets["deepseek"]["selected"])
+        self.assertIn(
+            str(self.home / ".agents" / "skills"),
+            targets["cursor"]["skill_roots"],
+        )
+
+    def test_cursor_and_hermes_use_their_registered_skill_shapes(self) -> None:
+        cursor_root = self.home / ".cursor" / "skills"
+        hermes_root = self.home / ".hermes" / "skills"
+        for root in (cursor_root, hermes_root):
+            rote = root / "rote"
+            rote.mkdir(parents=True)
+            (rote / "SKILL.md").write_text(
+                "---\nname: rote\ndescription: test\n---\n",
+                encoding="utf-8",
+            )
+        for name in ("cursor", "hermes"):
+            command = self.bin / name
+            command.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            command.chmod(0o755)
+
+        result = self.run_installer(
+            "install", "--harness", "cursor", "--harness", "hermes"
+        )
+
+        self.assertIn("Detected harnesses: cursor, hermes", result.stdout)
+        self.assertEqual(ROOT, (cursor_root / "play").resolve())
+        self.assertEqual(ROOT, (hermes_root / "play").resolve())
+        self.uninstall(ROOT)
 
     def test_repeated_harness_flags_install_only_selected_roots(self) -> None:
         result = self.run_installer(
@@ -322,6 +380,26 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("already active", result.stdout)
         self.uninstall(installed)
 
+    def test_current_portable_copy_survives_a_later_dependency_failure(self) -> None:
+        install_home = self.home / "portable-current-failure"
+        self.environment["PLAY_INSTALL_HOME"] = str(install_home)
+        self.run_installer("install", "--copy", "--harness", "codex")
+        installed = install_home / "skill"
+        skill = installed / "SKILL.md"
+        original_inode = skill.stat().st_ino
+
+        uv = self.bin / "uv"
+        uv.write_text("#!/bin/sh\nexit 23\n", encoding="utf-8")
+        uv.chmod(0o755)
+        result = self.run_installer(
+            "install", "--copy", "--harness", "codex", expected=1
+        )
+
+        self.assertIn("locked Python dependencies", result.stderr)
+        self.assertTrue(skill.is_file())
+        self.assertEqual(original_inode, skill.stat().st_ino)
+        self.uninstall(installed)
+
     def test_install_syncs_locked_runtime_dependencies_before_activation(self) -> None:
         install_home = self.home / "portable-dependencies"
         uv_log = self.home / "uv.log"
@@ -396,20 +474,23 @@ class InstallAllTest(unittest.TestCase):
         self.assertLess(elapsed, 5.0, f"warm three-harness install took {elapsed:.3f}s")
         self.assertIn("Modiqo Rote", result.stdout)
         self.assertIn("Where useful interactions become Plays", result.stdout)
-        self.assertIn("Play setup plan", result.stdout)
+        self.assertIn("Review setup", result.stdout)
         self.assertIn("✓ Using local Play source", result.stdout)
-        self.assertIn("◐ Checking the Play setup plan", result.stderr)
+        self.assertIn("› Checking Play, Rote, and Tulving updates", result.stderr)
         self.assertIn("✓ Verifying Codex", result.stderr)
-        self.assertIn("| Play setup plan", result.stdout)
+        self.assertIn("╭─ ◆ Review setup", result.stdout)
         self.assertIn("Version: 0.4.76", result.stdout)
-        self.assertIn("| Play setup", result.stdout)
+        self.assertIn("╭─ ◆ Play setup", result.stdout)
         self.assertIn("Status: READY", result.stdout)
         self.assertIn("OS:     ", result.stdout)
-        self.assertIn("How Play helps without getting in the way", result.stdout)
+        self.assertIn("Understand Play — optional", result.stdout)
+        self.assertIn("Type `play guide` in any ready agent", result.stdout)
         self.assertIn("Rote turns a successful agent run into an inspectable, repeatable Play", result.stdout)
-        self.assertIn("Play found     A strong match appears as one quiet line", result.stdout)
-        self.assertIn("No match       Play stays silent", result.stdout)
-        self.assertIn("Search is automatic. Pull and run always require approval", result.stdout)
+        self.assertIn("$play guide", result.stdout)
+        self.assertIn("/play guide", result.stdout)
+        self.assertIn("/skill:play guide", result.stdout)
+        self.assertIn("No match → Play steps aside", result.stdout)
+        self.assertIn("play journey view --active", result.stdout)
         self.assertIn('Codex: codex "\\$play what\'s new"', result.stdout)
         self.assertIn('Claude Code: claude "/play what\'s new"', result.stdout)
         installed = install_home / "skill"
@@ -438,6 +519,49 @@ class InstallAllTest(unittest.TestCase):
         )
         self.assertEqual("completed", cache["status"])
         self.assertIn("snapshot sha256:", cache["detail"])
+        self.uninstall(installed)
+
+    def test_curl_bootstrap_handles_clean_current_update_and_repair(self) -> None:
+        install_home = self.home / "curl-convergence"
+        installed = install_home / "skill"
+
+        fresh_result, fresh_report = self.run_curl_bootstrap(install_home)
+        self.assertIn("READY TO APPLY · FRESH", fresh_result.stdout)
+        self.assertEqual("fresh", fresh_report["play"]["install_state"])
+        skill = installed / "SKILL.md"
+        original_inode = skill.stat().st_ino
+        original_mtime = skill.stat().st_mtime_ns
+
+        current_result, current_report = self.run_curl_bootstrap(install_home)
+        self.assertIn("READY TO APPLY · VERIFY", current_result.stdout)
+        self.assertEqual("verify", current_report["play"]["install_state"])
+        self.assertEqual(original_inode, skill.stat().st_ino)
+        self.assertEqual(original_mtime, skill.stat().st_mtime_ns)
+
+        (installed / "VERSION").write_text("0.4.75\n", encoding="utf-8")
+        marker_path = installed / ".play-install.json"
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        marker["version"] = "0.4.75"
+        marker_path.write_text(
+            json.dumps(marker, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        update_result, update_report = self.run_curl_bootstrap(install_home)
+        self.assertIn("READY TO APPLY · UPDATE", update_result.stdout)
+        self.assertEqual("update", update_report["play"]["install_state"])
+        self.assertTrue(update_report["backup"]["has_previous_state"])
+        self.assertEqual("0.4.76", (installed / "VERSION").read_text().strip())
+
+        missing = installed / "scripts" / "bin" / "play-digest"
+        missing.unlink()
+        marker_path.unlink()
+        repair_result, repair_report = self.run_curl_bootstrap(install_home)
+        self.assertIn("READY TO APPLY · REPAIR", repair_result.stdout)
+        self.assertEqual("repair", repair_report["play"]["install_state"])
+        self.assertTrue(repair_report["backup"]["has_previous_state"])
+        self.assertIn("play-digest", " ".join(repair_report["play"]["missing_paths_before"]))
+        self.assertTrue(missing.is_file())
+        self.assertTrue(marker_path.is_file())
         self.uninstall(installed)
 
     def test_portable_installer_is_valid_posix_shell(self) -> None:

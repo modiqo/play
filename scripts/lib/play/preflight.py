@@ -6,7 +6,6 @@ import argparse
 import importlib.util
 import json
 import os
-import re
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -14,38 +13,23 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-_OK_EMAIL = re.compile(r"(?im)^ok:\s*([^@\s]+@[^@\s]+\.[^@\s]+)$")
+from .harnesses import (
+    HARNESS_BY_ID,
+    HARNESS_SPECS,
+    commands as harness_commands,
+    detect_harness,
+    labels as harness_labels,
+    skill_roots as configured_skill_roots,
+    supported_harnesses,
+)
+from .identity import rote_session_status
 
 
 SCHEMA = "play.preflight/v1"
 ROOT = Path(__file__).resolve().parents[3]
-SUPPORTED_HARNESSES = (
-    "codex",
-    "claude",
-    "kimi",
-    "cursor",
-    "hermes",
-    "opencode",
-    "deepseek",
-)
-HARNESS_COMMANDS = {
-    "codex": "codex",
-    "claude": "claude",
-    "kimi": "kimi",
-    "cursor": "cursor",
-    "hermes": "hermes",
-    "opencode": "opencode",
-    "deepseek": "dsh",
-}
-HARNESS_LABELS = {
-    "codex": "Codex",
-    "claude": "Claude Code",
-    "kimi": "Kimi",
-    "cursor": "Cursor",
-    "hermes": "Hermes Agent",
-    "opencode": "OpenCode",
-    "deepseek": "DeepSeek Harness (preview)",
-}
+SUPPORTED_HARNESSES = supported_harnesses()
+HARNESS_COMMANDS = harness_commands()
+HARNESS_LABELS = harness_labels()
 REQUIRED_PLAY_EXECUTABLES = (
     "play",
     "play-machine",
@@ -54,6 +38,7 @@ REQUIRED_PLAY_EXECUTABLES = (
     "play-activate",
     "play-certificate",
     "play-cheat-sheet",
+    "play-guide",
     "play-delivery",
     "play-digest",
     "play-handoff",
@@ -96,7 +81,7 @@ SETUP_COMMANDS = {
     ],
     "cursor": [
         "Install the rote-onboard skill in ~/.cursor/skills.",
-        "Restart Cursor, then invoke $rote-setup.",
+        "Restart Cursor, then invoke /rote-setup.",
     ],
     "hermes": [
         "Install the rote-onboard skill in ~/.hermes/skills.",
@@ -158,19 +143,6 @@ def harness_skill_roots() -> dict[str, tuple[Path, ...]]:
     claude_home = Path(
         os.environ.get("CLAUDE_CONFIG_DIR", home / ".claude")
     ).expanduser()
-    kimi_home = Path(os.environ.get("KIMI_CONFIG_DIR", home / ".kimi")).expanduser()
-    cursor_home = Path(
-        os.environ.get("CURSOR_CONFIG_DIR", home / ".cursor")
-    ).expanduser()
-    hermes_home = Path(os.environ.get("HERMES_HOME", home / ".hermes")).expanduser()
-    opencode_home = Path(
-        os.environ.get("OPENCODE_CONFIG_DIR", home / ".config" / "opencode")
-    ).expanduser()
-    deepseek_home = Path(os.environ.get("DSH_HOME", home / ".dsh")).expanduser()
-    agents_home = Path(os.environ.get("AGENTS_HOME", home / ".agents")).expanduser()
-    agents_config_home = Path(
-        os.environ.get("AGENTS_CONFIG_HOME", home / ".config" / "agents")
-    ).expanduser()
     codex_plugin_roots = tuple(
         sorted(
             {
@@ -185,17 +157,20 @@ def harness_skill_roots() -> dict[str, tuple[Path, ...]]:
         sorted(claude_home.glob("plugins/cache/*/*/*/skills"), key=str)
     )
     return {
-        "codex": (codex_home / "skills", *codex_plugin_roots),
-        "claude": (claude_home / "skills", *claude_plugin_roots),
-        "kimi": (
-            kimi_home / "skills",
-            agents_config_home / "skills",
-            agents_home / "skills",
-        ),
-        "cursor": (cursor_home / "skills",),
-        "hermes": (hermes_home / "skills",),
-        "opencode": (opencode_home / "skills", agents_home / "skills"),
-        "deepseek": (deepseek_home / "skills", agents_home / "skills"),
+        spec.id: (
+            (
+                *configured_skill_roots(spec, home=home),
+                *codex_plugin_roots,
+            )
+            if spec.id == "codex"
+            else (
+                *configured_skill_roots(spec, home=home),
+                *claude_plugin_roots,
+            )
+            if spec.id == "claude"
+            else configured_skill_roots(spec, home=home)
+        )
+        for spec in HARNESS_SPECS
     }
 
 
@@ -215,8 +190,9 @@ def _has_skill(root: Path, name: str) -> bool:
 def inspect_harnesses(active: str) -> list[dict[str, object]]:
     statuses = []
     for name, roots in harness_skill_roots().items():
-        command = shutil.which(HARNESS_COMMANDS[name])
-        installed = command is not None
+        installed, command = detect_harness(
+            HARNESS_BY_ID[name], resolver=shutil.which, home=Path.home()
+        )
         rote_roots = [str(root) for root in roots if _has_skill(root, "rote")]
         play_roots = [str(root) for root in roots if _has_skill(root, "play")]
         if not (installed or rote_roots or play_roots or name == active):
@@ -231,7 +207,7 @@ def inspect_harnesses(active: str) -> list[dict[str, object]]:
                 "rote_skill_roots": rote_roots,
                 "play_skill_installed": bool(play_roots),
                 "play_skill_roots": play_roots,
-                "selected": installed or bool(rote_roots) or bool(play_roots) or name == active,
+                "selected": installed or name == active,
             }
         )
     return statuses
@@ -319,17 +295,16 @@ def inspect(harness: str) -> dict[str, Any]:
         )
     else:
         with ThreadPoolExecutor(max_workers=2) as executor:
-            identity_future = executor.submit(run, [executable, "whoami"])
+            identity_future = executor.submit(
+                run, [executable, "whoami", "--check"]
+            )
             capability_future = executor.submit(run, [executable, "play", "--help"])
         try:
             identity = identity_future.result()
             identity_text = (identity.stdout or identity.stderr).strip()
-            # rote whoami can exit 0 while reporting "error: Not logged in", so a
-            # clean exit is not proof of identity; demand the ok: email line.
-            authenticated = (
-                identity.returncode == 0
-                and bool(_OK_EMAIL.search(identity.stdout or ""))
-            )
+            # --check refreshes and persists usable authentication. Current
+            # Rote versions intentionally produce no output on success.
+            authenticated = rote_session_status(identity) == "authenticated"
         except (OSError, subprocess.TimeoutExpired) as error:
             authenticated = False
             identity_text = f"Identity check failed: {error}"
@@ -337,7 +312,12 @@ def inspect(harness: str) -> dict[str, Any]:
             Check(
                 "authenticated",
                 authenticated,
-                identity_text or "Rote did not return an authenticated identity.",
+                identity_text
+                or (
+                    "Rote authentication verified."
+                    if authenticated
+                    else "Rote did not return an authenticated identity."
+                ),
             )
         )
 

@@ -7,21 +7,23 @@ import argparse
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.play.harnesses import HARNESS_SPECS
+
 DEFAULT_PROMPT = (
     "Prepare a summary of deployment failures for the completed calendar week 2026-07-27 through "
     "2026-08-02 from my authorized deployment systems. Treat the authorized Play-index search as "
     "having returned no adequate match."
 )
-COMMANDS = {
-    "codex": ["codex"],
-    "claude": ["claude"],
-    "kimi": ["kimi"],
-}
+COMMANDS = {spec.id: list(spec.start_command) for spec in HARNESS_SPECS}
+SMOKE_HARNESSES = ("codex", "claude", "kimi")
 CODEX_QUIET_CONFIG = [
     "-c",
     'model_verbosity="low"',
@@ -58,10 +60,15 @@ def interactive(name: str, quiet: bool = False) -> None:
 
 
 def smoke(name: str, prompt: str) -> None:
+    if name not in SMOKE_HARNESSES:
+        raise SystemExit(
+            f"{name} supports interactive launch; automated smoke mode is not defined yet"
+        )
     if not shutil.which(COMMANDS[name][0]):
         raise SystemExit(f"{name} is not installed or not on PATH")
     verify_profile()
-    output_file = None
+    output_file: Path | None = None
+    temporary = None
     if name == "codex":
         temporary = tempfile.NamedTemporaryFile()
         output_file = Path(temporary.name)
@@ -88,7 +95,8 @@ def smoke(name: str, prompt: str) -> None:
     result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
     if output_file and output_file.exists() and output_file.stat().st_size:
         output = output_file.read_text().strip()
-        temporary.close()
+        if temporary is not None:
+            temporary.close()
     else:
         output = result.stdout.strip()
     print(output)
@@ -122,7 +130,9 @@ def main() -> None:
         parser.error("--quiet is only available for interactive Codex sessions")
 
     if args.smoke_all:
-        harnesses = installed_harnesses()
+        harnesses = [
+            name for name in installed_harnesses() if name in SMOKE_HARNESSES
+        ]
         if not harnesses:
             raise SystemExit("no supported harness command is installed")
         for name in harnesses:

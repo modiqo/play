@@ -13,6 +13,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import textwrap
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +23,22 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from .inbox_cache import public_cache_entries
+from .harnesses import (
+    HARNESS_BY_ID,
+    HARNESS_SPECS,
+    commands as harness_commands,
+    detect_harness,
+    labels as harness_labels,
+    launch_surfaces,
+    skill_roots as configured_skill_roots,
+    supported_harnesses,
+    target_ids,
+)
+from .identity import (
+    last_login_provider,
+    remember_login_provider,
+    rote_session_status,
+)
 from .recurrence import (
     RecurrenceError,
     enable_tulving as enable_tulving_support,
@@ -52,53 +69,11 @@ REGISTRY_NETWORK_MARKERS = (
     "operation timed out",
     "timed out",
 )
-SUPPORTED_HARNESSES = (
-    "codex",
-    "claude",
-    "kimi",
-    "cursor",
-    "hermes",
-    "opencode",
-    "deepseek",
-)
-TARGET_IDS = {
-    "codex": "codex",
-    "claude": "claude-code",
-    "kimi": "kimi-code-cli",
-    "cursor": "cursor",
-    "hermes": "hermes-agent",
-    "opencode": "opencode",
-    # DeepSeek Harness consumes the shared Agent Skills root. Rote does not
-    # yet expose a dedicated target for this developer-preview harness.
-    "deepseek": "agents-md",
-}
-HARNESS_COMMANDS = {
-    "codex": "codex",
-    "claude": "claude",
-    "kimi": "kimi",
-    "cursor": "cursor",
-    "hermes": "hermes",
-    "opencode": "opencode",
-    "deepseek": "dsh",
-}
-LABELS = {
-    "codex": "Codex",
-    "claude": "Claude Code",
-    "kimi": "Kimi",
-    "cursor": "Cursor",
-    "hermes": "Hermes Agent",
-    "opencode": "OpenCode",
-    "deepseek": "DeepSeek Harness (preview)",
-}
-HARNESS_LAUNCH = {
-    "codex": ("codex", "$play"),
-    "claude": ("claude", "/play"),
-    "kimi": ("kimi", "/skill:play"),
-    "cursor": ("Open Cursor", "$play"),
-    "hermes": ("hermes", "/play"),
-    "opencode": ("opencode", "/play"),
-    "deepseek": ("dsh web", "/play"),
-}
+SUPPORTED_HARNESSES = supported_harnesses()
+TARGET_IDS = target_ids()
+HARNESS_COMMANDS = harness_commands()
+LABELS = harness_labels()
+HARNESS_LAUNCH = launch_surfaces()
 ROTE_SKILL_PROVIDERS = {
     "codex": ("Codex", "CODEX_HOME", ".codex"),
     "claude-code": ("Claude Code", "CLAUDE_CONFIG_DIR", ".claude"),
@@ -114,18 +89,17 @@ PLAY_PLUGIN = "play@play-skills"
 PLAY_REPOSITORY = "modiqo/play"
 ROTE_MCP_LIFECYCLE_MINIMUM = (0, 69, 2)
 ROTE_MCP_LIFECYCLE_MINIMUM_TEXT = ".".join(map(str, ROTE_MCP_LIFECYCLE_MINIMUM))
-MAX_SELECTED_HARNESSES = 3
-SETUP_INSIGHTS = (
-    "Build for Tuesday-you, not your imaginary ten-times-more-productive clone.",
-    "A workflow should pay rent quickly: one useful result beats a distant promise.",
-    "New queue detected? That may be maintenance wearing a productivity costume.",
-    "Try three manual wins before automation; let the recurring need prove itself.",
-    "If–then plans strengthen goals you already want—they cannot manufacture the need.",
-    "Unused workflows are field notes, not character references.",
-    "Keep, redesign, revisit, or retire: even a misfit workflow can teach you something.",
-    "The best trigger is work you already do; meet yourself there and return value fast.",
+DEFAULT_SELECTED_HARNESSES = 3
+MAX_PARALLEL_HARNESSES = 3
+SETUP_PRO_TIPS = (
+    "Rerun this installer to verify or repair an existing Play setup.",
+    "Play snapshots owned state before every update or repair.",
+    "Use arrow keys and Space to choose apps; setup runs up to three app jobs at once.",
+    "Detailed receipts live under ~/.local/state/play-bootstrap/runs/.",
+    "If verification fails, Play restores the previous verified state automatically.",
 )
 SPINNER_FRAMES = ("◐", "◓", "◑", "◒")
+TERMINAL_CARD_WIDTH = 84
 
 
 class BootstrapError(RuntimeError):
@@ -177,9 +151,9 @@ class Progress:
         stream=None,
         *,
         enabled: bool = True,
-        heartbeat_seconds: float = 1.0,
+        heartbeat_seconds: float = 0.0,
         interactive: bool | None = None,
-        insights: Sequence[str] = SETUP_INSIGHTS,
+        insights: Sequence[str] = (),
         insight_seconds: float = 4.0,
     ) -> None:
         self.stream = stream if stream is not None else sys.stderr
@@ -198,6 +172,10 @@ class Progress:
         self._active: dict[int, ProgressToken] = {}
         self._line_visible = False
         self._frame = 0
+        self._phase_label: str | None = None
+        self._phase_started: float | None = None
+        self._phase_completed = 0
+        self._phase_failed = False
 
     def _clear_active_locked(self) -> None:
         if not self._line_visible:
@@ -215,28 +193,90 @@ class Progress:
         return text[: max(1, width - 1)].rstrip() + "…"
 
     def _render_active_locked(self) -> None:
-        if not self.interactive or not self._active:
+        if not self.interactive or (not self._active and self._phase_label is None):
             return
         now = time.monotonic()
         tokens = list(self._active.values())
-        if len(tokens) == 1:
+        if not tokens:
+            text = (
+                f"{self._phase_label} · {self._phase_completed} "
+                f"step{'s' if self._phase_completed != 1 else ''} complete"
+            )
+        elif len(tokens) == 1:
             token = tokens[0]
-            text = f"{token.label} · {now - token.started:.0f}s"
+            text = (
+                f"{token.label} · {now - token.started:.0f}s"
+                if self.heartbeat_seconds
+                else token.label
+            )
         else:
             labels = "; ".join(token.label for token in tokens)
-            elapsed = max(now - token.started for token in tokens)
-            text = f"{labels} · {elapsed:.0f}s"
+            text = labels
+            if self.heartbeat_seconds:
+                elapsed = max(now - token.started for token in tokens)
+                text = f"{text} · {elapsed:.0f}s"
+        if self._phase_label is not None and tokens:
+            text = f"{self._phase_label} · {text}"
         self._clear_active_locked()
         if self.insights:
-            oldest = min(token.started for token in tokens)
+            oldest = (
+                min(token.started for token in tokens)
+                if tokens
+                else (self._phase_started or now)
+            )
             rotation = int((now - oldest) // self.insight_seconds)
             insight = self.insights[(self._insight_offset + rotation) % len(self.insights)]
-            self.stream.write(f"✦ {self._fit_terminal_line(insight)}\r\n")
-        glyph = SPINNER_FRAMES[self._frame % len(SPINNER_FRAMES)]
-        self._frame += 1
+            self.stream.write(
+                f"✦ {self._fit_terminal_line('Pro tip · ' + insight)}\r\n"
+            )
+        glyph = (
+            SPINNER_FRAMES[self._frame % len(SPINNER_FRAMES)]
+            if self.heartbeat_seconds
+            else ("◆" if self._phase_label is not None else "›")
+        )
+        if self.heartbeat_seconds:
+            self._frame += 1
         self.stream.write(f"{glyph} {self._fit_terminal_line(text)}")
         self.stream.flush()
         self._line_visible = True
+
+    def _finish_phase_locked(self) -> None:
+        if self._phase_label is None:
+            return
+        self._clear_active_locked()
+        elapsed = time.monotonic() - (self._phase_started or time.monotonic())
+        glyph = "✗" if self._phase_failed else "✓"
+        count = self._phase_completed
+        summary = f"{count} step{'s' if count != 1 else ''}"
+        print(
+            f"{glyph} {self._phase_label} · {summary} · {elapsed:.1f}s",
+            file=self.stream,
+            flush=True,
+        )
+        self._phase_label = None
+        self._phase_started = None
+        self._phase_completed = 0
+        self._phase_failed = False
+
+    def start_phase(self, label: str) -> None:
+        """Group detailed terminal work under one calm, durable milestone."""
+
+        if not self.enabled:
+            return
+        with self._lock:
+            if self.interactive:
+                self._finish_phase_locked()
+                self._phase_label = label
+                self._phase_started = time.monotonic()
+                self._render_active_locked()
+            else:
+                print(f"◆ {label}", file=self.stream, flush=True)
+
+    def complete_phase(self) -> None:
+        if not self.enabled or not self.interactive:
+            return
+        with self._lock:
+            self._finish_phase_locked()
 
     def _refresh(self) -> None:
         if not self.enabled or not self.interactive:
@@ -256,7 +296,7 @@ class Progress:
                     self._active[id(token)] = token
                     self._render_active_locked()
                 else:
-                    print(f"◐ {label}", file=self.stream, flush=True)
+                    print(f"› {label}", file=self.stream, flush=True)
         if self.enabled and self.interactive and self.heartbeat_seconds:
             token.stop = threading.Event()
 
@@ -278,14 +318,27 @@ class Progress:
         if not self.enabled:
             return
         glyph = "✓" if ok else "✗"
+        elapsed_text = (
+            f" ({elapsed:.1f}s)"
+            if elapsed >= 0.1 or self.heartbeat_seconds
+            else ""
+        )
         with self._lock:
             if self.interactive:
                 self._active.pop(id(token), None)
                 self._clear_active_locked()
-                print(f"{glyph} {token.label} ({elapsed:.1f}s)", file=self.stream, flush=True)
+                if self._phase_label is None:
+                    print(
+                        f"{glyph} {token.label}{elapsed_text}",
+                        file=self.stream,
+                        flush=True,
+                    )
+                else:
+                    self._phase_completed += 1
+                    self._phase_failed = self._phase_failed or not ok
                 self._render_active_locked()
             else:
-                print(f"{glyph} {token.label} ({elapsed:.1f}s)", file=self.stream, flush=True)
+                print(f"{glyph} {token.label}{elapsed_text}", file=self.stream, flush=True)
 
     def call(self, label: str, operation: Callable[[], Any]) -> Any:
         token = self.begin(label)
@@ -328,7 +381,7 @@ def _parallel_harness_work(
     ordered = list(dict.fromkeys(harnesses))
     if not ordered:
         return {}
-    with ThreadPoolExecutor(max_workers=min(MAX_SELECTED_HARNESSES, len(ordered))) as executor:
+    with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL_HARNESSES, len(ordered))) as executor:
         futures = {harness: executor.submit(operation, harness) for harness in ordered}
         return {harness: futures[harness].result() for harness in ordered}
 
@@ -440,53 +493,109 @@ def _installed_play_version() -> str | None:
     return version or None
 
 
-def _play_update_snapshot() -> dict[str, str | None]:
+def _path_present(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def _managed_launcher_paths() -> tuple[Path, ...]:
+    home = _home()
+    return (
+        Path(
+            os.environ.get(
+                "PLAY_MACHINE_LAUNCHER", home / ".local" / "bin" / "play-machine"
+            )
+        ).expanduser(),
+        Path(
+            os.environ.get(
+                "PLAY_ROUTING_LAUNCHER", home / ".local" / "bin" / "play-routing"
+            )
+        ).expanduser(),
+        Path(
+            os.environ.get(
+                "PLAY_JOURNEY_LAUNCHER", home / ".local" / "bin" / "play-journey"
+            )
+        ).expanduser(),
+        Path(
+            os.environ.get("PLAY_CLI_LAUNCHER", home / ".local" / "bin" / "play")
+        ).expanduser(),
+    )
+
+
+def _play_update_snapshot() -> dict[str, Any]:
     installed = _installed_play_version()
     target = _play_version()
-    if installed is None:
+    portable = _portable_play_path()
+    required_portable = (
+        portable / ".play-install.json",
+        portable / "SKILL.md",
+        portable / "VERSION",
+        portable / "scripts" / "harness" / "install-all",
+        portable / "scripts" / "harness" / "play-profile",
+        portable / "scripts" / "bin" / "play-bootstrap",
+        portable / "scripts" / "bin" / "play-machine",
+        portable / "scripts" / "bin" / "play-preflight",
+        portable / "scripts" / "bin" / "play-digest",
+    )
+    managed_runtime = (*_managed_launcher_paths(), _activation_profile_state_path())
+    installed_skill_paths = tuple(
+        root / "play" for roots in _roots().values() for root in roots
+    )
+    existing_state = any(
+        _path_present(path)
+        for path in (portable, *managed_runtime, *installed_skill_paths)
+    )
+    missing_paths = [
+        str(path)
+        for path in (*required_portable, *managed_runtime)
+        if not _path_present(path)
+    ]
+
+    if not existing_state:
+        install_state = "fresh"
+        health = "clean"
         status = "not_installed"
         detail = f"Play {target} will be installed."
         recommended_action = "install"
-    elif installed == target:
+        missing_paths = []
+    elif installed is not None and installed != target:
+        install_state = "update"
+        health = "outdated"
+        status = "available"
+        detail = f"Play {target} will replace {installed} after a recovery snapshot."
+        recommended_action = "update"
+    elif installed == target and not missing_paths:
+        install_state = "verify"
+        health = "current"
         status = "current"
         detail = f"Play {installed} is current and will be verified."
         recommended_action = "verify"
     else:
-        status = "available"
-        detail = f"Play {target} will replace {installed}."
-        recommended_action = "update"
+        install_state = "repair"
+        health = "damaged"
+        status = "repair_required"
+        missing_count = len(missing_paths)
+        detail = (
+            f"Play {target} will repair {missing_count} missing managed "
+            f"item{'s' if missing_count != 1 else ''} after a recovery snapshot."
+        )
+        recommended_action = "repair"
     return {
         "installed_version": installed,
         "target_version": target,
         "update_status": status,
+        "install_state": install_state,
+        "health": health,
+        "existing_state": existing_state,
+        "missing_paths": missing_paths,
         "detail": detail,
         "recommended_action": recommended_action,
     }
 
 
 def _roots() -> dict[str, tuple[Path, ...]]:
-    home = _home()
-    codex = Path(os.environ.get("CODEX_HOME", home / ".codex")).expanduser()
-    claude = Path(os.environ.get("CLAUDE_CONFIG_DIR", home / ".claude")).expanduser()
-    kimi = Path(os.environ.get("KIMI_CONFIG_DIR", home / ".kimi")).expanduser()
-    cursor = Path(os.environ.get("CURSOR_CONFIG_DIR", home / ".cursor")).expanduser()
-    hermes = Path(os.environ.get("HERMES_HOME", home / ".hermes")).expanduser()
-    opencode = Path(
-        os.environ.get("OPENCODE_CONFIG_DIR", home / ".config" / "opencode")
-    ).expanduser()
-    deepseek = Path(os.environ.get("DSH_HOME", home / ".dsh")).expanduser()
-    agents = Path(os.environ.get("AGENTS_HOME", home / ".agents")).expanduser()
-    agents_config = Path(
-        os.environ.get("AGENTS_CONFIG_HOME", home / ".config" / "agents")
-    ).expanduser()
     return {
-        "codex": (codex / "skills",),
-        "claude": (claude / "skills",),
-        "kimi": (kimi / "skills", agents_config / "skills", agents / "skills"),
-        "cursor": (cursor / "skills",),
-        "hermes": (hermes / "skills",),
-        "opencode": (opencode / "skills", agents / "skills"),
-        "deepseek": (deepseek / "skills", agents / "skills"),
+        spec.id: configured_skill_roots(spec, home=_home())
+        for spec in HARNESS_SPECS
     }
 
 
@@ -663,9 +772,8 @@ def _rote_compatibility_step(rote: str, runner: Runner) -> Step:
 def _probe_identity(rote: str | None, runner: Runner) -> str:
     if rote is None:
         return "unavailable"
-    result = runner([rote, "whoami"])
-    output = (result.stdout or result.stderr).strip()
-    return "authenticated" if result.returncode == 0 and "ok:" in output else "required"
+    result = runner([rote, "whoami", "--check"])
+    return rote_session_status(result)
 
 
 def _registry_network_failure(result: subprocess.CompletedProcess[str]) -> bool:
@@ -697,7 +805,7 @@ def _remote_auth_guidance() -> str:
         "No browser session was detected. On a machine with a browser, run "
         "`rote login --provider google` or `rote login --provider github`, then "
         "`rote provision --ttl 30`. On this machine, run `rote claim <dxp_...>`, "
-        "verify with `rote whoami`, and rerun the Play installer. Treat the claim "
+        "verify with `rote whoami --check`, and rerun the Play installer. Treat the claim "
         "token as a password; Play did not receive or record it."
     )
 
@@ -736,8 +844,17 @@ def _identity_gate(
 ) -> tuple[Step, bool]:
     """Verify identity or complete one explicit OAuth provider flow before setup mutates Play."""
 
-    if _probe_identity(rote, runner) == "authenticated":
+    identity = runner([rote, "whoami", "--check"])
+    identity_status = rote_session_status(identity)
+    if identity_status == "authenticated":
         return Step("rote_identity", "completed", "Rote identity verified."), True
+    if identity_status == "error":
+        detail = (
+            _registry_network_blocker("Rote identity check")
+            if _registry_network_failure(identity)
+            else "Rote identity check failed without declaring that login is required."
+        )
+        raise BootstrapError(detail)
     if remote_auth:
         return (
             Step(
@@ -749,6 +866,8 @@ def _identity_gate(
             ),
             False,
         )
+    if login_provider is None:
+        login_provider = last_login_provider()
     if login_provider is None:
         raise BootstrapError(_registry_credentials_blocker())
     if login_provider not in LOGIN_PROVIDERS:
@@ -775,10 +894,10 @@ def _identity_gate(
             ),
             False,
         )
-    identity = runner([rote, "whoami"])
+    identity = runner([rote, "whoami", "--check"])
     identity_output = (identity.stdout or identity.stderr).strip()
     email_match = re.search(r"(?im)^ok:\s*([^@\s]+@[^@\s]+\.[^@\s]+)\s*$", identity_output)
-    if identity.returncode != 0 or email_match is None:
+    if rote_session_status(identity) != "authenticated":
         detail = (
             _registry_network_blocker("Rote identity verification")
             if _registry_network_failure(identity)
@@ -796,11 +915,18 @@ def _identity_gate(
             ),
             False,
         )
+    remember_login_provider(login_provider)
+    detail = f"Signed in with {login_provider.title()}."
+    if email_match is not None:
+        detail = (
+            f"Signed in with {login_provider.title()} as "
+            f"{email_match.group(1).lower()}."
+        )
     return (
         Step(
             "rote_identity",
             "completed",
-            f"Signed in with {login_provider.title()} as {email_match.group(1).lower()}.",
+            detail,
             command=command,
             changed=True,
         ),
@@ -808,20 +934,23 @@ def _identity_gate(
     )
 
 
-def _probe_update(rote: str | None, runner: Runner) -> dict[str, str | None]:
+def _probe_update(rote: str | None, runner: Runner) -> dict[str, Any]:
     if rote is None:
         return {
             "status": "not_installed",
             "detail": "Rote is not installed.",
             "recommended_action": "install",
+            "check_command": None,
         }
-    result = runner([rote, "self-update", "--check"])
+    command = [rote, "self-update", "--check"]
+    result = runner(command)
     output = (result.stdout or result.stderr).strip()
     if result.returncode != 0:
         return {
             "status": "check_failed",
             "detail": output or f"update check exited {result.returncode}",
             "recommended_action": "review",
+            "check_command": command,
         }
     normalized = output.lower()
     current_markers = (
@@ -837,6 +966,7 @@ def _probe_update(rote: str | None, runner: Runner) -> dict[str, str | None]:
         "status": "current" if current else "available",
         "detail": output or "Rote reports that an update is available.",
         "recommended_action": "keep" if current else "update",
+        "check_command": command,
     }
 
 
@@ -960,26 +1090,18 @@ def _rote_skill_harnesses(
 def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> list[HarnessTarget]:
     if top_k < 1:
         raise BootstrapError("top-k must be at least 1")
-    if top_k > MAX_SELECTED_HARNESSES:
-        raise BootstrapError(
-            f"top-k cannot exceed {MAX_SELECTED_HARNESSES}; install at most three harnesses per run"
-        )
     unknown = sorted(set(requested or ()) - set(SUPPORTED_HARNESSES))
     if unknown:
         raise BootstrapError("unsupported harness name(s): " + ", ".join(unknown))
     requested_unique = list(dict.fromkeys(requested or ()))
-    if len(requested_unique) > MAX_SELECTED_HARNESSES:
-        raise BootstrapError(
-            f"select at most {MAX_SELECTED_HARNESSES} harnesses per install"
-        )
 
     candidates: list[dict[str, Any]] = []
     for order, name in enumerate(SUPPORTED_HARNESSES):
+        spec = HARNESS_BY_ID[name]
         roots = _roots()[name]
-        command = shutil.which(HARNESS_COMMANDS[name])
+        present, command = detect_harness(spec, resolver=shutil.which, home=_home())
         rote_ready = any(_has_skill(root, "rote") for root in roots)
         play_ready = any(_has_skill(root, "play") for root in roots)
-        present = command is not None or rote_ready or play_ready
         score = (100 if command else 0) + (30 if rote_ready else 0) + (20 if play_ready else 0) + (10 - order)
         candidates.append(
             {
@@ -989,7 +1111,11 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
                 "skill_roots": tuple(str(root) for root in roots),
                 "rote_skills_installed": rote_ready,
                 "play_skill_installed": play_ready,
-                "hooks": "managed" if name in {"codex", "claude", "cursor"} else "not_required",
+                "hooks": (
+                    "managed"
+                    if spec.hook_style in {"nested-json", "flat-json"}
+                    else "not_required"
+                ),
                 "score": score,
                 "detected": present,
                 "present": present,
@@ -1029,54 +1155,215 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
     ]
 
 
-def _parse_harness_selection(
-    answer: str, detected: Sequence[HarnessTarget]
-) -> list[str]:
-    defaults = [target.id for target in detected if target.selected]
-    normalized = answer.strip().lower()
-    if not normalized:
-        return defaults
-    if normalized in {"q", "quit", "cancel"}:
-        return []
-    tokens = [item for item in re.split(r"[\s,]+", normalized) if item]
-    if not tokens or any(not item.isdigit() for item in tokens):
-        raise BootstrapError("choose harnesses by number, separated by commas")
-    indexes = list(dict.fromkeys(int(item) for item in tokens))
-    if any(index < 1 or index > len(detected) for index in indexes):
-        raise BootstrapError(f"choose numbers from 1 to {len(detected)}")
-    if len(indexes) > MAX_SELECTED_HARNESSES:
-        raise BootstrapError(
-            f"select at most {MAX_SELECTED_HARNESSES} harnesses per install"
-        )
-    return [detected[index - 1].id for index in indexes]
+def _decode_harness_picker_key(sequence: bytes) -> str:
+    if sequence in {b"\x1b[A", b"\x1bOA"}:
+        return "up"
+    if sequence in {b"\x1b[B", b"\x1bOB"}:
+        return "down"
+    if sequence in {b"\r", b"\n"}:
+        return "confirm"
+    if sequence == b" ":
+        return "toggle"
+    if sequence.lower() == b"q" or sequence in {b"\x04", b"\x1b"}:
+        return "cancel"
+    if sequence.lower() in {b"k", b"w"}:
+        return "up"
+    if sequence.lower() in {b"j", b"s"} or sequence == b"\t":
+        return "down"
+    if sequence.lower() == b"a":
+        return "all"
+    if sequence.lower() == b"c":
+        return "clear"
+    return "unknown"
 
 
-def _render_harness_picker(detected: Sequence[HarnessTarget]) -> str:
-    default_indexes = [
-        str(index)
-        for index, target in enumerate(detected, start=1)
-        if target.selected
-    ]
+def _read_harness_picker_key(file_descriptor: int) -> str:
+    import select
+
+    first = os.read(file_descriptor, 1)
+    if not first:
+        return "cancel"
+    sequence = first
+    if first == b"\x1b":
+        for _ in range(2):
+            readable, _, _ = select.select([file_descriptor], [], [], 0.05)
+            if not readable:
+                break
+            sequence += os.read(file_descriptor, 1)
+    return _decode_harness_picker_key(sequence)
+
+
+def _update_harness_picker(
+    key: str,
+    detected: Sequence[HarnessTarget],
+    selected: Sequence[str],
+    active_index: int,
+) -> tuple[int, list[str], str | None, str | None]:
+    current = list(
+        dict.fromkeys(selected)
+    )
+    if not detected:
+        return 0, current, "cancel", None
+    active_index = max(0, min(active_index, len(detected) - 1))
+    if key == "up":
+        active_index = (active_index - 1) % len(detected)
+    elif key == "down":
+        active_index = (active_index + 1) % len(detected)
+    elif key == "toggle":
+        harness = detected[active_index].id
+        if harness in current:
+            current.remove(harness)
+        else:
+            current.append(harness)
+    elif key == "all":
+        current = [target.id for target in detected]
+    elif key == "clear":
+        current = []
+    elif key == "cancel":
+        return active_index, current, "cancel", None
+    elif key == "confirm":
+        if current:
+            return active_index, current, "confirm", None
+        return active_index, current, None, "Choose at least one app before continuing."
+    elif key == "unknown":
+        return active_index, current, None, "Use arrow keys, Space, Enter, or q."
+    detected_order = {target.id: index for index, target in enumerate(detected)}
+    current.sort(key=detected_order.__getitem__)
+    return active_index, current, None, None
+
+
+def _fit_picker_line(line: str, width: int | None) -> str:
+    if width is None or len(line) <= width:
+        return line
+    if width <= 1:
+        return line[:width]
+    return line[: width - 1] + "…"
+
+
+def _render_harness_picker(
+    detected: Sequence[HarnessTarget],
+    selected: Sequence[str] | None = None,
+    *,
+    active_index: int = 0,
+    message: str | None = None,
+    width: int | None = None,
+) -> str:
+    checked = set(
+        selected
+        if selected is not None
+        else [target.id for target in detected if target.selected]
+    )
     lines = [
         "",
-        "  Harnesses detected",
+        "  Select harnesses",
         "",
-        f"  Choose up to {MAX_SELECTED_HARNESSES} apps for this Play setup.",
+        "  The checked apps are recommended from this machine's detected setup.",
+        "  Use ↑/↓ to move, Space to toggle, and Enter to continue.",
+        "",
     ]
-    for index, target in enumerate(detected, start=1):
+    for index, target in enumerate(detected):
+        spec = HARNESS_BY_ID[target.id]
+        checkbox = "✓" if target.id in checked else " "
+        pointer = "❯" if index == active_index else " "
         recommendation = "  recommended" if target.selected else ""
-        lines.append(f"    [{index}] {target.label}{recommendation}")
+        lines.append(
+            f"  {pointer} [{checkbox}] {spec.glyph} {target.label:<26} {spec.play_entry}{recommendation}"
+        )
+    shared_labels = [
+        spec.label for spec in HARNESS_SPECS if "agents" in spec.skill_sources
+    ]
     lines.extend(
         [
             "",
-            "  Shared harness support",
-            "    Kimi, OpenCode, and DeepSeek Harness use ~/.agents/skills.",
-            "    Play creates that directory when missing and updates only Play-owned entries.",
+            "  Shared skills: ~/.agents/skills",
+            f"  Used by: {', '.join(shared_labels)}",
+            "  Play updates only Play-owned entries in that shared root.",
             "",
-            f"  Select apps [{','.join(default_indexes)}], or q to cancel: ",
+            (
+                f"  {message}"
+                if message
+                else f"  {len(checked)} checked · a selects all · c clears · q cancels"
+            ),
         ]
     )
-    return "\n".join(lines)
+    return "\n".join(_fit_picker_line(line, width) for line in lines)
+
+
+def _redraw_harness_picker(
+    output: Any,
+    frame: str,
+    previous_line_count: int,
+) -> int:
+    lines = frame.split("\n")
+    if previous_line_count:
+        output.write(f"\x1b[{previous_line_count}A")
+    for line in lines:
+        output.write(f"\r\x1b[2K{line}\n")
+    for _ in range(max(0, previous_line_count - len(lines))):
+        output.write("\r\x1b[2K\n")
+    output.flush()
+    return len(lines)
+
+
+def _run_harness_picker(
+    detected: Sequence[HarnessTarget],
+    stream: Any,
+    output: Any,
+) -> list[str]:
+    import termios
+    import tty
+
+    file_descriptor = stream.fileno()
+    try:
+        terminal_state = termios.tcgetattr(file_descriptor)
+    except termios.error as error:
+        raise BootstrapError(
+            "harness selection needs a terminal with arrow-key support; "
+            "automation must pass --harness or set PLAY_INSTALL_YES=1"
+        ) from error
+    try:
+        width = max(20, os.get_terminal_size(output.fileno()).columns - 1)
+    except (AttributeError, OSError):
+        width = max(20, shutil.get_terminal_size(fallback=(100, 24)).columns - 1)
+    selected = [target.id for target in detected if target.selected]
+    active_index = 0
+    message = None
+    previous_line_count = 0
+    output.write("\x1b[?25l")
+    output.flush()
+    try:
+        tty.setcbreak(file_descriptor)
+        while True:
+            frame = _render_harness_picker(
+                detected,
+                selected,
+                active_index=active_index,
+                message=message,
+                width=width,
+            )
+            previous_line_count = _redraw_harness_picker(
+                output, frame, previous_line_count
+            )
+            key = _read_harness_picker_key(file_descriptor)
+            active_index, selected, outcome, message = _update_harness_picker(
+                key, detected, selected, active_index
+            )
+            if outcome == "confirm":
+                final_frame = _render_harness_picker(
+                    detected,
+                    selected,
+                    active_index=active_index,
+                    message=f"✓ {len(selected)} apps selected.",
+                    width=width,
+                )
+                _redraw_harness_picker(output, final_frame, previous_line_count)
+                return selected
+            if outcome == "cancel":
+                return []
+    finally:
+        termios.tcsetattr(file_descriptor, termios.TCSADRAIN, terminal_state)
+        output.write("\x1b[?25h")
+        output.flush()
 
 
 def _missing_harness_advisory(requested: Sequence[str] | None = None) -> str:
@@ -1136,6 +1423,8 @@ def _choose_detected_harnesses(*, top_k: int) -> list[str]:
     output = sys.stderr
     if sys.stdin.isatty():
         stream = sys.stdin
+        if not output.isatty():
+            output = stream
     else:
         try:
             stream = open("/dev/tty", "r+", encoding="utf-8")
@@ -1147,17 +1436,7 @@ def _choose_detected_harnesses(*, top_k: int) -> list[str]:
                 "--harness or set PLAY_INSTALL_YES=1"
             ) from error
     try:
-        while True:
-            print(_render_harness_picker(detected), end="", file=output, flush=True)
-            answer = stream.readline()
-            if not answer:
-                raise BootstrapError(
-                    "harness selection ended before a choice was received"
-                )
-            try:
-                return _parse_harness_selection(answer, detected)
-            except BootstrapError as error:
-                print(f"  {error}.\n", file=output, flush=True)
+        return _run_harness_picker(detected, stream, output)
     finally:
         if close_stream:
             stream.close()
@@ -1167,7 +1446,7 @@ def _shared_agents_plan(selected: Sequence[str]) -> dict[str, Any]:
     targets = [
         harness
         for harness in selected
-        if harness in {"kimi", "opencode", "deepseek"}
+        if "agents" in HARNESS_BY_ID[harness].skill_sources
     ]
     root = Path(
         os.environ.get("AGENTS_HOME", _home() / ".agents")
@@ -1194,6 +1473,13 @@ def build_plan(
         codex_disabled_play_entries()
     shared_agents = _shared_agents_plan(selected)
     play_state = _play_update_snapshot()
+    play_install_state = str(play_state["install_state"])
+    install_effects = {
+        "fresh": "installs Play-owned state while preserving unrelated harness settings",
+        "verify": "keeps byte-current Play files in place, repairs drift if found, and verifies every selected harness",
+        "update": "replaces the older Play version after a recovery snapshot while preserving unrelated harness settings",
+        "repair": "backs up the damaged Play state, restores missing managed files, and preserves unrelated harness settings",
+    }
     tulving = probe_tulving(resolver=shutil.which, check_update=True)
     rote_state = _rote_snapshot(runner)
     rote = rote_state["path"]
@@ -1340,7 +1626,7 @@ def build_plan(
         },
         {
             "id": "backup_play_state",
-            "effect": "backs up every detected Play-owned skill, hook, launcher, profile, portable copy, model asset, and plugin state before overwrite; restores it automatically if replacement verification fails",
+            "effect": "snapshots every detected Play-owned skill, hook, launcher, profile, portable copy, model asset, and plugin state before convergence; restores it automatically if verification fails",
             "targets": selected,
             "recommended": True,
         },
@@ -1352,7 +1638,7 @@ def build_plan(
         },
         {
             "id": "install_play",
-            "effect": "fully overwrites Play-owned state with the selected version while preserving unrelated harness settings",
+            "effect": install_effects[play_install_state],
             "targets": selected,
         },
         {
@@ -1374,7 +1660,8 @@ def build_plan(
         "play": play_state,
         "os": _os_snapshot(),
         "top_k": top_k,
-        "max_selected_harnesses": MAX_SELECTED_HARNESSES,
+        "default_selected_harnesses": DEFAULT_SELECTED_HARNESSES,
+        "max_parallel_harnesses": MAX_PARALLEL_HARNESSES,
         "selected_harnesses": selected,
         "shared_agents": shared_agents,
         "recovery": {
@@ -3635,36 +3922,28 @@ def _post_install_tutorial(selected_harnesses: list[str]) -> list[str]:
 
     lines = [
         "",
-        "  How Play helps without getting in the way",
+        "  Understand Play — optional",
         "",
         "    Rote turns a successful agent run into an inspectable, repeatable Play that can travel across harnesses, models, machines, and teams.",
-        "",
-        "    1. Ask your agent for normal work",
-        '       Try: "Check the status of PR 2021."',
-        "       Play checks installed Plays and the refreshed authorized catalog.",
-        "",
-        "    2. Use a suggestion only when it helps",
-        "       Play found     A strong match appears as one quiet line.",
-        "       Possible Play  A weaker match appears as a passive option.",
-        "       No match       Play stays silent; your agent continues normally.",
-        "",
-        "    3. Explore on purpose when no Play covers the outcome",
+        "    Want the two-minute tour? Type `play guide` in any ready agent.",
+        "    You can also use that agent's native command:",
     ]
-    commands = {
-        "codex": "$play explore create a repeatable release check",
-        "claude": "/play explore create a repeatable release check",
-    }
     for harness in selected_harnesses:
-        command = commands.get(harness)
-        if command is not None:
-            lines.append(f"       {LABELS[harness]:<12} {command}")
+        launch = HARNESS_LAUNCH.get(str(harness))
+        if launch is None:
+            continue
+        _, invocation = launch
+        lines.append(f"       {LABELS[harness]:<28} {invocation} guide")
     lines.extend(
         [
-            "       Explore searches existing Plays first, then records new work from the start.",
             "",
-            "    Your control",
-            "       Search is automatic. Pull and run always require approval.",
-            "       Ignore a suggestion and normal work continues without Play.",
+            "    The guide explains What's New, Hello, running someone else's Play,",
+            "    where Plays come from, creating your own, sharing, and repeating later.",
+            "",
+            "  Or start working",
+            "    Ask your agent for the outcome you want.",
+            "    Match → inspect and approve → verified result",
+            "    No match → Play steps aside → your agent continues normally",
         ]
     )
     return lines
@@ -3692,6 +3971,90 @@ def _version_transition(before: object, after: object) -> str:
     return "not installed"
 
 
+def _wrap_terminal_card_line(line: str, width: int) -> list[str]:
+    if not line:
+        return [""]
+    leading = len(line) - len(line.lstrip(" "))
+    prefix = " " * min(leading, max(0, width - 1))
+    content = line.lstrip(" ")
+    available = max(1, width - len(prefix))
+    return textwrap.wrap(
+        content,
+        width=available,
+        initial_indent=prefix,
+        subsequent_indent=prefix,
+        break_long_words=True,
+        break_on_hyphens=False,
+        replace_whitespace=False,
+    ) or [prefix]
+
+
+def _terminal_card(
+    title: str,
+    lines: Sequence[str],
+    *,
+    width: int = TERMINAL_CARD_WIDTH,
+) -> str:
+    width = max(40, width)
+    inner_width = width - 4
+    title_segment = f"─ ◆ {title} "
+    top = "╭" + title_segment + "─" * max(0, width - len(title_segment) - 2) + "╮"
+    body: list[str] = []
+    for line in lines:
+        for wrapped in _wrap_terminal_card_line(line, inner_width):
+            body.append(f"│ {wrapped:<{inner_width}} │")
+    bottom = "╰" + "─" * (width - 2) + "╯"
+    return "\n".join([top, *body, bottom])
+
+
+def _update_display(status: object) -> tuple[str, str]:
+    normalized = str(status or "unknown").lower()
+    if normalized == "current":
+        return "✓", "CURRENT · checked"
+    if normalized in {"available", "update_available", "outdated"}:
+        return "↑", "UPDATE AVAILABLE · checked"
+    if normalized == "not_installed":
+        return "+", "NOT INSTALLED"
+    if normalized == "check_failed":
+        return "!", "UPDATE CHECK FAILED"
+    if normalized == "repair_required":
+        return "!", "REPAIR REQUIRED"
+    return "·", normalized.upper()
+
+
+def _component_version(value: object) -> str:
+    return _reported_version(value) or "not installed"
+
+
+def _display_path(value: object) -> str:
+    text = str(value or "")
+    home = str(_home())
+    if text == home:
+        return "~"
+    if text.startswith(home + os.sep):
+        return "~" + text[len(home) :]
+    return text
+
+
+def _display_restore_command(command: str) -> str:
+    marker = "play-bootstrap restore"
+    index = command.find(marker)
+    compact = command[index:] if index >= 0 else command
+    return compact.replace(str(_home()), "~")
+
+
+def _update_receipt_line(
+    label: str,
+    command_text: str,
+    update: object,
+) -> str:
+    if isinstance(update, dict) and update.get("check_command"):
+        return f"    ✓ {label:<9} {command_text}"
+    if isinstance(update, dict) and update.get("status") == "not_installed":
+        return f"    · {label:<9} skipped · not installed"
+    return f"    · {label:<9} update check not recorded"
+
+
 def _render_status_card(report: dict[str, Any]) -> str:
     """Render the curl installer's concise, action-oriented final screen."""
 
@@ -3713,10 +4076,6 @@ def _render_status_card(report: dict[str, Any]) -> str:
         for step in steps
     )
     lines = [
-        "",
-        "+------------------------------------------------------------+",
-        "| Play setup                                                 |",
-        "+------------------------------------------------------------+",
         f"  Status: {status_label}",
         f"  Run:    {report['run_id']}",
         "",
@@ -3724,7 +4083,7 @@ def _render_status_card(report: dict[str, Any]) -> str:
     ]
     system = report.get("os")
     if isinstance(system, dict) and system.get("display"):
-        lines.insert(6, f"  OS:     {system['display']}")
+        lines.insert(2, f"  OS:     {system['display']}")
     for harness in report["selected_harnesses"]:
         harness_steps = [step for step in steps if step.get("target") == harness]
         if status == "rolled_back":
@@ -3744,19 +4103,47 @@ def _render_status_card(report: dict[str, Any]) -> str:
             state = "ACTION REQUIRED"
         else:
             state = "READY"
-        lines.append(f"    {LABELS.get(harness, harness):<14} {state}")
+        state_icon = "✓" if state == "READY" else ("↺" if state == "RESTORED" else "!")
+        lines.append(f"    {state_icon} {LABELS.get(harness, harness):<14} {state}")
 
     play = report.get("play", {})
     rote = report.get("rote", {})
     tulving = report.get("tulving", {})
     if isinstance(play, dict):
+        play_mode = str(play.get("install_state") or "unknown").upper()
+        rote_before = rote.get("before", {}) if isinstance(rote, dict) else {}
+        rote_update = (
+            rote_before.get("update", {}) if isinstance(rote_before, dict) else {}
+        )
+        tulving_before = (
+            tulving.get("before", {}) if isinstance(tulving, dict) else {}
+        )
+        tulving_update = (
+            tulving_before.get("update", {})
+            if isinstance(tulving_before, dict)
+            else {}
+        )
+        rote_icon, rote_state = _update_display(
+            rote_update.get("status") if isinstance(rote_update, dict) else None
+        )
+        tulving_icon, tulving_state = _update_display(
+            tulving_update.get("status") if isinstance(tulving_update, dict) else None
+        )
         lines.extend(
             [
                 "",
                 "  Components",
-                f"    Play      {_version_transition(play.get('before'), play.get('after'))}",
-                f"    Rote      {_version_transition(rote.get('before'), rote.get('after'))}",
-                f"    Tulving   {_version_transition(tulving.get('before'), tulving.get('after'))}",
+                f"    ✓ Play       {_version_transition(play.get('before'), play.get('after'))} · {play_mode}",
+                f"    {rote_icon} Rote       {_version_transition(rote.get('before'), rote.get('after'))} · {rote_state}",
+                f"    {tulving_icon} Tulving    {_version_transition(tulving.get('before'), tulving.get('after'))} · {tulving_state}",
+                "",
+                "  Update receipts",
+                _update_receipt_line(
+                    "Rote", "rote self-update --check", rote_update
+                ),
+                _update_receipt_line(
+                    "Tulving", "tulving update --check", tulving_update
+                ),
             ]
         )
 
@@ -3853,7 +4240,7 @@ def _render_status_card(report: dict[str, Any]) -> str:
             lines.extend(
                 [
                     "",
-                    "  Complete the action above before trying the tutorial.",
+                    "  Complete the action above before asking for the guide.",
                 ]
             )
         lines.extend(_post_install_tutorial(report["selected_harnesses"]))
@@ -3877,8 +4264,8 @@ def _render_status_card(report: dict[str, Any]) -> str:
             [
                 "",
                 "  Detailed report",
-                f"    {report_paths.get('markdown')}",
-                f"    {report_paths.get('json')}",
+                f"    {_display_path(report_paths.get('markdown'))}",
+                f"    {_display_path(report_paths.get('json'))}",
             ]
         )
     backup = report.get("backup")
@@ -3887,18 +4274,43 @@ def _render_status_card(report: dict[str, Any]) -> str:
         and backup.get("has_previous_state") is True
         and isinstance(backup.get("restore_command"), str)
     ):
+        recovery_summary = (
+            "The current Play state was snapshotted before verification."
+            if isinstance(play, dict) and play.get("install_state") == "verify"
+            else "The previous Play state was snapshotted before convergence."
+        )
         lines.extend(
             [
                 "",
                 "  Recovery point",
-                "    The Play state replaced by this install was backed up.",
+                f"    {recovery_summary}",
                 "    To review and restore it:",
-                f"    {backup['restore_command']}",
+                f"    {_display_restore_command(str(backup['restore_command']))}",
                 f"    Play retains the newest {BACKUP_RETENTION} verified recovery points.",
             ]
         )
-    lines.extend(["+------------------------------------------------------------+", ""])
-    return "\n".join(lines)
+    play_mode = (
+        str(play.get("install_state") or "unknown")
+        if isinstance(play, dict)
+        else "unknown"
+    )
+    pro_tip = {
+        "fresh": "Rerun this installer later to verify the same Play version.",
+        "verify": "A current install stays in place unless Play detects file drift.",
+        "update": "The recovery command above can restore the pre-update snapshot.",
+        "repair": "The damaged state was snapshotted before missing files were restored.",
+    }.get(play_mode, "Detailed JSON and Markdown receipts preserve the full setup evidence.")
+    lines.extend(
+        [
+            "",
+            f"  ✦ Pro tip · {pro_tip}",
+            "",
+            "  ☕ Easter egg · Watch the agent's route unfold",
+            "    Run `play journey view --active`.",
+            "    Choose the active workspace on the left, press Play, then grab a coffee.",
+        ]
+    )
+    return "\n" + _terminal_card("Play setup", lines) + "\n"
 
 
 def _human_step_detail(step: dict[str, Any]) -> str:
@@ -3924,56 +4336,58 @@ def _human_step_detail(step: dict[str, Any]) -> str:
 
 
 def _render_plan(plan: dict[str, Any]) -> str:
-    lines = [
-        "",
-        "+------------------------------------------------------------+",
-        "| Play setup plan                                            |",
-        "+------------------------------------------------------------+",
-        f"  Version: {plan.get('play_version', 'unknown')}",
-        f"  Plan:    {plan['plan_id']}",
-        "",
-        "  Play",
-    ]
     play = plan.get("play", {})
-    if isinstance(play, dict):
-        lines.append(
-            f"    Installed: {play.get('installed_version') or 'not installed'}"
-        )
-        lines.append(f"    Target:    {play.get('target_version') or 'unknown'}")
-        lines.append(f"    Update:    {str(play.get('update_status') or 'unknown').upper()}")
-    lines.extend(
-        [
-            "",
-        "  Rote",
-        ]
+    play_mode = (
+        str(play.get("install_state") or "unknown").upper()
+        if isinstance(play, dict)
+        else "UNKNOWN"
     )
+    lines = [
+        f"  Review: READY TO APPLY · {play_mode}",
+        f"  Version: {plan.get('play_version', 'unknown')}",
+        "",
+        "  Components",
+    ]
+    if isinstance(play, dict):
+        installed = str(play.get("installed_version") or "not installed")
+        target = str(play.get("target_version") or "unknown")
+        transition = target if installed == target else f"{installed} → {target}"
+        play_icon = "✓" if play_mode == "VERIFY" else ("!" if play_mode == "REPAIR" else "↑")
+        lines.append(
+            f"    {play_icon} Play       {transition:<22} {play_mode}"
+        )
     rote = plan["rote"]
-    if rote["path"]:
-        lines.append(f"    Installed: {rote['version'] or 'unknown version'}")
-        lines.append(f"    Path:      {rote['path']}")
-    else:
-        lines.append("    Status:    NOT INSTALLED")
     update = rote["update"]
-    lines.append(f"    Update:    {str(update['status']).upper()}")
+    rote_icon, rote_update = _update_display(update.get("status"))
+    lines.append(
+        f"    {rote_icon} Rote       {str(rote.get('version') or 'not installed'):<22} {rote_update}"
+    )
     tulving = plan.get("tulving", {})
     tulving_update = tulving.get("update", {}) if isinstance(tulving, dict) else {}
-    lines.extend(["", "  Recurring Plays (optional)"])
-    if isinstance(tulving, dict) and tulving.get("ready") is True:
-        lines.append("    Tulving:   READY")
-        lines.append(f"    Path:      {tulving.get('executable')}")
-    elif isinstance(tulving, dict) and tulving.get("available") is True:
-        lines.append("    Tulving:   INSTALLED — CLOCK NOT READY")
-        lines.append("    Choice:    Enable during setup or leave scheduling off")
-    else:
-        lines.append("    Tulving:   NOT INSTALLED")
-        lines.append("    Choice:    Install Tulving or leave scheduling off")
     if isinstance(tulving_update, dict):
-        update_status = str(tulving_update.get("status") or "unknown").upper()
-        lines.append(f"    Update:    {update_status}")
-        if tulving_update.get("status") == "available":
-            lines.append(
-                f"    Version:   {tulving_update.get('installed')} → {tulving_update.get('latest')}"
-            )
+        tulving_icon, tulving_status = _update_display(tulving_update.get("status"))
+        installed_tulving = str(
+            tulving_update.get("installed")
+            or _reported_version(tulving)
+            or "not installed"
+        )
+        latest_tulving = tulving_update.get("latest")
+        tulving_version = (
+            f"{installed_tulving} → {latest_tulving}"
+            if tulving_update.get("status") == "available" and latest_tulving
+            else installed_tulving
+        )
+        clock = "clock ready" if tulving.get("ready") is True else "clock off"
+        lines.append(
+            f"    {tulving_icon} Tulving    {tulving_version:<22} {tulving_status} · {clock}"
+        )
+    lines.extend(["", "  Update checks"])
+    lines.append(_update_receipt_line("Rote", "rote self-update --check", update))
+    lines.append(
+        _update_receipt_line(
+            "Tulving", "tulving update --check", tulving_update
+        )
+    )
     lines.extend(["", "  Apps"])
     skill_states = {
         str(item["provider"]): item
@@ -4006,17 +4420,27 @@ def _render_plan(plan: dict[str, Any]) -> str:
             state = "REFRESH" if item.get("installed") else "INSTALL"
         else:
             state = "CURRENT"
-        lines.append(f"    {label:<28} Rote skills: {state}")
-    lines.extend(["", "  Will do"])
-    number = 1
-    for action in plan["actions"]:
-        if action["id"] == "keep_rote_current" or not action.get("recommended", True):
-            continue
-        lines.append(f"    {number}. {action['effect']}")
-        number += 1
+        state_icon = "✓" if state == "CURRENT" else ("↑" if state == "REFRESH" else "+")
+        lines.append(f"    {state_icon} {label:<27} Rote skills · {state}")
+    lines.extend(
+        [
+            "",
+            "  Changes",
+            "    1. Verify the Rote identity and component update receipts.",
+            "    2. Snapshot prior Play-owned state before convergence.",
+            "    3. Prepare selected skill roots while preserving unrelated entries.",
+            "    4. Converge Play files, hooks, launchers, and the public Play cache.",
+            "    5. Verify each app and roll back automatically if verification fails.",
+            "",
+            "  Safety",
+            "    ✓ Preserve unrelated harness settings and shared skill entries.",
+            "    ✓ Keep a recovery point before changing existing Play state.",
+            "    ✓ Roll back automatically when verification fails.",
+        ]
+    )
     approvals = [action for action in plan["actions"] if action.get("approval_required")]
     if approvals:
-        lines.extend(["", "  Safety check"])
+        lines.extend(["", "  Separate approval"])
         if any(action.get("id") == "install_rote" for action in approvals):
             lines.append(
                 "    Installing Rote uses its official remote installer; approval is checked before execution."
@@ -4025,8 +4449,19 @@ def _render_plan(plan: dict[str, Any]) -> str:
             lines.append(
                 "    Tulving installation, update, or clock initialization requires separate approval."
             )
-    lines.extend(["+------------------------------------------------------------+", ""])
-    return "\n".join(lines)
+    lines.extend(
+        [
+            "",
+            "  Locations",
+            f"    Rote      {_display_path(rote.get('path')) if rote.get('path') else 'not installed'}",
+            f"    Tulving   {_display_path(tulving.get('executable')) if isinstance(tulving, dict) and tulving.get('executable') else 'not installed'}",
+            "",
+            "  Plan ID",
+            f"    {plan['plan_id']}",
+            "  ✦ Pro tip · Press Enter to accept the recommended setup; detailed mode changes presentation, not safety.",
+        ]
+    )
+    return "\n" + _terminal_card("Review setup", lines) + "\n"
 
 
 def _render_guided_plan(plan: dict[str, Any]) -> str:
@@ -4036,6 +4471,8 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
         play_summary = f"Install Play {plan.get('play_version', 'unknown')}"
     elif play_status == "available":
         play_summary = f"Update Play to {plan.get('play_version', 'unknown')}"
+    elif play_status == "repair_required":
+        play_summary = f"Repair Play {plan.get('play_version', 'unknown')} from a recovery snapshot"
     else:
         play_summary = f"Verify Play {plan.get('play_version', 'unknown')}"
     rote = plan["rote"]
@@ -4052,10 +4489,18 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
     )
     app_count = len(plan["selected_harnesses"])
     app_word = "app" if app_count == 1 else "apps"
+    convergence_summary = {
+        "fresh": "Install Play-owned app state while preserving unrelated settings",
+        "verify": "Keep current Play files in place and repair only detected drift",
+        "update": "Snapshot the current version, then update Play-owned app state",
+        "repair": "Snapshot the damaged state, then restore missing Play-owned files",
+    }.get(
+        str(play.get("install_state") or "unknown")
+        if isinstance(play, dict)
+        else "unknown",
+        "Converge Play-owned app state while preserving unrelated settings",
+    )
     lines = [
-            "",
-            "  Your setup",
-            "",
             f"    Play   {play_summary}",
             f"    Rote   {rote_summary}",
             f"    Apps   {apps}",
@@ -4099,7 +4544,7 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
             "    1. Verify your Rote identity; headless machines can claim credentials provisioned elsewhere",
             "    2. Cache a verified public Play catalog for What’s New",
             f"    3. Prepare Rote and its skills for {app_count} {app_word}",
-            "    4. Back up and replace Play-owned harness state while preserving unrelated settings",
+            f"    4. {convergence_summary}",
             "    5. Verify every app and save a detailed receipt",
         ]
     )
@@ -4120,10 +4565,9 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
         [
             "",
             "  Credentials stay on this machine. Plays disclose writes before they run.",
-            "",
         ]
     )
-    return "\n".join(lines)
+    return "\n" + _terminal_card("Quick review", lines) + "\n"
 
 
 def _confirm(question: str, *, default: bool) -> bool:
@@ -4167,67 +4611,169 @@ def _confirm(question: str, *, default: bool) -> bool:
     raise BootstrapError("approval must be yes or no")
 
 
+def _login_method_options(browser_mode: str) -> tuple[tuple[str, str], ...]:
+    if browser_mode == "headless":
+        return (
+            ("remote", "Sign in from another machine"),
+            ("google", "Continue with Google using an SSH-forwarded callback"),
+            ("github", "Continue with GitHub using an SSH-forwarded callback"),
+        )
+    return (
+        ("google", "Continue with Google"),
+        ("github", "Continue with GitHub"),
+        ("remote", "Sign in from another machine"),
+    )
+
+
+def _update_login_picker(
+    key: str,
+    option_count: int,
+    active_index: int,
+) -> tuple[int, str | None, str | None]:
+    if option_count < 1:
+        return 0, "cancel", None
+    active_index = max(0, min(active_index, option_count - 1))
+    if key == "up":
+        active_index = (active_index - 1) % option_count
+    elif key == "down":
+        active_index = (active_index + 1) % option_count
+    elif key in {"toggle", "confirm"}:
+        return active_index, "confirm", None
+    elif key == "cancel":
+        return active_index, "cancel", None
+    elif key in {"unknown", "all", "clear"}:
+        return active_index, None, "Use arrow keys, Space, Enter, or q."
+    return active_index, None, None
+
+
+def _render_login_picker(
+    browser_mode: str,
+    *,
+    active_index: int = 0,
+    message: str | None = None,
+    width: int | None = None,
+) -> str:
+    options = _login_method_options(browser_mode)
+    active_index = max(0, min(active_index, len(options) - 1))
+    lines = [
+        "",
+        "  Sign in to Rote",
+        "",
+    ]
+    if browser_mode == "headless":
+        lines.extend(
+            [
+                "  No browser session was detected on this machine.",
+                "  Choose how to verify your identity before Play is activated.",
+            ]
+        )
+    else:
+        lines.append("  Choose how to verify your identity before Play is activated.")
+    lines.extend(
+        [
+            "  Use ↑/↓ to move, Space or Enter to choose, and q to cancel.",
+            "",
+        ]
+    )
+    for index, (_, label) in enumerate(options):
+        pointer = "❯" if index == active_index else " "
+        radio = "●" if index == active_index else "○"
+        recommendation = "  recommended" if index == 0 else ""
+        lines.append(f"  {pointer} {radio} {label}{recommendation}")
+    lines.extend(
+        [
+            "",
+            f"  {message}" if message else "  One choice will be used for this sign-in.",
+        ]
+    )
+    return "\n".join(_fit_picker_line(line, width) for line in lines)
+
+
+def _run_login_picker(browser_mode: str, stream: Any, output: Any) -> str:
+    import termios
+    import tty
+
+    file_descriptor = stream.fileno()
+    try:
+        terminal_state = termios.tcgetattr(file_descriptor)
+    except termios.error as error:
+        raise BootstrapError(
+            "sign-in selection needs an interactive terminal; automation must pass "
+            "--login-provider google|github or --remote-auth"
+        ) from error
+    try:
+        width = max(20, os.get_terminal_size(output.fileno()).columns - 1)
+    except (AttributeError, OSError):
+        width = max(20, shutil.get_terminal_size(fallback=(100, 24)).columns - 1)
+    options = _login_method_options(browser_mode)
+    active_index = 0
+    message = None
+    previous_line_count = 0
+    output.write("\x1b[?25l")
+    output.flush()
+    try:
+        tty.setcbreak(file_descriptor)
+        while True:
+            frame = _render_login_picker(
+                browser_mode,
+                active_index=active_index,
+                message=message,
+                width=width,
+            )
+            previous_line_count = _redraw_harness_picker(
+                output, frame, previous_line_count
+            )
+            key = _read_harness_picker_key(file_descriptor)
+            active_index, outcome, message = _update_login_picker(
+                key, len(options), active_index
+            )
+            if outcome == "confirm":
+                method, label = options[active_index]
+                final_frame = _render_login_picker(
+                    browser_mode,
+                    active_index=active_index,
+                    message=f"✓ {label} selected.",
+                    width=width,
+                )
+                _redraw_harness_picker(output, final_frame, previous_line_count)
+                return method
+            if outcome == "cancel":
+                raise BootstrapError(
+                    "sign-in selection was cancelled before Play was activated"
+                )
+    finally:
+        termios.tcsetattr(file_descriptor, termios.TCSADRAIN, terminal_state)
+        output.write("\x1b[?25h")
+        output.flush()
+
+
 def _choose_login_method(browser_mode: str, *, stream=None) -> str:
     """Choose browser OAuth or a secure handoff from the controlling terminal."""
 
     close_stream = False
+    output = sys.stderr
     if stream is None:
         if sys.stdin.isatty():
             stream = sys.stdin
+            if not output.isatty():
+                output = stream
         else:
             try:
                 stream = open("/dev/tty", "r+", encoding="utf-8")
+                output = stream
                 close_stream = True
             except OSError as error:
                 raise BootstrapError(
                     "sign-in needs an interactive terminal, a pre-claimed Rote identity, "
                     "or --login-provider google|github"
                 ) from error
-    if browser_mode == "headless":
-        prompt = (
-            "\nNo browser session was detected on this machine.\n"
-            "Sign in or create your Rote account before Play is activated:\n"
-            "  1. Sign in from another machine (recommended)\n"
-            "  2. Continue with Google using an SSH-forwarded callback\n"
-            "  3. Continue with GitHub using an SSH-forwarded callback\n"
-            "Choose 1, 2, or 3 [1]: "
-        )
-    else:
-        prompt = (
-            "\nSign in or create your Rote account before Play is activated:\n"
-            "  1. Continue with Google (recommended)\n"
-            "  2. Continue with GitHub\n"
-            "  3. Sign in from another machine\n"
-            "Choose 1, 2, or 3 [1]: "
-        )
+    elif stream is not sys.stdin:
+        output = stream
     try:
-        if stream is sys.stdin:
-            print(prompt, end="", file=sys.stderr, flush=True)
-        else:
-            stream.write(prompt)
-            stream.flush()
-        answer = stream.readline()
+        return _run_login_picker(browser_mode, stream, output)
     finally:
         if close_stream:
             stream.close()
-    if not answer:
-        raise BootstrapError("interactive sign-in selection ended before a choice was received")
-    normalized = answer.strip().lower()
-    if browser_mode == "headless":
-        if normalized in {"", "1", "remote", "another", "another machine"}:
-            return "remote"
-        if normalized in {"2", "google", "continue with google"}:
-            return "google"
-        if normalized in {"3", "github", "continue with github"}:
-            return "github"
-    else:
-        if normalized in {"", "1", "google", "continue with google"}:
-            return "google"
-        if normalized in {"2", "github", "continue with github"}:
-            return "github"
-        if normalized in {"3", "remote", "another", "another machine"}:
-            return "remote"
-    raise BootstrapError("sign-in method must be Google, GitHub, or another machine")
 
 
 def write_report(report: dict[str, Any]) -> tuple[Path, Path]:
@@ -4258,7 +4804,7 @@ def apply(
     progress: Progress | None = None,
 ) -> dict[str, Any]:
     source = source.resolve()
-    run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     started = datetime.now(timezone.utc).isoformat()
     active_progress = _progress(progress)
     plan = prepared_plan or active_progress.call(
@@ -4277,13 +4823,22 @@ def apply(
         rote_plan.get("identity") if isinstance(rote_plan, dict) else None
     )
     if (
-        planned_identity != "authenticated"
+        planned_identity in {None, "required", "unavailable"}
         and login_provider is None
         and not remote_auth
     ):
-        raise BootstrapError(_registry_credentials_blocker())
+        login_provider = last_login_provider()
+        if login_provider is None:
+            raise BootstrapError(_registry_credentials_blocker())
     selected = list(plan["selected_harnesses"])
     steps: list[Step] = []
+
+    def finish_report(status: str) -> dict[str, Any]:
+        active_progress.complete_phase()
+        return _finish_report(
+            plan, run_id, started, steps, status=status, runner=runner
+        )
+
     rote = resolve_rote()
     initially_present = rote is not None
 
@@ -4315,14 +4870,14 @@ def apply(
             steps.append(_result_step("install_rote", result, command))
             rote = resolve_rote()
             if result.returncode != 0 or rote is None:
-                return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
+                return finish_report("blocked")
     update_status = plan["rote"]["update"]["status"]
     if initially_present and rote is not None and update_status == "available":
         command = [rote, "self-update", "--yes"]
         result = active_progress.command("Updating Rote", runner, command)
         steps.append(_result_step("update_rote", result, command))
         if result.returncode != 0:
-            return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
+            return finish_report("blocked")
     elif initially_present and rote is not None:
         detail = plan["rote"]["update"]["detail"]
         steps.append(
@@ -4335,12 +4890,12 @@ def apply(
         )
 
     if rote is None:
-        return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
+        return finish_report("blocked")
 
     compatibility_step = _rote_compatibility_step(rote, runner)
     steps.append(compatibility_step)
     if compatibility_step.status == "failed":
-        return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
+        return finish_report("blocked")
 
     identity_step, identity_ready = _identity_gate(
         rote,
@@ -4352,29 +4907,16 @@ def apply(
     if identity_step.changed and active_progress.enabled:
         print(f"✓ {identity_step.detail}", file=active_progress.stream, flush=True)
     if not identity_ready:
-        return _finish_report(
-            plan,
-            run_id,
-            started,
-            steps,
-            status="onboarding_required",
-            runner=runner,
-        )
+        return finish_report("onboarding_required")
 
+    active_progress.start_phase("Preparing Play")
     root_step = active_progress.call(
         "Preparing selected harness skill roots",
         lambda: prepare_selected_skill_roots(selected),
     )
     steps.append(root_step)
     if root_step.status == "failed":
-        return _finish_report(
-            plan,
-            run_id,
-            started,
-            steps,
-            status="blocked",
-            runner=runner,
-        )
+        return finish_report("blocked")
 
     skill_harnesses = _rote_skill_harnesses(
         selected, plan["rote_skills"], update_status
@@ -4415,7 +4957,7 @@ def apply(
             )
         )
         if skill_result.returncode != 0:
-            return _finish_report(plan, run_id, started, steps, status="blocked", runner=runner)
+            return finish_report("blocked")
 
     expected_version = (source / "VERSION").read_text(encoding="utf-8").strip()
     plan_targets = {
@@ -4423,9 +4965,10 @@ def apply(
         for target in plan["targets"]
         if isinstance(target, dict) and isinstance(target.get("id"), str)
     }
+    active_progress.start_phase("Protecting existing setup")
     try:
         backup_manifest = active_progress.call(
-            "Backing up existing Play state",
+            "Creating a Play recovery snapshot",
             lambda: backup_play_state(selected, plan_targets, run_id=run_id),
         )
     except Exception as error:
@@ -4436,32 +4979,26 @@ def apply(
                 str(error),
             )
         )
-        return _finish_report(
-            plan, run_id, started, steps, status="blocked", runner=runner
-        )
+        return finish_report("blocked")
     steps.append(
         Step(
             "backup_play_state",
             "completed",
-            f"Backed up detected Play-owned state before overwrite: {backup_manifest}",
+            f"Snapshotted detected Play-owned state before convergence: {backup_manifest}",
             changed=True,
             evidence=str(backup_manifest),
         )
     )
 
     def rollback_failed_update() -> dict[str, Any]:
+        active_progress.start_phase("Restoring previous setup")
         rollback_step = active_progress.call(
             "Restoring the previous Play version",
             lambda: _rollback_play_state(backup_manifest),
         )
         steps.append(rollback_step)
-        return _finish_report(
-            plan,
-            run_id,
-            started,
-            steps,
-            status="rolled_back" if rollback_step.status == "completed" else "blocked",
-            runner=runner,
+        return finish_report(
+            "rolled_back" if rollback_step.status == "completed" else "blocked"
         )
 
     def fail_update(step_id: str, error: Exception) -> dict[str, Any]:
@@ -4504,6 +5041,7 @@ def apply(
         and isinstance(plan_targets.get(harness, {}).get("command"), str)
         and plan_targets[harness]["command"]
     ]
+    active_progress.start_phase("Connecting selected apps")
 
     def converge_marketplace(harness: str) -> list[Step]:
         executable = str(plan_targets[harness]["command"])
@@ -4631,6 +5169,7 @@ def apply(
             command,
         )
 
+    active_progress.start_phase("Verifying the installation")
     try:
         verification_results = _parallel_harness_work(selected, verify_harness)
     except Exception as error:
@@ -4762,7 +5301,7 @@ def apply(
                 )
             )
             status = "action_required"
-    return _finish_report(plan, run_id, started, steps, status=status, runner=runner)
+    return finish_report(status)
 
 
 def _finish_report(
@@ -4807,6 +5346,16 @@ def _finish_report(
             "before": {"version": installed_play_version},
             "after": {"version": active_play_version},
             "target_version": target_play_version,
+            "install_state": (
+                planned_play.get("install_state")
+                if isinstance(planned_play, dict)
+                else None
+            ),
+            "missing_paths_before": (
+                planned_play.get("missing_paths", [])
+                if isinstance(planned_play, dict)
+                else []
+            ),
         },
         "rote": {
             "before": plan["rote"],
@@ -4976,7 +5525,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 payload = restore_play_state(restore_plan)
         elif args.command == "plan":
             payload = progress.call(
-                "Checking the Play setup plan",
+                "Checking Play, Rote, and Tulving updates",
                 lambda: build_plan(top_k=args.top_k, requested=args.harness),
             )
         elif args.command == "apply":
@@ -5002,7 +5551,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print("Play installation cancelled before any changes were made.")
                     return 0
             plan = progress.call(
-                "Checking the Play setup plan",
+                "Checking Play, Rote, and Tulving updates",
                 lambda: build_plan(
                     top_k=args.top_k, requested=requested_harnesses
                 ),
@@ -5016,6 +5565,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "choose either --login-provider or --remote-auth, not both"
                 )
             browser_mode = _browser_mode(args.browser_mode)
+            if (
+                plan["rote"].get("identity") in {None, "required", "unavailable"}
+                and login_provider is None
+                and not remote_auth
+                and browser_mode != "headless"
+            ):
+                login_provider = last_login_provider()
             renderer = _render_guided_plan if args.mode == "guided" else _render_plan
             print(renderer(plan), file=sys.stderr if args.json else sys.stdout)
             if not args.yes:
@@ -5030,7 +5586,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if plan["rote"]["path"] is None:
                     approve_remote_installer = True
                 if (
-                    plan["rote"].get("identity") != "authenticated"
+                    plan["rote"].get("identity") in {None, "required", "unavailable"}
                     and login_provider is None
                     and not remote_auth
                 ):
@@ -5072,7 +5628,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         default=False,
                     )
             elif (
-                plan["rote"].get("identity") != "authenticated"
+                plan["rote"].get("identity") in {None, "required", "unavailable"}
                 and login_provider is None
                 and not remote_auth
                 and browser_mode == "headless"

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from .identity import last_login_provider, remember_login_provider, rote_session_status
 from .private_store import PrivateStoreError, atomic_write_json, load_json, locked_store
 from .render import json_text
 from .sidekick import CAPTURE_REF, capture_for_settle, load_ledger
@@ -370,7 +371,7 @@ def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
     command = _validated_rote_command(onboarding.get("rote_command"))
     try:
         completed = subprocess.run(
-            [command, "whoami"],
+            [command, "whoami", "--check"],
             text=True,
             capture_output=True,
             check=False,
@@ -378,10 +379,56 @@ def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise OnboardingError("Rote identity probe failed") from error
-    combined = "\n".join(part for part in (completed.stdout, completed.stderr) if part)
+    recovered_provider = None
+    identity_status = rote_session_status(completed)
+    if identity_status == "required":
+        recovered_provider = last_login_provider()
+        if recovered_provider is not None:
+            try:
+                login = subprocess.run(
+                    [command, "login", "--provider", recovered_provider],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=600,
+                )
+                if login.returncode == 0:
+                    completed = subprocess.run(
+                        [command, "whoami", "--check"],
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                        timeout=15,
+                    )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        identity_status = rote_session_status(completed)
+    combined_parts = [
+        part for part in (completed.stdout, completed.stderr) if part
+    ]
+    if identity_status == "error":
+        raise OnboardingError("Rote identity check failed without requesting login")
     email_match = _OK_EMAIL.search(completed.stdout or "")
+    if identity_status == "authenticated" and email_match is None:
+        try:
+            details = subprocess.run(
+                [command, "whoami"],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            details = None
+        if details is not None:
+            combined_parts.extend(
+                part for part in (details.stdout, details.stderr) if part
+            )
+            if details.returncode == 0:
+                email_match = _OK_EMAIL.search(details.stdout or "")
+    combined = "\n".join(combined_parts)
     digest = hashlib.sha256(combined.encode()).hexdigest()
-    if completed.returncode != 0 or email_match is None:
+    if identity_status == "required":
         return {
             "schema": SCHEMA,
             "kind": "identity",
@@ -392,10 +439,10 @@ def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
             "identity_ref": f"sha256:{digest}",
             "whoami_ns": time.perf_counter_ns() - started,
         }
-    email = email_match.group(1).strip().lower()
-    handle = email.split("@", 1)[0]
+    email = email_match.group(1).strip().lower() if email_match is not None else None
+    handle = email.split("@", 1)[0] if email is not None else None
     _warm_caches_after_identity()
-    return {
+    result = {
         "schema": SCHEMA,
         "kind": "identity",
         "ok": True,
@@ -405,6 +452,9 @@ def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
         "identity_ref": f"sha256:{digest}",
         "whoami_ns": time.perf_counter_ns() - started,
     }
+    if recovered_provider is not None:
+        result["login_provider"] = recovered_provider
+    return result
 
 
 def _paused_rote_login(
@@ -468,6 +518,7 @@ def login_rote_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
             if isinstance(identity_ref, str) and identity_ref:
                 evidence_refs.append(identity_ref)
             if identity.get("identity_status") == "authenticated":
+                remember_login_provider(provider)
                 return {
                     "schema": SCHEMA,
                     "kind": "login",
@@ -550,8 +601,8 @@ def render_first_use_orientation(human_name: str) -> str:
             "",
             "**Use the form for your harness:**",
             "",
-            "- **Codex or Cursor:** `$play run hello`",
-            "- **Claude Code, Hermes, OpenCode, or DeepSeek Harness:** `/play run hello`",
+            "- **Codex:** `$play run hello`",
+            "- **Claude Code, Cursor, Hermes, OpenCode, or DeepSeek Harness:** `/play run hello`",
             "- **Kimi Code:** `/skill:play run hello`",
             "- **Plain-language compatibility:** `play run hello`",
             "",

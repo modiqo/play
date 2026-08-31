@@ -73,6 +73,7 @@ def _probe_tulving_update(executable: str, runner: Runner) -> dict[str, Any]:
             "update_available": None,
             "detail": output or f"update check exited {result.returncode}",
             "recommended_action": "review",
+            "check_command": command,
         }
     try:
         payload = json.loads(result.stdout)
@@ -84,6 +85,7 @@ def _probe_tulving_update(executable: str, runner: Runner) -> dict[str, Any]:
             "update_available": None,
             "detail": "Tulving returned an invalid update receipt.",
             "recommended_action": "review",
+            "check_command": command,
         }
     installed = payload.get("installed") if isinstance(payload, dict) else None
     latest = payload.get("latest") if isinstance(payload, dict) else None
@@ -102,6 +104,7 @@ def _probe_tulving_update(executable: str, runner: Runner) -> dict[str, Any]:
             "update_available": None,
             "detail": "Tulving returned an incomplete update receipt.",
             "recommended_action": "review",
+            "check_command": command,
         }
     return {
         "status": "available" if available else "current",
@@ -114,6 +117,7 @@ def _probe_tulving_update(executable: str, runner: Runner) -> dict[str, Any]:
             else f"Tulving {installed} is current."
         ),
         "recommended_action": "update" if available else "keep",
+        "check_command": command,
     }
 
 
@@ -157,6 +161,7 @@ def probe_tulving(
                 "update_available": None,
                 "detail": "Tulving is not installed.",
                 "recommended_action": "install",
+                "check_command": None,
             }
         return payload
     version_result = runner([executable, "--version"])
@@ -618,9 +623,55 @@ def _proxy_arguments(args: argparse.Namespace) -> list[str]:
     raise RecurrenceError(f"unsupported recurring command {command!r}")
 
 
+def recall_last_run(
+    schedule_id: str | None = None,
+    *,
+    resolver: Resolver = shutil.which,
+    runner: Runner = _run,
+) -> dict:
+    """Return the newest completed envelope retained in Tulving's ledger."""
+
+    executable = resolver("tulving")
+    if executable is None:
+        raise RecurrenceError(TULVING_INSTALL_GUIDANCE)
+    command = [
+        executable,
+        "recall",
+        "--since",
+        "1970-01-01T00:00:00Z",
+    ]
+    if schedule_id:
+        command.extend(["--schedule", schedule_id])
+    result = runner(command)
+    if result.returncode != 0:
+        raise RecurrenceError(f"Tulving recall failed: {_detail(result)}")
+
+    latest: dict | None = None
+    for line_number, line in enumerate((result.stdout or "").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            envelope = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise RecurrenceError(
+                f"Tulving recall returned invalid JSON on line {line_number}: {error.msg}"
+            ) from error
+        if not isinstance(envelope, dict):
+            raise RecurrenceError(
+                f"Tulving recall returned a non-object envelope on line {line_number}"
+            )
+        if envelope.get("missed") is not True:
+            latest = envelope
+    if latest is None:
+        scope = f" for schedule {schedule_id}" if schedule_id else ""
+        raise RecurrenceError(f"no completed recurring Play runs were found{scope}")
+    return latest
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Tulving's 'every' and 'add' write paths are bound to 'schedule'. "
             "The OS-only 'tick' and transport-only 'mcp' commands stay internal."
@@ -643,6 +694,10 @@ def _build_parser() -> argparse.ArgumentParser:
     recall.add_argument("--changed", action="store_true")
     recall.add_argument("--failed", action="store_true")
     recall.add_argument("--schedule", dest="schedule_id")
+    last = subparsers.add_parser(
+        "last", help="show the latest completed run envelope retained in the ledger"
+    )
+    last.add_argument("id", nargs="?", help="optional schedule id")
     why = subparsers.add_parser("why", help="show or replace a schedule's reason")
     why.add_argument("id")
     why.add_argument("text", nargs="*")
@@ -715,6 +770,12 @@ def main(
                 runner=input_runner,
             ).get("schedules", [])
             payload = {"schema": SCHEDULES_SCHEMA, "schedules": schedules}
+        elif args.command == "last":
+            payload = recall_last_run(
+                args.id,
+                resolver=resolver,
+                runner=runner,
+            )
         else:
             result = forward_tulving(
                 _proxy_arguments(args), resolver=resolver, runner=runner

@@ -57,10 +57,10 @@ class PreflightTest(unittest.TestCase):
 
     @patch("scripts.lib.play.preflight.run")
     @patch("scripts.lib.play.preflight.shutil.which", return_value="/bin/rote")
-    def test_clean_exit_without_ok_email_is_not_authenticated(
+    def test_legacy_logout_output_is_not_authenticated(
         self, _which: MagicMock, run_command: MagicMock
     ) -> None:
-        # rote whoami can exit 0 while reporting it is not logged in.
+        # Older Rote versions could exit 0 while reporting that login is required.
         run_command.side_effect = [
             MagicMock(
                 returncode=0,
@@ -78,6 +78,24 @@ class PreflightTest(unittest.TestCase):
         )
         self.assertFalse(authenticated["ok"])
         self.assertIn("Not logged in", authenticated["detail"])
+
+    @patch("scripts.lib.play.preflight.run")
+    @patch("scripts.lib.play.preflight.shutil.which", return_value="/bin/rote")
+    def test_silent_identity_check_is_authenticated(
+        self, _which: MagicMock, run_command: MagicMock
+    ) -> None:
+        run_command.side_effect = [
+            MagicMock(returncode=0, stdout="", stderr=""),
+            MagicMock(returncode=0, stdout="rote play\nUSAGE\n", stderr=""),
+        ]
+
+        payload = inspect("claude")
+
+        authenticated = next(
+            check for check in payload["checks"] if check["id"] == "authenticated"
+        )
+        self.assertTrue(authenticated["ok"])
+        self.assertEqual("Rote authentication verified.", authenticated["detail"])
 
     @patch("scripts.lib.play.preflight.inspect_harnesses")
     @patch("scripts.lib.play.preflight.run")

@@ -131,6 +131,10 @@ class RecurrenceTest(unittest.TestCase):
         self.assertEqual("available", payload["update"]["status"])
         self.assertEqual("0.1.2", payload["update"]["installed"])
         self.assertEqual("0.1.3", payload["update"]["latest"])
+        self.assertEqual(
+            ["/usr/local/bin/tulving", "update", "--check"],
+            payload["update"]["check_command"],
+        )
 
     def test_enable_synchronizes_available_tulving_update_after_consent(self) -> None:
         updated = False
@@ -542,6 +546,91 @@ class RecurrenceTest(unittest.TestCase):
                 self.assertEqual([["/usr/local/bin/tulving", *expected]], calls)
                 self.assertEqual("ok\n", output.getvalue())
 
+    def test_last_returns_the_latest_completed_envelope_from_the_full_ledger(self) -> None:
+        calls: list[list[str]] = []
+        output = StringIO()
+        envelopes = [
+            {"run_id": "run-old", "schedule_id": "abc", "missed": False},
+            {"run_id": "run-new", "schedule_id": "abc", "missed": False},
+            {"run_id": "missed-newer", "schedule_id": "abc", "missed": True},
+        ]
+
+        with redirect_stdout(output):
+            result = main(
+                ["last", "abc"],
+                resolver=lambda _name: "/usr/local/bin/tulving",
+                runner=lambda command: calls.append(list(command))
+                or completed(
+                    command,
+                    stdout="".join(json.dumps(item) + "\n" for item in envelopes),
+                ),
+            )
+
+        self.assertEqual(0, result)
+        self.assertEqual(
+            [
+                [
+                    "/usr/local/bin/tulving",
+                    "recall",
+                    "--since",
+                    "1970-01-01T00:00:00Z",
+                    "--schedule",
+                    "abc",
+                ]
+            ],
+            calls,
+        )
+        self.assertEqual("run-new", json.loads(output.getvalue())["run_id"])
+
+    def test_last_without_an_id_returns_the_latest_run_across_schedules(self) -> None:
+        calls: list[list[str]] = []
+        output = StringIO()
+
+        with redirect_stdout(output):
+            result = main(
+                ["last"],
+                resolver=lambda _name: "/usr/local/bin/tulving",
+                runner=lambda command: calls.append(list(command))
+                or completed(
+                    command,
+                    stdout=(
+                        '{"run_id":"first","missed":false}\n'
+                        '{"run_id":"latest","missed":false}\n'
+                    ),
+                ),
+            )
+
+        self.assertEqual(0, result)
+        self.assertEqual(
+            [
+                [
+                    "/usr/local/bin/tulving",
+                    "recall",
+                    "--since",
+                    "1970-01-01T00:00:00Z",
+                ]
+            ],
+            calls,
+        )
+        self.assertEqual("latest", json.loads(output.getvalue())["run_id"])
+
+    def test_last_fails_clearly_when_no_completed_run_exists(self) -> None:
+        errors = StringIO()
+
+        with redirect_stderr(errors):
+            result = main(
+                ["last", "abc"],
+                resolver=lambda _name: "/usr/local/bin/tulving",
+                runner=lambda command: completed(
+                    command,
+                    stdout='{"run_id":"missed","missed":true}\n',
+                ),
+            )
+
+        self.assertEqual(1, result)
+        self.assertIn("no completed recurring Play runs", errors.getvalue())
+        self.assertIn("schedule abc", errors.getvalue())
+
     def test_facade_rejects_ambiguous_bulk_lifecycle_requests(self) -> None:
         for arguments, message in (
             (["stop"], "one schedule id or --all"),
@@ -592,6 +681,7 @@ class RecurrenceTest(unittest.TestCase):
             "changed",
             "digest",
             "recall",
+            "last",
             "why",
             "now",
             "stop",

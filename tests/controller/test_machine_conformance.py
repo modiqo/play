@@ -147,6 +147,9 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertIn("The harness-native prefix activates Play", SKILL_TEXT)
         self.assertIn("`/skill:play` in Kimi Code", SKILL_TEXT)
         self.assertIn("Bare `run hello` stays with the agent", SKILL_TEXT)
+        self.assertIn("begins with `play guide`", SKILL_TEXT)
+        self.assertIn("scripts/bin/play-guide --harness <current-harness>", SKILL_TEXT)
+        self.assertIn("This read-only guide must not authenticate, search, pull", SKILL_TEXT)
 
     def test_empty_invocation_uses_typed_live_identity_or_setup(self) -> None:
         self.assertEqual("invoke", MACHINE["initial"])

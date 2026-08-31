@@ -16,12 +16,16 @@ class PluginPackageTest(unittest.TestCase):
         self.assertTrue((TARGET / "scripts/harness/install-all").is_file())
         self.assertTrue((TARGET / "scripts/harness/play-profile").is_file())
         self.assertTrue((TARGET / "scripts/harness/start-harness").is_file())
+        self.assertTrue((TARGET / "scripts/lib/play/harnesses.py").is_file())
+        self.assertTrue((TARGET / "scripts/lib/play/identity.py").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-activate").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-activate").stat().st_mode & 0o111)
         self.assertTrue((TARGET / "scripts/bin/play").is_file())
         self.assertTrue((TARGET / "scripts/bin/play").stat().st_mode & 0o111)
         self.assertTrue((TARGET / "scripts/bin/play-cheat-sheet").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-cheat-sheet").stat().st_mode & 0o111)
+        self.assertTrue((TARGET / "scripts/bin/play-guide").is_file())
+        self.assertTrue((TARGET / "scripts/bin/play-guide").stat().st_mode & 0o111)
         self.assertTrue((TARGET / "scripts/bin/play-journal").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-journal").stat().st_mode & 0o111)
         self.assertTrue((TARGET / "scripts/bin/play-journey").is_file())
@@ -87,6 +91,15 @@ class PluginPackageTest(unittest.TestCase):
         hooks = json.loads((ROOT / "plugins/play/hooks/hooks.json").read_text())
 
         self.assertEqual({}, hooks["hooks"])
+
+    def test_cursor_marketplace_points_at_the_cursor_plugin_payload(self) -> None:
+        marketplace = json.loads(
+            (ROOT / ".cursor-plugin/marketplace.json").read_text()
+        )
+
+        self.assertEqual("play-skills", marketplace["name"])
+        self.assertEqual("./plugins/play", marketplace["plugins"][0]["source"])
+        self.assertTrue((ROOT / "plugins/play/.cursor-plugin/plugin.json").is_file())
 
     def test_active_sources_have_no_legacy_flow_commands(self) -> None:
         files = [ROOT / "README.md", ROOT / "SKILL.md"]

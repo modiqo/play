@@ -23,10 +23,11 @@ delegation, retry, and tool loop: do not invoke Play or Rote skills, CLIs, runti
 adapters, workspaces, capture, or follow-up routing. Use harness-native tools or only the matched
 vendor API/CLI path named by the hook.
 
-The harness-native prefix activates Play: use `$play` in Codex or Cursor, `/play` in Claude Code,
-Hermes, OpenCode, or DeepSeek Harness, and `/skill:play` in Kimi Code. Plain `play` is the
-natural-language compatibility prefix. Bare `run hello` stays with the agent. Play stays silent and
-out of the agent's way.
+The harness-native prefix activates Play. Use `$play` in Codex and `/skill:play` in Kimi Code. Use
+`/play` in Claude Code, Cursor, Hermes, OpenCode, or DeepSeek Harness.
+
+Plain `play` is the natural-language compatibility prefix. Bare `run hello` stays with the agent.
+Play stays silent and out of the agent's way.
 
 A hook line beginning `Play suggestion:` is also not Play activation. The hook has already searched
 installed Plays and the refreshed authorized catalog cache. Present only the exact quiet or passive
@@ -61,6 +62,16 @@ If the unchanged trimmed request is `play cheat-sheet`, `$play cheat-sheet`, `/p
 machine or run preflight. Run the bundled `scripts/bin/play-cheat-sheet`, present its Markdown
 verbatim, and stop. This read-only help path must not search, capture, update preferences, or create
 a settle nudge.
+
+If the unchanged request begins with `play guide`, `$play guide`, `/play guide`, or
+`/skill:play guide`, do not enter the state machine or run preflight. Run the bundled
+`scripts/bin/play-guide --harness <current-harness>`, followed by any guide topic or question words.
+Use `codex`, `claude`, `kimi`, `cursor`, `hermes`, `opencode`, or `deepseek` as the harness value.
+Present its Markdown verbatim and stop.
+
+This read-only guide must not authenticate, search, pull, run, crystallize work, update preferences,
+or create a continuation. It may explain scheduling as a later capability. It must never probe
+Tulving, offer a cadence, or create a schedule.
 
 If the unchanged request is `play journal`, `$play journal`, `/play journal`,
 `/skill:play journal`, or asks to show the Play recall journal, do not enter the state machine or
@@ -124,6 +135,9 @@ enter the state machine for these owner-private operations:
 - “What changed?” maps to `play recurring recall --since <checkpoint> --changed`.
 
 - “What failed?” maps to `play recurring recall --since <checkpoint> --failed`.
+
+- “What was the last run?” maps to `play recurring last`. Add the schedule ID when the request
+  names one schedule. This returns the newest completed envelope and ignores missed-run markers.
 
 - “Check my inbox” runs both recall views, then `play recurring list --all --json` for retirements.
   Use the caller's owner-private last-checked time and advance it only after display. Compare schedule
@@ -329,6 +343,18 @@ Rote's own update channel and refreshes its installed skills after a Rote update
 Tulving's own update channel and requires separate default-no approval before installation, update,
 or clock initialization. Play replacement remains its own restorable transaction. Never claim that
 Play rollback downgrades Rote or Tulving; report every component's before and after version.
+When the user asks to update Play itself, use `play update`. It downloads the latest official source
+over HTTPS. It then enters the first installer's planned, backed-up, verified convergence flow. Do
+not ask an already-installed user to paste the curl bootstrap again.
+
+Use `rote whoami --check` at every Play-owned identity boundary. It refreshes usable authentication and
+returns exit `77` only when login is required. After a verified Google or GitHub login, remember
+only that provider name in Play's owner-private state.
+
+On a later exit `77`, run `rote login --provider <remembered-provider>` automatically. Require a
+successful `rote whoami --check` before continuing. If no provider is known, ask once. Never start
+login for a network, configuration, or persistence error. Never store tokens or email in the
+preference.
 
 ## Stay out of the way
 

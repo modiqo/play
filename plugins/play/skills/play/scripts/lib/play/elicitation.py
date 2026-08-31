@@ -11,6 +11,7 @@ from typing import Any, Mapping
 
 import yaml
 
+from .harnesses import native_prompt_surfaces
 from .render import json_text
 
 
@@ -18,11 +19,7 @@ class ElicitationError(ValueError):
     pass
 
 
-NATIVE_SURFACES = {
-    "codex": "request_user_input",
-    "claude": "askquestion",
-    "kimi": "askquestion",
-}
+NATIVE_SURFACES = native_prompt_surfaces()
 
 
 @dataclass(frozen=True)
