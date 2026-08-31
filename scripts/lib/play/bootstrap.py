@@ -4617,11 +4617,13 @@ def _login_method_options(browser_mode: str) -> tuple[tuple[str, str], ...]:
             ("remote", "Sign in from another machine"),
             ("google", "Continue with Google using an SSH-forwarded callback"),
             ("github", "Continue with GitHub using an SSH-forwarded callback"),
+            ("exit", "Exit setup"),
         )
     return (
         ("google", "Continue with Google"),
         ("github", "Continue with GitHub"),
         ("remote", "Sign in from another machine"),
+        ("exit", "Exit setup"),
     )
 
 
@@ -4657,21 +4659,24 @@ def _render_login_picker(
     active_index = max(0, min(active_index, len(options) - 1))
     lines = [
         "",
-        "  Sign in to Rote",
+        "  Rote sign-in required",
         "",
     ]
     if browser_mode == "headless":
         lines.extend(
             [
-                "  No browser session was detected on this machine.",
-                "  Choose how to verify your identity before Play is activated.",
+                "  No browser was detected on this machine.",
+                "  Rote sign-in is mandatory. Setup activates Play only after verification.",
             ]
         )
     else:
-        lines.append("  Choose how to verify your identity before Play is activated.")
+        lines.append(
+            "  Rote sign-in is mandatory. Setup activates Play only after verification."
+        )
     lines.extend(
         [
-            "  Use ↑/↓ to move, Space or Enter to choose, and q to cancel.",
+            "  Choose one method, or exit setup without changing Play-owned state.",
+            "  Use ↑/↓ to move, Space or Enter to choose, and q to exit.",
             "",
         ]
     )
@@ -4683,7 +4688,11 @@ def _render_login_picker(
     lines.extend(
         [
             "",
-            f"  {message}" if message else "  One choice will be used for this sign-in.",
+            (
+                f"  {message}"
+                if message
+                else "  Setup continues only after Rote verifies your identity."
+            ),
         ]
     )
     return "\n".join(_fit_picker_line(line, width) for line in lines)
@@ -4738,9 +4747,7 @@ def _run_login_picker(browser_mode: str, stream: Any, output: Any) -> str:
                 _redraw_harness_picker(output, final_frame, previous_line_count)
                 return method
             if outcome == "cancel":
-                raise BootstrapError(
-                    "sign-in selection was cancelled before Play was activated"
-                )
+                return "exit"
     finally:
         termios.tcsetattr(file_descriptor, termios.TCSADRAIN, terminal_state)
         output.write("\x1b[?25h")
@@ -5591,6 +5598,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     and not remote_auth
                 ):
                     login_method = _choose_login_method(browser_mode)
+                    if login_method == "exit":
+                        print(
+                            "Play setup exited before activation. Rote sign-in is mandatory "
+                            "to activate Play. Setup made no changes to Play-owned state."
+                        )
+                        return 0
                     if login_method == "remote":
                         remote_auth = True
                     else:

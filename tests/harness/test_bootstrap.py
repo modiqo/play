@@ -122,25 +122,29 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("remote", method)
         run_picker.assert_called_once_with("headless", stream, stream)
         picker = _render_login_picker("headless")
-        self.assertIn("No browser session was detected", picker)
+        self.assertIn("No browser was detected", picker)
         self.assertIn("❯ ● Sign in from another machine  recommended", picker)
         self.assertIn("SSH-forwarded callback", picker)
         self.assertIn("Space or Enter to choose", picker)
+        self.assertIn("○ Exit setup", picker)
+        self.assertIn("Rote sign-in is mandatory", picker)
         self.assertNotIn("Choose 1, 2, or 3", picker)
 
     def test_login_picker_uses_radio_navigation(self) -> None:
         picker = _render_login_picker("headed")
         self.assertIn("❯ ● Continue with Google  recommended", picker)
         self.assertIn("○ Continue with GitHub", picker)
+        self.assertIn("○ Exit setup", picker)
+        self.assertIn("exit setup without changing Play-owned state", picker)
 
-        cursor, outcome, message = _update_login_picker("down", 3, 0)
+        cursor, outcome, message = _update_login_picker("down", 4, 0)
         self.assertEqual((1, None, None), (cursor, outcome, message))
-        cursor, outcome, message = _update_login_picker("toggle", 3, cursor)
+        cursor, outcome, message = _update_login_picker("toggle", 4, cursor)
         self.assertEqual((1, "confirm", None), (cursor, outcome, message))
-        cursor, outcome, message = _update_login_picker("up", 3, 0)
-        self.assertEqual((2, None, None), (cursor, outcome, message))
-        cursor, outcome, message = _update_login_picker("cancel", 3, cursor)
-        self.assertEqual((2, "cancel", None), (cursor, outcome, message))
+        cursor, outcome, message = _update_login_picker("up", 4, 0)
+        self.assertEqual((3, None, None), (cursor, outcome, message))
+        cursor, outcome, message = _update_login_picker("cancel", 4, cursor)
+        self.assertEqual((3, "cancel", None), (cursor, outcome, message))
 
     @patch("scripts.lib.play.bootstrap._linux_release")
     @patch("scripts.lib.play.bootstrap.platform_module.machine", return_value="x86_64")
@@ -2505,6 +2509,53 @@ class BootstrapTest(unittest.TestCase):
             prepared_plan=build.return_value,
             progress=ANY,
         )
+
+    @patch(
+        "scripts.lib.play.bootstrap.last_login_provider", return_value=None
+    )
+    @patch(
+        "scripts.lib.play.bootstrap._choose_detected_harnesses",
+        return_value=["codex"],
+    )
+    @patch("scripts.lib.play.bootstrap._choose_login_method", return_value="exit")
+    @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
+    @patch("scripts.lib.play.bootstrap.apply")
+    @patch("scripts.lib.play.bootstrap.build_plan")
+    def test_guided_install_can_exit_at_the_mandatory_sign_in_stage(
+        self,
+        build: MagicMock,
+        apply_plan: MagicMock,
+        confirm: MagicMock,
+        choose_login: MagicMock,
+        choose_harnesses: MagicMock,
+        _last_provider: MagicMock,
+    ) -> None:
+        build.return_value = {
+            "plan_id": "sha256:sign-in-exit",
+            "selected_harnesses": ["codex"],
+            "rote": {
+                "path": None,
+                "version": None,
+                "update": {
+                    "status": "not_installed",
+                    "detail": "Rote is not installed.",
+                },
+            },
+            "rote_skills": [],
+            "actions": [],
+        }
+
+        output = StringIO()
+        with redirect_stdout(output), redirect_stderr(StringIO()):
+            result = main(["install", "--run-id", "sign-in-exit-run"])
+
+        self.assertEqual(0, result)
+        confirm.assert_called_once()
+        choose_login.assert_called_once_with("headed")
+        choose_harnesses.assert_called_once_with(top_k=3)
+        apply_plan.assert_not_called()
+        self.assertIn("Rote sign-in is mandatory", output.getvalue())
+        self.assertIn("Setup made no changes to Play-owned state", output.getvalue())
 
     @patch(
         "scripts.lib.play.bootstrap._choose_detected_harnesses",
