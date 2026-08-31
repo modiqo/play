@@ -699,6 +699,30 @@ def _validate_inspected_parameter_event(
             raise ControllerRuntimeError(
                 "route_inspected_play requested an undeclared parameter"
             )
+        unresolved = [
+            name
+            for name, declaration in declared.items()
+            if declaration.get("required") is True and name not in parameters
+        ]
+        description = _path_value(event.payload, "parameter_input.description")
+        if not isinstance(description, str):
+            raise ControllerRuntimeError(
+                "route_inspected_play parameter prompt has no description"
+            )
+        omitted = []
+        folded = description.casefold()
+        for name in unresolved:
+            label = declared[name].get("label")
+            candidates = [name]
+            if isinstance(label, str) and label:
+                candidates.append(label)
+            if not any(candidate.casefold() in folded for candidate in candidates):
+                omitted.append(name)
+        if omitted:
+            raise ControllerRuntimeError(
+                "route_inspected_play must collect all unresolved required parameters "
+                "in one prompt; omitted: " + ", ".join(omitted)
+            )
 
 
 def _matches_parameter_type(value: Any, declared_type: Any) -> bool:

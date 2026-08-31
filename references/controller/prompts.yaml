@@ -201,7 +201,7 @@ prompts:
       play_run_declined: [prompt_version, selected_at]
 
   supply_play_parameter:
-    question: "Expected: {parameter_input.description}\n\nWhat value should I use for {parameter_input.label}?"
+    question: "Expected values:\n{parameter_input.description}\n\nWhat should I use for {parameter_input.label}?"
     template_fields: [parameter_input.label, parameter_input.description]
     selection: text
     input: {id: value, label: Parameter value, event: play_parameter_supplied}

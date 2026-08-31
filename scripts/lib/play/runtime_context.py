@@ -794,10 +794,8 @@ def _apply_mutation_semantics(
     elif mutation == "record_parameter_value":
         parameter = payload.get("parameter_input")
         if isinstance(parameter, Mapping):
-            name = parameter.get("name")
             value = parameter.get("value")
-            if isinstance(name, str) and name and isinstance(value, str) and value:
-                context["request"]["parameters"][name] = value
+            if isinstance(value, str) and value:
                 context["parameter_input"]["value"] = value
     elif mutation == "record_creator_standby":
         reference = _path_value(payload, "match.reference")

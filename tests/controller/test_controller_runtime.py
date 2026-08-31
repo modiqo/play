@@ -1334,7 +1334,28 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("use_decide", decision.projection["state"]["id"])
         self.assertEqual("model", decision.projection["state"]["boundary"])
 
-        requested_start = self.runtime.advance_session(
+        with self.assertRaisesRegex(
+            ControllerRuntimeError,
+            "must collect all unresolved required parameters in one prompt",
+        ):
+            self.runtime.advance_session(
+                decision.session,
+                ControllerEvent(
+                    id=EventId("play_parameter_required"),
+                    payload={
+                        "request": {"parameters": {}},
+                        "parameter_input": {
+                            "name": "start_date",
+                            "label": "Start date",
+                            "type": "string",
+                            "description": "Start date: Inclusive YYYY-MM-DD date",
+                        },
+                    },
+                    guards={},
+                ),
+            )
+
+        requested_parameters = self.runtime.advance_session(
             decision.session,
             ControllerEvent(
                 id=EventId("play_parameter_required"),
@@ -1342,26 +1363,31 @@ class ControllerRuntimeTest(unittest.TestCase):
                     "request": {"parameters": {}},
                     "parameter_input": {
                         "name": "start_date",
-                        "label": "Start date",
-                        "type": "string",
-                        "description": "Inclusive YYYY-MM-DD date",
+                        "label": "Start date and End date",
+                        "type": "group",
+                        "description": (
+                            "- Start date: Inclusive YYYY-MM-DD date\n"
+                            "- End date: Inclusive YYYY-MM-DD date"
+                        ),
                     },
                 },
                 guards={},
             ),
         ).session
-        first = advance_until_yield(self.runtime, requested_start, root=ROOT)
-        self.assertEqual("use_parameter_offer", first.projection["state"]["id"])
-        self.assertEqual("start_date", first.session.context["parameter_input"]["name"])
+        prompt = advance_until_yield(self.runtime, requested_parameters, root=ROOT)
+        self.assertEqual("use_parameter_offer", prompt.projection["state"]["id"])
+        self.assertEqual("start_date", prompt.session.context["parameter_input"]["name"])
         self.assertEqual(
-            "Expected: Inclusive YYYY-MM-DD date\n\n"
-            "What value should I use for Start date?",
-            first.projection["instruction"]["question"],
+            "Expected values:\n"
+            "- Start date: Inclusive YYYY-MM-DD date\n"
+            "- End date: Inclusive YYYY-MM-DD date\n\n"
+            "What should I use for Start date and End date?",
+            prompt.projection["instruction"]["question"],
         )
-        self.assertNotIn("template_fields", first.projection["instruction"])
+        self.assertNotIn("template_fields", prompt.projection["instruction"])
 
-        supplied_start = self.runtime.advance_session(
-            first.session,
+        supplied_parameters = self.runtime.advance_session(
+            prompt.session,
             ControllerEvent(
                 id=EventId("play_parameter_supplied"),
                 payload={
@@ -1369,50 +1395,22 @@ class ControllerRuntimeTest(unittest.TestCase):
                     "selected_at": "2026-08-08T00:00:00Z",
                     "parameter_input": {
                         "name": "start_date",
-                        "value": "2026-07-01",
+                        "value": (
+                            "Start date: 2026-07-01; End date: 2026-07-31"
+                        ),
                     },
                 },
                 guards={},
             ),
         ).session
-        second_decision = advance_until_yield(self.runtime, supplied_start, root=ROOT)
-        self.assertEqual("use_decide", second_decision.projection["state"]["id"])
-        requested_end = self.runtime.advance_session(
-            second_decision.session,
-            ControllerEvent(
-                id=EventId("play_parameter_required"),
-                payload={
-                    "request": {"parameters": {"start_date": "2026-07-01"}},
-                    "parameter_input": {
-                        "name": "end_date",
-                        "label": "End date",
-                        "type": "string",
-                        "description": "Inclusive YYYY-MM-DD date",
-                    },
-                },
-                guards={},
-            ),
-        ).session
-        second = advance_until_yield(self.runtime, requested_end, root=ROOT)
-        self.assertEqual("use_parameter_offer", second.projection["state"]["id"])
-        self.assertEqual("end_date", second.session.context["parameter_input"]["name"])
-
-        supplied_end = self.runtime.advance_session(
-            second.session,
-            ControllerEvent(
-                id=EventId("play_parameter_supplied"),
-                payload={
-                    "prompt_version": "supply_play_parameter",
-                    "selected_at": "2026-08-08T00:00:01Z",
-                    "parameter_input": {
-                        "name": "end_date",
-                        "value": "2026-07-31",
-                    },
-                },
-                guards={},
-            ),
-        ).session
-        final_decision = advance_until_yield(self.runtime, supplied_end, root=ROOT)
+        self.assertEqual({}, supplied_parameters.context["request"]["parameters"])
+        self.assertEqual(
+            "Start date: 2026-07-01; End date: 2026-07-31",
+            supplied_parameters.context["parameter_input"]["value"],
+        )
+        final_decision = advance_until_yield(
+            self.runtime, supplied_parameters, root=ROOT
+        )
         self.assertEqual("use_decide", final_decision.projection["state"]["id"])
         ready = self.runtime.advance_session(
             final_decision.session,

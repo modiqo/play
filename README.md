@@ -260,7 +260,7 @@ stateDiagram-v2
 
     %% ── Use (run a saved Play) ──
     use_inspect --> use_decide : read-only inspection
-    use_decide --> use_parameter_offer : required parameter missing
+    use_decide --> use_parameter_offer : required parameters unresolved
     use_parameter_offer --> use_decide : typed value supplied
     use_decide --> use_prepare : exact local Play
     use_decide --> use_offer : remote pull consent
@@ -1341,16 +1341,17 @@ The setup receipt lists Play, Rote, and Tulving versions before and after the ru
 point covers Play-owned state. It does not downgrade Rote or Tulving after their own successful
 updates.
 
-Play asks about recurrence after it presents the complete result and verified receipt. This
-order applies to first pulls, replacements, and already-local Plays. The picker offers hourly,
-daily, custom timing, or not now. It creates nothing until the user selects a cadence.
+Play ends a completed run after it presents the complete result and verified receipt. This order
+applies to first pulls, replacements, and already-local Plays. A passive line explains how to ask
+for scheduling in the next turn.
 
-Result delivery is an atomic checkpoint. Play copies the exact Markdown for the result into chat before
-it probes Tulving or opens a picker. A tool response, internal context, or recap does not count as
-delivery.
+Result delivery is an atomic checkpoint. Play copies the exact Markdown into chat and ends the
+assistant turn. A tool response, internal context, or recap does not count as delivery.
 
-If opening a picker could hide the result, Play ends with the result. The user can request
-scheduling later.
+Play never emits text and then opens the recurrence picker. Some harnesses can hide that text.
+
+The user can ask to schedule the completed Play. Play then offers hourly, daily, custom timing, or
+not now. It creates nothing until the user selects a cadence.
 
 Accepted schedules pin the exact Play version and approved parameters. Every schedule records a
 reason and defaults to a 30-day lifetime. The facade validates the spec with Tulving before writing.
@@ -1463,7 +1464,7 @@ the Play, resolve a local path, replay the command to capture output, or ask the
 a receipt.
 Unambiguous outcome verbs route directly from invocation to parallel Play search without a model
 qualification or harness preflight round trip. Canonical URIs accept explicit `key=value`
-parameters; inspection deterministically elicits any remaining required values before pull consent.
+parameters. Inspection collects all remaining required values in one prompt before pull consent.
 It uses `rote play` for local Play operations and `rote registry play` for registry distribution and
 registry-scoped discovery. It never uses legacy Flow command aliases or decomposes a failed Play
 operation into a manual pull-plus-run fallback.

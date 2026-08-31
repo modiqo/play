@@ -46,7 +46,7 @@ class PresentationTest(unittest.TestCase):
             normalized,
         )
 
-    def test_every_eligible_run_executes_before_recurring_offer(self) -> None:
+    def test_completed_run_ends_before_recurring_tools(self) -> None:
         skill = (Path(__file__).resolve().parents[2] / "SKILL.md").read_text()
         normalized = skill.replace("\n", " ")
 
@@ -55,7 +55,7 @@ class PresentationTest(unittest.TestCase):
             normalized,
         )
         self.assertIn(
-            "When a run qualifies, ask whether the user wants it to repeat",
+            "End that assistant turn after the result is visible",
             normalized,
         )
         self.assertIn(
@@ -63,13 +63,14 @@ class PresentationTest(unittest.TestCase):
             normalized,
         )
         self.assertIn(
-            "Place the literal primary payload and receipt in chat before you run `play recurring probe` or open the picker",
+            "Do not run `play recurring probe`, open a picker, or depend on mid-turn text after a completed run",
             normalized,
         )
         self.assertIn(
-            "A later scheduling request uses the explicit path above",
+            "A later scheduling request starts with `play recurring probe`",
             normalized,
         )
+        self.assertIn("↻ Want this to repeat? Ask <Play prefix> schedule this.", skill)
         self.assertNotIn("Tip: To repeat this Play automatically with Tulving", skill)
 
     def test_result_delivery_is_user_visible_before_recurring_tools(self) -> None:

@@ -263,9 +263,10 @@ run.
   `route_inspected_play`, resolve every parameter the
   user already supplied against the inspected frontmatter in one pass, normalize it to the declared
   type/description/example/valid values/input choices, and return the complete canonical
-  `request.parameters`. Ask for only the first value that is genuinely missing, ambiguous, or
-  invalid; never forward conversational shorthand as an execution parameter when frontmatter
-  declares a stricter format.
+  `request.parameters`. Collect every value that is genuinely missing, ambiguous, or invalid in one
+  structured prompt. After the user answers, normalize all supplied values together and ask again
+  only for fields that remain unresolved. Never forward conversational shorthand as an execution
+  parameter when frontmatter declares a stricter format.
 - `human`: present the exact projected prompt through structured elicitation; resume with the
   selected declared event.
 - `specialist`: invoke only `instruction.specialist` with `instruction.input` through the
@@ -274,21 +275,29 @@ run.
   specialist flow; return to the runtime only with a declared receipt event.
 - `terminal`: present the terminal outcome and stop.
 
-Present the complete result and its verified receipt unchanged. When a run qualifies, ask whether
-the user wants it to repeat. This includes a first remote pull or replacement and a run of an
-already-local exact version.
+Present the complete result and its verified receipt unchanged. End that assistant turn after the
+result is visible. Never open a recurrence picker or call another tool in the same turn. A harness
+prompt can hide mid-turn text.
+
+For an eligible run, place one passive line after the receipt.
+
+`↻ Want this to repeat? Ask <Play prefix> schedule this.`
+
+This includes a first remote pull or replacement and a run of an already-local exact version.
 
 Do not use the choice for the onboarding starter, a failed or blocked run, or an interactive Play.
 Do not use it for an inspection with writes or unverified effects.
 
-Result delivery is an atomic checkpoint. Place the literal primary payload and receipt in chat
-before you run `play recurring probe` or open the picker. A summary is not delivery. Continue only
-when its `tulving` capability is `ready`.
+Result delivery is an atomic checkpoint. Place the literal primary payload and receipt in chat and
+end the assistant turn. A summary is not delivery. Do not run `play recurring probe`, open a picker,
+or depend on mid-turn text after a completed run.
 
-Offer **Hourly**, **Daily**, **Choose cadence**, or **Not now** for that exact completed Play. Treat
-the choice as per-run consent. On acceptance, invoke `play recurring schedule` with the exact
-version, parameters, reason, cadence, and stop condition. Add supported use-case fields, then present
-Tulving's schedule receipt.
+A later scheduling request starts with `play recurring probe`. Then offer **Hourly**, **Daily**,
+**Choose cadence**, or **Not now** for that exact completed Play.
+
+Treat the choice as per-run consent. On acceptance, invoke `play recurring schedule`. Pass the
+exact version, parameters, reason, cadence, and stop condition. Add supported use-case fields, then
+present Tulving's schedule receipt.
 
 If the capability is not ready, end with the Play receipt. Do not mention or invoke scheduling.
 A later scheduling request uses the explicit path above. Do not require another Play run.

@@ -623,7 +623,7 @@ actions:
     kind: evaluator
     owner: play
     effect: none
-    input_required: [request.original, request.parameters, inspection.complete, inspection.parameters, inspection.local_change, inspection.exact_reference, inspection.disclosure_sha256]
+    input_required: [request.original, request.parameters, inspection.complete, inspection.parameters, inspection.local_change, inspection.exact_reference, inspection.disclosure_sha256, parameter_input.name, parameter_input.label, parameter_input.type, parameter_input.description, parameter_input.value]
     command_policy:
       - Resolve parameters only from request.original, request.parameters, and the complete inspected frontmatter declarations; never use a provider-specific or parameter-name-specific parser.
       - In one pass, map every explicit value and constraint in the user's request to the declared parameter names, including multiple values supplied together.
@@ -631,7 +631,8 @@ actions:
       - Never pass conversational shorthand through unchanged when the declaration requires a canonical format. Never invent a value that the request and frontmatter do not jointly support.
       - Preserve explicitly supplied optional values after normalization; omit unsupplied optional values so the Play's declared defaults remain authoritative.
       - Return request.parameters containing only declared parameters, with every resolved value in its canonical execution form.
-      - Emit play_parameter_required only for the first genuinely missing, ambiguous, or invalid parameter after preserving all other normalized values. Include the declaration's label, type, and complete description so the prompt teaches the accepted format.
+      - Emit one play_parameter_required event that covers every parameter that is genuinely missing, ambiguous, or invalid after preserving all other normalized values. Use the first unresolved declaration as parameter_input.name, use a concise combined label, set parameter_input.type to group when more than one field is unresolved, and include every unresolved label, type, and complete description in parameter_input.description.
+      - When parameter_input.value contains the user's answer to a grouped prompt, map and normalize every supplied value in one pass. Ask again only for fields that remain unresolved.
       - Emit local_play_ready only when the typed parameter contract is complete and inspection.local_change is none.
       - Emit remote_pull_required only when the typed parameter contract is complete and inspection requires install, replacement, restoration, or remains unknown.
     events:
