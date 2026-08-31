@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Sequence
 from unittest.mock import ANY, MagicMock, patch
 
+from scripts.lib.play.identity import remember_login_provider as save_login_provider
 from scripts.lib.play.bootstrap import (
     BootstrapError,
     REMOTE_AUTH_EVIDENCE,
@@ -1153,7 +1154,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("done", progress.call("Checking things", work))
 
         rendered = stream.getvalue()
-        self.assertIn("✦ Pro tip · Workflow fit first.\r\n◐ Checking things ·", rendered)
+        self.assertIn("✦ Pro tip · Workflow fit first.\r\n⠁ Checking things ·", rendered)
         self.assertIn("✦ Pro tip · Immediate value wins.", rendered)
         self.assertIn("\033[1A\r\033[2K", rendered)
         self.assertRegex(rendered, r"✓ Checking things \(\d+\.\ds\)")
@@ -1176,7 +1177,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertNotIn("redirected logs", rendered)
         self.assertEqual(2, rendered.count("\n"))
 
-    def test_default_terminal_progress_does_not_animate_or_move_up(self) -> None:
+    def test_default_terminal_progress_does_not_move_up(self) -> None:
         stream = StringIO()
         progress = Progress(stream, interactive=True)
 
@@ -1186,15 +1187,17 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(1, rendered.count("› Checking updates"))
         self.assertEqual(1, rendered.count("✓ Checking updates"))
         self.assertNotIn("\033[1A", rendered)
-        self.assertNotRegex(rendered, r"[◐◓◑◒]")
+        self.assertNotRegex(rendered, r"[⠁⠃⠇⡇⣇⣧⣷⣿]")
         self.assertNotIn("Pro tip", rendered)
 
     def test_terminal_progress_compacts_detailed_work_into_phases(self) -> None:
         stream = StringIO()
-        progress = Progress(stream, interactive=True)
+        progress = Progress(stream, heartbeat_seconds=0.01, interactive=True)
 
         progress.start_phase("Preparing Play")
-        progress.call("Preparing selected harness skill roots", lambda: None)
+        progress.call(
+            "Preparing selected harness skill roots", lambda: time.sleep(0.025)
+        )
         progress.call("Converging Rote skills", lambda: None)
         progress.start_phase("Protecting existing setup")
         progress.call("Creating a Play recovery snapshot", lambda: None)
@@ -1205,7 +1208,9 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("✓ Protecting existing setup · 1 step ·", rendered)
         self.assertNotIn("✓ Preparing selected harness skill roots", rendered)
         self.assertNotIn("✓ Creating a Play recovery snapshot", rendered)
-        self.assertNotRegex(rendered, r"[◐◓◑◒]")
+        self.assertRegex(rendered, r"[⠁⠃⠇⡇⣇⣧⣷⣿] Preparing Play")
+        self.assertNotIn("\033[1A", rendered)
+        self.assertEqual(1, rendered.count("✓ Preparing Play"))
 
     def test_progress_cleans_up_terminal_line_when_interrupted(self) -> None:
         stream = StringIO()
@@ -1800,37 +1805,19 @@ class BootstrapTest(unittest.TestCase):
             [call.args[0] for call in runner.call_args_list],
         )
 
-    @patch("scripts.lib.play.bootstrap.remember_login_provider")
-    @patch(
-        "scripts.lib.play.bootstrap.last_login_provider", return_value="google"
-    )
-    def test_identity_gate_reuses_the_last_verified_provider(
-        self, _last_provider: MagicMock, remember: MagicMock
-    ) -> None:
-        runner = MagicMock()
-        runner.side_effect = [
-            MagicMock(returncode=77, stdout="", stderr="authentication required"),
-            MagicMock(returncode=0, stdout="browser completed\n", stderr=""),
-            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
-        ]
-
-        step, ready = _identity_gate(
-            "/bin/rote", login_provider=None, runner=runner
+    def test_identity_gate_requires_explicit_setup_consent(self) -> None:
+        runner = MagicMock(
+            return_value=MagicMock(
+                returncode=77, stdout="", stderr="authentication required"
+            )
         )
 
-        self.assertTrue(ready)
-        self.assertTrue(step.changed)
-        self.assertEqual(
-            ["/bin/rote", "login", "--provider", "google"], step.command
-        )
-        remember.assert_called_once_with("google")
+        with self.assertRaisesRegex(BootstrapError, "registry credentials are required"):
+            _identity_gate("/bin/rote", login_provider=None, runner=runner)
 
-    @patch(
-        "scripts.lib.play.bootstrap.last_login_provider", return_value="github"
-    )
-    def test_identity_network_failure_never_starts_a_login(
-        self, _last_provider: MagicMock
-    ) -> None:
+        runner.assert_called_once_with(["/bin/rote", "whoami", "--check"])
+
+    def test_identity_network_failure_never_starts_a_login(self) -> None:
         runner = MagicMock(
             return_value=MagicMock(
                 returncode=1,
@@ -2424,9 +2411,6 @@ class BootstrapTest(unittest.TestCase):
         verify_prompt_intercept.assert_called_once()
 
     @patch(
-        "scripts.lib.play.bootstrap.last_login_provider", return_value=None
-    )
-    @patch(
         "scripts.lib.play.bootstrap._choose_detected_harnesses",
         return_value=["codex"],
     )
@@ -2441,7 +2425,6 @@ class BootstrapTest(unittest.TestCase):
         confirm: MagicMock,
         choose_login: MagicMock,
         choose_harnesses: MagicMock,
-        _last_provider: MagicMock,
     ) -> None:
         build.return_value = {
             "plan_id": "sha256:guided",
@@ -2511,9 +2494,6 @@ class BootstrapTest(unittest.TestCase):
         )
 
     @patch(
-        "scripts.lib.play.bootstrap.last_login_provider", return_value=None
-    )
-    @patch(
         "scripts.lib.play.bootstrap._choose_detected_harnesses",
         return_value=["codex"],
     )
@@ -2521,14 +2501,13 @@ class BootstrapTest(unittest.TestCase):
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
     @patch("scripts.lib.play.bootstrap.apply")
     @patch("scripts.lib.play.bootstrap.build_plan")
-    def test_guided_install_can_exit_at_the_mandatory_sign_in_stage(
+    def test_guided_install_ignores_remembered_provider_and_can_exit_at_sign_in(
         self,
         build: MagicMock,
         apply_plan: MagicMock,
         confirm: MagicMock,
         choose_login: MagicMock,
         choose_harnesses: MagicMock,
-        _last_provider: MagicMock,
     ) -> None:
         build.return_value = {
             "plan_id": "sha256:sign-in-exit",
@@ -2544,6 +2523,7 @@ class BootstrapTest(unittest.TestCase):
             "rote_skills": [],
             "actions": [],
         }
+        self.assertTrue(save_login_provider("google"))
 
         output = StringIO()
         with redirect_stdout(output), redirect_stderr(StringIO()):

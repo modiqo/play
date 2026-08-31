@@ -34,11 +34,7 @@ from .harnesses import (
     supported_harnesses,
     target_ids,
 )
-from .identity import (
-    last_login_provider,
-    remember_login_provider,
-    rote_session_status,
-)
+from .identity import remember_login_provider, rote_session_status
 from .recurrence import (
     RecurrenceError,
     enable_tulving as enable_tulving_support,
@@ -98,7 +94,24 @@ SETUP_PRO_TIPS = (
     "Detailed receipts live under ~/.local/state/play-bootstrap/runs/.",
     "If verification fails, Play restores the previous verified state automatically.",
 )
-SPINNER_FRAMES = ("◐", "◓", "◑", "◒")
+DOT_MATRIX_FRAMES = (
+    "⠁",
+    "⠃",
+    "⠇",
+    "⡇",
+    "⣇",
+    "⣧",
+    "⣷",
+    "⣿",
+    "⣾",
+    "⣼",
+    "⣸",
+    "⣰",
+    "⣠",
+    "⣀",
+    "⢀",
+)
+DEFAULT_PROGRESS_HEARTBEAT_SECONDS = 0.12
 TERMINAL_CARD_WIDTH = 84
 
 
@@ -198,14 +211,17 @@ class Progress:
         now = time.monotonic()
         tokens = list(self._active.values())
         if not tokens:
-            text = (
-                f"{self._phase_label} · {self._phase_completed} "
-                f"step{'s' if self._phase_completed != 1 else ''} complete"
-            )
+            if self._phase_completed:
+                text = (
+                    f"{self._phase_label} · {self._phase_completed} "
+                    f"step{'s' if self._phase_completed != 1 else ''} complete"
+                )
+            else:
+                text = f"{self._phase_label} · starting"
         elif len(tokens) == 1:
             token = tokens[0]
             text = (
-                f"{token.label} · {now - token.started:.0f}s"
+                f"{token.label} · {now - token.started:.1f}s"
                 if self.heartbeat_seconds
                 else token.label
             )
@@ -214,7 +230,7 @@ class Progress:
             text = labels
             if self.heartbeat_seconds:
                 elapsed = max(now - token.started for token in tokens)
-                text = f"{text} · {elapsed:.0f}s"
+                text = f"{text} · {elapsed:.1f}s"
         if self._phase_label is not None and tokens:
             text = f"{self._phase_label} · {text}"
         self._clear_active_locked()
@@ -230,7 +246,7 @@ class Progress:
                 f"✦ {self._fit_terminal_line('Pro tip · ' + insight)}\r\n"
             )
         glyph = (
-            SPINNER_FRAMES[self._frame % len(SPINNER_FRAMES)]
+            DOT_MATRIX_FRAMES[self._frame % len(DOT_MATRIX_FRAMES)]
             if self.heartbeat_seconds
             else ("◆" if self._phase_label is not None else "›")
         )
@@ -866,8 +882,6 @@ def _identity_gate(
             ),
             False,
         )
-    if login_provider is None:
-        login_provider = last_login_provider()
     if login_provider is None:
         raise BootstrapError(_registry_credentials_blocker())
     if login_provider not in LOGIN_PROVIDERS:
@@ -4834,9 +4848,7 @@ def apply(
         and login_provider is None
         and not remote_auth
     ):
-        login_provider = last_login_provider()
-        if login_provider is None:
-            raise BootstrapError(_registry_credentials_blocker())
+        raise BootstrapError(_registry_credentials_blocker())
     selected = list(plan["selected_harnesses"])
     steps: list[Step] = []
 
@@ -5507,7 +5519,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     restore_parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    progress = Progress(enabled=os.environ.get("PLAY_INSTALL_QUIET") != "1")
+    progress = Progress(
+        enabled=os.environ.get("PLAY_INSTALL_QUIET") != "1",
+        heartbeat_seconds=DEFAULT_PROGRESS_HEARTBEAT_SECONDS,
+    )
     try:
         _require_supported_os()
         if args.command == "backup":
@@ -5572,13 +5587,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "choose either --login-provider or --remote-auth, not both"
                 )
             browser_mode = _browser_mode(args.browser_mode)
-            if (
-                plan["rote"].get("identity") in {None, "required", "unavailable"}
-                and login_provider is None
-                and not remote_auth
-                and browser_mode != "headless"
-            ):
-                login_provider = last_login_provider()
             renderer = _render_guided_plan if args.mode == "guided" else _render_plan
             print(renderer(plan), file=sys.stderr if args.json else sys.stdout)
             if not args.yes:
