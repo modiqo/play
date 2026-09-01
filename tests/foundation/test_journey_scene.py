@@ -319,7 +319,7 @@ class JourneySceneTest(unittest.TestCase):
 
     def test_active_workspace_sync_prefers_cwd_then_latest_rote_workspace(self) -> None:
         rote_home = Path(self.temporary.name) / "rote-active-home"
-        workspaces = rote_home / "rote" / "workspaces"
+        workspaces = rote_home / "workspaces"
         captured = workspaces / "play-capture-existing"
         latest = workspaces / "independent-exploration"
         for modified, workspace in ((100.0, captured), (50.0, latest)):
@@ -359,6 +359,20 @@ class JourneySceneTest(unittest.TestCase):
         self.assertEqual("live", latest_summary["journey_mode"])
         self.assertFalse(latest_summary["active_recently"])
 
+    def test_active_workspace_sync_falls_back_to_the_legacy_rote_root(self) -> None:
+        rote_home = Path(self.temporary.name) / "rote-legacy-home"
+        workspace = rote_home / "rote" / "workspaces" / "legacy-exploration"
+        database = workspace / ".rote" / "workspace.db"
+        database.parent.mkdir(parents=True)
+        database.write_bytes(b"workspace")
+
+        with patch.dict(os.environ, {"ROTE_HOME": str(rote_home)}, clear=False):
+            attached = _active_workspace_capture(cwd=Path(self.temporary.name))
+
+        assert attached is not None
+        self.assertEqual(workspace.name, attached["workspace"])
+        self.assertEqual(str(workspace), attached["workspace_path"])
+
     def test_attached_workspace_is_synchronized_before_viewer_launch(self) -> None:
         capture = {
             **self.capture,
@@ -381,7 +395,7 @@ class JourneySceneTest(unittest.TestCase):
 
     def test_workspace_refresh_aligns_archive_to_current_rote_root(self) -> None:
         rote_home = Path(self.temporary.name) / "rote-home"
-        workspaces = rote_home / "rote" / "workspaces"
+        workspaces = rote_home / "workspaces"
         current = workspaces / "play-capture-current"
         untracked = workspaces / "dag-hello"
         internal = workspaces / ".rote-locks"

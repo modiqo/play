@@ -200,6 +200,9 @@ The pricing catalog is an install-time cache and can lag upstream pricing.
 
 ### Evidence is missing
 
-Journey is a disposable projection over Rote's owner-private evidence. Confirm the source workspace
-still exists under `~/.rote/rote/workspaces`, then rebuild the capture if necessary. Missing or
-redacted evidence is reported honestly rather than reconstructed from labels.
+The viewer is a disposable projection over Rote's owner-private evidence. Confirm the source
+workspace still exists under `~/.rote/workspaces`, then rebuild the projection if necessary. Play falls back to
+the legacy `~/.rote/rote/workspaces` root when the current root has no workspaces. If both roots
+contain workspaces, Play uses the current root and prints a warning.
+
+Missing or redacted evidence is reported honestly rather than reconstructed from labels.

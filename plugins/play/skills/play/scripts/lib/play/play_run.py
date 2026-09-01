@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 
 from .commands import CommandError, run_json
 from .private_store import ensure_private_directory
+from .rote_workspace_layout import rote_workspace_root
 from .state_home import state_path
 
 
@@ -303,8 +304,7 @@ def execute(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _rote_workspace_root(environment: Mapping[str, str]) -> Path:
-    rote_home = environment.get("ROTE_HOME")
-    return (Path(rote_home) if rote_home else Path.home() / ".rote") / "rote" / "workspaces"
+    return rote_workspace_root(environment)
 
 
 def _play_slug(reference: str) -> str | None:

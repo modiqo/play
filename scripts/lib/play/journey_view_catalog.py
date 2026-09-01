@@ -24,6 +24,7 @@ from .journey import (
     schedule_worker,
 )
 from .private_store import load_json
+from .rote_workspace_layout import rote_workspace_root
 from .journey_tutorial import TUTORIAL_REFERENCE, TUTORIAL_WORKSPACE_ID, ensure_tutorial
 
 
@@ -66,8 +67,7 @@ def _workspace_activity(workspace_path: Path | None) -> tuple[float | None, bool
 def _rote_workspace_root() -> Path:
     """Return Rote's canonical workspace root, honoring its test override."""
 
-    rote_home = os.environ.get("ROTE_HOME")
-    return (Path(rote_home) if rote_home else Path.home() / ".rote") / "rote" / "workspaces"
+    return rote_workspace_root()
 
 
 def _rote_workspaces() -> list[Path]:

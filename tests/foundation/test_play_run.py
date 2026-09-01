@@ -13,6 +13,7 @@ from scripts.lib.play.play_run import (
     PlayRunError,
     _CredentialSnapshot,
     _credential_snapshot,
+    _play_workspace_state,
     execute,
 )
 
@@ -201,6 +202,22 @@ class UniversalPlayRunTest(unittest.TestCase):
             result = execute(payload())
 
         self.assertEqual(workspace, result["execution"]["workspace"])
+
+    def test_workspace_state_reads_rotes_current_workspace_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            rote_home = Path(directory) / "rote-home"
+            workspace = rote_home / "workspaces" / "dag-hello-1234abcd"
+            database = workspace / ".rote" / "workspace.db"
+            responses = workspace / ".rote" / "responses"
+            responses.mkdir(parents=True)
+            database.write_bytes(b"workspace")
+
+            state = _play_workspace_state(
+                LATEST,
+                {"ROTE_HOME": str(rote_home)},
+            )
+
+        self.assertEqual([workspace.name], list(state))
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
     @patch("scripts.lib.play.play_run.subprocess.run")

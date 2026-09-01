@@ -2513,7 +2513,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     active_capture: Mapping[str, Any] | None = None
     if arguments.command == "view" and bool(arguments.active):
         from .journey_view_catalog import _active_workspace_capture
+        from .rote_workspace_layout import (
+            resolve_rote_workspace_layout,
+            workspace_layout_warning,
+        )
 
+        layout_warning = workspace_layout_warning(resolve_rote_workspace_layout())
+        if layout_warning is not None:
+            print(f"play-journey: {layout_warning}", file=sys.stderr)
         active_capture = _active_workspace_capture()
         capture_ref = str(active_capture.get("reference") or "") if active_capture else ""
         if not capture_ref or active_capture is None:
