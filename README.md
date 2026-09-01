@@ -745,8 +745,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.82/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.82 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.83/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.83 sh
 ```
 
 To inspect the small bootstrap before running it:
