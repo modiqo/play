@@ -43,6 +43,11 @@ Rote trajectory validator, and atomically binds `capture.status=verified`, the v
 reported before transition, leaving the continuation active rather than falling through to a
 generic terminal blocker.
 
+The specialist receives the workspace name and its absolute path. Every Rote command enters that
+path within the same shell invocation, including prerequisites, retries, refinements, and resumed
+work. The runtime checks both values against the owner-private capture before verification. A
+restricted harness must grant the verifier the same workspace access used to record the work.
+
 Every accepted event projection includes both a prebound `event_template` and a self-contained
 `payload_schema` with exact types, enums, and object shapes. Harnesses and specialists must fill
 the template according to that schema instead of guessing metadata values.

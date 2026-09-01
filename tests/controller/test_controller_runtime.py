@@ -284,6 +284,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         context["execution"] = {
             **context["execution"],
             "workspace": "play-capture-abcdefghijklmnop",
+            "workspace_path": "/tmp/play-capture-abcdefghijklmnop",
         }
         bound = replace(
             session,
@@ -352,6 +353,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         context["execution"] = {
             **context["execution"],
             "workspace": "play-capture-abcdefghijklmnop",
+            "workspace_path": "/tmp/play-capture-abcdefghijklmnop",
         }
         bound = replace(
             session,
@@ -1973,6 +1975,10 @@ class ControllerRuntimeTest(unittest.TestCase):
                         "status": "active",
                         "trajectory_ref": None,
                     },
+                    "execution": {
+                        "workspace": "play-capture-posthog-dau",
+                        "workspace_path": "/tmp/play-capture-posthog-dau",
+                    },
                     "preferences": {"ledger_ref": None},
                 },
                 guards={},
@@ -1985,7 +1991,16 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("specialist", projection["state"]["boundary"])
         self.assertEqual("rote", projection["instruction"]["specialist"])
         self.assertEqual("play-capture-posthog-dau", projection["instruction"]["input"]["execution"]["workspace"])
+        self.assertEqual(
+            "/tmp/play-capture-posthog-dau",
+            projection["instruction"]["input"]["execution"]["workspace_path"],
+        )
         policy = " ".join(projection["instruction"]["command_policy"])
+        self.assertIn("only execution location", policy)
+        self.assertIn("same shell invocation", policy)
+        self.assertIn("same access when resuming `play-machine`", policy)
+        self.assertIn("Do not repeat successful work", policy)
+        self.assertIn("emit exploration_route_exhausted", policy)
         self.assertIn("rote-task-routing", policy)
         self.assertIn("rote-adapter-create", policy)
         self.assertIn("rote-shell", policy)
@@ -2062,6 +2077,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             }
         )
         context["execution"]["workspace"] = "play-capture-posthog-dau"
+        context["execution"]["workspace_path"] = "/tmp/play-capture-posthog-dau"
         context["consent"]["explore"] = "approved"
         projected = session.__class__(
             schema=session.schema,
@@ -2139,6 +2155,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             }
         )
         context["execution"]["workspace"] = "play-capture-posthog"
+        context["execution"]["workspace_path"] = "/tmp/play-capture-posthog"
         context["consent"]["explore"] = "approved"
         projected = session.__class__(
             schema=session.schema,
@@ -2200,6 +2217,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             }
         )
         context["execution"]["workspace"] = "play-capture-posthog"
+        context["execution"]["workspace_path"] = "/tmp/play-capture-posthog"
         context["evidence"]["verification"] = "sha256:old"
         context["output"]["primary"] = "taxonomy"
         projected = session.__class__(

@@ -573,7 +573,7 @@ states:
   exploration_execute:
     owner: rote-specialist
     checkpoint: both
-    requires: [request.original, request.intent, request.requested_outcome, search.complete, capture.reference, capture.workspace, capture.status, execution.workspace, consent.explore]
+    requires: [request.original, request.intent, request.requested_outcome, search.complete, capture.reference, capture.workspace, capture.status, execution.workspace, execution.workspace_path, consent.explore]
     entry: {action: execute_captured_exploration}
     "on":
       exploration_prerequisite_ready: [{target: exploration_prerequisite_present, mutate: record_exploration_prerequisite}]

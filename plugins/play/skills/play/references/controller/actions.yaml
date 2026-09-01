@@ -428,7 +428,7 @@ actions:
       - A standby exit is a baton-pass, never a result. When captured, complete the request only through the returned Rote workspace; when normal, complete it without a later settle option.
       - Explore in the shape of the play it may become. One reading per captured rote call (never a script that fetches five things), stages named as you go, upstream responses consumed through rote query @N before values move on, endpoint dialects recorded when discovered, and a clean happy-path rerun before any export. A tangled trace crystallizes into a monolith no formatting can rescue.
     events:
-      standby_recorded: [standby.armed, standby.task_class, standby.hook_ref, capture.decision, capture.reason, capture.task_class, capture.reference, capture.workspace, capture.status, capture.trajectory_ref, preferences.ledger_ref]
+      standby_recorded: [standby.armed, standby.task_class, standby.hook_ref, capture.decision, capture.reason, capture.task_class, capture.reference, capture.workspace, capture.status, capture.trajectory_ref, execution.workspace, execution.workspace_path, preferences.ledger_ref]
 
   judge_save_worthiness:
     kind: evaluator
@@ -549,9 +549,11 @@ actions:
     owner: rote-specialist
     specialist: rote
     effect: mixed
-    input_required: [request.original, request.intent, request.requested_outcome, search.complete, search.sources, search.result_refs, capture.reference, capture.workspace, capture.status, execution.workspace, consent.explore]
+    input_required: [request.original, request.intent, request.requested_outcome, search.complete, search.sources, search.result_refs, capture.reference, capture.workspace, capture.status, execution.workspace, execution.workspace_path, consent.explore]
     command_policy:
       - Consume Play's completed local and authorized-registry no-match result as the search-first gate; do not repeat Play or Rote play search and do not ask for the outcome again.
+      - Treat `execution.workspace_path` as the only execution location. Enter that absolute path in the same shell invocation before every Rote command, for example `cd -- <absolute-path> && rote ...`; never run `rote cd` separately, assume a prior shell changed directory, substitute another workspace, or run from the repository.
+      - Keep prerequisites, routing, retries, resumed work, and every outcome-bearing operation inside that one workspace. If the harness requires filesystem permission for the workspace, retain the same access when resuming `play-machine`; never repeat successful work merely to repair verification.
       - Enter the already-created capture workspace and invoke rote-task-routing with the original user intent, empty-search evidence, workspace path, and the requirement to create a reusable workflow.
       - Begin routing with `rote explore <request.requested_outcome>`. If it suggests a newly available full Play, return to rote-flow-run; otherwise preserve the same workspace and continue substrate discovery.
       - For provider or API intent, inventory installed adapters first. If none covers the required operation, run `rote adapter catalog search` with both provider and operation terms through rote-task-routing.
@@ -566,6 +568,7 @@ actions:
       - If an external authentication or setup boundary forces a return before useful work resumes, return exploration_prerequisite_ready with its evidence. Play will re-enter this same specialist action for the original outcome; do not manufacture output metadata or enter save judgment.
       - Return exploration_outcome_ready only after at least one outcome-bearing operation beyond setup, with the complete user-visible result and a verified `rote trace --deps` trajectory bound to this capture. This action may not scaffold, export, save, author, lint, release, push, or publish a Play. Play alone decides save worthiness, then delegates crystallization, authoring, and publication through their separate lifecycle states.
       - "`capture.status`, `capture.trajectory_ref`, and `evidence.verification` are Play-owned authority fields. Return the projected placeholders unchanged; never derive them from prose, a capture handle, workspace output, or a guessed digest. At the event boundary Play resolves the continuation's capture handle, validates its persisted Rote workspace, and replaces all three fields with one validator-issued receipt before accepting the outcome."
+      - If Play reports that trajectory verification failed, keep this continuation and the completed outcome unchanged. Repair only the named workspace, authentication, database, or filesystem-permission condition, then resubmit the same exploration_outcome_ready event. Do not repeat successful work, switch tools, emit exploration_route_exhausted, or run manual trace commands as a substitute for Play's validator.
       - On a recoverable route failure, preserve the failed evidence and return exploration_route_exhausted. Play will ask whether to discover another tool, continue through a direct side-step, or stop; never silently fall back to a different substrate.
       - A `direct:` request is a one-turn excursion. Do not consume or close this Play continuation, import direct work into the captured trajectory, or claim its evidence. When the user returns with “continue exploration,” resume this same workspace and revalidate any external state that changed.
       - Interactive questions belong to the invoked Rote specialist flow. Continue through them in place and return to Play only with one declared event.

@@ -632,11 +632,17 @@ def _verify_captured_trajectory(
     reference = _path_value(session.context, "capture.reference")
     if not isinstance(reference, str) or not reference:
         raise ValueError("continuation has no captured exploration handle")
-    capture = capture_for_settle(reference)
     expected_workspace = _path_value(session.context, "execution.workspace")
-    if capture.get("workspace") != expected_workspace:
-        raise ValueError("verified capture workspace does not match the continuation")
-    return capture
+    expected_workspace_path = _path_value(session.context, "execution.workspace_path")
+    if not isinstance(expected_workspace, str) or not expected_workspace:
+        raise ValueError("continuation has no Rote exploration workspace")
+    if not isinstance(expected_workspace_path, str) or not expected_workspace_path:
+        raise ValueError("continuation has no Rote exploration workspace path")
+    return capture_for_settle(
+        reference,
+        expected_workspace=expected_workspace,
+        expected_workspace_path=expected_workspace_path,
+    )
 
 
 def _validate_inspected_parameter_event(

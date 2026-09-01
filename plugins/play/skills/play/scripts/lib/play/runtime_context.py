@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -186,6 +187,7 @@ def initial_context(
         "execution": {
             "owner": None,
             "workspace": None,
+            "workspace_path": None,
             "attempts": 0,
             "budget": 3,
             "pending_action": None,
@@ -591,7 +593,17 @@ def _apply_mutation_semantics(
         workspace = _path_value(payload, "capture.workspace")
         if not isinstance(workspace, str) or not workspace:
             raise RuntimeContextError("captured exploration requires a workspace")
+        workspace_path = _path_value(payload, "execution.workspace_path")
+        if (
+            not isinstance(workspace_path, str)
+            or not workspace_path
+            or not Path(workspace_path).is_absolute()
+        ):
+            raise RuntimeContextError(
+                "captured exploration requires an absolute workspace path"
+            )
         context["execution"]["workspace"] = workspace
+        context["execution"]["workspace_path"] = workspace_path
 
     if mutation == "record_exploration_route_failure":
         reason = payload.get("reason")

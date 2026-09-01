@@ -365,6 +365,8 @@ def capture_for_settle(
     *,
     path: Path | None = None,
     trajectory_validator: Any | None = None,
+    expected_workspace: str | None = None,
+    expected_workspace_path: str | None = None,
 ) -> dict[str, Any]:
     """Resolve one explicit capture and prove its Rote trajectory already exists."""
 
@@ -380,8 +382,17 @@ def capture_for_settle(
     capture = captures[capture_index]
     if capture.get("status") != "active":
         raise ValueError("capture handle is missing, expired, or already settled")
+    if expected_workspace is not None and capture.get("workspace") != expected_workspace:
+        raise ValueError("captured Rote workspace does not match the continuation")
+    workspace_path = Path(str(capture.get("workspace_path"))).expanduser().resolve()
+    if (
+        expected_workspace_path is not None
+        and workspace_path
+        != Path(expected_workspace_path).expanduser().resolve()
+    ):
+        raise ValueError("captured Rote workspace path does not match the continuation")
     validator = trajectory_validator or _validate_rote_trajectory
-    trajectory_ref = validator(Path(str(capture.get("workspace_path"))))
+    trajectory_ref = validator(workspace_path)
     if not isinstance(trajectory_ref, str) or not trajectory_ref:
         raise ValueError("capture has no verified Rote trajectory")
     captures[capture_index] = {
@@ -426,29 +437,73 @@ def _validate_rote_trajectory(workspace_path: Path) -> str:
         ("workspace", [executable, "ls"]),
         ("dependencies", [executable, "trace", "--deps"]),
     ):
-        completed = subprocess.run(
-            command,
-            cwd=workspace_path,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=30,
-        )
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=workspace_path,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise ValueError(
+                f"Rote {label} verification timed out inside the exploration workspace"
+            ) from error
         evidence = "\n".join(
             part.rstrip()
             for part in (completed.stdout, completed.stderr)
             if part.strip()
         )
-        if (
-            completed.returncode != 0
-            or not evidence.strip()
-            or "No responses yet" in evidence
-        ):
-            raise ValueError(f"capture has no verified Rote {label} trajectory")
+        if completed.returncode != 0:
+            raise ValueError(_rote_trajectory_failure(label, completed.returncode, evidence))
+        if not evidence.strip():
+            raise ValueError(
+                f"Rote {label} verification returned no evidence from the exploration workspace"
+            )
+        if "No responses yet" in evidence:
+            raise ValueError("the exploration workspace contains no recorded Rote responses")
         evidence_parts.append(f"[{label}]\n{evidence}")
     evidence = "\n".join(evidence_parts)
     digest = hashlib.sha256(evidence.encode()).hexdigest()
     return "sha256:" + digest
+
+
+def _rote_trajectory_failure(label: str, returncode: int, evidence: str) -> str:
+    """Classify a failed read-only trajectory probe without echoing workspace data."""
+
+    lowered = evidence.lower()
+    if any(
+        marker in lowered
+        for marker in (
+            "permission denied",
+            "operation not permitted",
+            "read-only file system",
+            "readonly database",
+            "sandbox",
+        )
+    ):
+        return (
+            "Rote cannot inspect the exploration workspace because this play-machine "
+            "process lacks filesystem permission; resume play-machine with the same "
+            "workspace access used to record the exploration"
+        )
+    if any(
+        marker in lowered
+        for marker in ("requires login", "not authenticated", "signed out")
+    ):
+        return "Rote authentication is required before Play can verify the exploration workspace"
+    if any(
+        marker in lowered
+        for marker in ("not a rote workspace", "workspace not found", "no such file or directory")
+    ):
+        return "the recorded Rote exploration workspace is unavailable"
+    if any(marker in lowered for marker in ("database is locked", "database busy")):
+        return "the Rote exploration workspace is busy; retry verification without repeating the work"
+    return (
+        f"Rote {label} verification exited with status {returncode}; retry verification "
+        "without repeating the exploration work"
+    )
 
 
 def record_standby(
@@ -527,6 +582,10 @@ def record_standby(
             "workspace": capture.get("workspace") if capture else None,
             "status": capture.get("status") if capture else "normal",
             "trajectory_ref": None,
+        },
+        "execution": {
+            "workspace": capture.get("workspace") if capture else None,
+            "workspace_path": capture.get("workspace_path") if capture else None,
         },
         "preferences": {"ledger_ref": ledger_ref},
         "presentation_markdown": presentation,

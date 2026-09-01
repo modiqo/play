@@ -67,6 +67,11 @@ class StandbyBatonPassTest(unittest.TestCase):
         self.assertEqual("capture", result["capture"]["decision"])
         self.assertTrue(result["capture"]["reference"].startswith("cap_"))
         self.assertTrue(result["capture"]["workspace"].startswith("play-capture-"))
+        self.assertEqual(result["capture"]["workspace"], result["execution"]["workspace"])
+        self.assertEqual(
+            str(self.base / result["capture"]["workspace"]),
+            result["execution"]["workspace_path"],
+        )
         presentation = result["presentation_markdown"]
         assert presentation is not None
         self.assertIn("started before execution", presentation)
@@ -132,8 +137,19 @@ class StandbyBatonPassTest(unittest.TestCase):
         )
         reference = result["capture"]["reference"]
 
+        with self.assertRaisesRegex(ValueError, "workspace path does not match"):
+            capture_for_settle(
+                reference,
+                expected_workspace=result["capture"]["workspace"],
+                expected_workspace_path=str(self.base / "another-workspace"),
+                trajectory_validator=lambda _path: "sha256:trajectory",
+            )
+
         capture = capture_for_settle(
-            reference, trajectory_validator=lambda _path: "sha256:trajectory"
+            reference,
+            expected_workspace=result["capture"]["workspace"],
+            expected_workspace_path=result["execution"]["workspace_path"],
+            trajectory_validator=lambda _path: "sha256:trajectory",
         )
         self.assertEqual("verified", capture["status"])
         with self.assertRaisesRegex(ValueError, "already settled"):
@@ -170,6 +186,23 @@ class StandbyBatonPassTest(unittest.TestCase):
             ],
             [call.args[0] for call in run.call_args_list],
         )
+
+    @patch("play.sidekick.subprocess.run")
+    @patch("play.sidekick.shutil.which", return_value="/bin/rote")
+    def test_trajectory_validator_explains_workspace_permission_failure(
+        self, _which: MagicMock, run: MagicMock
+    ) -> None:
+        workspace = self.base / "restricted-workspace"
+        workspace.mkdir()
+        run.return_value = subprocess.CompletedProcess(
+            ["/bin/rote", "ls"],
+            1,
+            "",
+            "error: operation not permitted while opening workspace.db\n",
+        )
+
+        with self.assertRaisesRegex(ValueError, "same workspace access"):
+            _validate_rote_trajectory(workspace)
 
 
 if __name__ == "__main__":

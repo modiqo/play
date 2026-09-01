@@ -215,6 +215,22 @@ capture handle, do all subsequent work through its named Rote workspace. Only af
 trajectory verifies may you re-enter with `$play settle <capture-handle> <one-line summary>`.
 Never settle normal/uncaptured work or reconstruct a trajectory after the fact.
 
+During an active exploration, treat `instruction.input.execution.workspace_path` as the only
+execution directory. It is an absolute path. Enter it in the same shell invocation before every
+Rote command (`cd -- "<workspace-path>" && rote ...`); never run `rote cd` as a separate command,
+assume a previous shell call changed directory, substitute another workspace, or execute from the
+repository. This invariant covers prerequisites, routing, retries, refinements, and resumed work.
+If the harness requires filesystem permission for that path, retain the same access when resuming
+`play-machine` so the runtime can verify the recorded trajectory. A `direct:` side-step remains
+outside this workspace and never contributes evidence.
+
+If runtime re-entry reports that it could not verify the captured Rote trajectory, keep the
+continuation active. Do not repeat the outcome work, switch tools, or return
+`exploration_route_exhausted`. Correct only the reported workspace, authentication, database, or
+filesystem-permission problem, then resubmit the unchanged `exploration_outcome_ready` event. The
+runtime runs its own `rote ls` and `rote trace --deps` checks; manually repeating those checks does
+not bind evidence to Play.
+
 The command executes every eligible deterministic action and stops only at a model, human,
 specialist, or terminal boundary, returning a short `continuation_id`. Keep that value opaque in
 harness state — never inspect, print, or persist it yourself. The runtime stores context
