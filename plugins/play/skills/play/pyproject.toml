@@ -1,6 +1,6 @@
 [project]
 name = "modiqo-play-controller"
-version = "0.4.79"
+version = "0.4.80"
 description = "Typed runtime for the declarative Play controller"
 requires-python = ">=3.10"
 dependencies = [
