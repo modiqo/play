@@ -62,6 +62,13 @@ class PluginPackageTest(unittest.TestCase):
             materialize(expected)
             self.assertEqual([], differences(expected, TARGET))
 
+    def test_codex_skill_requires_explicit_invocation(self) -> None:
+        source_metadata = (ROOT / "agents" / "openai.yaml").read_text()
+        packaged_metadata = (TARGET / "agents" / "openai.yaml").read_text()
+
+        self.assertIn("allow_implicit_invocation: false", source_metadata)
+        self.assertEqual(source_metadata, packaged_metadata)
+
     def test_packager_is_not_recursively_installed(self) -> None:
         self.assertFalse((TARGET / "scripts/bin/package-plugin").exists())
         self.assertFalse((TARGET / "scripts/lib/play/package.py").exists())

@@ -91,10 +91,10 @@ class ActivationProfileTest(unittest.TestCase):
 
         for skill in (self.roots[0] / "rote", self.roots[1] / "rote-shell"):
             self.assertIn(
-                "disable-model-invocation: false", (skill / "SKILL.md").read_text()
+                "disable-model-invocation: true", (skill / "SKILL.md").read_text()
             )
             self.assertIn(
-                "allow_implicit_invocation: true",
+                "allow_implicit_invocation: false",
                 (skill / "agents" / "openai.yaml").read_text(),
             )
 
@@ -165,8 +165,8 @@ class ActivationProfileTest(unittest.TestCase):
         result = self.run_profile("install")
 
         self.assertIn("reconciled", result.stdout)
-        self.assertIn("disable-model-invocation: false", markdown.read_text())
-        self.assertIn("allow_implicit_invocation: true", metadata.read_text())
+        self.assertIn("disable-model-invocation: true", markdown.read_text())
+        self.assertIn("allow_implicit_invocation: false", metadata.read_text())
         self.run_profile("uninstall")
         self.assertEqual(refreshed_markdown, markdown.read_bytes())
         self.assertEqual(refreshed_metadata, metadata.read_bytes())
@@ -199,7 +199,7 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertIn("reconciled", result.stdout)
         self.assertTrue((new_root / "play").is_symlink())
         self.assertIn(
-            "disable-model-invocation: false", (new_skill / "SKILL.md").read_text()
+            "disable-model-invocation: true", (new_skill / "SKILL.md").read_text()
         )
         self.run_profile("uninstall")
         self.assertEqual(original, (new_skill / "SKILL.md").read_bytes())
@@ -220,24 +220,24 @@ class ActivationProfileTest(unittest.TestCase):
         )
         self.run_profile("verify", roots=[self.roots[0]])
 
-    def test_install_migrates_legacy_explicit_only_profile_without_losing_backups(self) -> None:
+    def test_install_migrates_legacy_implicit_profile_without_losing_backups(self) -> None:
         self.run_profile("install")
         state = json.loads(self.state.read_text())
-        state.pop("activation_policy")
+        state["activation_policy"] = "rote-handoff-invocable/v1"
         for value in state["rote_skills"]:
             skill = Path(value)
             markdown = skill / "SKILL.md"
             metadata = skill / "agents" / "openai.yaml"
             markdown.write_text(
                 markdown.read_text().replace(
-                    "disable-model-invocation: false",
                     "disable-model-invocation: true",
+                    "disable-model-invocation: false",
                 )
             )
             metadata.write_text(
                 metadata.read_text().replace(
-                    "allow_implicit_invocation: true",
                     "allow_implicit_invocation: false",
+                    "allow_implicit_invocation: true",
                 )
             )
             for path in (markdown, metadata):
@@ -250,14 +250,14 @@ class ActivationProfileTest(unittest.TestCase):
 
         self.assertIn("reconciled", result.stdout)
         migrated = json.loads(self.state.read_text())
-        self.assertEqual("rote-handoff-invocable/v1", migrated["activation_policy"])
+        self.assertEqual("explicit-invocation/v1", migrated["activation_policy"])
         for value in migrated["rote_skills"]:
             skill = Path(value)
             self.assertIn(
-                "disable-model-invocation: false", (skill / "SKILL.md").read_text()
+                "disable-model-invocation: true", (skill / "SKILL.md").read_text()
             )
             self.assertIn(
-                "allow_implicit_invocation: true",
+                "allow_implicit_invocation: false",
                 (skill / "agents" / "openai.yaml").read_text(),
             )
 

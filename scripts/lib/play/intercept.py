@@ -1,19 +1,13 @@
-"""Blazing-fast structural interception for the two sidekick moments.
+"""Blazing-fast, local-only discovery of replayable Plays.
 
 `play-intercept prompt` runs on every UserPromptSubmit. It is local-only and
-must stay far under 100ms: action-shaped prompts pass through trusted user and
-project routing policy, then an mtime-keyed index of installed Plays and the
-refreshed authorized catalog cache are matched lexically. A direct prefix or
-validated route injects a whole-turn Play-and-Rote bypass contract before
-catalog access; discussion or scoped silence produces nothing. A strong match
-adds one non-blocking suggestion. A possible match adds one passive hint. No
-match produces no output, so the harness continues normally.
+must stay far under 100ms: action-shaped prompts are compared with an
+mtime-keyed index of replayable local Plays and a verified public catalog
+cache. A strong match adds one non-blocking suggestion. Everything else
+produces no output, so the harness continues normally.
 
-`play-intercept milestone-nudge` runs on Stop. During captured exploration it
-claims at most one due Rote-backed progress pulse; otherwise it claims at most
-one internal achievement event and teaches the next useful Play behavior.
-Capture and settle handles remain internal to their typed workflow and never
-leak through Stop.
+Legacy milestone commands remain accepted as silent no-ops so an older Stop
+hook cannot load Play state before the installer removes it.
 """
 
 from __future__ import annotations
@@ -27,42 +21,19 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from .inbox_cache import public_cache_entries, read_cache as read_inbox_cache
-from .journal import claim_exploration_pulse, render_pulse
-from .milestones import claim_nudge
+from .inbox_cache import read_cache as read_inbox_cache
 from .normalize import token_is_covered
 from .private_store import atomic_write_json, load_json
-from .routing import is_routing_management_request, matching_direct_route
 from .state_home import state_path
-from .sidekick import coarse_task_class, preference_policy
 
 
 INDEX_SCHEMA = "play.intercept-index/v1"
 FRONTMATTER_BYTES = 4096
 MIN_PROMPT_CHARS = 8
+_REPLAYABLE = re.compile(r"^#![^\n]*\brote\s+play\s+run\b", re.MULTILINE)
 
-_DIRECT_REQUEST = re.compile(
-    r"^(?:direct|without\s+play)\s*:\s*\S",
-    re.IGNORECASE,
-)
-_EXPLICIT_PLAY_REQUEST = re.compile(r"^play(?:\s+.*)?$", re.IGNORECASE | re.DOTALL)
 _BARE_HELLO_REQUEST = re.compile(
     r"^(?:please\s+)?run\s+(?:the\s+)?hello(?:\s+play)?[.!]?$",
-    re.IGNORECASE,
-)
-_CHEAT_SHEET_REQUEST = re.compile(
-    r"^(?:\$play|/play|/skill:play|play)\s+cheat(?:[\s-]?sheet)[.!]?$",
-    re.IGNORECASE,
-)
-_DIGEST_REQUEST = re.compile(
-    r"^(?:(?:\$play|/play|/skill:play|play)\s+(?:what'?s|whats)\s+new|"
-    r"(?:popular|trending)\s+plays)[.!]?$",
-    re.IGNORECASE,
-)
-_JOURNAL_REQUEST = re.compile(
-    r"^(?:(?:\$play|/play|/skill:play|play)\s+(?:recall\s+)?journal|"
-    r"show(?:\s+me)?(?:\s+my)?\s+play(?:\s+recall)?\s+journal)"
-    r"(?:\s+(today|yesterday|\d{4}-\d{2}-\d{2}))?[.!]?$",
     re.IGNORECASE,
 )
 _ACTION_REQUEST = re.compile(
@@ -99,7 +70,8 @@ _TAG = re.compile(r"^\s*\*?\s*-\s*([a-z0-9][a-z0-9_-]*)\s*$", re.MULTILINE)
 _TOKEN = re.compile(r"[a-z0-9]+")
 _STOPWORDS = frozenset(
     "a an and are at be by can could do for from get has have how i in is it me my of on or "
-    "please should status that the this to us we what when with you your".split()
+    "only play plays please rote run runs should skill status that the this to us we what when "
+    "with you your".split()
 )
 
 
@@ -168,6 +140,8 @@ def _parse_entry(reference: str, main: Path) -> dict[str, Any] | None:
         header = main.read_text(errors="ignore")[:FRONTMATTER_BYTES]
     except OSError:
         return None
+    if _REPLAYABLE.search(header) is None:
+        return None
     name_match = _NAME.search(header)
     description_match = _DESCRIPTION.search(header)
     name = name_match.group(1) if name_match else reference.rsplit("/", 1)[-1]
@@ -178,8 +152,8 @@ def _parse_entry(reference: str, main: Path) -> dict[str, Any] | None:
         "name": name,
         "description": description,
         "tags": tags,
-        "name_tokens": sorted(_tokens(name.replace("-", " ")) | _tokens(" ".join(tags))),
-        "text_tokens": sorted(_tokens(description)),
+        "name_tokens": sorted(_tokens(name.replace("-", " "))),
+        "text_tokens": sorted(_tokens(" ".join([description, *tags]))),
     }
 
 
@@ -220,9 +194,11 @@ def _hub_entries(local_names: set[str]) -> list[dict[str, Any]]:
     """Authorized hub Plays from the inbox catalog cache — zero network."""
 
     cache = read_inbox_cache()
-    if cache is None:
+    if cache is None or cache.get("catalog_complete") is not True:
         return []
-    catalog = public_cache_entries(cache)
+    catalog = cache.get("public_catalog")
+    if not isinstance(catalog, list):
+        return []
     entries: list[dict[str, Any]] = []
     for item in catalog:
         if not isinstance(item, Mapping):
@@ -232,6 +208,7 @@ def _hub_entries(local_names: set[str]) -> list[dict[str, Any]]:
         if (
             not isinstance(reference, str)
             or not isinstance(name, str)
+            or item.get("visibility") != "public"
             or name in local_names
         ):
             continue
@@ -246,11 +223,10 @@ def _hub_entries(local_names: set[str]) -> list[dict[str, Any]]:
                 "description": description,
                 "scope": "hub",
                 "catalog_tier": item.get("catalog_tier"),
-                "name_tokens": sorted(
-                    _tokens(name.replace("-", " "))
-                    | _tokens(" ".join([*labels, *tags, *adapters]))
+                "name_tokens": sorted(_tokens(name.replace("-", " "))),
+                "text_tokens": sorted(
+                    _tokens(" ".join([description, *labels, *tags, *adapters]))
                 ),
-                "text_tokens": sorted(_tokens(description)),
                 "labels": labels,
                 "tags": tags,
                 "adapters": adapters,
@@ -286,7 +262,7 @@ def _ranked_match(
 
 
 def best_match(prompt: str, entries: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Return a high-confidence match backed by two name or tag tokens."""
+    """Return a high-confidence match backed by two Play-name tokens."""
 
     ranked = _ranked_match(prompt, entries)
     if ranked is None:
@@ -297,89 +273,14 @@ def best_match(prompt: str, entries: list[dict[str, Any]]) -> dict[str, Any] | N
     return None
 
 
-def possible_match(prompt: str, entries: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Return a plausible match that is too weak to interrupt ordinary work."""
-
-    ranked = _ranked_match(prompt, entries)
-    if ranked is None:
-        return None
-    best, score, name_hits = ranked
-    if name_hits >= 2:
-        return None
-    if score >= 3 and name_hits == 1:
-        return best
-    return None
-
-
-def is_direct_request(prompt: str) -> bool:
-    """Return whether the user selected the explicit one-turn Play bypass."""
-
-    return _DIRECT_REQUEST.match(prompt.strip()) is not None
-
-
-def is_explicit_play_request(prompt: str) -> bool:
-    """Return whether the user used the plain-language Play prefix."""
-
-    return _EXPLICIT_PLAY_REQUEST.fullmatch(prompt.strip()) is not None
-
-
 def is_bare_hello_request(prompt: str) -> bool:
     """Keep an unprefixed Hello request on the normal agent route."""
 
     return _BARE_HELLO_REQUEST.fullmatch(prompt.strip()) is not None
 
 
-def _direct_bypass_context(route: Mapping[str, Any] | None = None) -> str:
-    """Stamp the complete inference turn with an explicit negative route."""
-
-    if route is None:
-        scope = "The user explicitly selected the one-turn direct prefix."
-        path = "Use harness-native tools or the relevant vendor API/CLI directly."
-    else:
-        providers = ", ".join(route["providers"]) or "none"
-        tools = ", ".join(route["tools"]) or "none"
-        executors = ", ".join(route["executors"])
-        scope = (
-            f"Validated direct route `{route['id']}` matched "
-            f"(providers: {providers}; tools: {tools}; executors: {executors})."
-        )
-        path = (
-            "Use harness-native tools or only the matched vendor API/CLI path "
-            "allowed by that route."
-        )
-    return (
-        "Play direct bypass: "
-        f"{scope} For this entire user turn, bypass both Play and Rote orchestration. "
-        "Do not invoke Play or Rote skills, CLIs, runtimes, searches, adapters, "
-        "workspaces, capture, or follow-up routing during any inference, delegation, "
-        f"retry, or tool loop. {path} Normal harness permissions, authentication, "
-        "tool approvals, and safety checks still apply."
-    )
-
-
-def is_cheat_sheet_request(prompt: str) -> bool:
-    """Return whether the prompt selected Play's deterministic help surface."""
-
-    return _CHEAT_SHEET_REQUEST.match(prompt.strip()) is not None
-
-
-def is_digest_request(prompt: str) -> bool:
-    """Return whether the prompt selected Play's deterministic digest surface."""
-
-    return _DIGEST_REQUEST.match(prompt.strip()) is not None
-
-
-def recall_journal_day(prompt: str) -> str | None:
-    """Resolve an explicit fast-path recall-journal request to a safe day token."""
-
-    match = _JOURNAL_REQUEST.match(prompt.strip())
-    if match is None:
-        return None
-    return (match.group(1) or "today").casefold()
-
-
 def is_action_request(prompt: str) -> bool:
-    """Keep catalog token overlap from activating Play for discussions."""
+    """Keep catalog token overlap from surfacing Plays for discussions."""
 
     stripped = prompt.strip()
     return (
@@ -399,23 +300,6 @@ def _is_match_backed_request(prompt: str) -> bool:
     )
 
 
-def _silenced(
-    prompt: str,
-    *,
-    session_id: str | None = None,
-    project_path: str | None = None,
-) -> bool:
-    task_class = coarse_task_class(prompt)
-    return (
-        preference_policy(
-            task_class,
-            session_id=session_id,
-            project_path=project_path,
-        )
-        == "silent"
-    )
-
-
 def intercept_prompt(
     prompt: str,
     *,
@@ -425,40 +309,6 @@ def intercept_prompt(
     """Return the one context line to inject, or None for silence."""
 
     stripped = prompt.strip()
-    if is_cheat_sheet_request(stripped):
-        return (
-            "Play: explicit cheat-sheet request — use the play skill's bundled "
-            "`scripts/bin/play-cheat-sheet`, present its Markdown verbatim, and do not "
-            "enter the Play state machine."
-        )
-    if is_digest_request(stripped):
-        return (
-            "Play: explicit what's-new request — use the play skill's bundled "
-            "`scripts/bin/play-digest --remember --days 7`, present its Markdown "
-            "verbatim, and do not enter the Play state machine or run preflight."
-        )
-    journal_day = recall_journal_day(stripped)
-    if journal_day is not None:
-        return (
-            "Play: explicit journal request — use the play skill's bundled "
-            f"`scripts/bin/play-journal show --day {journal_day}`, present its "
-            "Markdown verbatim, and do not enter the Play state machine or run preflight."
-        )
-    if is_routing_management_request(stripped):
-        return (
-            "Play: explicit routing-policy management request — use the play skill's "
-            "pre-machine routing-management path with the unchanged prompt. Default an "
-            "unqualified scope to this repository; do not search for or run a saved Play."
-        )
-    if is_direct_request(stripped):
-        return _direct_bypass_context()
-    if is_explicit_play_request(stripped):
-        return (
-            "Play activation: explicit `play` prefix — invoke the Play skill and enter "
-            "its typed runtime with the unchanged user request. This is activation, not "
-            "a suggestion. Continue through the normal harness route only if the runtime "
-            "returns an exited handoff."
-        )
     if is_bare_hello_request(stripped):
         return None
     if (
@@ -469,15 +319,6 @@ def intercept_prompt(
     action_request = is_action_request(stripped)
     if not action_request and not _is_match_backed_request(stripped):
         return None
-    if _silenced(
-        stripped,
-        session_id=session_id,
-        project_path=project_path,
-    ):
-        return None
-    direct_route = matching_direct_route(stripped, project_path=project_path)
-    if direct_route is not None:
-        return _direct_bypass_context(direct_route)
     entries = load_index()
     unpublished_names = {
         entry["name"]
@@ -500,25 +341,18 @@ def intercept_prompt(
         return (
             f"Play suggestion: high-confidence match `{match['reference']}` — {description} "
             "Show one quiet, non-blocking line: "
-            f"\"Play found: `{match['reference']}` — say `use Play {match['reference']}` "
-            "to inspect it.\" Do not enter the Play state machine, do not pause, and "
-            "continue the original request normally."
-        )
-    possible = possible_match(stripped, entries)
-    if possible is not None:
-        description = possible.get("description") or "a related Play"
-        return (
-            f"Play suggestion: possible match `{possible['reference']}` — {description} "
-            "Show one passive, non-blocking line: "
-            f"\"Possible Play: `{possible['reference']}` — say `search Plays` to review "
-            "matches.\" Do not enter the Play state machine, do not pause, and continue "
-            "the original request normally."
+            f"\"Play found: `{match['reference']}` — explicitly invoke Play with "
+            f"`{match['reference']}` to inspect it.\" Do not enter the Play state "
+            "machine, load Play or Rote state, pause, or change the original request."
         )
     return None
 
 
 def milestone_nudge(session_id: str | None) -> str | None:
-    """Return one due exploration pulse or event-backed achievement nudge."""
+    """Return an explicit workflow's exploration pulse or achievement nudge."""
+
+    from .journal import claim_exploration_pulse, render_pulse
+    from .milestones import claim_nudge
 
     pulse = claim_exploration_pulse(session_id=session_id)
     return render_pulse(pulse) if pulse is not None else claim_nudge(session_id=session_id)
@@ -570,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         return 0
 
-    line = milestone_nudge(payload.get("session_id"))
-    if line:
-        print(json.dumps({"systemMessage": line, "suppressOutput": True}))
+    # Older installers registered these commands on Stop. Keep the CLI names
+    # valid but inert so updating a source-linked Play is safe before the next
+    # installer convergence removes the stale hook entries.
     return 0

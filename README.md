@@ -351,13 +351,13 @@ $play journal yesterday
 $play journal 2026-08-17
 ```
 
-Exploration remains separate. Capture creation starts a detached, low-priority Journey worker that
-projects the Rote command/dependency DAG into human nodes—capability, authority, effect, blocker,
-recovery, evidence, milestone, artifact, and Play candidate. The worker performs classification and
-Rote JSON reads in the background. The Stop hook only reads one bounded snapshot and presents a
-material semantic change after the configured throttle; it runs no Rote subprocess, parses no
-trace, and opens no workspace database. Worker or snapshot failure is silent and cannot affect the
-exploration. Ordinary work and recalled saved-Play runs never show workspace analytics.
+Exploration remains separate. Explicit Play exploration starts a detached, low-priority Journey
+worker. It projects the Rote command/dependency DAG into human nodes. The worker performs
+classification and Rote JSON reads in the background. Ambient hooks never read its snapshots or
+show progress.
+
+`$play journey live` opens that state only during an explicit Play interaction. Worker or snapshot
+failure is silent and cannot affect the exploration.
 
 Rote remains the lossless evidence authority. Play retains the complete owner-private semantic
 graph in `~/.rote-play/journeys/<id>/journey.sqlite3` without pruning activities, nodes, edges, or
@@ -773,8 +773,8 @@ exercises the durable-copy path used by the curl installer.
 ## Install from a marketplace
 
 Play is packaged as one self-contained plugin under `plugins/play`. The package includes the skill,
-controller references, Python runtime, harness activation tools, and the `justfile` recipes that
-configure and verify the Play-first experience. `scripts/bin/package-plugin --check` prevents those
+controller references, Python runtime, harness activation tools, and `justfile` commands that
+configure and verify explicit Play use. `scripts/bin/package-plugin --check` prevents those
 installed files from drifting from this repository's source of truth.
 
 The Rote skill provider is a prerequisite so Play can hand missing local installation to the
@@ -806,16 +806,15 @@ Google, GitHub, and **Not now** choices. Play runs the selected OAuth login and 
 
 A signed-out Play run keeps its exact reference, parameters, disclosure, and approval. After login,
 Play resumes that run automatically instead of asking the user to issue the command again. A failed
-or deferred login leaves the Play unchanged and does not execute it. Ordinary requests are
-lexically classified and qualified first; only Play-bound evaluator events run the full preflight,
-so excluded conversation and repository work do not pay the identity/capability probe.
+or deferred login leaves the Play unchanged and does not execute it. Only explicit Play requests
+run the preflight. Ordinary conversation and repository work do not load Play or pay the identity
+and capability probe.
 Public Play URIs can still show their read-only public card before the CLI exists.
 
-Marketplace installs restore this launcher automatically from Play's session-start hook. If a
-harness cached or enabled the plugin without completing activation, `$play` also runs the bundled
-`scripts/bin/play-activate` and continues through the bundled runtime in the same turn. This works
-before Rote skills are present; later sessions converge Rote skills discovered in Codex or Claude
-plugin caches. In Codex, an explicitly disabled Play skill remains a user preference: open
+If a harness did not complete activation, `$play` runs the bundled `scripts/bin/play-activate`.
+Play continues through the bundled runtime in the same turn. This works
+before Rote skills are present. Running `just install` converges Rote skills discovered in Codex or
+Claude plugin caches. In Codex, an explicitly disabled Play skill remains a user preference: open
 `/skills`, enable Play, and restart the session.
 
 Install Play from its public marketplace after Rote setup:
@@ -863,16 +862,14 @@ just install
 
 `install` discovers every supported local harness and every skills root containing Rote skills —
 including `~/.agents/skills` — links this Play skill into each, and applies the activation metadata in
-[`agents/openai.yaml`](agents/openai.yaml) (`allow_implicit_invocation: true`) so Play stays
-implicitly invocable and the rote specialists remain model-invocable for chained handoffs. Play's
+[`agents/openai.yaml`](agents/openai.yaml) (`allow_implicit_invocation: false`). Play and Rote stay
+explicit-only until the user invokes Play. Play's
 structured prompts map to Kimi's `askquestion` control
 (`scripts/bin/play-question <prompt> --harness kimi`), and `just harness kimi` /
 `just smoke kimi` start and smoke-test the harness like Codex and Claude Code.
 
-Restart the harness after plugin installation. On first use, Play runs the bundled preflight. To
-make Play the preferred implicit entrypoint while keeping installed `rote` specialists
-model-invocable for chained handoffs, preview
-and apply the bundled reversible activation profile from the installed skill directory:
+Restart the harness after plugin installation. On first use, Play runs the bundled preflight.
+Preview and apply the explicit-only activation profile from the installed skill directory:
 
 ```bash
 just plan
@@ -881,7 +878,7 @@ just verify-profile
 ```
 
 In marketplace mode this profile does not create a second Play link. It snapshots and updates the
-activation metadata of discovered `rote` skills so the harness can follow chained handoffs.
+activation metadata of discovered Rote skills so ordinary prompts cannot load them.
 Uninstall restores those exact snapshots and fails closed if a managed file was subsequently
 changed.
 
@@ -934,9 +931,8 @@ claude plugin uninstall play@play-skills --scope user
 claude plugin install play@play-skills --scope user
 ```
 
-Restart the harness and start a new conversation after updating so it loads the refreshed skill. If
-you enabled the implicit Play-first profile, run the following from the newly installed Play skill
-directory to converge its reversible activation metadata after the plugin refresh:
+Restart the harness and start a new conversation after updating so it loads the refreshed skill.
+Run the following from the new Play skill directory to converge its activation metadata:
 
 ```bash
 just install
@@ -954,9 +950,8 @@ just package
 just update
 ```
 
-Then restart the harness and begin a new conversation. `just package` refreshes the self-contained
-marketplace payload; `just update` safely reapplies and verifies the source-linked Play-first
-profile.
+Then restart the harness and begin a new conversation. `just package` refreshes the marketplace
+payload. `just update` safely reapplies and verifies the source-linked explicit-only profile.
 
 ## Enable from a source checkout
 
@@ -966,7 +961,7 @@ Preview every harness root and canonical rote skill that will change:
 just plan
 ```
 
-Activate the Play-first profile and verify it:
+Activate the explicit-only profile and verify it:
 
 ```bash
 just install
@@ -984,9 +979,8 @@ the revised skill.
 
 `install` detects Codex, Claude Code, Kimi, Cursor, Hermes, OpenCode, and DeepSeek Harness. It
 discovers their skill roots containing `rote` or `rote-*`. It links this Play skill into each root.
-It also makes every Rote skill model-invocable for specialist handoffs. It snapshots the original
-Rote activation files so the change is reversible. Restart running harnesses after enabling the
-profile.
+It also keeps every Rote skill explicit-only. It snapshots the original Rote activation files so
+the change is reversible. Restart running harnesses after enabling the profile.
 
 It is also the convergence command after `rote harness setup`, a plugin refresh, or a newly added
 harness. If Rote replaced managed skill files, `just install` preserves those refreshed files as the
@@ -1021,7 +1015,7 @@ This launch sets `model_verbosity="low"`, `model_reasoning_summary="none"`, and
 `hide_agent_reasoning=true` as per-session overrides. It reduces model narration and reasoning
 events; the Codex UI may still render tool calls that were actually made.
 
-Run a read-only smoke test that must reach Play's search-and-step-aside boundary:
+Run a read-only smoke test. It explicitly invokes Play and reaches the search-and-step-aside boundary:
 
 ```bash
 just smoke codex
@@ -1234,27 +1228,21 @@ play-inbox line                        # instant; prints one line or nothing
 play-inbox details                     # cached full inbox, no network
 ```
 
-Wire it stale-while-revalidate at session start (no daemon or cron): the hook serves the previous
-refresh instantly and detaches the next one. The line counts only unseen items — the interactive
-digest owns the acknowledgment checkpoint, so viewing "what's new" quiets the banner on its own.
-
-The same hook surface carries the interception loop:
+The prompt hook performs replayable discovery only:
 
 ```bash
-play-intercept prompt            # UserPromptSubmit: fast paths, direct routes, or catalog match
-play-intercept milestone-nudge   # Stop: due exploration pulse, else one earned nudge, else silence
+play-intercept prompt            # UserPromptSubmit: strong replayable Play matches only
 play-journal show --day today    # Explicit local recall; no state machine or preflight
 ```
 
-The hook is the sole proactive activation gate. For `direct:` and `without play:` requests it
-injects a negative whole-turn route that forbids both Play and Rote orchestration, even when a saved
-Play would otherwise match. A validated direct routing policy injects the same contract plus its
-provider, tool, and executor constraints. Silence for any other request means normal harness
-execution; the skill does not self-enroll an ordinary outcome.
+The hook never activates Play or Rote. It never loads their state, reads journals, routes
+work, or emits progress at Stop. A strong match produces one quiet suggestion and normal work
+continues. Every other request stays silent.
 
-Before matching catalog tokens, the hook requires an action-shaped request. A design question such
-as “should we use GitHub Actions?” stays silent even if a GitHub Play exists. Actual actions can be
-routed directly through a user or project policy:
+Before matching catalog tokens, the hook requires an action-shaped request and two Play-name token
+matches. A design question stays silent even if its words overlap Play tags or descriptions.
+
+Explicit Play requests can inspect or manage the existing user and project routing policy:
 
 ```yaml
 # .play/routing.yaml
@@ -1272,10 +1260,9 @@ routes:
     executors: [api, cli]
 ```
 
-A matching `direct` route suppresses Play activation only; normal harness permissions, credential
-boundaries, and safety checks still apply. Policies cannot contain command templates, arguments,
-endpoints, or credentials. Invalid policies authorize nothing and fall back to ordinary Play
-matching.
+The discovery hook does not read this policy. Ordinary requests already bypass Play and Rote
+because both skills are explicit-only. Policies cannot contain command templates, arguments,
+endpoints, or credentials.
 
 Global install creates an empty owner-private policy at `~/.rote-play/routing.yaml`; it deliberately
 does not modify whichever repository happened to launch the installer. Manage that user policy or
@@ -1293,14 +1280,14 @@ play-routing --project . remove github-direct
 play-routing --project . list --json
 ```
 
-The same operations are available through natural-language Play requests without entering the
+The same operations are available through explicit Play requests without entering the
 state machine. An unqualified initialization defaults to the current repository:
 
 ```text
-Initialize Play routing for this repo
-Route GitHub directly through gh in this project
-Show this project's Play routing policy
-Stop routing GitHub directly here
+$play Initialize Play routing for this repo
+$play Route GitHub directly through gh in this project
+$play Show this project's Play routing policy
+$play Stop routing GitHub directly here
 ```
 
 Only explicit user/global wording selects `~/.rote-play/routing.yaml`.
@@ -1309,21 +1296,16 @@ Only explicit user/global wording selects `~/.rote-play/routing.yaml`.
 idempotent without overwriting existing policy. The nearest `.play/routing.yaml` inside the current
 Git worktree augments the user policy.
 
-Hook state (index cache, cooldowns, nudge markers, preference ledger, standby hooks, journal
-settings, and the recall command log) lives in
-shared `~/.rote-play/` stores, so the safeguards compose across harnesses: a Play saved from one
-harness is an interception candidate in every other, and nudges never double-fire. Preference
-resolution is specificity ordered (`session` over `project` over `global`); a non-global entry must
-carry its exact scope key and cannot silently widen to other sessions or projects.
+Discovery shares only its local Play index and verified public catalog cache across harnesses. It
+does not read Play preferences, journals, exploration state, or Rote workspaces. A Play saved from one
+harness can still become a discovery candidate in another harness.
 
 Cache lifecycle: setup synchronously builds a complete, canonically ordered catalog after identity
 verification and records both its stable SHA-256 fingerprint and its authorized-organization
 fingerprint in the bootstrap receipt. **What’s New** therefore has a zero-network first read when
-the harness starts. Session start refreshes only when the cache is older than six hours or the
-authorized scope changes — no cron or manual sync — and keeps the last verified snapshot if a
-maintenance refresh cannot reach the registry. The cache stores exact references, release metadata,
-labels, tags, and each entry's tier when the registry exposes them; digest acknowledgment remains a
-separate state so refreshing never marks an item as viewed.
+the user invokes it. Explicit inbox and digest commands refresh a stale cache and retain the last
+verified snapshot if the registry is unavailable. The discovery hook performs no network work.
+The cache stores exact references, release metadata, labels, tags, and each entry's tier.
 
 Recurring work is optional. Guided setup treats Play, Rote, and
 [Tulving](https://github.com/modiqo/tulving) as independent release cycles under one receipt.

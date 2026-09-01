@@ -1,4 +1,4 @@
-"""Validated user and project routing policy for Play's prompt interceptor."""
+"""Validated user and project routing policy for explicit Play management."""
 
 from __future__ import annotations
 

@@ -1,10 +1,9 @@
 ---
 name: play
 description: >
-  Sidekick for reusable procedures. Use when the user explicitly invokes Play, a Play hook names a
-  relevant saved procedure or recommends a search, or a verified capture is ready to settle. Play
-  also manages direct-routing policy from natural-language requests and handles its cheat sheet,
-  onboarding, canonical Play URIs, digest, management, sharing, and birth certificates.
+  Sidekick for reusable procedures. Use only when the user explicitly invokes Play. Play runs and
+  creates reusable procedures and manages its cheat sheet, onboarding, canonical Play URIs, digest,
+  routing policy, management, sharing, and birth certificates.
 ---
 
 # Play
@@ -15,21 +14,16 @@ returned projection is the entire instruction contract for the current moment.
 
 ## Activation gate
 
-Enter Play only when the user explicitly invokes Play or the prompt hook injected a Play activation
-line. An ordinary outcome with no hook activation continues normally; do not independently enroll it
-in Play merely because it could become reusable. A hook line beginning `Play direct bypass:` is a
-negative route, not Play activation. Honor it for the complete user turn, including every inference,
-delegation, retry, and tool loop: do not invoke Play or Rote skills, CLIs, runtimes, searches,
-adapters, workspaces, capture, or follow-up routing. Use harness-native tools or only the matched
-vendor API/CLI path named by the hook.
+Enter Play only when the user explicitly invokes Play. An ordinary outcome continues normally; do
+not independently enroll it in Play merely because it could become reusable. The discovery hook may
+surface a saved Play, but it never activates Play or Rote and never loads their state.
 
 The harness-native prefix activates Play. Use `$play` in Codex and `/skill:play` in Kimi Code. Use
 `/play` in Claude Code, Cursor, Hermes, OpenCode, or DeepSeek Harness.
 
-Plain `play` is the natural-language compatibility prefix. Bare `run hello` stays with the agent.
-Play stays silent and out of the agent's way.
+Without that explicit prefix, Play stays silent and out of the agent's way.
 
-A hook line beginning `Play suggestion:` is also not Play activation. The hook has already searched
+A hook line beginning `Play suggestion:` is not Play activation. The hook has already searched
 installed Plays and the refreshed authorized catalog cache. Present only the exact quiet or passive
 one-line suggestion quoted by the hook. Do not pause, enter the state machine, search again, pull,
 inspect, run, or invoke Rote. Continue the original request through the normal harness route. The
@@ -100,7 +94,7 @@ If the unchanged trimmed request is `play what's new`, `$play what's new`, `/pla
 preflight, or create a continuation. Run the bundled
 `scripts/bin/play-digest --remember --days 7`, present its Markdown verbatim, and stop. The digest
 uses the install-warmed catalog cache when fresh and performs its own bounded refresh otherwise. A
-later request to inspect or run one of the displayed Plays is a new, naturally activated request.
+later request must explicitly invoke Play to inspect or run one of the displayed Plays.
 
 For a request whose primary intent is to initialize, inspect, add, update, or remove Play's direct
 routing policy, do not enter the state machine or run preflight. Translate the unchanged request to
@@ -243,7 +237,7 @@ play-machine run-until-yield --stdin --json <<'PLAY_INPUT'
 PLAY_INPUT
 ```
 
-When the activation hook names a Play, preserve that complete canonical `owner/name` reference in
+When the discovery hook names a Play, preserve that complete canonical `owner/name` reference in
 every `match.reference` event. Never shorten it to the bare Play name, reconstruct an owner, or use
 digest display text as identity. The runtime can resolve a unique bare name from its complete cached
 catalog as a compatibility safeguard, but the hook-supplied canonical reference remains authoritative.
@@ -384,8 +378,9 @@ preference.
 ## Stay out of the way
 
 Automatic hook discovery searches installed Plays and the refreshed authorized catalog cache.
-Strong matches produce one quiet suggestion. Possible matches produce one passive suggestion. Both
-continue the normal harness route without entering Play. No match produces no Play output.
+Strong matches produce one quiet suggestion and continue the normal harness route. Weak matches and
+no matches produce no Play output. Discovery never reads Play preferences, journals, exploration
+state, or Rote workspaces.
 
 When an explicitly activated outcome search finds no adequate Play, the runtime exits quietly and
 the harness continues the unchanged request normally. An explicit Play search may show an empty
@@ -419,9 +414,8 @@ projected recovery choice instead of silently changing tools. A `direct:` reques
 does not consume the Play continuation or import direct work into the captured evidence. Complete
 that one direct turn, state that exploration remains paused, and resume the same workspace only
 when the user says `continue exploration`, revalidating any external state that changed.
-Only an active captured exploration may display workspace analytics. Its Stop hook stays silent
-until both the configured step interval and time throttle are due, then shows one compact pulse;
-ordinary requests and recalled Play runs never show Rote workspace statistics.
+Only an explicitly active captured exploration may display workspace analytics. Ambient hooks never
+show progress or Rote workspace statistics.
 **A standby exit is a baton-pass, never a result**: complete a captured request only through the
 returned workspace, or complete a normal request without a future settle option. Saving, publication,
 adapter authentication, and team invites run only through the projected specialist handoffs. Never

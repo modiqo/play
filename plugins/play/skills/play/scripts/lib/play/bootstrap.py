@@ -1792,7 +1792,7 @@ def build_plan(
         },
         {
             "id": "install_hooks",
-            "effect": "installs exactly one Play-owned hook set in each harness's user configuration; marketplace bundles declare no competing hooks",
+            "effect": "installs one discovery-only prompt hook in each harness's user configuration and removes stale Play stop and session hooks; marketplace bundles declare no competing hooks",
             "native_plugin_targets": [],
             "portable_targets": portable_hook_targets,
             "targets": portable_hook_targets,
@@ -2914,13 +2914,13 @@ def _enable_codex_play_hook_state(
 
 
 def _verify_prompt_intercept(source: Path, *, verify_catalog: bool = False) -> None:
-    """Execute deterministic activation and cached-catalog probes after replacement."""
+    """Execute silent pass-through and verified cached-catalog probes."""
 
     command = source / "scripts" / "bin" / "play-intercept"
     try:
         result = subprocess.run(
             [str(command), "prompt"],
-            input=json.dumps({"prompt": "play cheat-sheet"}),
+            input=json.dumps({"prompt": "export the quarterly numbers"}),
             text=True,
             capture_output=True,
             check=False,
@@ -2928,17 +2928,9 @@ def _verify_prompt_intercept(source: Path, *, verify_catalog: bool = False) -> N
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise BootstrapError(f"Play prompt hook smoke check failed: {error}") from error
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError as error:
+    if result.returncode != 0 or result.stdout.strip():
         raise BootstrapError(
-            "Play prompt hook smoke check returned invalid output: "
-            f"{(result.stderr or result.stdout).strip() or f'exit {result.returncode}'}"
-        ) from error
-    context = payload.get("hookSpecificOutput", {}).get("additionalContext")
-    if result.returncode != 0 or not isinstance(context, str) or "cheat-sheet" not in context:
-        raise BootstrapError(
-            "Play prompt hook smoke check did not emit activation context: "
+            "Play prompt hook smoke check did not pass through silently: "
             f"{(result.stderr or result.stdout).strip() or f'exit {result.returncode}'}"
         )
     if not verify_catalog:
@@ -3008,22 +3000,11 @@ def _verify_prompt_intercept(source: Path, *, verify_catalog: bool = False) -> N
 
 def _managed_hook_entries(harness: str, source: Path) -> dict[str, list[dict[str, Any]]]:
     intercept = shlex.quote(str(source / "scripts" / "bin" / "play-intercept"))
-    inbox = shlex.quote(str(source / "scripts" / "bin" / "play-inbox"))
     prompt = f"{intercept} prompt 2>/dev/null || true"
-    stop = f"{intercept} milestone-nudge 2>/dev/null || true"
-    session = f"{inbox} line 2>/dev/null; ({inbox} refresh --if-older-than 6 >/dev/null 2>&1 &)"
     if harness in {"codex", "claude"}:
-        return {
-            "UserPromptSubmit": [_nested_hook(prompt)],
-            "Stop": [_nested_hook(stop)],
-            "SessionStart": [_nested_hook(session, matcher="startup|resume")],
-        }
+        return {"UserPromptSubmit": [_nested_hook(prompt)]}
     if harness == "cursor":
-        return {
-            "beforeSubmitPrompt": [{"command": prompt, "timeout": 5}],
-            "stop": [{"command": stop, "timeout": 5}],
-            "sessionStart": [{"command": session, "timeout": 5}],
-        }
+        return {"beforeSubmitPrompt": [{"command": prompt, "timeout": 5}]}
     raise BootstrapError(f"hooks are unsupported for {harness}")
 
 
@@ -3038,15 +3019,18 @@ def install_hooks(
     if not isinstance(hooks, dict):
         raise BootstrapError(f"hooks must be an object in {path}")
     desired = _managed_hook_entries(harness, source)
-    for event, entries in desired.items():
+    for event in list(hooks):
         current = hooks.get(event, [])
         if not isinstance(current, list):
             raise BootstrapError(f"hook event {event} must be a list in {path}")
         preserved = [entry for entry in current if not _is_play_hook(entry)]
-        # An approved install is a convergence boundary: remove every prior
-        # Play-owned entry and append a fresh canonical copy even when the
-        # serialized command happens to be unchanged.
-        hooks[event] = [*preserved, *entries]
+        if preserved:
+            hooks[event] = preserved
+        else:
+            hooks.pop(event)
+    for event, entries in desired.items():
+        current = hooks.get(event, [])
+        hooks[event] = [*current, *entries]
     if harness == "cursor":
         value["version"] = 1
     backup: Path | None = None
@@ -3070,8 +3054,9 @@ def install_hooks(
     return Step(
         "install_hooks",
         "completed",
-        f"Backed up and replaced Play prompt, stop, and session hooks in {path}; "
-        f"the prompt hook smoke check passed.{state_detail}",
+        f"Backed up and installed the discovery-only Play prompt hook in {path}; "
+        f"stale Play stop and session hooks were removed, and the prompt hook smoke "
+        f"check passed.{state_detail}",
         target=harness,
         changed=True,
         evidence=str(backup) if backup else str(path),

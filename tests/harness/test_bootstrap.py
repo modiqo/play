@@ -545,7 +545,14 @@ class BootstrapTest(unittest.TestCase):
                         "UserPromptSubmit": [
                             {"hooks": [{"command": "keep-me", "type": "command"}]},
                             {"hooks": [{"command": "/old/play-intercept prompt"}]},
-                        ]
+                        ],
+                        "Stop": [
+                            {"hooks": [{"command": "keep-stop", "type": "command"}]},
+                            {"hooks": [{"command": "/old/play-intercept milestone-nudge"}]}
+                        ],
+                        "SessionStart": [
+                            {"hooks": [{"command": "/old/play-inbox refresh"}]}
+                        ],
                     }
                 }
             ),
@@ -561,9 +568,10 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("keep-me", json.dumps(prompt))
         self.assertIn(str(ROOT / "scripts" / "bin" / "play-intercept"), json.dumps(prompt))
         self.assertTrue(path.with_name("hooks.json.play-backup-test-run").is_file())
-        self.assertIn("Stop", value["hooks"])
-        self.assertIn("milestone-nudge", json.dumps(value["hooks"]["Stop"]))
-        self.assertIn("SessionStart", value["hooks"])
+        self.assertEqual(1, len(value["hooks"]["Stop"]))
+        self.assertIn("keep-stop", json.dumps(value["hooks"]["Stop"]))
+        self.assertNotIn("play-intercept", json.dumps(value["hooks"]["Stop"]))
+        self.assertNotIn("SessionStart", value["hooks"])
 
     def test_codex_hook_reinstall_resets_only_play_disabled_state(self) -> None:
         path = self.home / ".codex" / "hooks.json"
@@ -623,7 +631,7 @@ class BootstrapTest(unittest.TestCase):
                 {
                     "schema": "play.inbox-cache/v1",
                     "catalog_complete": True,
-                    "catalog": [
+                    "public_catalog": [
                         {
                             "reference": "modiqo/retrieve-rideshare-receipts",
                             "name": "retrieve-rideshare-receipts",
@@ -646,7 +654,7 @@ class BootstrapTest(unittest.TestCase):
                 {
                     "schema": "play.inbox-cache/v1",
                     "catalog_complete": True,
-                    "catalog": [
+                    "public_catalog": [
                         {
                             "reference": "private-org/cloudflare-worker-details",
                             "name": "cloudflare-worker-details",
@@ -675,6 +683,7 @@ class BootstrapTest(unittest.TestCase):
                 {
                     "schema": "play.inbox-cache/v1",
                     "catalog_complete": True,
+                    "public_catalog": [],
                     "catalog": [
                         {
                             "reference": "private-org/cloudflare-worker-details",
@@ -698,9 +707,8 @@ class BootstrapTest(unittest.TestCase):
         value = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(1, value["version"])
         self.assertIn("play-intercept", value["hooks"]["beforeSubmitPrompt"][0]["command"])
-        self.assertIn("play-intercept", value["hooks"]["stop"][0]["command"])
-        self.assertIn("milestone-nudge", value["hooks"]["stop"][0]["command"])
-        self.assertIn("play-inbox", value["hooks"]["sessionStart"][0]["command"])
+        self.assertNotIn("stop", value["hooks"])
+        self.assertNotIn("sessionStart", value["hooks"])
 
     def test_native_plugin_removes_only_legacy_play_hooks(self) -> None:
         for harness, directory, filename in (

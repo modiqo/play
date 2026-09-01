@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install and restore the Play-first skill activation profile."""
+"""Install and restore Play's explicit-only skill activation profile."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 SCHEMA = "play.activation-profile/v1"
-ACTIVATION_POLICY = "rote-handoff-invocable/v1"
+ACTIVATION_POLICY = "explicit-invocation/v1"
 PORTABLE_MARKER_SCHEMA = "play.portable-install/v1"
 SOURCE = Path(
     os.environ.get("PLAY_PROFILE_SOURCE", Path(__file__).resolve().parents[2])
@@ -289,7 +289,7 @@ def restore(path: Path, record: dict[str, object]) -> None:
         parent.rmdir()
 
 
-def invocable_skill_markdown(original: bytes) -> bytes:
+def explicit_skill_markdown(original: bytes) -> bytes:
     text = original.decode("utf-8")
     lines = text.splitlines(keepends=True)
     if not lines or lines[0].strip() != "---":
@@ -306,20 +306,20 @@ def invocable_skill_markdown(original: bytes) -> bytes:
         if not re.match(r"^disable-model-invocation\s*:", line)
     ]
     newline = "\r\n" if lines[0].endswith("\r\n") else "\n"
-    frontmatter.append(f"disable-model-invocation: false{newline}")
+    frontmatter.append(f"disable-model-invocation: true{newline}")
     return "".join(
         [lines[0], *frontmatter, lines[closing], *lines[closing + 1 :]]
     ).encode()
 
 
-def invocable_openai_yaml(original: bytes | None) -> bytes:
+def explicit_openai_yaml(original: bytes | None) -> bytes:
     if original is None:
-        return b"policy:\n  allow_implicit_invocation: true\n"
+        return b"policy:\n  allow_implicit_invocation: false\n"
 
     text = original.decode("utf-8")
     pattern = re.compile(r"(?m)^(\s{2}allow_implicit_invocation:)\s*[^\n]*$")
     if pattern.search(text):
-        return pattern.sub(r"\1 true", text).encode()
+        return pattern.sub(r"\1 false", text).encode()
 
     lines = text.splitlines(keepends=True)
     policy = next(
@@ -328,31 +328,31 @@ def invocable_openai_yaml(original: bytes | None) -> bytes:
     )
     newline = "\r\n" if any(line.endswith("\r\n") for line in lines) else "\n"
     if policy is not None:
-        lines.insert(policy + 1, f"  allow_implicit_invocation: true{newline}")
+        lines.insert(policy + 1, f"  allow_implicit_invocation: false{newline}")
         return "".join(lines).encode()
     separator = "" if not text or text.endswith(("\n", "\r")) else newline
     return (
         f"{text}{separator}policy:{newline}"
-        f"  allow_implicit_invocation: true{newline}"
+        f"  allow_implicit_invocation: false{newline}"
     ).encode()
 
 
-def play_is_implicit() -> bool:
+def play_is_explicit() -> bool:
     metadata = read_bytes(SOURCE / "agents" / "openai.yaml").decode("utf-8")
     return bool(
-        re.search(r"(?m)^\s{2}allow_implicit_invocation:\s*true\s*$", metadata)
+        re.search(r"(?m)^\s{2}allow_implicit_invocation:\s*false\s*$", metadata)
     )
 
 
-def rote_is_invocable(skill: Path) -> bool:
+def rote_is_explicit(skill: Path) -> bool:
     markdown = read_bytes(skill / "SKILL.md").decode("utf-8")
     metadata = skill / "agents" / "openai.yaml"
     return (
-        bool(re.search(r"(?m)^disable-model-invocation:\s*false\s*$", markdown))
+        bool(re.search(r"(?m)^disable-model-invocation:\s*true\s*$", markdown))
         and metadata.is_file()
         and bool(
             re.search(
-                r"(?m)^\s{2}allow_implicit_invocation:\s*true\s*$",
+                r"(?m)^\s{2}allow_implicit_invocation:\s*false\s*$",
                 read_bytes(metadata).decode("utf-8"),
             )
         )
@@ -428,8 +428,8 @@ def verify_state(state: dict[str, object]) -> list[str]:
     expected_mode = "marketplace" if marketplace_source() else "source-linked"
     if state.get("mode", "source-linked") != expected_mode:
         problems.append(f"activation mode changed; expected {expected_mode}")
-    if not play_is_implicit():
-        problems.append("Play source is not configured for implicit invocation")
+    if not play_is_explicit():
+        problems.append("Play source is not configured for explicit-only invocation")
     launcher = Path(str(state.get("launcher", launcher_path())))
     if not launcher.is_file() or read_bytes(launcher) != launcher_content():
         problems.append(f"missing or changed Play runtime launcher: {launcher}")
@@ -479,8 +479,8 @@ def verify_state(state: dict[str, object]) -> list[str]:
             problems.append(f"missing or changed Play link: {link}")
     for value in state["rote_skills"]:
         skill = Path(str(value))
-        if not rote_is_invocable(skill):
-            problems.append(f"rote skill is not handoff-invocable: {skill}")
+        if not rote_is_explicit(skill):
+            problems.append(f"rote skill is not explicit-only: {skill}")
     return problems
 
 
@@ -554,8 +554,8 @@ def reconcile(state: dict[str, object]) -> None:
         orphaned_source_restore or managed_source_migration
     ):
         raise ProfileError(f"activation mode changed; expected {mode}")
-    if not play_is_implicit():
-        raise ProfileError("Play source is not configured for implicit invocation")
+    if not play_is_explicit():
+        raise ProfileError("Play source is not configured for explicit-only invocation")
 
     selected_roots, _, _ = desired_profile(mode)
     roots, play_links, rote_skills = preserve_managed_roots(
@@ -661,10 +661,10 @@ def reconcile(state: dict[str, object]) -> None:
                 if not current_matches:
                     backups[str(path)] = snapshot(path)
                 if path == markdown:
-                    content = invocable_skill_markdown(read_bytes(path))
+                    content = explicit_skill_markdown(read_bytes(path))
                     mode_bits = path.stat().st_mode & 0o777
                 else:
-                    content = invocable_openai_yaml(read_bytes(path) if path.exists() else None)
+                    content = explicit_openai_yaml(read_bytes(path) if path.exists() else None)
                     mode_bits = 0o644
                 atomic_write(path, content, mode_bits)
                 backups[str(path)]["managed_sha256"] = digest(read_bytes(path))
@@ -730,7 +730,7 @@ def reconcile(state: dict[str, object]) -> None:
             or list(map(str, roots)) != list(map(str, state["roots"]))
         )
         if not profile_changed:
-            print(f"Play-first profile already active across {len(roots)} harness root(s)")
+            print(f"Play explicit-only profile already active across {len(roots)} harness root(s)")
             return
 
         updated = {
@@ -772,7 +772,7 @@ def reconcile(state: dict[str, object]) -> None:
         raise
 
     print(
-        f"reconciled Play-first {mode} profile across {len(roots)} harness root(s); "
+        f"reconciled Play explicit-only {mode} profile across {len(roots)} harness root(s); "
         f"rebased {len(rebased_skills)} refreshed/new rote skill(s); "
         f"restored {len(restored_links)} managed Play link(s)"
     )
@@ -788,8 +788,8 @@ def install() -> None:
     if existing:
         reconcile(existing)
         return
-    if not (SOURCE / "SKILL.md").is_file() or not play_is_implicit():
-        raise ProfileError("Play source is incomplete or not implicit")
+    if not (SOURCE / "SKILL.md").is_file() or not play_is_explicit():
+        raise ProfileError("Play source is incomplete or not explicit-only")
 
     mode = "marketplace" if marketplace_source() else "source-linked"
     roots, play_links, rote_skills = desired_profile(mode)
@@ -816,11 +816,11 @@ def install() -> None:
             backups[str(metadata)] = snapshot(metadata)
             atomic_write(
                 markdown,
-                invocable_skill_markdown(read_bytes(markdown)),
+                explicit_skill_markdown(read_bytes(markdown)),
                 markdown.stat().st_mode & 0o777,
             )
             original_metadata = read_bytes(metadata) if metadata.exists() else None
-            atomic_write(metadata, invocable_openai_yaml(original_metadata))
+            atomic_write(metadata, explicit_openai_yaml(original_metadata))
 
         for value, record in backups.items():
             record["managed_sha256"] = digest(read_bytes(Path(value)))
@@ -867,8 +867,8 @@ def install() -> None:
     discard_displaced(displaced)
 
     print(
-        f"activated Play-first {mode} profile across {len(roots)} harness root(s); "
-        f"made {len(rote_skills)} canonical rote skill(s) handoff-invocable"
+        f"activated Play explicit-only {mode} profile across {len(roots)} harness root(s); "
+        f"kept {len(rote_skills)} canonical rote skill(s) explicit-only"
     )
     print("restart the harness, or run just harness <name> / just smoke <name>")
 
@@ -891,7 +891,7 @@ def plan() -> None:
         if (managed_path.exists() or managed_path.is_symlink()) and recorded != managed_path:
             conflicts.append(managed_path)
     print(
-        f"Play-first {mode} plan: {len(roots)} harness root(s), "
+        f"Play explicit-only {mode} plan: {len(roots)} harness root(s), "
         f"{len(rote_skills)} canonical rote skill(s), {len(conflicts)} Play conflict(s)"
     )
     if os.environ.get("PLAY_PROFILE_VERBOSE") == "1":
@@ -908,7 +908,7 @@ def plan() -> None:
 def uninstall() -> None:
     state = load_state()
     if state is None:
-        raise ProfileError("Play-first profile is not installed; no reversible state was found")
+        raise ProfileError("Play explicit-only profile is not installed; no reversible state was found")
     source = Path(str(state["source"])).resolve()
     unsafe = []
     for value in state["play_links"]:
@@ -955,14 +955,14 @@ def report(require_active: bool) -> None:
     state = load_state()
     if state is None:
         if require_active:
-            raise ProfileError("Play-first profile is not installed")
+            raise ProfileError("Play explicit-only profile is not installed")
         marketplace = marketplace_source()
         roots = discover_roots(
             include_plugin_caches=marketplace,
             require_roots=not marketplace,
         )
         print(
-            f"Play-first profile: inactive ({len(roots)} rote harness root(s) detected)"
+            f"Play explicit-only profile: inactive ({len(roots)} rote harness root(s) detected)"
         )
         if os.environ.get("PLAY_PROFILE_VERBOSE") == "1":
             for root in roots:
@@ -971,12 +971,12 @@ def report(require_active: bool) -> None:
     problems = verify_state(state)
     if problems:
         raise ProfileError(
-            "Play-first profile verification failed:\n  " + "\n  ".join(problems)
+            "Play explicit-only profile verification failed:\n  " + "\n  ".join(problems)
         )
     print(
-        f"Play-first profile: active ({state.get('mode', 'source-linked')}); "
-        f"play implicit in {len(state['roots'])} root(s), "
-        f"{len(state['rote_skills'])} canonical rote skill(s) handoff-invocable"
+        f"Play explicit-only profile: active ({state.get('mode', 'source-linked')}); "
+        f"play linked in {len(state['roots'])} root(s), "
+        f"{len(state['rote_skills'])} canonical rote skill(s) explicit-only"
     )
     if os.environ.get("PLAY_PROFILE_VERBOSE") == "1":
         for root in state["roots"]:

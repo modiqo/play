@@ -4,4 +4,4 @@ interface:
   default_prompt: "Use $play to run or create a reusable outcome, browse Plays, inspect how one was born, or manage direct-routing policy."
 
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false

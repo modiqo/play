@@ -17,14 +17,8 @@ from play.intercept import (
     intercept_prompt,
     is_action_request,
     is_bare_hello_request,
-    is_cheat_sheet_request,
-    is_digest_request,
-    is_direct_request,
-    is_explicit_play_request,
     load_index,
     milestone_nudge,
-    possible_match,
-    recall_journal_day,
     settle_nudge,
 )
 from play.milestones import record_event
@@ -94,7 +88,7 @@ class InterceptTest(unittest.TestCase):
                 str(ROOT / "scripts" / "bin" / "play-intercept"),
                 "prompt",
             ],
-            input=json.dumps({"prompt": "play cheat-sheet"}),
+            input=json.dumps({"prompt": "check status on PR 1701"}),
             text=True,
             capture_output=True,
             check=False,
@@ -105,7 +99,7 @@ class InterceptTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         payload = json.loads(result.stdout)
         self.assertIn(
-            "cheat-sheet",
+            "pr-status-check",
             payload["hookSpecificOutput"]["additionalContext"],
         )
 
@@ -125,6 +119,15 @@ class InterceptTest(unittest.TestCase):
             {"pr-status-check", "modiqo/dns-propagation-check"}, references
         )
 
+    def test_index_ignores_nonreplayable_typescript(self) -> None:
+        directory = self.flows / "not-a-play"
+        directory.mkdir(parents=True)
+        (directory / "main.ts").write_text("export const value = 1;\n")
+
+        references = {entry["reference"] for entry in load_index()}
+
+        self.assertNotIn("not-a-play", references)
+
     def test_index_cache_is_reused_until_flows_change(self) -> None:
         load_index()
         cache_path = Path(os.environ["PLAY_INTERCEPT_INDEX_PATH"])
@@ -141,7 +144,7 @@ class InterceptTest(unittest.TestCase):
         self.assertIn("pr-status-check", line)
         self.assertIn("high-confidence match", line)
         self.assertIn("non-blocking", line)
-        self.assertIn("continue the original request normally", line)
+        self.assertIn("change the original request", line)
 
     def test_conversation_is_silent(self) -> None:
         self.assertIsNone(intercept_prompt("why did you pick that module name"))
@@ -156,15 +159,10 @@ class InterceptTest(unittest.TestCase):
         self.assertIsNone(intercept_prompt("/play"))
         self.assertIsNone(intercept_prompt("ok"))
 
-    def test_plain_play_prefix_is_explicit_activation(self) -> None:
+    def test_plain_play_prefix_is_not_interpreted_by_discovery(self) -> None:
         for prompt in ("play", "play run hello", "Play run weekly-report"):
             with self.subTest(prompt=prompt):
-                self.assertTrue(is_explicit_play_request(prompt))
-                line = intercept_prompt(prompt)
-                self.assertIsNotNone(line)
-                self.assertTrue((line or "").startswith("Play activation:"))
-                self.assertIn("unchanged user request", line or "")
-                self.assertIn("not a suggestion", line or "")
+                self.assertIsNone(intercept_prompt(prompt))
 
     def test_bare_hello_stays_on_the_normal_agent_route(self) -> None:
         self._write_flow(
@@ -178,7 +176,7 @@ class InterceptTest(unittest.TestCase):
                 self.assertTrue(is_bare_hello_request(prompt))
                 self.assertIsNone(intercept_prompt(prompt))
 
-    def test_cheat_sheet_command_uses_the_pre_machine_help_path(self) -> None:
+    def test_cheat_sheet_command_is_left_to_explicit_skill_invocation(self) -> None:
         for prompt in (
             "play cheat-sheet",
             "$play cheat sheet",
@@ -186,26 +184,18 @@ class InterceptTest(unittest.TestCase):
             "/skill:play cheat-sheet",
         ):
             with self.subTest(prompt=prompt):
-                self.assertTrue(is_cheat_sheet_request(prompt))
-                line = intercept_prompt(prompt)
-                self.assertIsNotNone(line)
-                self.assertIn("play-cheat-sheet", line or "")
-                self.assertIn("do not enter the Play state machine", line or "")
+                self.assertIsNone(intercept_prompt(prompt))
 
-    def test_journal_command_uses_the_pre_machine_local_path(self) -> None:
-        for prompt, day in (
-            ("$play journal", "today"),
-            ("play recall journal yesterday", "yesterday"),
-            ("show me my Play journal 2026-08-17", "2026-08-17"),
+    def test_journal_command_is_left_to_explicit_skill_invocation(self) -> None:
+        for prompt in (
+            "$play journal",
+            "play recall journal yesterday",
+            "show me my Play journal 2026-08-17",
         ):
             with self.subTest(prompt=prompt):
-                self.assertEqual(day, recall_journal_day(prompt))
-                line = intercept_prompt(prompt)
-                self.assertIsNotNone(line)
-                self.assertIn(f"play-journal show --day {day}", line or "")
-                self.assertIn("do not enter the Play state machine", line or "")
+                self.assertIsNone(intercept_prompt(prompt))
 
-    def test_whats_new_command_uses_the_pre_machine_digest_path(self) -> None:
+    def test_whats_new_command_is_left_to_explicit_skill_invocation(self) -> None:
         for prompt in (
             "play what's new",
             "$play whats new",
@@ -215,13 +205,9 @@ class InterceptTest(unittest.TestCase):
             "trending Plays",
         ):
             with self.subTest(prompt=prompt):
-                self.assertTrue(is_digest_request(prompt))
-                line = intercept_prompt(prompt)
-                self.assertIsNotNone(line)
-                self.assertIn("play-digest --remember --days 7", line or "")
-                self.assertIn("do not enter the Play state machine", line or "")
+                self.assertIsNone(intercept_prompt(prompt))
 
-    def test_routing_management_uses_pre_machine_skill_path(self) -> None:
+    def test_routing_management_is_left_to_explicit_skill_invocation(self) -> None:
         project = Path(self._temporary.name) / "routing-project"
         project.mkdir()
         (project / ".git").mkdir()
@@ -237,27 +223,17 @@ class InterceptTest(unittest.TestCase):
             "remove GitHub from the Play direct route here",
         ):
             with self.subTest(prompt=prompt):
-                line = intercept_prompt(prompt, project_path=str(project))
-                self.assertIsNotNone(line)
-                self.assertIn("pre-machine routing-management path", line or "")
-                self.assertIn("Default an unqualified scope to this repository", line or "")
+                self.assertIsNone(intercept_prompt(prompt, project_path=str(project)))
 
-    def test_direct_prefix_is_a_one_turn_hard_bypass(self) -> None:
+    def test_direct_prefix_is_not_interpreted_by_the_discovery_hook(self) -> None:
         for prompt in (
             "direct: check status on PR 1701 in modiqo/rote",
             "without play: check status on PR 1701 in modiqo/rote",
         ):
             with self.subTest(prompt=prompt):
-                self.assertTrue(is_direct_request(prompt))
-                line = intercept_prompt(prompt)
-                self.assertIsNotNone(line)
-                self.assertIn("bypass both Play and Rote", line or "")
-                self.assertIn("entire user turn", line or "")
-                self.assertIn("inference, delegation, retry, or tool loop", line or "")
-                self.assertIn("harness-native tools", line or "")
-        self.assertFalse(is_direct_request("please work directly on PR 1701"))
+                self.assertIsNone(intercept_prompt(prompt))
 
-    def test_project_direct_route_wins_before_catalog_matching(self) -> None:
+    def test_project_direct_route_does_not_replace_discovery_matching(self) -> None:
         project = Path(self._temporary.name) / "direct-project"
         project.mkdir()
         (project / ".git").mkdir()
@@ -271,23 +247,20 @@ class InterceptTest(unittest.TestCase):
         self.assertTrue(is_action_request(prompt))
         line = intercept_prompt(prompt, project_path=str(project))
         self.assertIsNotNone(line)
-        self.assertIn("Validated direct route `github-direct`", line or "")
-        self.assertIn("providers: github, github-actions", line or "")
-        self.assertIn("tools: git, gh", line or "")
-        self.assertIn("executors: api, cli", line or "")
-        self.assertIn("bypass both Play and Rote", line or "")
+        self.assertIn("pr-status-check", line or "")
+        self.assertNotIn("Validated direct route", line or "")
 
-    def test_ledger_silence_wins_over_a_match(self) -> None:
+    def test_discovery_does_not_read_global_play_preferences(self) -> None:
         append_ledger_entry(
             statement="no plays for status checks",
             task_class="ops-maintenance",
             policy="silent",
         )
-        self.assertIsNone(
+        self.assertIsNotNone(
             intercept_prompt("can you check status on PR 1701 in modiqo/rote")
         )
 
-    def test_project_silence_does_not_escape_its_project(self) -> None:
+    def test_discovery_does_not_read_project_play_preferences(self) -> None:
         project = Path(self._temporary.name) / "quiet-project"
         other = Path(self._temporary.name) / "other-project"
         append_ledger_entry(
@@ -299,10 +272,10 @@ class InterceptTest(unittest.TestCase):
         )
 
         prompt = "can you check status on PR 1701 in modiqo/rote"
-        self.assertIsNone(intercept_prompt(prompt, project_path=str(project)))
+        self.assertIsNotNone(intercept_prompt(prompt, project_path=str(project)))
         self.assertIsNotNone(intercept_prompt(prompt, project_path=str(other)))
 
-    def test_session_preference_overrides_global_silence(self) -> None:
+    def test_discovery_does_not_read_session_play_preferences(self) -> None:
         append_ledger_entry(
             statement="no plays for status checks",
             task_class="ops-maintenance",
@@ -318,27 +291,65 @@ class InterceptTest(unittest.TestCase):
 
         prompt = "can you check status on PR 1701 in modiqo/rote"
         self.assertIsNotNone(intercept_prompt(prompt, session_id="session-open"))
-        self.assertIsNone(intercept_prompt(prompt, session_id="session-quiet"))
+        self.assertIsNotNone(intercept_prompt(prompt, session_id="session-quiet"))
 
     def test_no_match_is_always_silent(self) -> None:
         prompt = "export the quarterly numbers into a spreadsheet"
         self.assertIsNone(intercept_prompt(prompt))
         self.assertIsNone(intercept_prompt(prompt))
 
-    def test_possible_match_is_passive_and_does_not_activate_play(self) -> None:
-        prompt = "review github comments before merge"
-        entries = load_index()
+    def test_play_and_rote_complaint_does_not_trigger_discovery(self) -> None:
+        from play.private_store import atomic_write_json
 
-        match = possible_match(prompt, entries)
-        assert match is not None
-        self.assertEqual("pr-status-check", match["reference"])
+        atomic_write_json(
+            Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
+            {
+                "schema": "play.inbox-cache/v1",
+                "catalog_complete": True,
+                "public_catalog": [
+                    {
+                        "reference": "modiqo/process-only-play-run-verification",
+                        "name": "process-only-play-run-verification",
+                        "description": "Verifies Play and Rote process state.",
+                        "visibility": "public",
+                        "tags": ["play", "rote", "session", "state"],
+                    }
+                ],
+            },
+        )
 
-        line = intercept_prompt(prompt)
-        assert line is not None
-        self.assertIn("possible match", line)
-        self.assertIn("Possible Play", line)
-        self.assertIn("Do not enter the Play state machine", line)
-        self.assertIn("continue the original request normally", line)
+        prompt = (
+            "review the current play code as one user is complaining that their "
+            "session state is always intercepted with plays/rote"
+        )
+
+        self.assertIsNone(intercept_prompt(prompt))
+
+    def test_generic_catalog_tags_cannot_count_as_name_hits(self) -> None:
+        from play.private_store import atomic_write_json
+
+        atomic_write_json(
+            Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
+            {
+                "schema": "play.inbox-cache/v1",
+                "catalog_complete": True,
+                "public_catalog": [
+                    {
+                        "reference": "modiqo/archive-records",
+                        "name": "archive-records",
+                        "description": "Archives records after a verified request.",
+                        "visibility": "public",
+                        "tags": ["play", "rote", "session", "state"],
+                    }
+                ],
+            },
+        )
+
+        self.assertIsNone(intercept_prompt("review the Play and Rote session state"))
+
+    def test_possible_match_does_not_interrupt_ordinary_work(self) -> None:
+        prompt = "review PR comments before merge"
+        self.assertIsNone(intercept_prompt(prompt))
 
     def test_no_match_no_verb_is_silent(self) -> None:
         self.assertIsNone(intercept_prompt("refactor the widget renderer for clarity"))
@@ -391,6 +402,25 @@ class InterceptTest(unittest.TestCase):
     def test_milestone_nudge_silent_without_an_event(self) -> None:
         self.assertIsNone(settle_nudge("session-a"))
 
+    def test_legacy_stop_command_is_an_inert_compatibility_noop(self) -> None:
+        record_event(
+            "play_run_completed",
+            run_id="run-legacy-stop",
+            reference="modiqo/hello",
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "scripts" / "bin" / "play-intercept"), "milestone-nudge"],
+            input=json.dumps({"session_id": "session-a"}),
+            text=True,
+            capture_output=True,
+            check=False,
+            env=os.environ.copy(),
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("", result.stdout)
+
     def test_best_match_requires_two_name_tokens(self) -> None:
         entries = load_index()
         self.assertIsNone(
@@ -423,7 +453,8 @@ class InterceptTest(unittest.TestCase):
                 "counts": {"new": 0, "revised": 0},
                 "digest": {},
                 "markdown": None,
-                "catalog": [
+                "catalog_complete": True,
+                "public_catalog": [
                     {
                         "reference": "modiqo/list-top-committers",
                         "name": "list-top-committers",
@@ -437,8 +468,8 @@ class InterceptTest(unittest.TestCase):
         assert line is not None
         self.assertIn("high-confidence match", line)
         self.assertIn("modiqo/list-top-committers", line)
-        self.assertIn("use Play modiqo/list-top-committers", line)
-        self.assertIn("do not pause", line)
+        self.assertIn("explicitly invoke Play", line)
+        self.assertIn("load Play or Rote state", line)
 
     def test_automatic_hook_ignores_private_rows_from_an_unverifiable_cache(self) -> None:
         from play.private_store import atomic_write_json
@@ -460,6 +491,26 @@ class InterceptTest(unittest.TestCase):
 
         self.assertIsNone(intercept_prompt("build private report from internal data"))
 
+    def test_automatic_hook_ignores_public_rows_from_an_incomplete_cache(self) -> None:
+        from play.private_store import atomic_write_json
+
+        atomic_write_json(
+            Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
+            {
+                "schema": "play.inbox-cache/v1",
+                "public_catalog": [
+                    {
+                        "reference": "modiqo/list-top-committers",
+                        "name": "list-top-committers",
+                        "description": "Lists top contributors for a GitHub repository.",
+                        "visibility": "public",
+                    }
+                ],
+            },
+        )
+
+        self.assertIsNone(intercept_prompt("list top committers for modiqo/rote"))
+
     def test_unpublished_local_play_precedes_same_named_catalog_play(self) -> None:
         from play.private_store import atomic_write_json
 
@@ -467,7 +518,8 @@ class InterceptTest(unittest.TestCase):
             Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
             {
                 "schema": "play.inbox-cache/v1",
-                "catalog": [
+                "catalog_complete": True,
+                "public_catalog": [
                     {
                         "reference": "modiqo/pr-status-check",
                         "name": "pr-status-check",
@@ -492,7 +544,8 @@ class InterceptTest(unittest.TestCase):
             Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
             {
                 "schema": "play.inbox-cache/v1",
-                "catalog": [
+                "catalog_complete": True,
+                "public_catalog": [
                     {
                         "reference": "modiqo/retrieve-rideshare-receipts",
                         "name": "retrieve-rideshare-receipts",
@@ -516,7 +569,8 @@ class InterceptTest(unittest.TestCase):
             Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
             {
                 "schema": "play.inbox-cache/v1",
-                "catalog": [
+                "catalog_complete": True,
+                "public_catalog": [
                     {
                         "reference": "modiqo/retrieve-recent-emails",
                         "name": "retrieve-recent-emails",
@@ -541,7 +595,8 @@ class InterceptTest(unittest.TestCase):
             Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
             {
                 "schema": "play.inbox-cache/v1",
-                "catalog": [
+                "catalog_complete": True,
+                "public_catalog": [
                     {
                         "reference": "modiqo/retrieve-recent-emails",
                         "name": "retrieve-recent-emails",
@@ -569,7 +624,8 @@ class InterceptTest(unittest.TestCase):
             Path(os.environ["PLAY_INBOX_CACHE_PATH"]),
             {
                 "schema": "play.inbox-cache/v1",
-                "catalog": [
+                "catalog_complete": True,
+                "public_catalog": [
                     {
                         "reference": "modiqo/retrieve-rideshare-receipts",
                         "name": "retrieve-rideshare-receipts",
