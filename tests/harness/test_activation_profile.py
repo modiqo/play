@@ -45,10 +45,16 @@ class ActivationProfileTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def run_profile(
-        self, command: str, expected: int = 0
+        self,
+        command: str,
+        expected: int = 0,
+        *,
+        roots: list[Path] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
-        environment["PLAY_HARNESS_ROOTS"] = os.pathsep.join(map(str, self.roots))
+        environment["PLAY_HARNESS_ROOTS"] = os.pathsep.join(
+            map(str, self.roots if roots is None else roots)
+        )
         environment["PLAY_PROFILE_STATE"] = str(self.state)
         environment["PLAY_MACHINE_LAUNCHER"] = str(self.launcher)
         environment["PLAY_ROUTING_LAUNCHER"] = str(self.routing_launcher)
@@ -197,6 +203,22 @@ class ActivationProfileTest(unittest.TestCase):
         )
         self.run_profile("uninstall")
         self.assertEqual(original, (new_skill / "SKILL.md").read_bytes())
+
+    def test_subset_reinstall_preserves_previously_managed_harness_links(self) -> None:
+        self.run_profile("install")
+
+        result = self.run_profile("install", roots=[self.roots[0]])
+
+        self.assertIn("already active across 2 harness root(s)", result.stdout)
+        for root in self.roots:
+            self.assertTrue((root / "play").is_symlink())
+            self.assertEqual(ROOT, (root / "play").resolve())
+        state = json.loads(self.state.read_text(encoding="utf-8"))
+        self.assertEqual(
+            sorted(str(root.resolve()) for root in self.roots),
+            sorted(state["roots"]),
+        )
+        self.run_profile("verify", roots=[self.roots[0]])
 
     def test_install_migrates_legacy_explicit_only_profile_without_losing_backups(self) -> None:
         self.run_profile("install")

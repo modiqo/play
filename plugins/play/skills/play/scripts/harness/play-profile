@@ -466,8 +466,13 @@ def verify_state(state: dict[str, object]) -> list[str]:
     except ProfileError:
         current_roots = set()
     recorded_roots = set(map(str, state["roots"]))
-    if current_roots != recorded_roots:
-        problems.append("installed harness roots changed; uninstall and install the profile again")
+    if configured_roots() is not None:
+        if not current_roots.issubset(recorded_roots):
+            problems.append(
+                "selected harness roots are not covered by the installed profile; run install again"
+            )
+    elif current_roots != recorded_roots:
+        problems.append("installed harness roots changed; run install to reconcile the profile")
     for value in state["play_links"]:
         link = Path(str(value))
         if not link.is_symlink() or link.resolve() != source:
@@ -490,6 +495,27 @@ def desired_profile(mode: str) -> tuple[list[Path], list[Path], dict[Path, Path]
         for visible_path in iter_rote_skills(root):
             rote_skills.setdefault(visible_path.resolve(), visible_path)
     return roots, play_links, rote_skills
+
+
+def preserve_managed_roots(
+    state: dict[str, object],
+    mode: str,
+    roots: list[Path],
+) -> tuple[list[Path], list[Path], dict[Path, Path]]:
+    """Keep valid roots from earlier installs when this run selects a subset."""
+
+    combined = list(roots)
+    for value in state.get("roots", []):
+        root = Path(str(value)).expanduser().resolve()
+        if root.is_dir() and root not in combined:
+            combined.append(root)
+    combined = sorted(dict.fromkeys(combined), key=str)
+    play_links = [] if mode == "marketplace" else [root / "play" for root in combined]
+    rote_skills: dict[Path, Path] = {}
+    for root in combined:
+        for visible_path in iter_rote_skills(root):
+            rote_skills.setdefault(visible_path.resolve(), visible_path)
+    return combined, play_links, rote_skills
 
 
 def activation_paths(skill: Path) -> tuple[Path, Path]:
@@ -531,7 +557,10 @@ def reconcile(state: dict[str, object]) -> None:
     if not play_is_implicit():
         raise ProfileError("Play source is not configured for implicit invocation")
 
-    roots, play_links, rote_skills = desired_profile(mode)
+    selected_roots, _, _ = desired_profile(mode)
+    roots, play_links, rote_skills = preserve_managed_roots(
+        state, mode, selected_roots
+    )
     old_links = [Path(str(value)) for value in state["play_links"]]
     old_link_set = set(old_links)
     desired_link_set = set(play_links)

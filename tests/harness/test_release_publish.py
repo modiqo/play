@@ -13,6 +13,9 @@ from scripts.release.publish_play import (
 SELECTOR = """#!/bin/sh
 set -eu
 release=v0.4.56
+
+curl "https://example.test/${release}/install.sh" \\
+  | env PLAY_INSTALL_REF="${release}" PLAY_INSTALL_CHANNEL=playoffs sh
 """
 
 
@@ -32,6 +35,7 @@ class ReleasePublishTest(unittest.TestCase):
     def test_replace_selector_changes_only_the_release(self) -> None:
         updated = replace_selector(SELECTOR, "v0.4.58")
         self.assertEqual("v0.4.58", selector_release(updated))
+        self.assertIn("PLAY_INSTALL_CHANNEL=playoffs", updated)
         self.assertEqual(SELECTOR, replace_selector(SELECTOR, "v0.4.56"))
 
 

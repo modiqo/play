@@ -26,8 +26,10 @@ from .inbox_cache import public_cache_entries
 from .harnesses import (
     HARNESS_BY_ID,
     HARNESS_SPECS,
+    HOSTED_HARNESS_SPECS,
     commands as harness_commands,
     detect_harness,
+    detect_hosted_harness,
     labels as harness_labels,
     launch_surfaces,
     skill_roots as configured_skill_roots,
@@ -70,6 +72,7 @@ TARGET_IDS = target_ids()
 HARNESS_COMMANDS = harness_commands()
 LABELS = harness_labels()
 HARNESS_LAUNCH = launch_surfaces()
+HOSTED_LABELS = {spec.id: spec.label for spec in HOSTED_HARNESS_SPECS}
 ROTE_SKILL_PROVIDERS = {
     "codex": ("Codex", "CODEX_HOME", ".codex"),
     "claude-code": ("Claude Code", "CLAUDE_CONFIG_DIR", ".claude"),
@@ -1086,6 +1089,54 @@ def prepare_selected_skill_roots(selected: Sequence[str]) -> Step:
     )
 
 
+def prepare_hosted_handoffs(
+    installed_source: Path,
+    hosted_targets: Sequence[dict[str, Any]],
+) -> list[Step]:
+    """Verify hosted-agent import recipes without writing to their cloud VMs."""
+
+    steps: list[Step] = []
+    for target in hosted_targets:
+        if target.get("detected") is not True:
+            continue
+        target_id = str(target.get("id") or "hosted-agent")
+        compatibility = str(target.get("compatibility_harness") or "cursor")
+        relative = str(
+            target.get("handoff_skill") or "integrations/grok-bot/play/SKILL.md"
+        )
+        recipe = installed_source / relative
+        if not recipe.is_file():
+            steps.append(
+                Step(
+                    "prepare_hosted_handoff",
+                    "failed",
+                    f"The bundled {HOSTED_LABELS.get(target_id, target_id)} import recipe is missing: {recipe}",
+                    target=target_id,
+                )
+            )
+        elif target.get("compatibility_ready") is not True:
+            steps.append(
+                Step(
+                    "prepare_hosted_handoff",
+                    "unavailable",
+                    f"{HOSTED_LABELS.get(target_id, target_id)} was detected, but its optional Play import was skipped because {LABELS.get(compatibility, compatibility)} was not selected.",
+                    target=target_id,
+                    evidence=str(recipe),
+                )
+            )
+        else:
+            steps.append(
+                Step(
+                    "prepare_hosted_handoff",
+                    "available",
+                    f"Import the bundled Play pointer into {HOSTED_LABELS.get(target_id, target_id)}; it routes execution to this registered computer through the {LABELS.get(compatibility, compatibility)} contract.",
+                    target=target_id,
+                    evidence=str(recipe),
+                )
+            )
+    return steps
+
+
 def _rote_skills_snapshot(providers: Sequence[str] | None = None) -> list[dict[str, Any]]:
     result = []
     roots = _rote_skill_roots()
@@ -1173,6 +1224,7 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
                 "present": present,
             }
         )
+    auto_selected_cursor = False
     if requested_unique:
         selected = {
             str(item["id"])
@@ -1185,6 +1237,15 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
             key=lambda item: (-int(item["score"]), SUPPORTED_HARNESSES.index(str(item["id"]))),
         )
         selected = {str(item["id"]) for item in ranked[:top_k]}
+        grok_detected = any(
+            spec.id == "grok"
+            and detect_hosted_harness(spec, home=_home(), environ=os.environ)
+            for spec in HOSTED_HARNESS_SPECS
+        )
+        cursor = next((item for item in candidates if item["id"] == "cursor"), None)
+        if grok_detected and cursor is not None and cursor["present"]:
+            selected.add("cursor")
+            auto_selected_cursor = cursor not in ranked[:top_k]
     return [
         HarnessTarget(
             **{key: value for key, value in item.items() if key != "present"},
@@ -1196,7 +1257,13 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
                     "requested but not detected"
                     if requested_unique and item["id"] in requested_unique
                     else (
-                        f"selected in top {top_k}"
+                        (
+                            "selected for detected Grok Bot"
+                            if item["id"] == "cursor"
+                            and item["id"] in selected
+                            and auto_selected_cursor
+                            else f"selected in top {top_k}"
+                        )
                         if item["id"] in selected
                         else ("not detected" if not item["present"] else f"outside top {top_k}")
                     )
@@ -1204,6 +1271,23 @@ def discover_targets(*, top_k: int, requested: Sequence[str] | None = None) -> l
             ),
         )
         for item in candidates
+    ]
+
+
+def discover_hosted_targets(selected: Sequence[str]) -> list[dict[str, Any]]:
+    """Describe hosted companions without pretending their cloud VM is local."""
+
+    chosen = set(selected)
+    return [
+        {
+            **asdict(spec),
+            "detected": detect_hosted_harness(
+                spec, home=_home(), environ=os.environ
+            ),
+            "compatibility_ready": spec.compatibility_harness in chosen,
+            "handoff_skill": "integrations/grok-bot/play/SKILL.md",
+        }
+        for spec in HOSTED_HARNESS_SPECS
     ]
 
 
@@ -1524,6 +1608,7 @@ def build_plan(
         # parser protects later Codex enablement and rollback operations.
         codex_disabled_play_entries()
     shared_agents = _shared_agents_plan(selected)
+    hosted_targets = discover_hosted_targets(selected)
     play_state = _play_update_snapshot()
     play_install_state = str(play_state["install_state"])
     install_effects = {
@@ -1646,6 +1731,18 @@ def build_plan(
             "recommended": bool(shared_agents["targets"]),
         },
         {
+            "id": "prepare_hosted_handoffs",
+            "effect": "bundles a thin Grok Bot import that routes Play through the user's registered computer and Cursor-compatible harness contract",
+            "targets": [
+                target["id"]
+                for target in hosted_targets
+                if target["detected"] is True
+            ],
+            "recommended": any(
+                target["detected"] is True for target in hosted_targets
+            ),
+        },
+        {
             "id": "converge_rote_skills",
             "effect": (
                 "installs missing or updated bundled Rote skills in personal harness roots"
@@ -1715,6 +1812,7 @@ def build_plan(
         "default_selected_harnesses": DEFAULT_SELECTED_HARNESSES,
         "max_parallel_harnesses": MAX_PARALLEL_HARNESSES,
         "selected_harnesses": selected,
+        "hosted_targets": hosted_targets,
         "shared_agents": shared_agents,
         "recovery": {
             "retention": BACKUP_RETENTION,
@@ -3915,6 +4013,23 @@ def _markdown(report: dict[str, Any]) -> str:
             else:
                 state = "skipped, not installed"
             lines.append(f"- **{label}**: {state}")
+    hosted_targets = [
+        target
+        for target in report.get("hosted_targets", [])
+        if isinstance(target, dict) and target.get("detected") is True
+    ]
+    if hosted_targets:
+        lines.extend(["", "## Hosted agents", ""])
+        for target in hosted_targets:
+            target_id = str(target.get("id") or "hosted-agent")
+            state = (
+                "registered-computer import ready"
+                if target.get("compatibility_ready") is True
+                else "detected; Cursor compatibility harness required"
+            )
+            lines.append(
+                f"- **{HOSTED_LABELS.get(target_id, target_id)}**: {state}"
+            )
     play = report.get("play", {})
     rote = report.get("rote", {})
     tulving = report.get("tulving", {})
@@ -4158,6 +4273,33 @@ def _render_status_card(report: dict[str, Any]) -> str:
         state_icon = "✓" if state == "READY" else ("↺" if state == "RESTORED" else "!")
         lines.append(f"    {state_icon} {LABELS.get(harness, harness):<14} {state}")
 
+    hosted_targets = [
+        target
+        for target in report.get("hosted_targets", [])
+        if isinstance(target, dict) and target.get("detected") is True
+    ]
+    if hosted_targets:
+        lines.extend(["", "  Hosted agents"])
+        for target in hosted_targets:
+            target_id = str(target.get("id") or "hosted-agent")
+            handoff = next(
+                (
+                    step
+                    for step in steps
+                    if step.get("id") == "prepare_hosted_handoff"
+                    and step.get("target") == target_id
+                ),
+                {},
+            )
+            if handoff.get("status") == "available":
+                icon, state = "↗", "IMPORT READY"
+            elif handoff.get("status") == "unavailable":
+                icon, state = "·", "NOT CONFIGURED"
+            else:
+                icon, state = "!", "INCOMPLETE"
+            label = HOSTED_LABELS.get(target_id, target_id)
+            lines.append(f"    {icon} {label:<14} {state}")
+
     play = report.get("play", {})
     rote = report.get("rote", {})
     tulving = report.get("tulving", {})
@@ -4270,11 +4412,36 @@ def _render_status_card(report: dict[str, Any]) -> str:
         for step in action_steps:
             target = step.get("target")
             if target:
-                prefix = f"{LABELS.get(str(target), str(target))}: "
+                target_id = str(target)
+                prefix = f"{LABELS.get(target_id, HOSTED_LABELS.get(target_id, target_id))}: "
             else:
                 step_id = str(step.get("id") or "setup")
                 prefix = step_id.replace("_", " ").title() + ": "
             lines.append(f"    - {prefix}{_human_step_detail(step)}")
+
+    grok_handoff = next(
+        (
+            step
+            for step in steps
+            if step.get("id") == "prepare_hosted_handoff"
+            and step.get("target") == "grok"
+            and step.get("status") == "available"
+        ),
+        None,
+    )
+    if isinstance(grok_handoff, dict):
+        recipe = _display_path(grok_handoff.get("evidence"))
+        lines.extend(
+            [
+                "",
+                "  Finish Grok Bot",
+                "    Open a Grok Bot agent connected to this Mac, then say:",
+                f"      “Import the Play skill from {recipe} on my registered computer.”",
+                "    The imported pointer reads the canonical recipe and runs Play on this Mac.",
+                "    It never copies Rote, credentials, private state, or the runtime into Grok's cloud VM.",
+                "    After import, type `/play guide` for the tour or `/play what's new` to begin.",
+            ]
+        )
 
     if status == "rolled_back":
         lines.extend(
@@ -4309,6 +4476,8 @@ def _render_status_card(report: dict[str, Any]) -> str:
                 lines.append(f'    {label}: claude "/play what\'s new"')
             else:
                 lines.append(f"    {label}: start `{command}`, then type `{invocation} what's new`")
+        if isinstance(grok_handoff, dict):
+            lines.append("    Grok Bot: after import, type `/play what's new`")
 
     report_paths = report.get("report_paths")
     if isinstance(report_paths, dict):
@@ -4474,6 +4643,15 @@ def _render_plan(plan: dict[str, Any]) -> str:
             state = "CURRENT"
         state_icon = "✓" if state == "CURRENT" else ("↑" if state == "REFRESH" else "+")
         lines.append(f"    {state_icon} {label:<27} Rote skills · {state}")
+    detected_hosted = [
+        target
+        for target in plan.get("hosted_targets", [])
+        if isinstance(target, dict) and target.get("detected") is True
+    ]
+    for target in detected_hosted:
+        label = HOSTED_LABELS.get(str(target.get("id")), str(target.get("id")))
+        state = "IMPORT READY" if target.get("compatibility_ready") else "NEEDS CURSOR"
+        lines.append(f"    ↗ {label:<27} Hosted agent · {state}")
     lines.extend(
         [
             "",
@@ -4557,6 +4735,13 @@ def _render_guided_plan(plan: dict[str, Any]) -> str:
             f"    Rote   {rote_summary}",
             f"    Apps   {apps}",
     ]
+    if any(
+        isinstance(target, dict) and target.get("detected") is True
+        for target in plan.get("hosted_targets", [])
+    ):
+        lines.append(
+            "    Grok   Prepare a registered-computer import through Cursor"
+        )
     tulving = plan.get("tulving", {})
     tulving_update = tulving.get("update", {}) if isinstance(tulving, dict) else {}
     if (
@@ -5245,6 +5430,17 @@ def apply(
                 "verify", verification_results[harness], command, target=harness
             )
         )
+    hosted_steps = prepare_hosted_handoffs(
+        installed_source,
+        [
+            target
+            for target in plan.get("hosted_targets", [])
+            if isinstance(target, dict)
+        ],
+    )
+    steps.extend(hosted_steps)
+    if any(step.status == "failed" for step in hosted_steps):
+        return rollback_failed_update()
     tulving_state = plan.get("tulving", {})
     if enable_tulving:
         try:
@@ -5358,7 +5554,41 @@ def apply(
                 )
             )
             status = "action_required"
+    if status == "completed" and rote is not None:
+        _record_verified_play_install(rote, plan, runner=runner)
     return finish_report(status)
+
+
+def _record_verified_play_install(
+    rote: str,
+    plan: Mapping[str, Any],
+    *,
+    runner: Runner,
+) -> None:
+    source = os.environ.get("PLAY_INSTALL_CHANNEL", "direct").strip().lower()
+    if source not in {"direct", "playoffs"}:
+        source = "other"
+    planned_play = plan.get("play", {})
+    install_state = (
+        str(planned_play.get("install_state") or "verify")
+        if isinstance(planned_play, Mapping)
+        else "verify"
+    )
+    play_version = str(plan.get("play_version") or "unknown")
+    harnesses = ",".join(sorted(set(map(str, plan["selected_harnesses"]))))
+    command = [
+        rote,
+        "telemetry",
+        "record-play-install",
+        source,
+        install_state,
+        play_version,
+        harnesses,
+    ]
+    try:
+        runner(command)
+    except OSError:
+        pass
 
 
 def _finish_report(
@@ -5398,6 +5628,7 @@ def _finish_report(
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "os": plan.get("os") or _os_snapshot(),
         "selected_harnesses": plan["selected_harnesses"],
+        "hosted_targets": plan.get("hosted_targets", []),
         "targets": plan["targets"],
         "play": {
             "before": {"version": installed_play_version},

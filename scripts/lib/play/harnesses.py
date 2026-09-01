@@ -32,6 +32,22 @@ class HarnessSpec:
     glyph: str
 
 
+@dataclass(frozen=True)
+class HostedHarnessSpec:
+    """Describe an agent whose runtime lives outside the local machine."""
+
+    id: str
+    label: str
+    app_bundle: str
+    app_env: str
+    compatibility_harness: str
+    execution_host: str
+    delivery: str
+    play_entry: str
+    setup_entry: str
+    glyph: str
+
+
 HARNESS_SPECS = (
     HarnessSpec(
         id="codex",
@@ -149,6 +165,23 @@ HARNESS_SPECS = (
 
 HARNESS_BY_ID = {spec.id: spec for spec in HARNESS_SPECS}
 
+HOSTED_HARNESS_SPECS = (
+    HostedHarnessSpec(
+        id="grok",
+        label="Grok Bot",
+        app_bundle="Grok Bot.app",
+        app_env="GROK_BOT_APP",
+        compatibility_harness="cursor",
+        execution_host="registered-computer",
+        delivery="agent-library-import",
+        play_entry="/play",
+        setup_entry="import the Play skill",
+        glyph="✧",
+    ),
+)
+
+HOSTED_HARNESS_BY_ID = {spec.id: spec for spec in HOSTED_HARNESS_SPECS}
+
 
 def home_path(
     spec: HarnessSpec,
@@ -227,6 +260,38 @@ def detect_harness(
         marker.exists() for marker in native_markers(spec, home=home, environ=environ)
     )
     return detected, command
+
+
+def hosted_markers(
+    spec: HostedHarnessSpec,
+    *,
+    home: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> tuple[Path, ...]:
+    """Return local desktop markers for a hosted agent companion."""
+
+    owner = Path.home() if home is None else home
+    values = os.environ if environ is None else environ
+    if spec.app_env in values:
+        return (Path(values[spec.app_env]).expanduser(),)
+    return (
+        Path("/Applications") / spec.app_bundle,
+        owner / "Applications" / spec.app_bundle,
+    )
+
+
+def detect_hosted_harness(
+    spec: HostedHarnessSpec,
+    *,
+    home: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> bool:
+    """Detect only the local companion app, never its managed cloud VM."""
+
+    return any(
+        marker.exists()
+        for marker in hosted_markers(spec, home=home, environ=environ)
+    )
 
 
 def supported_harnesses() -> tuple[str, ...]:

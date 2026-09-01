@@ -54,12 +54,14 @@ from scripts.lib.play.bootstrap import (
     codex_play_enablement_step,
     converge_claude_tulving_mcp,
     converge_play_marketplace,
+    discover_hosted_targets,
     discover_targets,
     install_hooks,
     install_journey_model_assets,
     list_play_backups,
     prune_play_backups,
     prepare_selected_skill_roots,
+    prepare_hosted_handoffs,
     remove_portable_play_hooks,
     restore_play_state,
     main,
@@ -81,6 +83,7 @@ class BootstrapTest(unittest.TestCase):
             "CURSOR_CONFIG_DIR": str(self.home / ".cursor"),
             "KIMI_CONFIG_DIR": str(self.home / ".kimi"),
             "AGENTS_HOME": str(self.home / ".agents"),
+            "GROK_BOT_APP": str(self.home / "Applications" / "Grok Bot.app"),
             "PLAY_BOOTSTRAP_STATE": str(self.home / "state"),
         }
         self.environment_patch = patch.dict(os.environ, self.environment, clear=False)
@@ -1322,6 +1325,63 @@ class BootstrapTest(unittest.TestCase):
             [target.id for target in requested if target.selected],
         )
 
+    @patch("scripts.lib.play.bootstrap.shutil.which")
+    def test_detected_grok_bot_adds_cursor_to_default_selection(
+        self, which: MagicMock
+    ) -> None:
+        which.side_effect = lambda name: "/bin/codex" if name == "codex" else None
+        (self.home / ".cursor").mkdir()
+        grok_app = Path(self.environment["GROK_BOT_APP"])
+        grok_app.mkdir(parents=True)
+
+        targets = discover_targets(top_k=1)
+        selected = [target.id for target in targets if target.selected]
+        cursor = next(target for target in targets if target.id == "cursor")
+
+        self.assertEqual(["codex", "cursor"], selected)
+        self.assertEqual("selected for detected Grok Bot", cursor.selection_reason)
+        hosted = discover_hosted_targets(selected)
+        self.assertTrue(hosted[0]["detected"])
+        self.assertTrue(hosted[0]["compatibility_ready"])
+        self.assertEqual("registered-computer", hosted[0]["execution_host"])
+
+    @patch("scripts.lib.play.bootstrap.shutil.which")
+    def test_explicit_selection_does_not_override_cursor_choice(
+        self, which: MagicMock
+    ) -> None:
+        which.side_effect = lambda name: "/bin/codex" if name == "codex" else None
+        (self.home / ".cursor").mkdir()
+        Path(self.environment["GROK_BOT_APP"]).mkdir(parents=True)
+
+        targets = discover_targets(top_k=1, requested=["codex"])
+
+        self.assertEqual(
+            ["codex"], [target.id for target in targets if target.selected]
+        )
+
+    def test_hosted_handoff_requires_pointer_and_cursor_compatibility(self) -> None:
+        installed = self.home / "installed-play"
+        recipe = installed / "integrations" / "grok-bot" / "play" / "SKILL.md"
+        recipe.parent.mkdir(parents=True)
+        recipe.write_text("---\nname: play\n---\n", encoding="utf-8")
+        target = {
+            "id": "grok",
+            "detected": True,
+            "compatibility_harness": "cursor",
+            "compatibility_ready": True,
+            "handoff_skill": "integrations/grok-bot/play/SKILL.md",
+        }
+
+        ready = prepare_hosted_handoffs(installed, [target])
+        blocked = prepare_hosted_handoffs(
+            installed, [{**target, "compatibility_ready": False}]
+        )
+
+        self.assertEqual("available", ready[0].status)
+        self.assertEqual(str(recipe), ready[0].evidence)
+        self.assertEqual("unavailable", blocked[0].status)
+        self.assertIn("Cursor", blocked[0].detail)
+
     def test_codex_disabled_play_skill_override_is_detected(self) -> None:
         config = self.home / ".codex" / "config.toml"
         config.parent.mkdir(parents=True)
@@ -1696,6 +1756,43 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("DeepSeek Harness (preview): start `dsh web`", rendered)
         self.assertIn("then type `/play what's", rendered)
 
+    def test_status_card_explains_grok_registered_computer_import(self) -> None:
+        recipe = (
+            self.home
+            / ".local/share/modiqo/play/skill/integrations/grok-bot/play/SKILL.md"
+        )
+        rendered = _render_status_card(
+            {
+                "status": "completed",
+                "run_id": "grok-ready",
+                "selected_harnesses": ["cursor"],
+                "targets": [],
+                "hosted_targets": [
+                    {
+                        "id": "grok",
+                        "detected": True,
+                        "compatibility_ready": True,
+                    }
+                ],
+                "steps": [
+                    {
+                        "id": "prepare_hosted_handoff",
+                        "status": "available",
+                        "detail": "Grok Bot import is ready.",
+                        "target": "grok",
+                        "evidence": str(recipe),
+                    }
+                ],
+            }
+        )
+
+        self.assertIn("Hosted agents", rendered)
+        self.assertIn("Grok Bot       IMPORT READY", rendered)
+        self.assertIn("Finish Grok Bot", rendered)
+        self.assertIn("on my registered computer", rendered)
+        self.assertIn("never copies Rote", rendered)
+        self.assertIn("Grok Bot: after import, type `/play what's new`", rendered)
+
     def test_status_card_frames_missing_identity_as_guided_onboarding(self) -> None:
         rendered = _render_status_card(
             {
@@ -1977,6 +2074,12 @@ class BootstrapTest(unittest.TestCase):
             [step["id"] for step in report["steps"]],
         )
         self.assertIn("Rote 0.69.1 is too old", report["steps"][-1]["detail"])
+        self.assertFalse(
+            any(
+                call.args[0][1:3] == ["telemetry", "record-play-install"]
+                for call in runner.call_args_list
+            )
+        )
         backup.assert_not_called()
 
     @patch("scripts.lib.play.bootstrap._warm_public_play_cache")
@@ -2386,16 +2489,18 @@ class BootstrapTest(unittest.TestCase):
             ),
             MagicMock(returncode=0, stdout="Play ready\n", stderr=""),
             MagicMock(returncode=0, stdout='{"ready":true}\n', stderr=""),
+            MagicMock(returncode=0, stdout="", stderr=""),
             MagicMock(returncode=0, stdout="version: 1.1.0\n", stderr=""),
             MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
         ]
 
-        report = apply(
-            ROOT,
-            requested=["codex"],
-            runner=runner,
-            run_id="complete-run",
-        )
+        with patch.dict(os.environ, {"PLAY_INSTALL_CHANNEL": "playoffs"}):
+            report = apply(
+                ROOT,
+                requested=["codex"],
+                runner=runner,
+                run_id="complete-run",
+            )
 
         self.assertEqual("completed", report["status"])
         commands = [call.args[0] for call in runner.call_args_list]
@@ -2411,6 +2516,18 @@ class BootstrapTest(unittest.TestCase):
                 "--package",
                 "*",
                 "--force",
+            ],
+            commands,
+        )
+        self.assertIn(
+            [
+                "/bin/rote",
+                "telemetry",
+                "record-play-install",
+                "playoffs",
+                "fresh",
+                "0.4.79",
+                "codex",
             ],
             commands,
         )

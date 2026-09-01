@@ -23,6 +23,7 @@ TOP_LEVEL_FILES = (
 )
 DIRECTORIES = (
     "agents",
+    "integrations",
     "references",
     "scripts/bin",
     "scripts/harness",
