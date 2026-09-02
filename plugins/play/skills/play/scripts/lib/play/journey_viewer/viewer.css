@@ -1240,7 +1240,8 @@ footer {
 .drive-gear-readout span.active b { color: #5ce1ff; text-shadow: 0 0 10px rgba(92,225,255,.6); }
 .drive-gear-readout span.active small { color: #e2f6fb; }
 
-.hud { --hud: 92,225,255; --amber: 255,184,77; --red: 255,96,84; --green: 92,226,162; position: absolute; inset: 0; z-index: 8; pointer-events: none; color: #d7f1f8; }
+.hud { --hud: 92,225,255; --amber: 255,184,77; --red: 255,96,84; --green: 92,226,162; position: absolute; inset: 0; z-index: 9; pointer-events: none; color: #d7f1f8; }
+.hud.unfolded ~ .drive-dashboard .drive-gear-readout { opacity: 0; pointer-events: none; transition: opacity 160ms ease; }
 .hud.tone-writes, .hud-tag.tone-writes, .hud-pane.tone-writes { --hud: 255,184,77; }
 .hud-tag.tone-hazard, .hud-pane.tone-hazard, .hud-tag.tone-error, .hud-pane.tone-error { --hud: 255,96,84; }
 
