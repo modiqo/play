@@ -238,6 +238,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             site.events.userData.markers?.forEach((marker) => {
               const selectedMarker = selectedSite && marker.userData.sequence === selectedRef.current?.sequence
               marker.scale.setScalar(selectedMarker ? 1.22 : 1)
+              if (marker.userData.ring) marker.userData.ring.rotation.z = elapsed * (selectedMarker ? 1.6 : .5)
               marker.traverse((object) => {
                 if (!object.material || !Number.isFinite(object.userData.baseEventEmissive)) return
                 object.material.emissiveIntensity = selectedMarker
@@ -355,17 +356,11 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           title={`Inspect Play runtime @${runtimeRecord.sequence}`}
         >RUNTIME <b>@{String(runtimeRecord.sequence).padStart(2, '0')}</b></button>}
       </div>
-      <div className="drive-dashboard-clearance" aria-hidden="true">
-        <div className={`drive-gear-readout gear-${gear || 'neutral'}`}>
-          {CAPABILITY_GEARS.map((item) => <span key={item.id} className={gear === item.id ? 'active' : ''}><b>{item.action}</b><small>{item.system}</small></span>)}
-        </div>
-      </div>
-      <div className="drive-cluster-right">
-        <div className="drive-readouts drive-readouts-right">
-        <DriveMetric label="SUCCESS" value={telemetry.success} tone="green" />
-        <DriveMetric label="ERRORS" value={telemetry.error} tone={telemetry.error ? 'red' : ''} />
-        </div>
-      </div>
+      <div className="drive-dashboard-clearance" aria-hidden="true" data-gear={activeGear?.system || 'NEUTRAL'} />
     </div>
+    <aside className="drive-side-strip" aria-label="Run outcome readouts">
+      <DriveMetric label="SUCCESS" value={telemetry.success} tone="green" />
+      <DriveMetric label="ERRORS" value={telemetry.error} tone={telemetry.error ? 'red' : ''} />
+    </aside>
   </div>
 }

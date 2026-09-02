@@ -63,6 +63,94 @@ function knurlTexture(count = 72) {
   return texture
 }
 
+function perforationTexture(size = 256, pitch = 14) {
+  const texture = canvasTexture(size, size, (context, width, height) => {
+    context.fillStyle = '#808080'
+    context.fillRect(0, 0, width, height)
+    for (let y = pitch / 2; y < height; y += pitch) {
+      for (let x = pitch / 2 + ((y / pitch) % 2) * (pitch / 2); x < width; x += pitch) {
+        const dot = context.createRadialGradient(x, y, 0, x, y, pitch * .28)
+        dot.addColorStop(0, '#101010')
+        dot.addColorStop(.7, '#303030')
+        dot.addColorStop(1, '#808080')
+        context.fillStyle = dot
+        context.beginPath()
+        context.arc(x, y, pitch * .28, 0, Math.PI * 2)
+        context.fill()
+      }
+    }
+  })
+  texture.colorSpace = THREE.NoColorSpace
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+  texture.repeat.set(10, 2)
+  return texture
+}
+
+function stitchTexture(count = 96) {
+  const texture = canvasTexture(1024, 16, (context, width, height) => {
+    context.clearRect(0, 0, width, height)
+    const step = width / count
+    context.fillStyle = '#d9dee2'
+    for (let index = 0; index < count; index += 1) {
+      context.fillRect(index * step + step * .18, 5, step * .5, 6)
+    }
+  })
+  texture.wrapS = THREE.RepeatWrapping
+  return texture
+}
+
+function carbonTexture(size = 256, cell = 16) {
+  const texture = canvasTexture(size, size, (context, width, height) => {
+    for (let y = 0; y < height; y += cell) {
+      for (let x = 0; x < width; x += cell) {
+        const across = ((x + y) / cell) % 2 === 0
+        const gradient = across
+          ? context.createLinearGradient(x, y, x + cell, y)
+          : context.createLinearGradient(x, y, x, y + cell)
+        gradient.addColorStop(0, '#1a1f23')
+        gradient.addColorStop(.5, '#3a434a')
+        gradient.addColorStop(1, '#161a1e')
+        context.fillStyle = gradient
+        context.fillRect(x, y, cell, cell)
+      }
+    }
+  })
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+  texture.repeat.set(3, 1)
+  return texture
+}
+
+function dialLabelTexture(letter, word, active) {
+  const texture = canvasTexture(320, 128, (context, width, height) => {
+    context.clearRect(0, 0, width, height)
+    // Engraved plate: a dark inset with a hairline edge so the label reads
+    // against the dash instead of dissolving into it.
+    const plate = context.createLinearGradient(0, 0, 0, height)
+    plate.addColorStop(0, active ? 'rgba(18,52,66,.92)' : 'rgba(10,18,24,.9)')
+    plate.addColorStop(1, active ? 'rgba(6,22,30,.94)' : 'rgba(4,9,13,.94)')
+    context.fillStyle = plate
+    context.beginPath()
+    context.roundRect(8, 8, width - 16, height - 16, 10)
+    context.fill()
+    context.lineWidth = 3
+    context.strokeStyle = active ? 'rgba(92,225,255,.95)' : 'rgba(150,180,195,.5)'
+    context.stroke()
+    if (active) {
+      context.shadowColor = 'rgba(92,225,255,.95)'
+      context.shadowBlur = 18
+    }
+    context.textAlign = 'center'
+    context.fillStyle = active ? '#9ff0ff' : '#c7dbe3'
+    context.font = '700 58px "Departure Mono", "Berkeley Mono", Menlo, monospace'
+    context.fillText(letter, width / 2, 66)
+    context.shadowBlur = 0
+    context.fillStyle = active ? '#f2fbfd' : '#9db4bf'
+    context.font = '600 22px "Departure Mono", "Berkeley Mono", Menlo, monospace'
+    context.fillText(word, width / 2, 104)
+  })
+  return texture
+}
+
 function badgeTexture(title, subtitle, accent = '#3fc3ff') {
   return canvasTexture(256, 256, (context, width, height) => {
     context.fillStyle = '#0d1418'
@@ -129,49 +217,53 @@ function buildWheel(materials) {
   const wheel = new THREE.Group()
   wheel.name = 'cockpit-wheel'
   const rimRadius = .175
-  const rim = add(wheel, new THREE.TorusGeometry(rimRadius, .021, 36, 160), materials.leather, {name: 'rim'})
-  rim.scale.z = .78
-  // A thin satin inlay on the inner edge of the rim reads as stitching under light.
-  add(wheel, new THREE.TorusGeometry(rimRadius - .019, .0025, 10, 160), materials.brushed, {position: [0, 0, .004], name: 'rim-inlay'})
-  // Three-spoke layout: two near-horizontal arms dropping toward the hub and one lower stem.
+  const tube = .02
+  // Smooth leather rim, flattened toward the driver like a sports wheel.
+  const rim = add(wheel, new THREE.TorusGeometry(rimRadius, tube, 40, 180), materials.leather, {name: 'rim'})
+  rim.scale.z = .8
+  // Perforated leather on the two hand positions.
+  for (const [start, length] of [[20 * DEG, 50 * DEG], [110 * DEG, 50 * DEG]]) {
+    const grip = add(wheel, new THREE.TorusGeometry(rimRadius, tube + .0015, 40, 60, length), materials.perforated, {
+      rotation: [0, 0, start], name: 'grip',
+    })
+    grip.scale.z = .8
+  }
+  // Contrast stitching runs along the inside of the rim.
+  const stitch = add(wheel, new THREE.TorusGeometry(rimRadius - tube * .55, .0028, 8, 180), materials.stitch, {position: [0, 0, tube * .55], name: 'stitching'})
+  stitch.renderOrder = 2
+  // A polished trim ring where the rim meets the spokes.
+  add(wheel, new THREE.TorusGeometry(rimRadius - tube - .006, .0035, 12, 180), materials.chrome, {name: 'trim'})
+  // Three-spoke layout with a carbon face and a chrome edge.
   const arms = [
-    {angle: 14, length: rimRadius - .03, width: .03},
-    {angle: 166, length: rimRadius - .03, width: .03},
-    {angle: 270, length: rimRadius - .04, width: .024},
+    {angle: 12, length: rimRadius - .028, width: .034},
+    {angle: 168, length: rimRadius - .028, width: .034},
+    {angle: 270, length: rimRadius - .036, width: .026},
   ]
   for (const arm of arms) {
     const radians = arm.angle * DEG
-    const spoke = add(wheel, new THREE.BoxGeometry(arm.length, arm.width, .014), materials.gunmetal, {
-      position: [Math.cos(radians) * (arm.length / 2 + .02), Math.sin(radians) * (arm.length / 2 + .02), 0],
-      rotation: [0, 0, radians],
-      name: `spoke-${arm.angle}`,
-    })
-    spoke.geometry.translate(0, 0, 0)
-    add(wheel, new THREE.BoxGeometry(arm.length - .01, .003, .015), materials.chrome, {
-      position: [Math.cos(radians) * (arm.length / 2 + .02), Math.sin(radians) * (arm.length / 2 + .02), .001],
-      rotation: [0, 0, radians],
-      name: `spoke-line-${arm.angle}`,
-    })
+    const center = [Math.cos(radians) * (arm.length / 2 + .018), Math.sin(radians) * (arm.length / 2 + .018), 0]
+    add(wheel, new THREE.BoxGeometry(arm.length, arm.width, .013), materials.gunmetal, {position: center, rotation: [0, 0, radians], name: `spoke-${arm.angle}`})
+    add(wheel, new THREE.PlaneGeometry(arm.length - .012, arm.width - .01), materials.carbon, {position: [center[0], center[1], .0068], rotation: [0, 0, radians], name: `spoke-face-${arm.angle}`})
+    add(wheel, new THREE.BoxGeometry(arm.length - .008, .0025, .014), materials.chrome, {position: [center[0], center[1], .0005], rotation: [0, 0, radians], name: `spoke-edge-${arm.angle}`})
   }
-  for (const angle of [40, 140]) {
-    add(wheel, new THREE.SphereGeometry(.016, 20, 14), materials.leather, {
-      position: [Math.cos(angle * DEG) * (rimRadius - .004), Math.sin(angle * DEG) * (rimRadius - .004), .006],
-      scale: [1, 1.9, .7],
-      name: `grip-${angle}`,
-    })
-  }
-  add(wheel, new THREE.CylinderGeometry(.046, .05, .03, 64), materials.gunmetal, {rotation: [Math.PI / 2, 0, 0], name: 'hub'})
-  add(wheel, new THREE.TorusGeometry(.047, .0022, 10, 96), materials.chrome, {position: [0, 0, .016], name: 'hub-ring'})
-  add(wheel, new THREE.CircleGeometry(.04, 64), materials.badge, {position: [0, 0, .0165], name: 'badge'})
-  add(wheel, new THREE.BoxGeometry(.026, .006, .01), materials.accentSoft, {position: [0, rimRadius, .011], name: 'stitch'})
+  // Hub: machined cap, chrome bezel, illuminated ring, badge.
+  add(wheel, new THREE.CylinderGeometry(.05, .056, .034, 72), materials.gunmetal, {rotation: [Math.PI / 2, 0, 0], name: 'hub'})
+  add(wheel, new THREE.TorusGeometry(.052, .0025, 12, 120), materials.chrome, {position: [0, 0, .017], name: 'hub-bezel'})
+  add(wheel, new THREE.TorusGeometry(.044, .0012, 8, 120), materials.accentSoft, {position: [0, 0, .0182], name: 'hub-light'})
+  add(wheel, new THREE.CircleGeometry(.041, 72), materials.badge, {position: [0, 0, .0175], name: 'badge'})
+  // Top-dead-centre marker.
+  add(wheel, new THREE.BoxGeometry(.022, .005, .008), materials.accentSoft, {position: [0, rimRadius, tube * .9], name: 'tdc'})
   return wheel
 }
+
+const DIAL_LABELS = {call: ['A', 'ADAPTER'], drive: ['B', 'BROWSER'], shell: ['S', 'SHELL']}
 
 function buildDial(materials) {
   const dial = new THREE.Group()
   dial.name = 'cockpit-dial'
   add(dial, new THREE.CylinderGeometry(.084, .09, .012, 64), materials.gunmetal, {position: [0, -.012, 0], name: 'base'})
   add(dial, new THREE.TorusGeometry(.082, .004, 10, 96), materials.chrome, {rotation: [Math.PI / 2, 0, 0], position: [0, -.004, 0], name: 'bezel'})
+  add(dial, new THREE.TorusGeometry(.086, .0012, 8, 96), materials.accentSoft, {rotation: [Math.PI / 2, 0, 0], position: [0, -.002, 0], name: 'bezel-light'})
   const knob = new THREE.Group()
   knob.name = 'knob'
   add(knob, new THREE.CylinderGeometry(.064, .066, .034, 96, 1, false), materials.knurl, {position: [0, .017, 0], name: 'knurl'})
@@ -179,18 +271,33 @@ function buildDial(materials) {
   add(knob, new THREE.BoxGeometry(.008, .006, .03), materials.accent, {position: [0, .047, -.036], name: 'needle'})
   dial.add(knob)
   const lamps = {}
+  const labels = {}
   for (const [gear, angle] of Object.entries(DIAL_DETENTS)) {
     const radians = angle * DEG
     const lamp = add(dial, new THREE.SphereGeometry(.0055, 12, 10), materials.lamp.clone(), {
-      position: [Math.sin(radians) * .092, .002, -Math.cos(radians) * .092],
+      position: [Math.sin(radians) * .096, .002, -Math.cos(radians) * .096],
       name: `lamp-${gear}`,
     })
     lamps[gear] = lamp
+    // Engraved label on the dash, fanned around the detent it names.
+    const [letter, word] = DIAL_LABELS[gear]
+    const material = new THREE.MeshBasicMaterial({map: dialLabelTexture(letter, word, false), transparent: true, toneMapped: false, depthWrite: false})
+    const fan = radians * 1.7
+    const label = add(dial, new THREE.PlaneGeometry(.16, .064), material, {
+      position: [Math.sin(fan) * .2, .034, -Math.cos(fan) * .2],
+      rotation: [-Math.PI / 2 + 1.05, -fan, 0],
+      name: `dial-label-${gear}`,
+    })
+    label.userData.letter = letter
+    label.userData.word = word
+    label.renderOrder = 3
+    labels[gear] = label
   }
   const readout = add(dial, new THREE.PlaneGeometry(.001, .001), materials.readout, {position: [0, -1, 0], name: 'readout'})
   readout.visible = false
   dial.userData.knob = knob
   dial.userData.lamps = lamps
+  dial.userData.labels = labels
   dial.userData.readout = readout
   return dial
 }
@@ -225,6 +332,9 @@ export function createCockpit(renderer, {tier = 'balanced'} = {}) {
     chrome: physical({color: 0xc4ced3, roughness: .2, metalness: 1, envMap: environment, envMapIntensity: .9}),
     brushed: physical({color: 0x4d585f, roughness: .48, metalness: .9, bumpMap: grain, bumpScale: .0009, envMap: environment, envMapIntensity: .55}),
     knurl: physical({color: 0x3f4a51, roughness: .42, metalness: .9, bumpMap: knurlTexture(), bumpScale: .0028, envMap: environment, envMapIntensity: .6}),
+    perforated: physical({color: 0x0c0f12, roughness: .82, metalness: 0, clearcoat: .08, clearcoatRoughness: .8, bumpMap: perforationTexture(), bumpScale: .0045, envMap: environment, envMapIntensity: .05}),
+    stitch: new THREE.MeshStandardMaterial({map: stitchTexture(), transparent: true, alphaTest: .4, roughness: .9, metalness: 0, color: 0xd9dee2}),
+    carbon: physical({map: carbonTexture(), roughness: .32, metalness: .2, clearcoat: .9, clearcoatRoughness: .12, envMap: environment, envMapIntensity: .5}),
     dash: physical({color: 0x090d10, roughness: .74, metalness: 0, clearcoat: .08, clearcoatRoughness: .8, bumpMap: grain, bumpScale: .0012, envMap: environment, envMapIntensity: .15}),
     accent: new THREE.MeshStandardMaterial({color: COCKPIT_ACCENT, emissive: COCKPIT_ACCENT, emissiveIntensity: 1.2, roughness: .3}),
     accentSoft: new THREE.MeshStandardMaterial({color: 0x123846, emissive: COCKPIT_ACCENT, emissiveIntensity: .22, roughness: .5}),
@@ -251,9 +361,9 @@ export function createCockpit(renderer, {tier = 'balanced'} = {}) {
   cockpit.add(wheelMount)
 
   const dial = buildDial(materials)
-  dial.position.set(.46, -.3, -.9)
-  dial.rotation.x = .1
-  dial.scale.setScalar(.72)
+  dial.position.set(.42, -.265, -.92)
+  dial.rotation.x = .22
+  dial.scale.setScalar(.66)
   cockpit.add(dial)
 
   const visor = buildVisor(materials, tier)
@@ -266,6 +376,10 @@ export function createCockpit(renderer, {tier = 'balanced'} = {}) {
   key.position.set(.15, 1, -.1)
   key.target.position.set(-.1, -.4, -.9)
   cockpit.add(key, key.target)
+  const rimLight = new THREE.DirectionalLight(0x9fd6ff, .55)
+  rimLight.position.set(-.6, .4, -1.2)
+  rimLight.target.position.set(-.13, -.3, -.86)
+  cockpit.add(rimLight, rimLight.target)
   const fill = new THREE.PointLight(0xffd9b8, .18, 2.2, 2)
   fill.position.set(.4, -.05, -.5)
   cockpit.add(fill)
@@ -303,6 +417,12 @@ export function updateCockpit(cockpit, {wheelDeg = 0, dialDeg = 0, gear = '', mo
   if (gear !== cockpit.userData.lampGear) {
     for (const [lampGear, lamp] of Object.entries(dial.userData.lamps)) {
       lamp.material.emissiveIntensity = lampGear === gear ? 2.2 : .12
+    }
+    for (const [labelGear, label] of Object.entries(dial.userData.labels)) {
+      const previous = label.material.map
+      label.material.map = dialLabelTexture(label.userData.letter, label.userData.word, labelGear === gear)
+      label.material.needsUpdate = true
+      previous?.dispose()
     }
     cockpit.userData.lampGear = gear
   }
