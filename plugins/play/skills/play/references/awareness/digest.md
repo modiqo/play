@@ -64,6 +64,13 @@ later inspect succeeds.
   `latest_version_created_at`; `updated_at` alone may be a metadata edit and is not sufficient.
 - Do not treat a visibility-only metadata edit as a revision.
 - Include private Plays only from organizations authorized for the current identity.
+- Always merge the public baseline (`play.registry.PUBLIC_BASELINE_ORGANIZATIONS`, currently
+  `modiqo`) into the catalog, count, ranking, and random sample. A signed-in identity with no
+  organization membership must still see every community Play it can run, never
+  “0 runnable public Plays”. Read a baseline organization live only when the identity is not
+  already a member; a membership enumerates the same public Plays and must not be double counted.
+  Label the scope `authorized_organizations_and_public_baseline` and name the baseline in the
+  closing coverage disclosure whenever a non-member baseline contributed Plays.
 - Enrich new and revised cards with `rote registry play info <reference> --json` for released
   version and author provenance. Read public download and install counters only from the public Play
   card. Neither awareness read implies local installation or run eligibility; inspect a selected
@@ -95,7 +102,8 @@ at most ten unique unversioned references, and reconciles with the runnable publ
 Refresh a legacy cache that lacks this projection.
 
 Complete inspection coverage supports an exact scoped count. Partial coverage must say “at least”
-and disclose that the scope is the user’s authorized organizations, not the global registry.
+and disclose that the scope is the user’s authorized organizations plus the public baseline, not
+the global registry.
 
 Selecting a Play carries only its exact displayed reference and parameters into read-only
 inspection. After dependencies, local convergence, operations, and effects are disclosed,

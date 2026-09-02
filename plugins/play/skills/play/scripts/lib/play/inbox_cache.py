@@ -31,6 +31,7 @@ from .digest_state import (
 )
 from .private_store import atomic_write_json, load_json
 from .registry import (
+    PUBLIC_BASELINE_ORGANIZATIONS,
     Organization,
     load_authorized_index_flows,
     load_organizations,
@@ -42,7 +43,6 @@ from .state_home import state_path
 
 CACHE_SCHEMA = "play.inbox-cache/v1"
 DEFAULT_WINDOW_DAYS = 7
-PUBLIC_BASELINE_ORGANIZATIONS = ("modiqo",)
 
 
 def _default_cache_path() -> Path:
@@ -253,6 +253,7 @@ def refresh_cache(
         since=since,
         organizations=resolved_organizations,
         grouped_flows=grouped,
+        baseline_flows=baseline_grouped,
     )
     catalog: list[dict[str, Any]] = []
     public_catalog: list[dict[str, Any]] = []

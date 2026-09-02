@@ -19,12 +19,16 @@ from play.digest import (
     _upgrade_cached_discovery,
     build_digest,
     classify_updates,
+    collect_digest,
+    merge_public_baseline,
     rank_public,
     render_markdown,
     supports_play_discovery,
     main,
 )
+from play.public_trends import PublicStatsBatch
 from play.registry import Organization, RegistryReadError
+from play.timewindow import TimeWindowError
 
 
 class DigestTest(unittest.TestCase):
@@ -609,6 +613,211 @@ class DigestTest(unittest.TestCase):
             public_limit=5,
         )
         self.assertNotEqual(first["awareness_sha"], revised["awareness_sha"])
+
+
+
+class PublicBaselineTest(unittest.TestCase):
+    """Every signed-in identity sees the public baseline, even with no organization."""
+
+    def setUp(self) -> None:
+        self.end = datetime(2026, 9, 2, tzinfo=timezone.utc)
+        self.baseline_play = {
+            "name": "hello",
+            "visibility": "public",
+            "status": "released",
+            "created_at": "2026-06-01T00:00:00+00:00",
+            "latest_version_created_at": "2026-06-01T00:00:00+00:00",
+            "description": "Say hello.",
+        }
+
+    def _stats(self, grouped, **_):
+        plays = [
+            {
+                "owner": owner,
+                "name": play["name"],
+                "visibility": "public",
+                "download_count": 3,
+                "install_count": 1,
+                "owner_kind": "org",
+                "description": play.get("description", ""),
+                "reference": f"{owner}/{play['name']}",
+            }
+            for owner, plays in sorted(grouped.items())
+            for play in plays
+            if play.get("visibility") == "public"
+        ]
+        return PublicStatsBatch(
+            plays=plays,
+            errors=[],
+            candidate_count=len(plays),
+            omitted_count=0,
+            elapsed_ms=1.0,
+            workers=1,
+        )
+
+    def test_merge_adds_baseline_only_for_non_member_organizations(self) -> None:
+        grouped = {"modiqo": [{"name": "internal", "visibility": "private"}]}
+        baseline = {
+            "modiqo": [self.baseline_play],
+            "community": [self.baseline_play, {"name": "secret", "visibility": "private"}],
+        }
+        merged, contributed = merge_public_baseline(grouped, baseline)
+        self.assertEqual(["community"], contributed)
+        self.assertEqual(["internal"], [flow["name"] for flow in merged["modiqo"]])
+        self.assertEqual(["hello"], [flow["name"] for flow in merged["community"]])
+        self.assertEqual(grouped, {"modiqo": [{"name": "internal", "visibility": "private"}]})
+
+    def test_zero_organization_identity_counts_baseline_plays(self) -> None:
+        baseline_requests = []
+
+        def load_baseline(authorized, **_):
+            baseline_requests.append(set(authorized))
+            return {"modiqo": [self.baseline_play]}
+
+        with patch("play.digest.load_authorized_flows", return_value={}), patch(
+            "play.digest.load_public_baseline_flows", side_effect=load_baseline
+        ), patch("play.digest.load_registry_flow_infos") as infos, patch(
+            "play.digest.inspect_references"
+        ) as inspections, patch(
+            "play.digest.fetch_authorized_public_stats", side_effect=self._stats
+        ):
+            infos.return_value.flows = []
+            infos.return_value.errors = []
+            infos.return_value.omitted_count = 0
+            inspections.return_value.flows = []
+            inspections.return_value.errors = []
+            inspections.return_value.omitted_count = 0
+            digest = collect_digest(days=7, organizations=[], end=self.end)
+
+        self.assertEqual([set()], baseline_requests)
+        self.assertEqual(1, digest["ranking"]["eligible_count"])
+        self.assertEqual(1, digest["sample"]["available_count"])
+        self.assertEqual(["modiqo/hello"], [item["reference"] for item in digest["public_sample"]])
+        self.assertEqual(["modiqo"], digest["baseline"]["organizations"])
+        self.assertEqual(
+            "authorized_organizations_and_public_baseline", digest["ranking"]["scope"]
+        )
+        self.assertIn("public_baseline", digest["sources"])
+        self.assertEqual([], digest["organizations"])
+        markdown = render_markdown(digest)
+        self.assertIn("**1 runnable public Play** visible to you", markdown)
+        self.assertIn("- **hello** — Say hello.", markdown)
+        self.assertIn("and the public `modiqo` baseline", markdown)
+        self.assertTrue(supports_play_discovery(digest))
+
+    def test_baseline_member_is_not_double_counted(self) -> None:
+        member_catalog = {
+            "modiqo": [
+                self.baseline_play,
+                {
+                    "name": "internal",
+                    "visibility": "private",
+                    "created_at": "2026-06-01T00:00:00+00:00",
+                    "latest_version_created_at": "2026-06-01T00:00:00+00:00",
+                },
+            ]
+        }
+        with patch("play.digest.load_authorized_flows", return_value=member_catalog), patch(
+            "play.digest.load_public_baseline_flows", return_value={}
+        ) as load_baseline, patch("play.digest.load_registry_flow_infos") as infos, patch(
+            "play.digest.inspect_references"
+        ) as inspections, patch(
+            "play.digest.fetch_authorized_public_stats", side_effect=self._stats
+        ):
+            infos.return_value.flows = []
+            infos.return_value.errors = []
+            infos.return_value.omitted_count = 0
+            inspections.return_value.flows = []
+            inspections.return_value.errors = []
+            inspections.return_value.omitted_count = 0
+            digest = collect_digest(
+                days=7, organizations=[Organization("modiqo", "Modiqo")], end=self.end
+            )
+
+        load_baseline.assert_called_once_with({"modiqo"})
+        self.assertEqual(1, digest["ranking"]["eligible_count"])
+        self.assertEqual([], digest["baseline"]["organizations"])
+        self.assertEqual("authorized_organizations", digest["ranking"]["scope"])
+        self.assertNotIn("public_baseline", digest["sources"])
+        self.assertNotIn("baseline", render_markdown(digest))
+
+    def test_caller_supplied_baseline_skips_live_baseline_read(self) -> None:
+        with patch("play.digest.load_public_baseline_flows") as load_baseline, patch(
+            "play.digest.load_registry_flow_infos"
+        ) as infos, patch("play.digest.inspect_references") as inspections, patch(
+            "play.digest.fetch_authorized_public_stats", side_effect=self._stats
+        ):
+            infos.return_value.flows = []
+            infos.return_value.errors = []
+            infos.return_value.omitted_count = 0
+            inspections.return_value.flows = []
+            inspections.return_value.errors = []
+            inspections.return_value.omitted_count = 0
+            digest = collect_digest(
+                days=7,
+                organizations=[],
+                grouped_flows={},
+                baseline_flows={"modiqo": [self.baseline_play]},
+                end=self.end,
+            )
+
+        load_baseline.assert_not_called()
+        self.assertEqual(1, digest["ranking"]["eligible_count"])
+        self.assertEqual(["modiqo"], digest["baseline"]["organizations"])
+
+    def test_untimestamped_baseline_card_counts_without_failing_updates(self) -> None:
+        minimal = {"name": "starter", "visibility": "public", "status": "released"}
+        with patch("play.digest.load_registry_flow_infos") as infos, patch(
+            "play.digest.inspect_references"
+        ) as inspections, patch(
+            "play.digest.fetch_authorized_public_stats", side_effect=self._stats
+        ):
+            infos.return_value.flows = []
+            infos.return_value.errors = []
+            infos.return_value.omitted_count = 0
+            inspections.return_value.flows = []
+            inspections.return_value.errors = []
+            inspections.return_value.omitted_count = 0
+            digest = collect_digest(
+                days=7,
+                organizations=[],
+                grouped_flows={},
+                baseline_flows={"modiqo": [minimal]},
+                end=self.end,
+            )
+
+        self.assertEqual(1, digest["ranking"]["eligible_count"])
+        self.assertEqual([], digest["org_updates"]["new"])
+        self.assertTrue(digest["org_updates"]["revised_complete"])
+        self.assertIsNone(digest["public_sample"][0]["recent_at"])
+
+    def test_authorized_card_without_timestamp_still_fails_closed(self) -> None:
+        minimal = {"name": "starter", "visibility": "public", "status": "released"}
+        with patch("play.digest.load_registry_flow_infos"), patch(
+            "play.digest.inspect_references"
+        ), patch("play.digest.fetch_authorized_public_stats", side_effect=self._stats):
+            with self.assertRaises(TimeWindowError):
+                collect_digest(
+                    days=7,
+                    organizations=[Organization("acme", "Acme")],
+                    grouped_flows={"acme": [minimal]},
+                    baseline_flows={},
+                    end=self.end,
+                )
+
+    def test_baseline_changes_the_awareness_fingerprint(self) -> None:
+        start = datetime(2026, 8, 26, tzinfo=timezone.utc)
+        without = build_digest([], {}, [], start=start, end=self.end, public_limit=10)
+        with_baseline = build_digest(
+            [],
+            {"modiqo": [self.baseline_play]},
+            [],
+            start=start,
+            end=self.end,
+            public_limit=10,
+            baseline_organizations=["modiqo"],
+        )
+        self.assertNotEqual(without["awareness_sha"], with_baseline["awareness_sha"])
 
 
 if __name__ == "__main__":

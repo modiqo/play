@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
@@ -86,6 +87,9 @@ class InspectionBatch:
     omitted_count: int
 
 
+PUBLIC_BASELINE_ORGANIZATIONS = ("modiqo",)
+
+
 def load_organizations() -> list[Organization]:
     payload = run_rote_json("registry", "org", "list", "--json", error_type=RegistryReadError)
     if not isinstance(payload, list):
@@ -153,6 +157,26 @@ def load_public_organization_flows(slug: str) -> list[dict]:
 
     _, flows = _load_organization_flows(slug)
     return [flow for flow in flows if flow.get("visibility") == "public"]
+
+
+def load_public_baseline_flows(
+    authorized_slugs: set[str],
+    *,
+    load_public_flows: Callable[[str], list[dict]] | None = None,
+) -> dict[str, list[dict]]:
+    """Load public Plays from every baseline organization the identity is not a member of.
+
+    The public baseline is visible to every signed-in identity, including one that
+    belongs to no organization. An authorized membership already enumerates the
+    organization's complete list, so only the remaining baseline slugs are read.
+    """
+
+    loader = load_public_flows or load_public_organization_flows
+    return {
+        slug: loader(slug)
+        for slug in PUBLIC_BASELINE_ORGANIZATIONS
+        if slug not in authorized_slugs
+    }
 
 
 def _default_parameters(parameters: object) -> dict[str, Any]:

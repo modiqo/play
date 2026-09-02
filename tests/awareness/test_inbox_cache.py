@@ -373,10 +373,18 @@ class InboxCacheTest(unittest.TestCase):
                 }
             ]
 
+        collected_baselines = []
+
+        def collect(**kwargs):
+            baseline = kwargs["baseline_flows"]
+            collected_baselines.extend(sorted(baseline))
+            self.assertEqual(["starter"], [flow["name"] for flow in baseline["modiqo"]])
+            return _digest(0, 0)
+
         cache = refresh_cache(
             cache_path=self.cache_path,
             state_path=self.state_path,
-            collect=lambda **_: _digest(0, 0),
+            collect=collect,
             load_flows=load_authorized,
             load_public_flows=load_public,
             organizations=[Organization("acme", "Acme", "org-acme")],
@@ -386,6 +394,7 @@ class InboxCacheTest(unittest.TestCase):
         self.assertEqual([{"acme"}], authorized_scopes)
         self.assertEqual(["modiqo"], public_scopes)
         self.assertEqual(["modiqo"], cache["baseline_scope"])
+        self.assertEqual(["modiqo"], collected_baselines)
         self.assertRegex(cache["authority_sha256"], r"^sha256:[0-9a-f]{64}$")
         self.assertEqual(
             ["authorized_private", "authorized_public", "public_baseline"],

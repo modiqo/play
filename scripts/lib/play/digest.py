@@ -27,6 +27,7 @@ from .registry import (
     Organization,
     inspect_references,
     load_authorized_flows,
+    load_public_baseline_flows,
     load_registry_flow_infos,
     load_organizations,
     registry_failure_guidance,
@@ -38,6 +39,7 @@ from .timewindow import TimeWindowError, next_checkpoint, parse_timestamp, resol
 
 SCHEMA = "play.digest/v1"
 PUBLIC_SAMPLE_LIMIT = 10
+PUBLIC_BASELINE_TIER = "public_baseline"
 FINGERPRINT_FIELDS = (
     "name",
     "visibility",
@@ -66,6 +68,16 @@ def _digest_item(slug: str, flow: dict[str, Any], timestamp: datetime, kind: str
     }
 
 
+def _is_untimestamped_baseline(flow: dict) -> bool:
+    """Best-effort baseline cards without publication timestamps skip update classification.
+
+    Authorized organization lists remain fail-closed; only a merged public
+    baseline card may omit ``created_at`` and still count toward discovery.
+    """
+
+    return flow.get("catalog_tier") == PUBLIC_BASELINE_TIER and not flow.get("created_at")
+
+
 def classify_updates(
     grouped: dict[str, list[dict]], start: datetime, end: datetime
 ) -> tuple[list[dict], list[dict]]:
@@ -73,6 +85,8 @@ def classify_updates(
     revised: list[dict] = []
     for slug, flows in grouped.items():
         for flow in flows:
+            if _is_untimestamped_baseline(flow):
+                continue
             created = parse_timestamp(flow.get("created_at"), field=f"{slug}/{flow['name']}.created_at")
             if start <= created < end:
                 new.append(_digest_item(slug, flow, created, "new"))
@@ -132,6 +146,29 @@ def _eligible_public(flows: list[tuple[str, dict]]) -> list[dict[str, Any]]:
     return eligible
 
 
+def merge_public_baseline(
+    grouped: dict[str, list[dict]], baseline: dict[str, list[dict]] | None
+) -> tuple[dict[str, list[dict]], list[str]]:
+    """Add public baseline Plays to the authorized catalog without duplicating a membership.
+
+    Returns the merged catalog and the sorted baseline slugs that contributed
+    Plays the identity could not enumerate through an organization membership.
+    """
+
+    merged = {slug: list(flows) for slug, flows in grouped.items()}
+    contributed: list[str] = []
+    for slug in sorted(baseline or {}):
+        if slug in merged:
+            continue
+        merged[slug] = [
+            {**flow, "catalog_tier": PUBLIC_BASELINE_TIER}
+            for flow in (baseline or {})[slug]
+            if isinstance(flow, dict) and flow.get("visibility") == "public"
+        ]
+        contributed.append(slug)
+    return merged, contributed
+
+
 def rank_public(
     flows: list[tuple[str, dict]],
     limit: int,
@@ -140,19 +177,31 @@ def rank_public(
     source_errors: list[str] | None = None,
     candidate_count: int | None = None,
     omitted_count: int = 0,
+    baseline_organizations: list[str] | None = None,
 ) -> tuple[list[dict], dict[str, Any]]:
     eligible = _eligible_public(flows)
     owner_counts: dict[str, int] = {}
     for item in eligible:
         owner_counts[item["owner"]] = owner_counts.get(item["owner"], 0) + 1
+    baseline = sorted(baseline_organizations or [])
+    coverage = (
+        "in your organizations and the public baseline"
+        if baseline
+        else "in your organizations"
+    )
     ranking = {
         "metric": "lifetime_downloads",
         "label": (
-            "Top public Plays by lifetime downloads in your organizations"
+            f"Top public Plays by lifetime downloads {coverage}"
             if source_complete
-            else "Top inspected public Plays by lifetime downloads in your organizations"
+            else f"Top inspected public Plays by lifetime downloads {coverage}"
         ),
-        "scope": "authorized_organizations",
+        "scope": (
+            "authorized_organizations_and_public_baseline"
+            if baseline
+            else "authorized_organizations"
+        ),
+        "baseline_organizations": baseline,
         "eligible_count": len(eligible),
         "organization_count": len(owner_counts),
         "owner_counts": [
@@ -172,8 +221,8 @@ def rank_public(
         ranking["reason"] = "one or more public Plays could not be read"
     elif not eligible:
         ranking["reason"] = (
-            "no released public Plays with lifetime download totals were found in authorized "
-            "organizations"
+            "no released public Plays with lifetime download totals were found "
+            f"{coverage.replace('your organizations', 'authorized organizations')}"
         )
     return eligible[:limit], ranking
 
@@ -195,11 +244,13 @@ def awareness_fingerprint(
     grouped: dict[str, list[dict]],
     public_top: list[dict[str, Any]],
     ranking: dict[str, Any],
+    baseline_organizations: list[str] | None = None,
 ) -> str:
     """Hash the current awareness snapshot without moving window timestamps."""
 
     snapshot = {
         "organizations": [org.slug for org in organizations],
+        "baseline_organizations": sorted(baseline_organizations or []),
         "plays": [
             {
                 "owner": slug,
@@ -251,7 +302,9 @@ def build_digest(
     update_metadata_omitted_count: int = 0,
     update_inspection_errors: list[str] | None = None,
     update_omitted_count: int = 0,
+    baseline_organizations: list[str] | None = None,
 ) -> dict[str, Any]:
+    baseline_slugs = sorted(baseline_organizations or [])
     new, revised = classify_updates(grouped, start, end)
     inspected_updates = update_inspections or {}
     metadata_updates = update_metadata or {}
@@ -275,7 +328,8 @@ def build_digest(
         flow.get("latest_version_created_at") is not None
         for flows in grouped.values()
         for flow in flows
-        if parse_timestamp(
+        if not _is_untimestamped_baseline(flow)
+        and parse_timestamp(
             flow.get("created_at"), field=f"{flow['name']}.created_at"
         ) < start
     )
@@ -286,6 +340,7 @@ def build_digest(
         source_errors=ranking_errors,
         candidate_count=ranking_candidate_count,
         omitted_count=ranking_omitted_count,
+        baseline_organizations=baseline_slugs,
     )
     ranking["fetch"] = {
         "mode": "parallel",
@@ -317,7 +372,9 @@ def build_digest(
     return {
         "schema": SCHEMA,
         "complete": True,
-        "awareness_sha": awareness_fingerprint(organizations, grouped, public_top, ranking),
+        "awareness_sha": awareness_fingerprint(
+            organizations, grouped, public_top, ranking, baseline_slugs
+        ),
         "window": {
             "start": start.astimezone(timezone.utc).isoformat(),
             "end": end.astimezone(timezone.utc).isoformat(),
@@ -325,6 +382,7 @@ def build_digest(
         },
         "sources": [
             "authorized_registry",
+            *(["public_baseline"] if baseline_slugs else []),
             "public_play_card",
             "registry_flow_info",
             "play_inspect",
@@ -332,6 +390,10 @@ def build_digest(
         "organizations": [
             {"slug": org.slug, "display_name": org.display_name} for org in organizations
         ],
+        "baseline": {
+            "scope": "public_baseline",
+            "organizations": baseline_slugs,
+        },
         "org_updates": {
             "new": new,
             "revised": revised,
@@ -520,7 +582,24 @@ def render_markdown(digest: dict[str, Any]) -> str:
             ]
         )
     else:
-        lines.extend(["", "Counts cover runnable public cards visible through your authorized organizations; they are not a claim about the global registry."])
+        baseline_info = digest.get("baseline")
+        baseline_slugs = (
+            baseline_info.get("organizations") if isinstance(baseline_info, dict) else None
+        )
+        if isinstance(baseline_slugs, list) and baseline_slugs:
+            baseline_text = ", ".join(f"`{slug}`" for slug in baseline_slugs)
+            coverage_text = (
+                "visible through your authorized organizations and the public "
+                f"{baseline_text} baseline"
+            )
+        else:
+            coverage_text = "visible through your authorized organizations"
+        lines.extend(
+            [
+                "",
+                f"Counts cover runnable public cards {coverage_text}; they are not a claim about the global registry.",
+            ]
+        )
     if not public_cache_only and not ranking["complete"]:
         lines.append("Coverage is partial because one or more public Plays could not be read.")
     return "\n".join(lines)
@@ -581,9 +660,16 @@ def collect_digest(
     org_slugs: list[str] | None = None,
     organizations: list[Organization] | None = None,
     grouped_flows: dict[str, list[dict]] | None = None,
+    baseline_flows: dict[str, list[dict]] | None = None,
     end: datetime | None = None,
 ) -> dict[str, Any]:
-    """Collect a digest without coupling callers to the CLI or output renderer."""
+    """Collect a digest without coupling callers to the CLI or output renderer.
+
+    The public baseline is merged into the authorized catalog so an identity with
+    no organization membership still sees every community Play it can run.
+    Pass ``baseline_flows`` when the caller already loaded it; otherwise the
+    baseline organizations the identity is not a member of are read live.
+    """
 
     if min(days, public_limit, inspection_budget, update_metadata_budget, update_inspection_budget) < 1:
         raise ValueError("digest limits and budgets must be at least 1")
@@ -605,11 +691,17 @@ def collect_digest(
             else load_organizations()
         )
     )
-    grouped = (
+    authorized = (
         grouped_flows
         if grouped_flows is not None
         else load_authorized_flows({org.slug for org in resolved_organizations})
     )
+    baseline = (
+        baseline_flows
+        if baseline_flows is not None
+        else load_public_baseline_flows(set(authorized))
+    )
+    grouped, baseline_slugs = merge_public_baseline(authorized, baseline)
     candidate_new, candidate_revised = classify_updates(grouped, start, resolved_end)
     update_references = [item["reference"] for item in [*candidate_new, *candidate_revised]]
     metadata_batch = load_registry_flow_infos(update_references, limit=update_metadata_budget)
@@ -642,6 +734,7 @@ def collect_digest(
         update_metadata_omitted_count=metadata_batch.omitted_count,
         update_inspection_errors=update_batch.errors,
         update_omitted_count=update_batch.omitted_count,
+        baseline_organizations=baseline_slugs,
     )
 
 
