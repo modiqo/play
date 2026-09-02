@@ -287,6 +287,9 @@ function buildDial(materials) {
     label.userData.letter = letter
     label.userData.word = word
     label.renderOrder = 3
+    // The plate itself is drawn in screen space for crisp type; the mesh
+    // only supplies the projected anchor.
+    label.visible = false
     labels[gear] = label
   }
   const readout = add(dial, new THREE.PlaneGeometry(.001, .001), materials.readout, {position: [0, -1, 0], name: 'readout'})

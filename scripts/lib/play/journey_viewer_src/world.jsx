@@ -42,6 +42,34 @@ const CAPABILITY_GEARS = [
   {id: 'shell', action: 'S', system: 'SHELL'},
 ]
 
+function DialPlates({anchorsRef, gear}) {
+  const host = useRef(null)
+  useEffect(() => {
+    let frame = 0
+    const paint = () => {
+      frame = requestAnimationFrame(paint)
+      const node = host.current
+      if (!node) return
+      for (const plate of node.children) {
+        const anchor = anchorsRef.current?.[plate.dataset.gear]
+        if (!anchor || !anchor.visible) {
+          plate.style.opacity = '0'
+          continue
+        }
+        plate.style.opacity = '1'
+        plate.style.transform = `translate(${anchor.x}px, ${anchor.y}px) translate(-50%, -50%)`
+      }
+    }
+    frame = requestAnimationFrame(paint)
+    return () => cancelAnimationFrame(frame)
+  }, [anchorsRef])
+  return <div className="dial-plates" ref={host} aria-hidden="true">
+    {CAPABILITY_GEARS.map((item) => <span key={item.id} data-gear={item.id} className={`dial-plate${gear === item.id ? ' active' : ''}`}>
+      <b>{item.action}</b><small>{item.system}</small>
+    </span>)}
+  </div>
+}
+
 function DriveMetric({label, value, tone = ''}) {
   const previous = useRef(value)
   const [changed, setChanged] = useState(false)
@@ -65,6 +93,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
   const gearRef = useRef('')
   const anchorsRef = useRef({})
   const headingRef = useRef(0)
+  const dialAnchorsRef = useRef({})
   const [error, setError] = useState('')
   const plan = useMemo(() => buildDriveWorldPlan(story), [story])
   const replayNumber = Number(replay)
@@ -285,6 +314,17 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             }
           }
           anchorsRef.current = anchors
+          const dialAnchors = {}
+          for (const [gearId, label] of Object.entries(cockpit.userData.dial.userData.labels)) {
+            label.getWorldPosition(projected)
+            projected.project(camera)
+            dialAnchors[gearId] = {
+              x: (projected.x + 1) / 2 * width,
+              y: (1 - projected.y) / 2 * height,
+              visible: projected.z < 1,
+            }
+          }
+          dialAnchorsRef.current = dialAnchors
 
           if (composer) composer.render()
           else renderer.render(scene, camera)
@@ -358,6 +398,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       </div>
       <div className="drive-dashboard-clearance" aria-hidden="true" data-gear={activeGear?.system || 'NEUTRAL'} />
     </div>
+    <DialPlates anchorsRef={dialAnchorsRef} gear={gear} />
     <aside className="drive-side-strip" aria-label="Run outcome readouts">
       <DriveMetric label="SUCCESS" value={telemetry.success} tone="green" />
       <DriveMetric label="ERRORS" value={telemetry.error} tone={telemetry.error ? 'red' : ''} />
