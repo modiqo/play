@@ -121,33 +121,29 @@ function carbonTexture(size = 256, cell = 16) {
 }
 
 function dialLabelTexture(letter, word, active) {
-  const texture = canvasTexture(320, 128, (context, width, height) => {
+  const texture = canvasTexture(512, 208, (context, width, height) => {
     context.clearRect(0, 0, width, height)
-    // Engraved plate: a dark inset with a hairline edge so the label reads
-    // against the dash instead of dissolving into it.
-    const plate = context.createLinearGradient(0, 0, 0, height)
-    plate.addColorStop(0, active ? 'rgba(18,52,66,.92)' : 'rgba(10,18,24,.9)')
-    plate.addColorStop(1, active ? 'rgba(6,22,30,.94)' : 'rgba(4,9,13,.94)')
-    context.fillStyle = plate
+    // Engraved plate: a near-black inset with a bright edge so the label
+    // reads against the dash from the driver's seat.
+    context.fillStyle = active ? 'rgba(6,30,40,.96)' : 'rgba(3,8,12,.96)'
     context.beginPath()
-    context.roundRect(8, 8, width - 16, height - 16, 10)
+    context.roundRect(10, 10, width - 20, height - 20, 16)
     context.fill()
-    context.lineWidth = 3
-    context.strokeStyle = active ? 'rgba(92,225,255,.95)' : 'rgba(150,180,195,.5)'
+    context.lineWidth = 5
+    context.strokeStyle = active ? '#5ce1ff' : 'rgba(200,222,232,.7)'
     context.stroke()
-    if (active) {
-      context.shadowColor = 'rgba(92,225,255,.95)'
-      context.shadowBlur = 18
-    }
     context.textAlign = 'center'
-    context.fillStyle = active ? '#9ff0ff' : '#c7dbe3'
-    context.font = '700 58px "Departure Mono", "Berkeley Mono", Menlo, monospace'
-    context.fillText(letter, width / 2, 66)
+    context.shadowColor = active ? 'rgba(92,225,255,1)' : 'rgba(255,255,255,.45)'
+    context.shadowBlur = active ? 26 : 8
+    context.fillStyle = active ? '#c9f6ff' : '#ffffff'
+    context.font = '700 104px "Departure Mono", "Berkeley Mono", Menlo, monospace'
+    context.fillText(letter, width / 2, 116)
     context.shadowBlur = 0
-    context.fillStyle = active ? '#f2fbfd' : '#9db4bf'
-    context.font = '600 22px "Departure Mono", "Berkeley Mono", Menlo, monospace'
-    context.fillText(word, width / 2, 104)
+    context.fillStyle = active ? '#ffffff' : '#e3eef3'
+    context.font = '700 38px "Departure Mono", "Berkeley Mono", Menlo, monospace'
+    context.fillText(word, width / 2, 176)
   })
+  texture.anisotropy = 8
   return texture
 }
 
@@ -283,9 +279,9 @@ function buildDial(materials) {
     const [letter, word] = DIAL_LABELS[gear]
     const material = new THREE.MeshBasicMaterial({map: dialLabelTexture(letter, word, false), transparent: true, toneMapped: false, depthWrite: false})
     const fan = radians * 1.7
-    const label = add(dial, new THREE.PlaneGeometry(.16, .064), material, {
-      position: [Math.sin(fan) * .2, .034, -Math.cos(fan) * .2],
-      rotation: [-Math.PI / 2 + 1.05, -fan, 0],
+    const label = add(dial, new THREE.PlaneGeometry(.17, .069), material, {
+      position: [Math.sin(fan) * .21, .04, -Math.cos(fan) * .21],
+      rotation: [-Math.PI / 2 + 1.25, 0, 0],
       name: `dial-label-${gear}`,
     })
     label.userData.letter = letter
