@@ -480,6 +480,23 @@ export function createDriveFixture(chapter, site) {
   return group
 }
 
+const PYLON_TONES = {read: 0x5ce1ff, write: 0xffb84d, hazard: 0xff6054, error: 0xff6054}
+
+function pylonTone(record) {
+  const status = String(record.status || '').toLowerCase()
+  const profile = record.effect_profile || {}
+  const posture = String(profile.posture || record.effect || '').toLowerCase()
+  if (status === 'failed' || status === 'error' || status === 'errored') return 'error'
+  if (profile.destructive === true || posture === 'destructive') return 'hazard'
+  if (posture === 'write' || posture === 'mutate') return 'write'
+  return 'read'
+}
+
+/**
+ * Exchange pylons: a thin lit post with a floating ring, one per recorded
+ * exchange, in the same tone language as the heads-up display. The reticle
+ * locks onto the ring.
+ */
 export function createDriveEvents(records = [], site) {
   const group = new THREE.Group()
   group.name = `drive-events:${site.id}`
@@ -488,30 +505,37 @@ export function createDriveEvents(records = [], site) {
   records.forEach((record, index) => {
     const lane = index % 3 - 1
     const row = Math.floor(index / 3)
-    const succeeded = record.status === 'succeeded' || record.status === 'ok'
-    const color = succeeded ? 0xdbe5e9 : DRIVE_COLORS.red
+    const color = PYLON_TONES[pylonTone(record)]
     const marker = new THREE.Group()
-    marker.position.set(lane * 2.45, .38, 5.4 + row * 1.9)
+    marker.position.set(lane * 2.45, 0, 5.4 + row * 1.9)
     marker.userData.motion = 'event-marker'
-    const body = mesh(marker, new THREE.CapsuleGeometry(.36, .68, 5, 12), color, {
-      rotation: [Math.PI / 2, 0, 0], motion: 'event-body',
-      material: {emissive: succeeded ? 0x7e929c : DRIVE_COLORS.red, emissiveIntensity: .22, roughness: .46, metalness: .18},
+    const base = mesh(marker, new THREE.CylinderGeometry(.34, .4, .05, 40), 0x0b1216, {
+      position: [0, .025, 0], castShadow: false,
+      material: {roughness: .6, metalness: .3, emissive: color, emissiveIntensity: .05},
     })
-    body.scale.y = .64
-    body.userData.baseEventEmissive = .22
-    const glass = mesh(marker, new THREE.BoxGeometry(.56, .22, .62), 0x18303b, {
-      position: [0, .27, -.08], castShadow: false,
-      material: {emissive: 0x18303b, emissiveIntensity: .24, roughness: .18, metalness: .34, opacity: .9},
+    base.userData.baseEventEmissive = .05
+    const halo = mesh(marker, new THREE.RingGeometry(.36, .44, 48), color, {
+      position: [0, .06, 0], rotation: [-Math.PI / 2, 0, 0], castShadow: false,
+      material: {emissive: color, emissiveIntensity: .9, roughness: .4, opacity: .85},
     })
-    glass.userData.baseEventEmissive = .24
-    for (const x of [-.22, .22]) {
-      const lamp = mesh(marker, new THREE.BoxGeometry(.12, .08, .035), succeeded ? 0xff5b45 : 0xff2419, {
-        position: [x, .05, .72], castShadow: false,
-        material: {emissive: succeeded ? 0xff5b45 : 0xff2419, emissiveIntensity: 1.35, roughness: .2},
-      })
-      lamp.userData.baseEventEmissive = 1.35
-    }
+    halo.userData.baseEventEmissive = .9
+    const post = mesh(marker, new THREE.CylinderGeometry(.022, .03, 1.5, 12), color, {
+      position: [0, .8, 0], castShadow: false,
+      material: {emissive: color, emissiveIntensity: 1.4, roughness: .3, metalness: .1},
+    })
+    post.userData.baseEventEmissive = 1.4
+    const ring = mesh(marker, new THREE.TorusGeometry(.26, .018, 10, 48), color, {
+      position: [0, 1.62, 0], rotation: [Math.PI / 2, 0, 0], castShadow: false, motion: 'event-ring',
+      material: {emissive: color, emissiveIntensity: 1.6, roughness: .3},
+    })
+    ring.userData.baseEventEmissive = 1.6
+    const core = mesh(marker, new THREE.SphereGeometry(.06, 14, 12), 0xffffff, {
+      position: [0, 1.62, 0], castShadow: false,
+      material: {emissive: color, emissiveIntensity: 2.4, roughness: .2},
+    })
+    core.userData.baseEventEmissive = 2.4
     marker.userData.sequence = record.sequence
+    marker.userData.ring = ring
     group.add(marker)
     markers.push(marker)
   })

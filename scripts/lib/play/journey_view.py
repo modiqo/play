@@ -401,7 +401,7 @@ def _existing_viewer(capture_ref: str, *, root: Path | None = None) -> dict[str,
 
 def _security_headers(handler: BaseHTTPRequestHandler) -> None:
     handler.send_header("Cache-Control", "no-store")
-    handler.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'")
+    handler.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'")
     handler.send_header("Referrer-Policy", "no-referrer")
     handler.send_header("X-Content-Type-Options", "nosniff")
     handler.send_header("X-Frame-Options", "DENY")

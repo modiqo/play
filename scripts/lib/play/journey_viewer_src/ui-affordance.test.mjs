@@ -14,12 +14,20 @@ test('dense route landmarks keep large click targets and semantic labels', () =>
   assert.match(app, /marker-cluster/)
 })
 
-test('recorded exchanges expose compact non-italic request and response controls', () => {
-  assert.match(world, /drive-event-flow/)
-  assert.match(world, />REQ</)
-  assert.match(world, />RES</)
-  assert.match(world, />INSPECT</)
-  assert.match(css, /\.drive-event-action > em \{[^}]*font-style: normal/)
+test('recorded exchanges dock on the windshield visor with request and response evidence', () => {
+  const visor = readFileSync(new URL('./visor.jsx', import.meta.url), 'utf8')
+  assert.match(world, /<Visor /)
+  assert.doesNotMatch(world, /drive-events/)
+  assert.match(visor, /hud-tag/)
+  assert.match(visor, /hud-tethers/)
+  assert.match(visor, /hud-reticle/)
+  assert.match(visor, /title="REQUEST"/)
+  assert.match(visor, /title="RESPONSE"/)
+  assert.match(visor, /hud-pane-gauges/)
+  assert.match(visor, /event\.key === 'Escape'/)
+  assert.match(css, /\.hud-tag \{[\s\S]*?pointer-events: auto/)
+  assert.match(css, /\.hud-pane \{[\s\S]*?pointer-events: auto/)
+  assert.match(css, /--flow-ms/)
 })
 
 test('the footer keeps archive counts out of the persistent driving controls', () => {
@@ -29,24 +37,30 @@ test('the footer keeps archive counts out of the persistent driving controls', (
   assert.match(footer, /replay-position/)
 })
 
-test('journey switching is a labelled header file picker, not a footer control', () => {
+test('journey switching opens the departure board from a labelled header control', () => {
+  const board = readFileSync(new URL('./board.jsx', import.meta.url), 'utf8')
   const header = app.match(/<header>(?<body>[\s\S]*?)<\/header>/)?.groups?.body || ''
   const footer = app.match(/<footer>(?<body>[\s\S]*?)<\/footer>/)?.groups?.body || ''
   assert.match(header, /journey-picker-trigger/)
   assert.match(header, />JOURNEYS</)
   assert.doesNotMatch(footer, /JOURNEYS/)
-  assert.match(app, /NEWEST FIRST/)
-  assert.match(app, /journey-kind/)
+  assert.match(app, /<DepartureBoard/)
+  assert.match(board, /NEWEST FIRST/)
+  assert.match(board, /journey-kind/)
+  assert.match(board, /DEPARTURES/)
 })
 
-test('the stage card carries the primary playback control', () => {
-  assert.match(world, /drive-primary-play/)
-  assert.match(world, /PLAY ROUTE/)
-  assert.match(world, /PAUSE ROUTE/)
+test('the wheel hub is the ignition and the stage card no longer carries playback', () => {
+  assert.doesNotMatch(world, /drive-primary-play/)
+  assert.match(world, /<Ignition /)
+  assert.match(world, /event\.code === 'Space'/)
+  assert.match(world, /drive-destination/)
+  assert.match(world, /hud-arrival/)
+  assert.match(app, /departureCountdown\(/)
   assert.match(app, /onTogglePlayback=\{togglePlayback\}/)
-  const control = css.match(/\.drive-primary-play \{(?<body>[\s\S]*?)\n\}/)?.groups?.body || ''
-  assert.match(control, /min-height: 52px/)
-  assert.match(control, /pointer-events: auto/)
+  const control = css.match(/\.ignition \{(?<body>[\s\S]*?)\n\}/)?.groups?.body || ''
+  assert.match(control, /border-radius: 50%/)
+  assert.match(css, /\.ignition\.state-ready/)
 })
 
 test('the driving cluster remains shallow enough to preserve the road scene', () => {
@@ -58,16 +72,22 @@ test('the driving cluster remains shallow enough to preserve the road scene', ()
   assert.doesNotMatch(world, /drive-stage-instrument/)
 })
 
-test('follow mode presents a centered wheel and animated capability shifter', () => {
-  assert.match(world, /drive-steering-wheel/)
-  assert.match(world, /drive-capability-shifter/)
-  assert.match(world, /Capability gear:/)
-  assert.match(world, /ADAPTER/)
-  assert.match(world, /BROWSER/)
-  assert.match(world, /SHELL/)
-  assert.match(css, /@keyframes drive-steering-correction/)
-  assert.match(css, /transition: transform 680ms cubic-bezier/)
-  assert.match(css, /\.drive-shift-option b \{[^}]*font-size: 15px/)
-  assert.match(css, /\.drive-shift-option small \{[^}]*font-size: 9px/)
-  assert.match(css, /prefers-reduced-motion:[\s\S]*\.drive-steering-wheel/)
+test('follow mode drives a scene-built cockpit that steers by the road', () => {
+  const cockpit = readFileSync(new URL('./cockpit-elements.js', import.meta.url), 'utf8')
+  assert.match(world, /createCockpit\(renderer/)
+  assert.match(world, /camera\.add\(cockpit\)/)
+  assert.match(world, /wheelAngleFromTangents\(direction, aheadTangent\)/)
+  assert.match(world, /dialAngleForGear\(gearRef\.current\)/)
+  assert.doesNotMatch(world, /drive-steering-wheel|drive-capability-shifter/)
+  assert.match(cockpit, /TorusGeometry/)
+  assert.match(cockpit, /MeshPhysicalMaterial/)
+  assert.match(cockpit, /RoomEnvironment/)
+  assert.match(cockpit, /knurl/)
+  assert.match(cockpit, /transmission/)
+  assert.match(cockpit, /dial-label-/)
+  assert.doesNotMatch(world, /drive-gear-readout/)
+  assert.match(cockpit, /'ADAPTER'/)
+  assert.match(cockpit, /'BROWSER'/)
+  assert.match(cockpit, /'SHELL'/)
+  assert.match(css, /prefers-reduced-motion:[\s\S]*\.hud-tag/)
 })
