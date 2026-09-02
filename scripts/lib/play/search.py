@@ -115,6 +115,9 @@ class SearchError(CommandError):
     pass
 
 
+_ORDINAL = re.compile(r"^\d+(?:st|[nr]d|th)$")
+
+
 def discovery_queries(query: str) -> list[str]:
     """Return bounded broad-to-specific queries without model inference."""
 
@@ -125,6 +128,7 @@ def discovery_queries(query: str) -> list[str]:
         if token not in _DISCOVERY_STOP_WORDS
         and token not in _MONTHS
         and not token.isdecimal()
+        and not _ORDINAL.match(token)
     ]
     broad = " ".join(stable)
     return list(dict.fromkeys(candidate for candidate in (query, broad) if candidate))
@@ -522,6 +526,50 @@ def local_reference(path_value: str, flow_root: Path) -> str | None:
     return None
 
 
+OWNERSHIP_LABELS = {"yours": "yours", "team": "your team", "community": "community"}
+OWNERSHIP_HEADERS = {"yours": "Yours", "team": "Your team", "community": "Community"}
+
+
+def owner_scope() -> tuple[str | None, set[str]]:
+    """Return (profile handle, authorized organization slugs) from the inbox cache.
+
+    Both come from the verified cache the background refresh maintains, so
+    search never pays a registry round trip to learn who is asking. A missing
+    cache yields no handle and no organizations, which ranks everything as
+    community without changing any match classification.
+    """
+
+    try:
+        from .inbox_cache import read_cache
+
+        cache = read_cache()
+    except Exception:  # noqa: BLE001 - identity is a ranking hint, never a gate
+        return None, set()
+    if not isinstance(cache, dict):
+        return None, set()
+    handle = cache.get("profile_handle")
+    organizations = cache.get("organization_scope")
+    return (
+        handle if isinstance(handle, str) and handle else None,
+        {slug for slug in organizations if isinstance(slug, str)}
+        if isinstance(organizations, list)
+        else set(),
+    )
+
+
+def classify_ownership(
+    reference: str | None, handle: str | None, organizations: set[str]
+) -> str:
+    owner = (reference or "").partition("/")[0].casefold()
+    if not owner:
+        return "community"
+    if handle and owner == handle.casefold():
+        return "yours"
+    if owner in {slug.casefold() for slug in organizations}:
+        return "team"
+    return "community"
+
+
 def new_hit(name: str, description: str, reference: str | None) -> dict:
     return {
         "name": name,
@@ -548,6 +596,7 @@ def merge_results(
     flow_root: Path,
     limit: int,
     normalized_query: str | list[str] = "",
+    ownership: tuple[str | None, set[str]] | None = None,
 ) -> list[dict]:
     local_flows = local_payload.get("flows") if isinstance(local_payload, dict) else None
     if not isinstance(local_flows, list):
@@ -669,6 +718,10 @@ def merge_results(
         [normalized_query] if isinstance(normalized_query, str) else list(normalized_query)
     )
     query_token_sets: list[set[str]] = []
+    # Identity tokens keep stop words ("retrieve", "find") because a Play name
+    # may legitimately contain one; they are used only to recognise a request
+    # that names a Play, never to score outcome coverage.
+    identity_token_sets: list[set[str]] = []
     for text in query_texts:
         try:
             outcome = outcome_query(text) if text.strip() else ""
@@ -679,14 +732,20 @@ def merge_results(
         tokens = set(semantic_query.split())
         if tokens and tokens not in query_token_sets:
             query_token_sets.append(tokens)
+        identity = set(outcome.split())
+        if identity and identity not in identity_token_sets:
+            identity_token_sets.append(identity)
     if not query_token_sets:
         query_token_sets.append(set())
+    handle, organizations = ownership if ownership is not None else owner_scope()
     for hit in hits:
+        owner_slug = (hit["reference"] or "").partition("/")[0]
         searchable = set(
             normalize_query(
                 " ".join(
                     [
                         hit["name"],
+                        owner_slug,
                         hit["description"],
                         *sorted(hit["labels"]),
                         *sorted(hit["tags"]),
@@ -698,34 +757,57 @@ def merge_results(
         # the user's own words) may be searched together; the best one counts.
         coverage = 0.0
         query_tokens: set[str] = query_token_sets[0]
+        uncovered: set[str] = set(query_tokens)
         for candidate_tokens in query_token_sets:
+            candidate_uncovered = {
+                token
+                for token in candidate_tokens
+                if not token_is_covered(token, searchable)
+            }
             candidate_coverage = (
-                sum(1 for token in candidate_tokens if token_is_covered(token, searchable))
-                / len(candidate_tokens)
+                (len(candidate_tokens) - len(candidate_uncovered)) / len(candidate_tokens)
                 if candidate_tokens
                 else 0.0
             )
             if candidate_coverage > coverage or not query_tokens:
                 coverage = candidate_coverage
                 query_tokens = candidate_tokens
+                uncovered = candidate_uncovered
         rank_fusion = sum(1.0 / (60 + rank) for rank in hit["source_ranks"].values())
         hit["combined_score"] = coverage + rank_fusion
         hit["coverage"] = coverage
         # A request naturally carries argument tokens (repo, channel, date) that
         # can never appear in Play metadata, so raw query coverage under-scores
-        # parameterized requests. When the query contains the Play's complete
+        # parameterized requests. When any phrasing contains the Play's complete
         # name identity, treat the unmatched remainder as arguments, not gaps.
         name_tokens = set(normalize_query(hit["name"]).split())
-        name_is_covered = bool(name_tokens) and all(
-            token_is_covered(token, query_tokens) for token in name_tokens
+        name_is_covered = bool(name_tokens) and any(
+            all(token_is_covered(token, identity) for token in name_tokens)
+            for identity in identity_token_sets
         )
-        hit["match_classification"] = (
-            "full"
-            if coverage >= 0.60 or (name_is_covered and coverage >= 0.34)
-            else "partial"
-            if coverage >= 0.34
-            else "uncertain"
-        )
+        # "full" is reserved for a request whose every outcome token the card
+        # accounts for. A proportional threshold let two words out of three
+        # ("summarize last email" -> last-commit-summary) pass as adequate; the
+        # dropped word is usually the one that names what the user actually
+        # wants, and a full match skips straight to inspect-and-run.
+        if query_tokens and not uncovered:
+            hit["match_classification"] = "full"
+            hit["match_basis"] = "complete"
+            hit["argument_terms"] = set()
+        elif name_is_covered and coverage >= 0.34:
+            hit["match_classification"] = "full"
+            hit["match_basis"] = "identity"
+            hit["argument_terms"] = set(uncovered)
+            uncovered = set()
+        elif coverage >= 0.34:
+            hit["match_classification"] = "partial"
+            hit["match_basis"] = "partial"
+            hit["argument_terms"] = set()
+        else:
+            hit["match_classification"] = "uncertain"
+            hit["match_basis"] = "uncertain"
+            hit["argument_terms"] = set()
+        hit["uncovered_terms"] = uncovered
         adapter_tokens = {
             adapter: set(normalize_query(adapter).split())
             for adapter in hit["matched_adapters"]
@@ -735,19 +817,47 @@ def merge_results(
             for adapter, tokens in adapter_tokens.items()
             if tokens and all(token_is_covered(token, query_tokens) for token in tokens)
         }
+        hit["adapter_terms"] = {
+            token
+            for adapter in hit["matched_adapters"]
+            for token in adapter_tokens[adapter]
+        }
         hit["primary_scope"] = (
             "local" if "local" in hit["sources"]
             else "remote_private" if "remote_private" in hit["sources"]
             else "remote_public" if "remote_public" in hit["sources"]
             else "remote_baseline"
         )
+        hit["ownership"] = classify_ownership(hit["reference"], handle, organizations)
     lexical_full = any(hit["match_classification"] == "full" for hit in hits)
     adapter_matches = [hit for hit in hits if hit["matched_adapters"]]
     if adapter_matches and not lexical_full:
         hits = adapter_matches
         for hit in hits:
-            hit["match_classification"] = "full"
+            # Naming an adapter ("gmail", "crucible") is a strong association,
+            # but it only makes a Play adequate when nothing else in the request
+            # is left unexplained. "delete gmail filters" must not run whatever
+            # Gmail Play happens to rank first.
+            remaining = {
+                token
+                for token in hit["uncovered_terms"]
+                if not token_is_covered(token, hit["adapter_terms"])
+            }
+            if not remaining:
+                hit["match_classification"] = "full"
+                hit["match_basis"] = "adapter"
+                hit["uncovered_terms"] = set()
+            else:
+                hit["match_classification"] = "partial"
+                hit["match_basis"] = "adapter_partial"
+                hit["uncovered_terms"] = remaining
             hit["combined_score"] += 1.0
+        best_class = (
+            "full"
+            if any(hit["match_classification"] == "full" for hit in hits)
+            else "partial"
+        )
+        hits = [hit for hit in hits if hit["match_classification"] == best_class]
     else:
         best_class = "full" if lexical_full else "partial"
         hits = [hit for hit in hits if hit["match_classification"] == best_class]
@@ -759,8 +869,22 @@ def merge_results(
         "remote_public": 2,
         "remote_baseline": 3,
     }
+
+    def ownership_tier(hit: dict) -> int:
+        # Ownership orders equally adequate Plays only. Classification is
+        # decided first and never consults who owns the card, so a community
+        # Play with complete coverage still beats the caller's own partial one.
+        if hit["primary_scope"] == "local":
+            return 0
+        if hit["ownership"] == "yours":
+            return 1
+        if hit["ownership"] == "team":
+            return 2 if hit["primary_scope"] == "remote_private" else 3
+        return 4 + scope_priority[hit["primary_scope"]]
+
     hits.sort(key=lambda hit: (
         class_priority[hit["match_classification"]],
+        ownership_tier(hit),
         scope_priority[hit["primary_scope"]],
         -hit["combined_score"],
         hit["name"].casefold(),
@@ -828,10 +952,14 @@ def merge_results(
                 "score": round(hit["combined_score"], 8),
                 "coverage": round(hit["coverage"], 8),
                 "match_classification": hit["match_classification"],
+                "match_basis": hit["match_basis"],
+                "uncovered_terms": sorted(hit["uncovered_terms"]),
+                "argument_terms": sorted(hit["argument_terms"]),
                 "matched_adapters": sorted(hit["matched_adapters"], key=str.casefold),
                 "labels": sorted(hit["labels"], key=str.casefold),
                 "tags": sorted(hit["tags"], key=str.casefold),
                 "primary_scope": primary_scope,
+                "ownership": hit["ownership"],
                 "uri": uri,
                 "run_command": run_command,
                 "inspect_command": inspect_command,
@@ -861,13 +989,25 @@ def render_markdown(
         lines.extend(["", f"Normalized from: {original.strip()}"])
     if not results:
         return "\n".join([*lines, "", "No matching Plays found."])
+    tiers = [result.get("ownership") for result in results]
+    segmented = len({tier for tier in tiers if tier}) > 1
+    current_tier = None
     for index, result in enumerate(results, 1):
         source = " + ".join(result["sources"])
         version = f" · v{result['version']}" if result["version"] else ""
+        ownership = result.get("ownership")
+        if segmented and ownership != current_tier:
+            current_tier = ownership
+            lines.extend(["", OWNERSHIP_HEADERS.get(ownership, "Community")])
+        badges = "".join(
+            f" · {value}"
+            for value in (result.get("match_classification"), OWNERSHIP_LABELS.get(ownership))
+            if value
+        )
         lines.extend(
             [
                 "",
-                f"{index}. **{result['name']}** · {source}{version} · score {result['score']:.8f}",
+                f"{index}. **{result['name']}** · {source}{version}{badges} · score {result['score']:.8f}",
                 f"   URI: {result['uri']}",
                 (
                     "   Local: found; the outcome route runs it immediately after read-only inspection."
@@ -897,7 +1037,11 @@ def build_play_choices(results: list[dict]) -> list[dict]:
             {
                 "reference": reference,
                 "label": reference.partition("@")[0],
-                "description": result["selection_description"],
+                "description": (
+                    f"{OWNERSHIP_LABELS[result['ownership']]} · {result['selection_description']}"
+                    if result.get("ownership") in OWNERSHIP_LABELS
+                    else result["selection_description"]
+                ),
                 "parameters": {},
             }
         )

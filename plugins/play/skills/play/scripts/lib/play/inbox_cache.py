@@ -15,6 +15,8 @@ import argparse
 import hashlib
 import json
 import os
+import re
+import subprocess
 import sys
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
@@ -168,6 +170,32 @@ def _snapshot_sha(payload: object) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
+_PROFILE_HANDLE = re.compile(r"(?im)^handle:\s*([a-z0-9][a-z0-9_-]{0,62})\s*$")
+
+
+def load_profile_handle(*, timeout_seconds: float = 5.0) -> str | None:
+    """Return the claimed Rote profile handle, or None when it cannot be read.
+
+    Search uses the handle only to rank the identity's own Plays ahead of
+    equally adequate community Plays; a missing handle changes no match.
+    """
+
+    try:
+        completed = subprocess.run(
+            ["rote", "registry", "whoami", "--verbose"],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    match = _PROFILE_HANDLE.search(completed.stdout)
+    return match.group(1) if match else None
+
+
 def refresh_cache(
     *,
     days: int = DEFAULT_WINDOW_DAYS,
@@ -179,6 +207,7 @@ def refresh_cache(
     load_public_flows: Callable[[str], list[dict[str, Any]]] | None = None,
     organizations: list[Organization] | None = None,
     require_complete_catalog: bool = False,
+    load_handle: Callable[[], str | None] | None = None,
 ) -> dict[str, Any]:
     """Fetch the digest and persist both cache tiers; the background-job body."""
 
@@ -348,10 +377,16 @@ def refresh_cache(
         markdown = render_markdown(dict(digest))
     except (KeyError, TypeError):
         markdown = None
+    handle_loader = load_handle or load_profile_handle
+    try:
+        profile_handle = handle_loader()
+    except Exception:  # noqa: BLE001 - identity is a ranking hint, never a gate
+        profile_handle = None
     cache = {
         "schema": CACHE_SCHEMA,
         "fetched_at": _utc_now().isoformat(timespec="seconds"),
         "window_days": days,
+        "profile_handle": profile_handle if isinstance(profile_handle, str) else None,
         "summary_line": summary_line(digest),
         "counts": {
             "new": len(digest.get("org_updates", {}).get("new", [])),

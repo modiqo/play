@@ -1869,6 +1869,67 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("normal", yielded.session.context["capture"]["status"])
         self.assertEqual((), yielded.presentations)
 
+    def test_full_label_with_uncovered_outcome_terms_is_downgraded_not_run(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-downgrade",
+            task_key="task-downgrade",
+            request_original="summarize last email",
+        )
+        context: dict[str, Any] = copy.deepcopy(dict(session.context))
+        context["state"] = "classify"
+        context["request"]["intent"] = "summarize last email"
+        context["request"]["requested_outcome"] = "summarize the last email"
+        candidate = {
+            "name": "last-commit-summary",
+            "description": "Return the last commit for a GitHub repository",
+            "reference": "manasds/last-commit-summary",
+            "exact_reference": "manasds/last-commit-summary@0.1.0",
+            "version": "0.1.0",
+            "status": "approved",
+            "sources": ["remote_public"],
+            "score": 0.68,
+            "coverage": 0.6667,
+            "match_classification": "full",
+            "match_basis": "complete",
+            "uncovered_terms": ["email"],
+            "argument_terms": [],
+            "matched_adapters": [],
+            "labels": [],
+            "tags": [],
+            "primary_scope": "remote_public",
+            "uri": "https://play.modiqo.ai/manasds/last-commit-summary",
+            "run_command": "unused",
+            "inspect_command": "unused",
+            "hint_kind": "play",
+            "local_availability": "not_found",
+            "execution_resolution": "pull_required",
+            "selection_description": "Remote public match; pulling requires approval.",
+        }
+        context["search"].update(
+            {
+                "complete": True,
+                "query": "summarize last email",
+                "sources": ["local", "authorized_registry"],
+                "result_refs": ["manasds/last-commit-summary@0.1.0"],
+                "results": [candidate],
+                "play_choices": [],
+            }
+        )
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("classify")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("full_match", yielded.trace[0].event)
+        self.assertEqual("exited", yielded.projection["state"]["id"])
+        self.assertEqual("partial", yielded.session.context["match"]["classification"])
+        self.assertEqual(["email"], yielded.session.context["match"]["uncovered"])
+        self.assertEqual("normal", yielded.session.context["capture"]["decision"])
+
     def test_explicit_explore_no_match_converts_original_outcome_to_capture(self) -> None:
         from play.runtime_context import apply_event, initial_context
 
@@ -3732,6 +3793,68 @@ class ControllerRuntimeTest(unittest.TestCase):
             ),
         )
         self.assertEqual("birth_bind", matched.cursor.state)
+
+    def test_save_offer_projects_verbatim_presentation_with_every_choice(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-save",
+            task_key="task-save",
+            request_original="create a reusable Play",
+        )
+        context = dict(session.context)
+        context["state"] = "save_offer"
+        context["candidate"] = {**context["candidate"], "reference": "code-docs"}
+        context["publication"] = {
+            **context["publication"],
+            "owner_resolution": "resolved",
+            "profile_handle": "chetan",
+            "owner": "chetan",
+            "owner_choices": [
+                {
+                    "id": "profile:chetan",
+                    "owner": "chetan",
+                    "kind": "profile_handle",
+                    "display_name": "@chetan (profile handle)",
+                    "ownership_description": "Publish under `chetan`.",
+                    "recommended": True,
+                }
+            ],
+            "owner_summary": "Your claimed handle is ready.",
+            "owner_probe_ref": "sha256:" + "a" * 64,
+            "owner_probe_ns": 1,
+        }
+        save_cursor = replace(session.cursor, state=StateId("save_offer"))
+
+        instruction = self.runtime.project(save_cursor, context).as_dict()["instruction"]
+        labels = [choice["label"] for choice in instruction["choices"]]
+        presentation = instruction["presentation"]
+
+        self.assertEqual(["Team", "Community", "Skip"], labels)
+        self.assertEqual("verbatim", presentation["fidelity"])
+        self.assertEqual(
+            {"Team": "save_private", "Community": "save_public", "Skip": "save_skipped"},
+            presentation["choice_events"],
+        )
+        for label in labels:
+            self.assertIn(f"**{label}**", presentation["markdown"])
+        self.assertIn("Your claimed handle is ready.", presentation["markdown"])
+        self.assertIn("Reply with one number.", presentation["markdown"])
+        rules = " ".join(presentation["rules"])
+        self.assertIn("Never add, remove, rename", rules)
+        self.assertIn("never removes a choice", rules)
+
+        with self.assertRaises(ControllerRuntimeError) as rejected:
+            self.runtime.step(
+                save_cursor,
+                ControllerEvent(
+                    id=EventId("save_local_only"),
+                    payload={"prompt_version": "1", "selected_at": "2026-09-02T00:00:00Z"},
+                    guards={},
+                ),
+            )
+        message = str(rejected.exception)
+        self.assertIn("does not accept event 'save_local_only'", message)
+        self.assertIn("save_private, save_public, save_skipped", message)
+        self.assertIn("verbatim", message)
 
     def test_public_owner_guard_is_derived_before_release(self) -> None:
         save_cursor = replace(self.cursor(), state=StateId("save_offer"))

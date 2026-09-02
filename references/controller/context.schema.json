@@ -486,6 +486,22 @@
             "uncertain"
           ]
         },
+        "match_basis": {
+          "enum": [
+            "complete",
+            "identity",
+            "adapter",
+            "adapter_partial",
+            "partial",
+            "uncertain"
+          ]
+        },
+        "uncovered_terms": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "argument_terms": {
+          "$ref": "#/$defs/stringArray"
+        },
         "matched_adapters": {
           "$ref": "#/$defs/stringArray"
         },
@@ -494,6 +510,13 @@
         },
         "tags": {
           "$ref": "#/$defs/stringArray"
+        },
+        "ownership": {
+          "enum": [
+            "yours",
+            "team",
+            "community"
+          ]
         },
         "primary_scope": {
           "enum": [

@@ -525,7 +525,8 @@ actions:
       - Search the harness's intent paraphrase and the user's original words together; strip argument values (URLs, paths, handles, dates) and stop words so only outcome vocabulary reaches the AND-of-terms registry search, and add one OR-relaxed registry query so phrasing differences cannot hide an adequate Play.
       - Normalize once, derive bounded outcome queries, then search local and authorized registry indexes concurrently.
       - Partition authorized registry matches into private organizations and the public hub.
-      - Rank adequate matches local first, remote private second, and remote public third.
+      - Classify a Play as a full match only when the card accounts for every outcome token of at least one phrasing, or when a phrasing names the Play; report any remaining outcome tokens as uncovered_terms so the adequacy guard can downgrade instead of run.
+      - Rank adequate matches local first, then the identity's own Plays, then team Plays, then remote public, then baseline; ownership never changes a match classification.
       - Deduplicate aliases and versions by canonical Play reference and return bounded execution metadata.
     events:
       search_ready: [search.complete, search.query, search.sources, search.result_refs, search.results, search.play_choices]

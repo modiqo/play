@@ -9,6 +9,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
+from unittest import mock
+
+from play import inbox_cache as INBOX_CACHE
 from play.inbox_cache import (
     cached_line,
     public_cache_entries,
@@ -100,9 +103,38 @@ class InboxCacheTest(unittest.TestCase):
         base = Path(self._temporary.name)
         self.cache_path = base / "inbox-cache.json"
         self.state_path = base / "digest-state.json"
+        # The default handle probe shells out to rote; keep every test offline.
+        no_rote = mock.patch.object(
+            INBOX_CACHE.subprocess,
+            "run",
+            return_value=mock.Mock(returncode=1, stdout="", stderr="not logged in"),
+        )
+        no_rote.start()
+        self.addCleanup(no_rote.stop)
 
     def tearDown(self) -> None:
         self._temporary.cleanup()
+
+    def test_refresh_persists_the_claimed_profile_handle_for_ranking(self) -> None:
+        cache = self._refresh(_digest(0, 0), load_handle=lambda: "rwnalds")
+        self.assertEqual("rwnalds", cache["profile_handle"])
+        self.assertEqual("rwnalds", read_cache(cache_path=self.cache_path)["profile_handle"])
+
+        failing = self._refresh(
+            _digest(0, 0),
+            load_handle=lambda: (_ for _ in ()).throw(RuntimeError("offline")),
+        )
+        self.assertIsNone(failing["profile_handle"])
+        self.assertIsNone(self._refresh(_digest(0, 0))["profile_handle"])
+
+    def test_profile_handle_probe_parses_whoami_and_tolerates_failure(self) -> None:
+        completed = mock.Mock(returncode=0, stdout="@@result\nemail: a@b.c\nhandle: rwnalds\n")
+        with mock.patch.object(INBOX_CACHE.subprocess, "run", return_value=completed):
+            self.assertEqual("rwnalds", INBOX_CACHE.load_profile_handle())
+        with mock.patch.object(
+            INBOX_CACHE.subprocess, "run", side_effect=OSError("missing rote")
+        ):
+            self.assertIsNone(INBOX_CACHE.load_profile_handle())
 
     def _refresh(self, digest: dict, **kwargs):
         return refresh_cache(

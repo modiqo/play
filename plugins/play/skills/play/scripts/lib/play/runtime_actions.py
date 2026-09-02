@@ -407,7 +407,17 @@ def _commandless_result(
             "uncertain": "uncertain_match",
         }[classification]
         covered = [str(candidate.get("name") or reference)]
-        uncovered = [] if classification == "full" else [str(outcome)]
+        # Search reports the outcome tokens the card could not account for. A
+        # "full" label with a non-empty remainder fails the
+        # match_satisfies_constraints guard and is downgraded instead of run.
+        remainder = candidate.get("uncovered_terms")
+        uncovered = (
+            [str(term) for term in remainder]
+            if classification == "full" and isinstance(remainder, list)
+            else []
+            if classification == "full"
+            else [str(outcome)]
+        )
         match: dict[str, Any] = {
             "covered": covered,
             "uncovered": uncovered,

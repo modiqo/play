@@ -278,7 +278,14 @@ run.
   only for fields that remain unresolved. Never forward conversational shorthand as an execution
   parameter when frontmatter declares a stricter format.
 - `human`: present the exact projected prompt through structured elicitation; resume with the
-  selected declared event.
+  selected declared event. The projection carries `instruction.presentation` with verbatim
+  Markdown, a label-to-event map, and fidelity rules. Show every projected choice with its exact
+  label and description, in the projected order. Never add, remove, rename, merge, or re-describe
+  a choice; a choice that is not projected does not exist. The user's original words never
+  remove a choice and never answer the prompt, so do not pre-decide, pre-select, or skip it on
+  their behalf. Resume only with the event bound to the choice the user selected. The runtime
+  rejects any other event and names the declared ones; when that happens, show the projected
+  prompt again unchanged.
 - `specialist`: invoke only `instruction.specialist` with `instruction.input` through the
   harness's skill mechanism; resume with the one accepted typed receipt event. Interactive
   specialists own their own user questions — ask those directly and continue inside the

@@ -16,7 +16,7 @@ from jsonschema import Draft202012Validator
 from statemachine.io import create_machine_class_from_definition
 
 from .machine import MachineValidationError, validate_bundle
-from .elicitation import native_payload, parse_question
+from .elicitation import markdown_fallback, native_payload, parse_question
 from .executors import action_executor
 from .runtime_context import (
     RuntimeContextError,
@@ -317,8 +317,12 @@ class ControllerRuntime:
             raise ControllerRuntimeError(f"terminal state {cursor.state!r} accepts no events")
         branches = state.events.get(event.id)
         if branches is None:
+            accepted = ", ".join(sorted(str(item) for item in state.events))
             raise ControllerRuntimeError(
-                f"state {cursor.state!r} does not accept event {event.id!r}"
+                f"state {cursor.state!r} does not accept event {event.id!r}; "
+                f"only a declared event may resume it: {accepted}. "
+                "Present the projected prompt verbatim and resume with the "
+                "event bound to the user's selected choice."
             )
         _validate_event_payload(
             event.payload,
@@ -438,6 +442,7 @@ class ControllerRuntime:
                 "choices": rendered["choices"],
                 "input": rendered["input"],
                 "events": dict(prompt.get("events", {})),
+                "presentation": _prompt_presentation(question, rendered, context or {}),
             }
         else:
             raise ControllerRuntimeError(
@@ -1279,6 +1284,37 @@ def _derive_session_guards(
         payload=event.payload,
         guards=values,
     )
+
+
+PROMPT_FIDELITY_RULES: tuple[str, ...] = (
+    "Present this prompt verbatim: the question, every choice label, and every choice "
+    "description exactly as projected, in the projected order.",
+    "Never add, remove, rename, merge, reorder, or re-describe a choice. A choice that is "
+    "not projected here does not exist and cannot be offered.",
+    "The user's original request never removes a choice and never answers this prompt. "
+    "Do not pre-decide, pre-select, or skip the prompt on the user's behalf.",
+    "Resume the runtime only with the declared event bound to the choice the user "
+    "selected. Free text that matches no choice is not a selection; ask again.",
+)
+
+
+def _prompt_presentation(
+    question: Any, rendered: Mapping[str, Any], context: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Return a ready-to-show block so a harness never has to rebuild the prompt.
+
+    Cheaper models tend to treat a projected choice list as advisory and compose
+    their own menu, dropping or inventing options. The verbatim Markdown and the
+    exact choice-to-event map give them nothing to reinterpret.
+    """
+    return {
+        "fidelity": "verbatim",
+        "markdown": markdown_fallback(question, context),
+        "choice_events": {
+            str(choice["label"]): str(choice["event"]) for choice in rendered["choices"]
+        },
+        "rules": list(PROMPT_FIDELITY_RULES),
+    }
 
 
 def _validate_event_payload(

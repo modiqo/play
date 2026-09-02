@@ -12,6 +12,14 @@ from play import search as PLAY_SEARCH
 
 
 class SearchTest(unittest.TestCase):
+    def setUp(self) -> None:
+        # Never let the developer's real inbox cache leak identity into ranking.
+        self._no_identity = mock.patch.dict(
+            os.environ, {"PLAY_INBOX_CACHE_PATH": "/nonexistent/play-inbox-cache.json"}
+        )
+        self._no_identity.start()
+        self.addCleanup(self._no_identity.stop)
+
     def test_query_normalization_removes_special_characters_and_duplicate_tokens(self):
         query = "Live status? (AI models)—AI models; café's latency!"
         self.assertEqual(
@@ -962,6 +970,183 @@ class SearchTest(unittest.TestCase):
         )
         self.assertEqual([], results)
 
+    def test_two_of_three_outcome_tokens_are_not_a_full_match(self):
+        """"summarize last email" must not run a Play about git commits."""
+        flow_root = pathlib.Path("/tmp/example-flows")
+        registry = [
+            {
+                "owner_slug": "manasds",
+                "skill_name": "last-commit-summary",
+                "skill_description": (
+                    "Return the last commit SHA, author, date, and message for a "
+                    "GitHub repository"
+                ),
+                "visibility": "public",
+                "version": "0.1.0",
+            },
+            {
+                "owner_slug": "modiqo",
+                "skill_name": "retrieve-recent-emails",
+                "skill_description": (
+                    "Retrieves recent Gmail messages matching a Gmail search query"
+                ),
+                "visibility": "public",
+                "version": "0.1.6",
+            },
+        ]
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []}, registry, flow_root, 10, "summarize last email"
+        )
+        self.assertTrue(results)
+        for result in results:
+            self.assertNotEqual("full", result["match_classification"], result["reference"])
+        commit = next(r for r in results if r["name"] == "last-commit-summary")
+        self.assertEqual("partial", commit["match_classification"])
+        self.assertEqual(["email"], commit["uncovered_terms"])
+        self.assertEqual([], commit["argument_terms"])
+
+    def test_complete_outcome_coverage_is_a_full_match_with_empty_remainder(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        registry = [
+            {
+                "owner_slug": "rwnalds",
+                "skill_name": "what-should-i-automate",
+                "skill_description": "Finds the repeated work worth automating.",
+                "visibility": "public",
+                "version": "0.2.1",
+            }
+        ]
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []}, registry, flow_root, 10, "what should i automate"
+        )
+        self.assertEqual("full", results[0]["match_classification"])
+        self.assertEqual("complete", results[0]["match_basis"])
+        self.assertEqual(1.0, results[0]["coverage"])
+        self.assertEqual([], results[0]["uncovered_terms"])
+
+    def test_naming_the_play_keeps_argument_words_out_of_the_remainder(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        registry = [
+            {
+                "owner_slug": "modiqo",
+                "skill_name": "retrieve-rideshare-receipts",
+                "skill_description": "Retrieves rideshare receipts between two dates.",
+                "visibility": "public",
+                "version": "0.1.0",
+            }
+        ]
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []},
+            registry,
+            flow_root,
+            10,
+            "retrieve rideshare receipts for acme between the 15th and 20th",
+        )
+        self.assertEqual("full", results[0]["match_classification"])
+        self.assertEqual("identity", results[0]["match_basis"])
+        self.assertEqual([], results[0]["uncovered_terms"])
+        self.assertEqual(["acme"], results[0]["argument_terms"])
+
+    def test_intent_paraphrase_cannot_hide_a_better_live_match_behind_the_cache(self):
+        """Case 2: a two-thirds cached hit no longer skips the live registry."""
+        import json as json_module
+        import tempfile
+
+        commands = []
+
+        def fake_run(command, **_kwargs):
+            commands.append(command)
+            if "--source" not in command:
+                return {"flows": []}
+            return {
+                "schema": "rote.remote-play-search.v1",
+                "items": [
+                    {
+                        "play_id": "automate-play",
+                        "reference": "rwnalds/what-should-i-automate@0.2.1",
+                        "owner": {"slug": "rwnalds", "kind": "user"},
+                        "name": "what-should-i-automate",
+                        "description": "Finds the repeated work worth automating.",
+                        "version": "0.2.1",
+                        "visibility": "public",
+                        "status": "approved",
+                    }
+                ],
+            }
+
+        phrasings = ["daily work review", "what should i automate"]
+        with tempfile.TemporaryDirectory() as temporary:
+            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
+            cache_path.write_text(
+                json_module.dumps(
+                    {
+                        "schema": "play.inbox-cache/v1",
+                        "catalog_complete": True,
+                        "catalog": [
+                            {
+                                "reference": "modiqo/agent-work-daily-close",
+                                "name": "agent-work-daily-close",
+                                "description": (
+                                    "Audits recent agent sessions for daily work closure."
+                                ),
+                                "visibility": "public",
+                                "version": "1.0.1",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                PLAY_SEARCH, "run_json", side_effect=fake_run
+            ), mock.patch.dict(
+                os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
+            ):
+                local, registry = PLAY_SEARCH.search_both(phrasings, 5)
+
+        self.assertEqual("live_after_cache_miss", local["source_health"]["mode"])
+        self.assertTrue(any("--source" in command for command in commands))
+        results = PLAY_SEARCH.merge_results(
+            local, registry, pathlib.Path("/tmp/none"), 5, phrasings
+        )
+        self.assertEqual(
+            ["rwnalds/what-should-i-automate"],
+            [result["reference"] for result in results],
+        )
+        self.assertEqual("full", results[0]["match_classification"])
+
+    def test_adapter_name_alone_does_not_make_an_unrelated_request_adequate(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        registry = [
+            {
+                "owner_slug": "modiqo",
+                "skill_name": "retrieve-recent-emails",
+                "skill_description": "Retrieves recent inbox messages.",
+                "visibility": "public",
+                "version": "0.1.6",
+                "adapters": ["gmail"],
+            }
+        ]
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []}, registry, flow_root, 10, "delete every gmail filter"
+        )
+        self.assertEqual(["modiqo/retrieve-recent-emails"], [r["reference"] for r in results])
+        self.assertEqual("partial", results[0]["match_classification"])
+        self.assertEqual("adapter_partial", results[0]["match_basis"])
+        self.assertEqual(["delete", "every", "filter"], results[0]["uncovered_terms"])
+
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []}, registry, flow_root, 10, "gmail plays"
+        )
+        self.assertEqual("full", results[0]["match_classification"])
+        self.assertEqual("adapter", results[0]["match_basis"])
+
+    def test_ordinal_day_tokens_are_arguments_not_outcome_vocabulary(self):
+        self.assertEqual(
+            ["rideshare receipts 15th", "rideshare receipts"],
+            PLAY_SEARCH.discovery_queries("rideshare receipts 15th"),
+        )
+
     def test_stem_sharing_is_bounded_to_real_inflections(self):
         from play.normalize import token_is_covered
 
@@ -1039,6 +1224,170 @@ class SearchTest(unittest.TestCase):
         self.assertEqual(
             ["local", "remote_private", "remote_public", "remote_baseline"],
             [result["primary_scope"] for result in results],
+        )
+
+    def test_identity_owned_plays_rank_ahead_of_equally_adequate_community_plays(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        description = "Finds the repeated work worth automating."
+        registry = [
+            {
+                "owner_slug": "someone",
+                "skill_name": "automation-opportunity-scan",
+                "skill_description": description,
+                "version": "0.1.0",
+                "rank": 30.0,
+                "status": "approved",
+                "visibility": "public",
+            },
+            {
+                "owner_slug": "rwnalds",
+                "skill_name": "what-should-i-automate",
+                "skill_description": description,
+                "version": "0.2.1",
+                "rank": 1.0,
+                "status": "approved",
+                "visibility": "public",
+            },
+            {
+                "owner_slug": "acme",
+                "skill_name": "team-automation-review",
+                "skill_description": description,
+                "version": "1.0.0",
+                "rank": 20.0,
+                "status": "approved",
+                "visibility": "public",
+            },
+        ]
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []},
+            registry,
+            flow_root,
+            10,
+            "automation worth repeated work",
+            ownership=("rwnalds", {"acme"}),
+        )
+        self.assertEqual(
+            [
+                ("rwnalds/what-should-i-automate", "yours"),
+                ("acme/team-automation-review", "team"),
+                ("someone/automation-opportunity-scan", "community"),
+            ],
+            [(result["reference"], result["ownership"]) for result in results],
+        )
+        self.assertTrue(all(result["match_classification"] == "full" for result in results))
+
+    def test_ownership_never_lifts_a_partial_match_over_a_complete_community_match(self):
+        flow_root = pathlib.Path("/tmp/example-flows")
+        registry = [
+            {
+                "owner_slug": "rwnalds",
+                "skill_name": "last-commit-summary",
+                "skill_description": "Return the last commit for a GitHub repository.",
+                "version": "0.1.0",
+                "visibility": "public",
+            },
+            {
+                "owner_slug": "someone",
+                "skill_name": "summarize-last-email",
+                "skill_description": "Summarize the last email in your inbox.",
+                "version": "0.1.0",
+                "visibility": "public",
+            },
+        ]
+        results = PLAY_SEARCH.merge_results(
+            {"flows": []},
+            registry,
+            flow_root,
+            10,
+            "summarize last email",
+            ownership=("rwnalds", set()),
+        )
+        self.assertEqual(["someone/summarize-last-email"], [r["reference"] for r in results])
+        self.assertEqual("community", results[0]["ownership"])
+
+    def test_owner_scope_reads_handle_and_organizations_from_the_inbox_cache(self):
+        import json as json_module
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
+            cache_path.write_text(
+                json_module.dumps(
+                    {
+                        "schema": "play.inbox-cache/v1",
+                        "profile_handle": "rwnalds",
+                        "organization_scope": ["acme", "modiqo"],
+                        "catalog": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}):
+                self.assertEqual(("rwnalds", {"acme", "modiqo"}), PLAY_SEARCH.owner_scope())
+        self.assertEqual((None, set()), PLAY_SEARCH.owner_scope())
+
+    def test_markdown_segments_by_ownership_only_when_tiers_differ(self):
+        def result(name, owner, ownership):
+            return {
+                "name": name,
+                "version": "0.1.0",
+                "sources": ["remote_public"],
+                "score": 1.0,
+                "match_classification": "full",
+                "ownership": ownership,
+                "uri": f"https://play.modiqo.ai/{owner}/{name}",
+                "run_command": f"rote play run {owner}/{name}",
+                "inspect_command": f"rote play inspect {owner}/{name} --json",
+                "hint_kind": "play",
+                "execution_resolution": "pull_required",
+            }
+
+        mixed = PLAY_SEARCH.render_markdown(
+            "what should i automate",
+            "what should i automate",
+            [
+                result("what-should-i-automate", "rwnalds", "yours"),
+                result("automation-opportunity-scan", "someone", "community"),
+            ],
+        )
+        self.assertIn("\nYours\n", mixed)
+        self.assertIn("\nCommunity\n", mixed)
+        self.assertLess(mixed.index("Yours"), mixed.index("Community"))
+        self.assertIn("**what-should-i-automate** · remote_public · v0.2.1".replace("0.2.1", "0.1.0") + " · full · yours", mixed)
+
+        single = PLAY_SEARCH.render_markdown(
+            "what should i automate",
+            "what should i automate",
+            [result("what-should-i-automate", "rwnalds", "yours")],
+        )
+        self.assertNotIn("\nYours\n", single)
+        self.assertIn(" · full · yours", single)
+
+    def test_play_choices_lead_with_the_ownership_word(self):
+        choices = PLAY_SEARCH.build_play_choices(
+            [
+                {
+                    "name": "what-should-i-automate",
+                    "reference": "rwnalds/what-should-i-automate@0.2.1",
+                    "primary_scope": "remote_public",
+                    "ownership": "yours",
+                    "selection_description": "Finds the repeated work worth automating.",
+                },
+                {
+                    "name": "team-automation-review",
+                    "reference": "acme/team-automation-review@1.0.0",
+                    "primary_scope": "remote_public",
+                    "ownership": "team",
+                    "selection_description": "Reviews team automation.",
+                },
+            ]
+        )
+        self.assertEqual(
+            [
+                "yours · Finds the repeated work worth automating.",
+                "your team · Reviews team automation.",
+            ],
+            [choice["description"] for choice in choices],
         )
 
     def test_play_choices_include_local_and_remote_runnable_plays(self):
