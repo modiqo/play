@@ -1869,6 +1869,105 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("normal", yielded.session.context["capture"]["status"])
         self.assertEqual((), yielded.presentations)
 
+    def test_several_full_matches_are_offered_as_a_choice_not_auto_selected(self) -> None:
+        session = self.runtime.initial_session(
+            run_id="session-ambiguous",
+            task_key="task-ambiguous",
+            request_original="what should i automate",
+        )
+        context: dict[str, Any] = copy.deepcopy(dict(session.context))
+        context["state"] = "classify"
+        context["request"]["intent"] = "what should i automate"
+        context["request"]["requested_outcome"] = "what to automate"
+
+        def candidate(owner: str, name: str, ownership: str) -> dict[str, Any]:
+            return {
+                "name": name,
+                "description": "Finds the repeated work worth automating.",
+                "reference": f"{owner}/{name}",
+                "exact_reference": f"{owner}/{name}@0.1.0",
+                "version": "0.1.0",
+                "status": "approved",
+                "sources": ["remote_public"],
+                "score": 1.0,
+                "coverage": 1.0,
+                "match_classification": "full",
+                "match_basis": "complete",
+                "uncovered_terms": [],
+                "argument_terms": [],
+                "matched_adapters": [],
+                "labels": [],
+                "tags": [],
+                "primary_scope": "remote_public",
+                "ownership": ownership,
+                "uri": f"https://play.modiqo.ai/{owner}/{name}",
+                "run_command": "unused",
+                "inspect_command": "unused",
+                "hint_kind": "play",
+                "local_availability": "not_found",
+                "execution_resolution": "pull_required",
+                "selection_description": "Remote public match; pulling requires approval.",
+            }
+
+        peers = [
+            candidate("rwnalds", "what-should-i-automate", "community"),
+            candidate("someone", "automation-opportunity-scan", "community"),
+        ]
+        context["search"].update(
+            {
+                "complete": True,
+                "query": "what should i automate",
+                "sources": ["local", "authorized_registry"],
+                "result_refs": [item["exact_reference"] for item in peers],
+                "results": peers,
+                "play_choices": [
+                    {
+                        "reference": item["reference"],
+                        "label": item["reference"],
+                        "description": item["selection_description"],
+                        "parameters": {},
+                    }
+                    for item in peers
+                ],
+            }
+        )
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("classify")),
+            context=context,
+            preflight_ready=True,
+        )
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("full_match", yielded.trace[0].event)
+        self.assertEqual("search_offer", yielded.projection["state"]["id"])
+        self.assertEqual("human", yielded.projection["state"]["boundary"])
+        labels = [choice["label"] for choice in yielded.projection["instruction"]["choices"]]
+        self.assertIn("rwnalds/what-should-i-automate", labels)
+        self.assertIn("someone/automation-opportunity-scan", labels)
+        self.assertEqual("full", yielded.session.context["match"]["classification"])
+
+        # The caller's own Play settles the tie: no choice, straight to inspection.
+        peers[0]["ownership"] = "yours"
+        projected = session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("classify")),
+            context=context,
+            preflight_ready=True,
+        )
+        with patch("play.runtime_actions.subprocess.run") as run:
+            run.return_value.returncode = 1
+            run.return_value.stdout = ""
+            run.return_value.stderr = "offline"
+            settled = advance_until_yield(self.runtime, projected, root=ROOT)
+        self.assertEqual("full_match", settled.trace[0].event)
+        self.assertEqual(
+            ["classify_adequacy", "inspect_registry_play"],
+            [item.action for item in settled.trace[:2]],
+        )
+        self.assertNotEqual("search_offer", settled.projection["state"]["id"])
+
     def test_full_label_with_uncovered_outcome_terms_is_downgraded_not_run(self) -> None:
         session = self.runtime.initial_session(
             run_id="session-downgrade",

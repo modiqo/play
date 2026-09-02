@@ -1227,6 +1227,29 @@ def _derive_session_guards(
         and isinstance(_path_value(event.payload, "match.reference"), str)
         and _path_value(event.payload, "match.uncovered") == []
     )
+    # Two honest cards can both cover every word of a request. When more than
+    # one distinct Play is fully adequate and none is already local or the
+    # caller's own, the human picks; the runtime never auto-selects among peers.
+    results = _path_value(context, "search.results")
+    full_references: set[str] = set()
+    settled = False
+    if isinstance(results, list):
+        for result in results:
+            if not isinstance(result, Mapping) or result.get("match_classification") != "full":
+                continue
+            reference = result.get("reference")
+            if isinstance(reference, str) and reference:
+                full_references.add(reference.partition("@")[0])
+            if result.get("primary_scope") == "local" or result.get("ownership") == "yours":
+                settled = True
+    offered = _path_value(context, "search.play_choices")
+    values[GuardId("full_match_is_ambiguous")] = (
+        event.id == EventId("full_match")
+        and len(full_references) >= 2
+        and not settled
+        and isinstance(offered, list)
+        and len(offered) >= 2
+    )
     selected_reference = _path_value(context, "match.reference")
     choices = _path_value(context, "search.play_choices")
     values[GuardId("search_has_remaining_choices")] = (

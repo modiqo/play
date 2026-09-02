@@ -485,7 +485,12 @@ def validate_bundle(
     check(_target(states, "search", "search_ready") == "search_present", "a search-only request must present results before selection")
     check(_target(states, "search_present", "search_presented") == "search_offer", "presented search results must offer read-only inspection")
     check(_target(states, "search_present", "search_empty") == "completed", "an explicit empty search must present its result and finish without offering exploration")
-    check(_target(states, "classify", "full_match") == "use_inspect", "an adequate discovered Play must enter read-only inspection")
+    check(
+        _target(states, "classify", "full_match") == "search_present"
+        and states["classify"]["on"]["full_match"][0].get("guard") == "full_match_is_ambiguous",
+        "several fully adequate Plays must be offered as a choice, never auto-selected",
+    )
+    check(_target(states, "classify", "full_match", 1) == "use_inspect", "an adequate discovered Play must enter read-only inspection")
     check(states.get("use_inspect", {}).get("entry", {}).get("action") == "inspect_registry_play", "Use must start with reusable Play inspection")
     check(_target(states, "use_inspect", "play_inspected") == "use_decide", "inspection must route by local readiness")
     check(states.get("use_decide", {}).get("entry", {}).get("action") == "route_inspected_play", "typed parameter resolution must precede local readiness")

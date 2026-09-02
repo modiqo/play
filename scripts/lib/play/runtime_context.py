@@ -17,7 +17,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "6798c1579a17e1d474c245c0c581086ebb30cd0626ea8ccb6bc52e9c84866096"
+SUPPORTED_MUTATION_SET_SHA256 = "4d48660fdc7172b6cc3f236f8d7388c3d492d6b0dc334f201718e1d13f2783c5"
 
 
 def validate_mutation_contract(mutations: list[str]) -> None:
@@ -504,6 +504,12 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "downgrade_inadequate_match": {
         "mode": "exited",
         "match.classification": "partial",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
+    "record_ambiguous_match": {
+        "mode": "use",
+        "match.classification": "full",
         "capture.decision": "normal",
         "capture.status": "normal",
     },

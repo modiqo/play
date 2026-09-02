@@ -255,6 +255,7 @@ stateDiagram-v2
     search --> search_offer : search-only request with results
     search --> completed : explicit search has no match
     search_offer --> use_inspect : result selected
+    classify --> search_present : several full matches, none local or yours
     classify --> use_inspect : full match (arguments do not dilute)
     classify --> exited : partial / uncertain / no match
 

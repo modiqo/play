@@ -1363,6 +1363,40 @@ class SearchTest(unittest.TestCase):
         self.assertNotIn("\nYours\n", single)
         self.assertIn(" · full · yours", single)
 
+    def test_partial_rows_name_the_missing_words_instead_of_recommending_inspection(self):
+        def result(name, owner, classification, uncovered):
+            return {
+                "name": name,
+                "version": "0.1.0",
+                "sources": ["remote_public"],
+                "score": 0.68,
+                "match_classification": classification,
+                "uncovered_terms": uncovered,
+                "ownership": "community",
+                "uri": f"https://play.modiqo.ai/{owner}/{name}",
+                "run_command": f"rote play run {owner}/{name}",
+                "inspect_command": f"rote play inspect {owner}/{name} --json",
+                "hint_kind": "play",
+                "execution_resolution": "pull_required",
+            }
+
+        partial_only = PLAY_SEARCH.render_markdown(
+            "summarize last email",
+            "summarize last email",
+            [result("last-commit-summary", "manasds", "partial", ["email"])],
+        )
+        self.assertIn("Closest Plays only. None covers the whole request", partial_only)
+        self.assertIn("Partial: does not cover email", partial_only)
+        self.assertNotIn("Next: inspect", partial_only)
+
+        with_full = PLAY_SEARCH.render_markdown(
+            "retrieve recent emails",
+            "retrieve recent emails",
+            [result("retrieve-recent-emails", "modiqo", "full", [])],
+        )
+        self.assertNotIn("Closest Plays only", with_full)
+        self.assertIn("Next: inspect with", with_full)
+
     def test_play_choices_lead_with_the_ownership_word(self):
         choices = PLAY_SEARCH.build_play_choices(
             [

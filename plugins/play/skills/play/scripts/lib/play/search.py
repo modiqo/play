@@ -992,6 +992,14 @@ def render_markdown(
     tiers = [result.get("ownership") for result in results]
     segmented = len({tier for tier in tiers if tier}) > 1
     current_tier = None
+    if not any(result.get("match_classification") == "full" for result in results):
+        lines.extend(
+            [
+                "",
+                "Closest Plays only. None covers the whole request, so Play will not "
+                "run one of them without your explicit choice.",
+            ]
+        )
     for index, result in enumerate(results, 1):
         source = " + ".join(result["sources"])
         version = f" · v{result['version']}" if result["version"] else ""
@@ -1016,7 +1024,15 @@ def render_markdown(
                 ),
             ]
         )
-        lines.append(f"   Next: inspect with `{result['inspect_command']}`")
+        if result.get("match_classification") in {"partial", "uncertain"}:
+            missing = result.get("uncovered_terms") or []
+            lines.append(
+                "   Partial: does not cover " + ", ".join(missing)
+                if missing
+                else "   Partial: covers only part of the request."
+            )
+        else:
+            lines.append(f"   Next: inspect with `{result['inspect_command']}`")
         if result.get("matched_adapters"):
             lines.append(
                 "   Adapter match: " + ", ".join(result["matched_adapters"])

@@ -21,6 +21,7 @@ guards:
   - exploration_goal_is_required
   - exploration_goal_is_ready
   - match_satisfies_constraints
+  - full_match_is_ambiguous
   - search_has_remaining_choices
   - captured_trajectory_is_verified
   - authentication_is_static
@@ -127,6 +128,7 @@ mutations:
   - record_partial_match
   - record_uncertain_match
   - record_no_match
+  - record_ambiguous_match
   - record_failed_receipt
   - enter_direct_use
   - record_play_inspection
@@ -795,9 +797,10 @@ actions:
     owner: rote-specialist
     specialist: rote-flow-authoring
     effect: local-write
-    input_required: [candidate.reference, consent.save]
+    input_required: [candidate.reference, consent.save, request.original]
     command_policy:
       - "Invoke rote-flow-authoring for this state only: author, test, lint, and release the candidate, then stop before every registry push or publication command."
+      - Before `rote play release`, run `scripts/bin/play-tag-hints --request <request.original> --play <path-to-main.ts> --json` and add every suggested tag under metadata.discoverability.tags, so the card covers the outcome words of the request that created it; a Play whose card cannot be found by its own originating request is not discoverable.
       - Release only a play that meets the shape standards; author-named steps, a real DAG with both edge kinds declared, degrade-never-die failure handling, honest deps.toml with per-step timeout_ms, and a classified presentation with a per-step stage ledger; never an information dump.
       - Test the negative space before release; one degraded-source run must complete with a labeled unknown, and one injected hard fault must fail closed with working --resume. Verify the final DAG from the run output's layer lines (or the registry-resolved play-dag Play); multi-source work rendering as one step means the shape standards were skipped."
       - Never delegate an end-to-end release-and-publish request. The specialist must return control to Play so birth_capture can record the immutable owner-local birth before publication begins.

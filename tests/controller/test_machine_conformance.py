@@ -735,7 +735,7 @@ class MachineConformanceTest(unittest.TestCase):
         for event, branch in (
             ("partial_match", 0),
             ("uncertain_match", 0),
-            ("full_match", 1),
+            ("full_match", 2),
             ("no_match", 0),
         ):
             with self.subTest(event=event):
