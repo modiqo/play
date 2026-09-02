@@ -37,24 +37,30 @@ test('the footer keeps archive counts out of the persistent driving controls', (
   assert.match(footer, /replay-position/)
 })
 
-test('journey switching is a labelled header file picker, not a footer control', () => {
+test('journey switching opens the departure board from a labelled header control', () => {
+  const board = readFileSync(new URL('./board.jsx', import.meta.url), 'utf8')
   const header = app.match(/<header>(?<body>[\s\S]*?)<\/header>/)?.groups?.body || ''
   const footer = app.match(/<footer>(?<body>[\s\S]*?)<\/footer>/)?.groups?.body || ''
   assert.match(header, /journey-picker-trigger/)
   assert.match(header, />JOURNEYS</)
   assert.doesNotMatch(footer, /JOURNEYS/)
-  assert.match(app, /NEWEST FIRST/)
-  assert.match(app, /journey-kind/)
+  assert.match(app, /<DepartureBoard/)
+  assert.match(board, /NEWEST FIRST/)
+  assert.match(board, /journey-kind/)
+  assert.match(board, /DEPARTURES/)
 })
 
-test('the stage card carries the primary playback control', () => {
-  assert.match(world, /drive-primary-play/)
-  assert.match(world, /PLAY ROUTE/)
-  assert.match(world, /PAUSE ROUTE/)
+test('the wheel hub is the ignition and the stage card no longer carries playback', () => {
+  assert.doesNotMatch(world, /drive-primary-play/)
+  assert.match(world, /<Ignition /)
+  assert.match(world, /event\.code === 'Space'/)
+  assert.match(world, /drive-destination/)
+  assert.match(world, /hud-arrival/)
+  assert.match(app, /departureCountdown\(/)
   assert.match(app, /onTogglePlayback=\{togglePlayback\}/)
-  const control = css.match(/\.drive-primary-play \{(?<body>[\s\S]*?)\n\}/)?.groups?.body || ''
-  assert.match(control, /min-height: 52px/)
-  assert.match(control, /pointer-events: auto/)
+  const control = css.match(/\.ignition \{(?<body>[\s\S]*?)\n\}/)?.groups?.body || ''
+  assert.match(control, /border-radius: 50%/)
+  assert.match(css, /\.ignition\.state-ready/)
 })
 
 test('the driving cluster remains shallow enough to preserve the road scene', () => {

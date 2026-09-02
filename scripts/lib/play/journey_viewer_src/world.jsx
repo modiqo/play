@@ -70,6 +70,43 @@ function DialPlates({anchorsRef, gear}) {
   </div>
 }
 
+function Ignition({anchorRef, playing, frozen, progress, departure, onToggle}) {
+  const host = useRef(null)
+  const [armed, setArmed] = useState(false)
+  useEffect(() => { if (playing) setArmed(true) }, [playing])
+  useEffect(() => {
+    let frame = 0
+    const paint = () => {
+      frame = requestAnimationFrame(paint)
+      const node = host.current
+      const anchor = anchorRef.current
+      if (!node) return
+      if (!anchor || !anchor.visible) { node.style.opacity = '0'; return }
+      node.style.opacity = '1'
+      node.style.transform = `translate(${anchor.x}px, ${anchor.y}px) translate(-50%, -50%)`
+    }
+    frame = requestAnimationFrame(paint)
+    return () => cancelAnimationFrame(frame)
+  }, [anchorRef])
+  useEffect(() => {
+    const onKey = (event) => {
+      const target = event.target
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable || target.tagName === 'BUTTON')) return
+      if (event.key === ' ' || event.code === 'Space') { event.preventDefault(); onToggle() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onToggle])
+  const state = departure !== null ? 'departing' : playing ? 'driving' : progress >= .999 ? 'arrived' : frozen || armed ? 'held' : 'ready'
+  const label = departure !== null ? `${departure || 'GO'}` : playing ? 'PAUSE' : progress >= .999 ? 'REPLAY' : frozen || armed ? 'RESUME' : 'START'
+  const ring = departure !== null ? 'DEPARTING' : playing ? 'DRIVING' : progress >= .999 ? 'ARRIVED' : frozen || armed ? 'HELD' : 'IGNITION'
+  return <button ref={host} type="button" className={`ignition state-${state}`} onClick={onToggle} aria-label={`${label} the route (Space)`} title="Space">
+    <i className="ignition-ring" aria-hidden="true" />
+    <b>{label}</b>
+    <small>{ring}</small>
+  </button>
+}
+
 function DriveMetric({label, value, tone = ''}) {
   const previous = useRef(value)
   const [changed, setChanged] = useState(false)
@@ -85,7 +122,7 @@ function DriveMetric({label, value, tone = ''}) {
   </div>
 }
 
-export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect, onTogglePlayback, exchange}) {
+export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect, onTogglePlayback, exchange, departure = null, destination = null, onChangeJourney, upcoming = [], onChooseJourney}) {
   const host = useRef(null)
   const replayRef = useRef(replay)
   const playingRef = useRef(playing)
@@ -94,6 +131,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
   const anchorsRef = useRef({})
   const headingRef = useRef(0)
   const dialAnchorsRef = useRef({})
+  const hubAnchorRef = useRef(null)
   const [error, setError] = useState('')
   const plan = useMemo(() => buildDriveWorldPlan(story), [story])
   const replayNumber = Number(replay)
@@ -325,6 +363,12 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
             }
           }
           dialAnchorsRef.current = dialAnchors
+          const badge = cockpit.userData.wheel.getObjectByName('badge')
+          if (badge) {
+            badge.getWorldPosition(projected)
+            projected.project(camera)
+            hubAnchorRef.current = {x: (projected.x + 1) / 2 * width, y: (1 - projected.y) / 2 * height, visible: projected.z < 1}
+          }
 
           if (composer) composer.render()
           else renderer.render(scene, camera)
@@ -363,15 +407,6 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         <h2>{chapter.title}</h2>
         <p><strong>{WORLD_ROLE[chapter.kind] || 'Stage'}.</strong> {MAP_MEANING[chapter.kind] || chapter.detail}</p>
         <small>{WORLD_STORY[chapter.kind] || chapter.detail}</small>
-        <button
-          className={`drive-primary-play${playing ? ' playing' : frozen ? ' frozen' : ''}`}
-          onClick={onTogglePlayback}
-          aria-label={playing ? 'Pause journey playback' : frozen ? 'Resume journey playback' : progress >= .999 ? 'Replay journey' : 'Play journey'}
-        >
-          <i className="drive-play-glyph" aria-hidden="true" />
-          <span><b>{playing ? 'PAUSE ROUTE' : frozen ? 'RESUME ROUTE' : progress >= .999 ? 'REPLAY ROUTE' : 'PLAY ROUTE'}</b><small>{playing ? 'HOLD AT CURRENT POSITION' : frozen ? 'CONTINUE TO NEXT SITE' : progress >= .999 ? 'RETURN TO THE START' : 'BEGIN THE RECORDED TRAVERSAL'}</small></span>
-          <em>{playing ? 'Ⅱ' : '▶'}</em>
-        </button>
       </div>
       {!nextIsCurrent && <div className="drive-next">
         <span>UP NEXT · {KIND_LABEL[nextChapter.kind] || nextChapter.kind}</span>
@@ -396,9 +431,31 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           title={`Inspect Play runtime @${runtimeRecord.sequence}`}
         >RUNTIME <b>@{String(runtimeRecord.sequence).padStart(2, '0')}</b></button>}
       </div>
-      <div className="drive-dashboard-clearance" aria-hidden="true" data-gear={activeGear?.system || 'NEUTRAL'} />
+      <div className="drive-dashboard-clearance" data-gear={activeGear?.system || 'NEUTRAL'}>
+        {destination && <div className="drive-destination">
+          <span>DESTINATION</span>
+          <strong title={destination.title}>{destination.title}</strong>
+          <em>{destination.status}</em>
+          <button type="button" onClick={onChangeJourney} title="Open the departure board (J)">CHANGE · J</button>
+        </div>}
+      </div>
     </div>
     <DialPlates anchorsRef={dialAnchorsRef} gear={gear} />
+    <Ignition anchorRef={hubAnchorRef} playing={playing} frozen={frozen} progress={progress} departure={departure} onToggle={onTogglePlayback} />
+    {progress >= .999 && !playing && <section className="hud-arrival" aria-label="Arrived">
+      <i className="hud-corner tl" /><i className="hud-corner tr" /><i className="hud-corner bl" /><i className="hud-corner br" />
+      <span>ARRIVED</span>
+      <strong>{destination?.title || story.outcome}</strong>
+      {upcoming.length > 0 && <div className="hud-arrival-next">
+        <small>NEXT JOURNEYS</small>
+        {upcoming.map((item) => <button key={item.id} type="button" onClick={() => onChooseJourney?.(item)}>
+          <b>{item.journey_mode === 'live' ? 'LIVE' : item.tutorial ? 'START HERE' : item.journey_mode === 'workspace' ? 'WORKSPACE' : 'RECORDED'}</b>
+          <span>{item.intent}</span>
+        </button>)}
+      </div>}
+      <button type="button" className="hud-arrival-again" onClick={onTogglePlayback}>DRIVE AGAIN · SPACE</button>
+      <button type="button" className="hud-arrival-board" onClick={onChangeJourney}>DEPARTURE BOARD · J</button>
+    </section>}
     <aside className="drive-side-strip" aria-label="Run outcome readouts">
       <DriveMetric label="SUCCESS" value={telemetry.success} tone="green" />
       <DriveMetric label="ERRORS" value={telemetry.error} tone={telemetry.error ? 'red' : ''} />

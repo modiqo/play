@@ -7,6 +7,9 @@ import {journeyActivityLabel, journeyKind, journeyPickerItems} from './journey-p
 import {EXPERIENCE_SCALES, adjacentExperienceScale, defaultExperienceScale, markerScaleForExperience, storedExperienceScale} from './experience-scale.mjs'
 import {useJourneyRuntime} from './use-journey-runtime.js'
 import JourneyWorld from './world.jsx'
+import DepartureBoard from './board.jsx'
+import {departureCountdown, nextJourneys} from './departure-board.mjs'
+import {workspaceFromLocation} from './api.js'
 
 export default function App() {
   const [viewport, setViewport] = React.useState(() => ({width: window.innerWidth, height: window.innerHeight}))
@@ -26,6 +29,10 @@ export default function App() {
     try { window.localStorage.setItem('play-journey:experience-scale:v1', String(experienceScale)) } catch {}
   }, [experienceScale])
   const markerScale = markerScaleForExperience(experienceScale, viewport.width, viewport.height)
+  // The departure board is the opening scene unless a deep link named a journey.
+  const [boardOpen, setBoardOpen] = React.useState(() => !workspaceFromLocation)
+  const [departure, setDeparture] = React.useState(null)
+  const autoDepartRef = React.useRef(workspaceFromLocation ? 'initial' : null)
   const panelScale = 1 + (experienceScale - 1) * .48
   const {
     index, workspace, story, interactions, selected, setSelected, exchange,
@@ -54,6 +61,55 @@ export default function App() {
   const pickerItems = journeyPickerItems(index?.workspaces || [])
   const journeyCount = pickerItems.filter((item) => !item.tutorial).length
   const frozen = mode === 'follow' && observing && !playing
+  const upcoming = React.useMemo(() => nextJourneys(index?.workspaces || [], workspace, 3), [index?.workspaces, workspace])
+  const pick = React.useCallback((item) => {
+    autoDepartRef.current = item.id
+    setBoardOpen(false)
+    return choose(item)
+  }, [choose])
+  const playingRef = React.useRef(playing)
+  React.useEffect(() => { playingRef.current = playing }, [playing])
+  const replayRef = React.useRef(replay)
+  React.useEffect(() => { replayRef.current = replay }, [replay])
+  // A chosen journey departs on its own after a short countdown; the driver
+  // only ever has to pause. Live tracking already follows the harness.
+  React.useEffect(() => {
+    if (!story || mode !== 'follow' || !workspace) return undefined
+    const pending = autoDepartRef.current
+    if (pending !== workspace && pending !== 'initial') return undefined
+    // The story for a freshly chosen journey arrives after `workspace`
+    // changes, so the pending flag stays set until the countdown actually
+    // completes; an interrupted countdown simply restarts with the new story.
+    const seconds = departureCountdown({live: liveCapture, tracking: trackingLive})
+    if (seconds === 0) {
+      autoDepartRef.current = null
+      return undefined
+    }
+    setDeparture(seconds)
+    const timers = []
+    for (let tick = 1; tick <= seconds; tick += 1) timers.push(window.setTimeout(() => setDeparture(seconds - tick), tick * 1000))
+    timers.push(window.setTimeout(() => {
+      autoDepartRef.current = null
+      setDeparture(null)
+      if (!playingRef.current && replayRef.current < .999) togglePlayback()
+    }, seconds * 1000 + 250))
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer))
+      setDeparture(null)
+    }
+  }, [story?.journey_key, mode, workspace])
+  React.useEffect(() => {
+    const onKey = (event) => {
+      const target = event.target
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      if ((event.key === 'j' || event.key === 'J') && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault()
+        setBoardOpen((value) => !value)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   // In Follow, the visor unfolds exchanges on the windshield; the aside is for Atlas.
   const showEvidencePanel = chapter && mode !== 'follow'
   const changeMode = (nextMode) => {
@@ -66,14 +122,6 @@ export default function App() {
     setMode(nextMode)
     if (nextMode !== 'follow') setFitSignal((value) => value + 1)
   }
-  React.useEffect(() => {
-    if (!journeysOpen) return undefined
-    const closeOnEscape = (event) => {
-      if (event.key === 'Escape') setJourneysOpen(false)
-    }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [journeysOpen, setJourneysOpen])
 
   return <main
     className={`dark mode-${mode}${frozen ? ' is-frozen' : ''}${trackingLive ? ' is-live-tracking' : ''}${showEvidencePanel ? ' evidence-open' : ''}`}
@@ -82,7 +130,7 @@ export default function App() {
     <section className="atlas-stage">
       {story && interactions
         ? mode === 'follow'
-          ? <JourneyWorld key={`follow:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} selected={selected} onSelect={selectVantage} onTogglePlayback={togglePlayback} markerScale={markerScale} exchange={exchange} />
+          ? <JourneyWorld key={`follow:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} selected={selected} onSelect={selectVantage} onTogglePlayback={togglePlayback} markerScale={markerScale} exchange={exchange} departure={departure} destination={{title: selectedWorkspace?.intent || story?.outcome || 'Captured exploration', status}} onChangeJourney={() => setBoardOpen(true)} upcoming={upcoming} onChooseJourney={pick} />
           : <Cartography key={`${mode}:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} selected={selected} onSelect={setSelected} fitSignal={fitSignal} markerScale={markerScale} />
         : loadError
           ? <div className="loading failed"><strong>JOURNEY CONNECTION LOST</strong><span>{loadError}</span><code>play-journey view --active</code></div>
@@ -92,11 +140,11 @@ export default function App() {
       <div className="header-launcher">
         <div className="brand"><strong>PLAY</strong><small>{mode === 'follow' ? 'FOLLOW' : 'ATLAS'}</small></div>
         <button
-          className={`journey-picker-trigger${journeysOpen ? ' active' : ''}`}
-          onClick={() => setJourneysOpen((value) => !value)}
-          aria-expanded={journeysOpen}
-          aria-controls="journey-picker"
-          title="Open another live or recorded journey"
+          className={`journey-picker-trigger${boardOpen ? ' active' : ''}`}
+          onClick={() => setBoardOpen((value) => !value)}
+          aria-expanded={boardOpen}
+          aria-controls="departure-board"
+          title="Open the departure board (J)"
         >
           <i className="file-picker-icon" aria-hidden="true" />
           <span>JOURNEYS</span>
@@ -126,59 +174,6 @@ export default function App() {
         >A·{Math.round(experienceScale * 100)}</button>
       </div>
     </header>
-    {journeysOpen && <button className="journey-picker-scrim" onClick={() => setJourneysOpen(false)} aria-label="Close journey picker" />}
-    <aside id="journey-picker" className={`journey-drawer${journeysOpen ? ' open' : ''}`} aria-label="Open journey">
-      <div className="journey-picker-heading">
-        <span><b>OPEN JOURNEY</b><small>NEWEST FIRST</small></span>
-        <button onClick={() => setJourneysOpen(false)} aria-label="Close journey picker">×</button>
-      </div>
-      <div className="journey-picker-summary">
-        <span><i className="live" />{pickerItems.filter((item) => journeyKind(item) === 'LIVE').length} LIVE</span>
-        <span><i />{pickerItems.filter((item) => journeyKind(item) === 'RECORDED').length} RECORDED</span>
-        <span><i />{pickerItems.filter((item) => journeyKind(item) === 'WORKSPACE').length} WORKSPACE</span>
-      </div>
-      <div className="workspace-list">{pickerItems.map((item, itemIndex) => {
-        const unavailable = !item.graph_ready && !item.projectable
-        const kind = journeyKind(item)
-        const stateLabel = workspace === item.id
-          ? item.tutorial ? 'VIEWING · TUTORIAL' : recalled ? 'VIEWING · RECALLED' : item.journey_mode === 'live' && item.active_recently ? 'VIEWING · LIVE' : item.journey_mode === 'live' ? 'VIEWING · QUIET' : item.journey_mode === 'workspace' ? 'VIEWING · WORKSPACE' : 'VIEWING · RECORDED'
-          : item.tutorial
-            ? 'START HERE'
-            : item.graph_ready && item.journey_mode === 'live' && item.active_recently
-            ? 'LIVE · UPDATING'
-            : item.graph_ready && item.journey_mode === 'live'
-              ? 'LIVE · QUIET'
-            : item.graph_ready && item.journey_mode === 'workspace'
-              ? 'WORKSPACE SNAPSHOT'
-            : item.graph_ready
-              ? 'RECORDED'
-              : item.projectable
-                ? 'BUILD MAP'
-                : item.workspace_available ? 'NO PLAY JOURNEY' : 'NO EVIDENCE'
-        const coverage = item.graph_ready
-          ? `${item.nodes} sites · ${item.edges} routes`
-          : item.projectable
-            ? 'projection available'
-            : item.workspace_available
-              ? 'Rote workspace · no Play capture'
-              : 'workspace unavailable'
-        const beginsGuide = item.tutorial && itemIndex > 0 && !pickerItems[itemIndex - 1]?.tutorial
-        return <React.Fragment key={item.id}>
-        {beginsGuide && <div className="journey-list-divider"><span>GUIDE</span></div>}
-        <button disabled={unavailable} className={`workspace-card${workspace === item.id ? ' active' : ''}${item.journey_mode === 'live' && item.active_recently ? ' live' : ''}`} onClick={() => choose(item)}>
-        <i className="workspace-file" aria-hidden="true"><u /></i>
-        <span className="workspace-card-copy"><strong>{item.intent}</strong><small>{coverage}</small></span>
-        <span className="workspace-card-meta">
-          <b className={`journey-kind kind-${kind.toLowerCase().replaceAll(' ', '-')}`}>{kind}</b>
-          <time>{journeyActivityLabel(item)}</time>
-          <em>{workspace === item.id ? 'CURRENT' : unavailable ? 'UNAVAILABLE' : 'OPEN →'}</em>
-        </span>
-        <span className="workspace-state">{stateLabel}</span>
-        </button>
-        </React.Fragment>
-      })}</div>
-      <p>Select a journey to load its recorded sites, route, and evidence.</p>
-    </aside>
     <aside
       className={`landmark-panel${showEvidencePanel ? ' visible' : ''}${runtimeInteraction ? ' runtime-evidence' : ''}`}
       onMouseLeave={interaction ? () => setSelected(null) : undefined}
@@ -233,6 +228,15 @@ export default function App() {
         </>}
       </>}
     </aside>
+    {boardOpen && index && <DepartureBoard
+      items={index.workspaces || []}
+      current={workspace}
+      onChoose={pick}
+      onClose={() => setBoardOpen(false)}
+      canClose={Boolean(story)}
+      refreshing={refreshing}
+      onRefresh={refreshWorkspaces}
+    />}
     <footer>
       <div className="replay">
         <div className="replay-controls">
