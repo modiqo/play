@@ -54,7 +54,8 @@ export default function App() {
   const pickerItems = journeyPickerItems(index?.workspaces || [])
   const journeyCount = pickerItems.filter((item) => !item.tutorial).length
   const frozen = mode === 'follow' && observing && !playing
-  const showEvidencePanel = chapter && (mode !== 'follow' || interaction)
+  // In Follow, the visor unfolds exchanges on the windshield; the aside is for Atlas.
+  const showEvidencePanel = chapter && mode !== 'follow'
   const changeMode = (nextMode) => {
     if (nextMode === mode) {
       if (nextMode !== 'follow') setFitSignal((value) => value + 1)
@@ -81,7 +82,7 @@ export default function App() {
     <section className="atlas-stage">
       {story && interactions
         ? mode === 'follow'
-          ? <JourneyWorld key={`follow:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} selected={selected} onSelect={selectVantage} onTogglePlayback={togglePlayback} markerScale={markerScale} />
+          ? <JourneyWorld key={`follow:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} frozen={frozen} selected={selected} onSelect={selectVantage} onTogglePlayback={togglePlayback} markerScale={markerScale} exchange={exchange} />
           : <Cartography key={`${mode}:${story.journey_key}`} story={story} interactions={interactions} replay={replay} playing={playing} selected={selected} onSelect={setSelected} fitSignal={fitSignal} markerScale={markerScale} />
         : loadError
           ? <div className="loading failed"><strong>JOURNEY CONNECTION LOST</strong><span>{loadError}</span><code>play-journey view --active</code></div>

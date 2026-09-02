@@ -1,11 +1,17 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react'
 import * as THREE from 'three'
+import {EffectComposer} from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import {RenderPass} from 'three/examples/jsm/postprocessing/RenderPass.js'
+import {UnrealBloomPass} from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import {OutputPass} from 'three/examples/jsm/postprocessing/OutputPass.js'
 import {KIND_LABEL, MAP_MEANING, WORLD_ROLE, WORLD_STORY} from './semantics.js'
-import {adaptiveRenderPixelRatio} from './render-quality.mjs'
+import {adaptiveRenderPixelRatio, renderQualityTier} from './render-quality.mjs'
 import {buildDriveWorldPlan, sampleDriveRoute} from './drive-world-plan.mjs'
 import {animateDriveEnvironment, createDriveEnvironment, createDriveEvents, createDriveFixture, DRIVE_COLORS, updateDriveFixture} from './drive-world-elements.js'
-import {interactionStateLabel} from './interaction-affordance.mjs'
+import {createCockpit, disposeCockpit, updateCockpit} from './cockpit-elements.js'
+import {dampAngle, dialAngleForGear, wheelAngleFromTangents, wheelMicroCorrectionDeg} from './steering-model.mjs'
 import {formatModelCost, playbackModelTelemetry} from './model-telemetry.mjs'
+import Visor from './visor.jsx'
 
 function orientToRoute(object, tangent) {
   object.quaternion.setFromUnitVectors(
@@ -51,11 +57,14 @@ function DriveMetric({label, value, tone = ''}) {
   </div>
 }
 
-export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect, onTogglePlayback}) {
+export default function JourneyWorld({story, interactions, replay, playing, frozen, selected, onSelect, onTogglePlayback, exchange}) {
   const host = useRef(null)
   const replayRef = useRef(replay)
   const playingRef = useRef(playing)
   const selectedRef = useRef(selected)
+  const gearRef = useRef('')
+  const anchorsRef = useRef({})
+  const headingRef = useRef(0)
   const [error, setError] = useState('')
   const plan = useMemo(() => buildDriveWorldPlan(story), [story])
   const replayNumber = Number(replay)
@@ -79,6 +88,7 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
   useEffect(() => { replayRef.current = replay }, [replay])
   useEffect(() => { playingRef.current = playing }, [playing])
   useEffect(() => { selectedRef.current = selected }, [selected])
+  useEffect(() => { gearRef.current = gear }, [gear])
 
   useEffect(() => {
     if (!host.current || !story.chapters.length) return undefined
@@ -87,6 +97,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
     let frame = 0
     let observer
     let renderer
+    let composer = null
+    let cockpit = null
     try {
       const scene = new THREE.Scene()
       scene.background = new THREE.Color(DRIVE_COLORS.sky)
@@ -109,6 +121,23 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       renderer.toneMapping = THREE.ACESFilmicToneMapping
       renderer.toneMappingExposure = 1.04
       host.current.appendChild(renderer.domElement)
+
+      const tier = renderQualityTier({
+        devicePixelRatio: window.devicePixelRatio,
+        hardwareConcurrency: navigator.hardwareConcurrency,
+        width: host.current.clientWidth,
+        height: host.current.clientHeight,
+        reducedMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true,
+      })
+      // The driver's hands: a child of the camera so the cockpit never lags
+      // the chase. The camera must live in the scene for its children to draw.
+      cockpit = createCockpit(renderer, {tier})
+      camera.add(cockpit)
+      scene.add(camera)
+      let wheelDeg = 0
+      let dialDeg = dialAngleForGear(gearRef.current)
+      const aheadTangent = new THREE.Vector3()
+      const projected = new THREE.Vector3()
 
       scene.add(new THREE.HemisphereLight(0xa8cde4, 0x11181d, 1.9))
       scene.add(new THREE.AmbientLight(0x7891a0, .36))
@@ -146,6 +175,14 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         camera.updateProjectionMatrix()
         renderer.setPixelRatio(adaptiveRenderPixelRatio(window.devicePixelRatio, width, height))
         renderer.setSize(width, height, false)
+        composer?.setSize(width, height)
+      }
+      if (tier === 'high') {
+        composer = new EffectComposer(renderer)
+        composer.addPass(new RenderPass(scene, camera))
+        const bloom = new UnrealBloomPass(new THREE.Vector2(host.current.clientWidth, host.current.clientHeight), .22, .45, .92)
+        composer.addPass(bloom)
+        composer.addPass(new OutputPass())
       }
       observer = new ResizeObserver(resize)
       observer.observe(host.current)
@@ -213,7 +250,43 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           statusLight.position.y += 1.3
           statusLight.intensity = playingRef.current ? 6.8 : 4.4
           animateDriveEnvironment(environment, elapsed)
-          renderer.render(scene, camera)
+
+          // Steer by the road ahead, never by the gear.
+          const lookAhead = sampleDriveRoute(plan, Math.min(story.chapters.length - 1, routeProgress + .09))
+          aheadTangent.set(lookAhead.tangent.x, 0, lookAhead.tangent.z).normalize()
+          const moving = Boolean(playingRef.current)
+          const wheelTarget = wheelAngleFromTangents(direction, aheadTangent) + wheelMicroCorrectionDeg(elapsed, moving)
+          wheelDeg = dampAngle(wheelDeg, wheelTarget, deltaSeconds, moving ? 5.2 : 3.4)
+          headingRef.current = wheelDeg
+          dialDeg = dampAngle(dialDeg, dialAngleForGear(gearRef.current), deltaSeconds, 7)
+          updateCockpit(cockpit, {wheelDeg, dialDeg, gear: gearRef.current, moving, elapsed, glow: 1})
+
+          // Screen anchors for the visor tethers: one per visible bead.
+          const width = renderer.domElement.clientWidth
+          const height = renderer.domElement.clientHeight
+          const anchors = {}
+          const reachedSite = fixtures[reached]
+          if (reachedSite?.events.visible) {
+            for (const marker of reachedSite.events.userData.markers || []) {
+              marker.getWorldPosition(projected)
+              projected.project(camera)
+              // A bead close to the bumper projects below the frame; a real HUD
+              // pins the reticle to the edge rather than losing the lock.
+              const ahead = projected.z < 1
+              const rawX = (projected.x + 1) / 2 * width
+              const rawY = (1 - projected.y) / 2 * height
+              const margin = 64
+              const x = Math.max(margin, Math.min(width - margin, rawX))
+              const y = Math.max(margin + 40, Math.min(height - 190, rawY))
+              anchors[marker.userData.sequence] = {
+                x, y, visible: ahead, clamped: ahead && (x !== rawX || y !== rawY),
+              }
+            }
+          }
+          anchorsRef.current = anchors
+
+          if (composer) composer.render()
+          else renderer.render(scene, camera)
           frame = requestAnimationFrame(render)
         } catch (caught) {
           setError(caught instanceof Error ? caught.message : String(caught))
@@ -228,6 +301,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
       disposed = true
       cancelAnimationFrame(frame)
       observer?.disconnect()
+      if (cockpit) disposeCockpit(cockpit)
+      composer?.dispose?.()
       if (renderer) {
         renderer.dispose()
         renderer.domElement.remove()
@@ -261,24 +336,8 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
         <span>UP NEXT · {KIND_LABEL[nextChapter.kind] || nextChapter.kind}</span>
         <strong>{nextChapter.title}</strong>
       </div>}
-      {!!records.length && <div className="drive-events" aria-label="Recorded interactions">
-        <div className="drive-events-heading"><span>RECORDED EXCHANGES</span><b>{records.length}</b></div>
-        {records.map((record) => <button
-          key={record.sequence}
-          className={selected?.sequence === record.sequence ? 'selected' : ''}
-          onClick={() => onSelect(selected?.sequence === record.sequence ? null : {siteId: chapter.id, sequence: record.sequence})}
-        >
-          <i className="drive-event-evidence" aria-hidden="true"><u /><u /></i>
-          <span className="drive-event-index">@{String(record.sequence).padStart(2, '0')}</span>
-          <strong>{record.capability?.label || record.operation}</strong>
-          <small>{interactionStateLabel(record)}</small>
-          <span className="drive-event-action">
-            <span className="drive-event-flow"><b>REQ</b><i>→</i><b>RES</b></span>
-            <em>INSPECT</em><b className="drive-event-chevron">›</b>
-          </span>
-        </button>)}
-      </div>}
     </section>
+    <Visor chapter={chapter} records={records} selected={selected} onSelect={onSelect} exchange={exchange} anchorsRef={anchorsRef} headingRef={headingRef} playing={playing} />
     <div className="drive-dashboard" aria-label="Run telemetry dashboard">
       <div className="drive-cluster-left">
         <span className={`drive-motion-state${playing ? ' moving' : ''}`}>{playing && progress < .002 ? 'DEPARTING' : playing ? 'ROUTE ENGAGED' : frozen ? 'VANTAGE HELD' : 'READY'}</span>
@@ -296,34 +355,9 @@ export default function JourneyWorld({story, interactions, replay, playing, froz
           title={`Inspect Play runtime @${runtimeRecord.sequence}`}
         >RUNTIME <b>@{String(runtimeRecord.sequence).padStart(2, '0')}</b></button>}
       </div>
-      <div className="drive-dashboard-clearance">
-        <div
-          className={`drive-cockpit gear-${gear || 'neutral'}${playing ? ' moving' : ''}`}
-          role="status"
-          aria-live="polite"
-          aria-label={`Capability gear: ${activeGear?.system || 'neutral'}`}
-        >
-          <div className="drive-steering-column" aria-hidden="true">
-            <div className="drive-steering-wheel">
-              <i className="drive-wheel-rim" />
-              <i className="drive-wheel-spoke drive-wheel-spoke-left" />
-              <i className="drive-wheel-spoke drive-wheel-spoke-right" />
-              <i className="drive-wheel-spoke drive-wheel-spoke-lower" />
-              <span className="drive-wheel-hub"><b>PLAY</b><small>FOLLOW</small></span>
-            </div>
-          </div>
-          <div className="drive-capability-shifter">
-            <span>CAPABILITY GEAR</span>
-            <strong>{activeGear?.system || 'NEUTRAL'}</strong>
-            <div className="drive-shift-gate" aria-hidden="true">
-              <i className="drive-shift-rail" />
-              <i className="drive-shift-lever"><b /></i>
-              {CAPABILITY_GEARS.map((item) => <span
-                className={`drive-shift-option${gear === item.id ? ' active' : ''}`}
-                key={item.id}
-              ><b>{item.action}</b><small>{item.system}</small></span>)}
-            </div>
-          </div>
+      <div className="drive-dashboard-clearance" aria-hidden="true">
+        <div className={`drive-gear-readout gear-${gear || 'neutral'}`}>
+          {CAPABILITY_GEARS.map((item) => <span key={item.id} className={gear === item.id ? 'active' : ''}><b>{item.action}</b><small>{item.system}</small></span>)}
         </div>
       </div>
       <div className="drive-cluster-right">
