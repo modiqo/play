@@ -73,7 +73,7 @@ class Rendered:
         """The presentation's own error message, without terminal colour codes."""
         clean = _ANSI.sub("", self.stderr)
         for line in clean.splitlines():
-            if "rror" in line and "at " not in line[:6]:
+            if re.search(r"error", line, re.I) and "at " not in line[:6]:
                 return line.strip()[:200]
         return clean.strip().splitlines()[-1][:200] if clean.strip() else "no output"
 

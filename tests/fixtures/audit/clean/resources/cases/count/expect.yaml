@@ -13,12 +13,14 @@ partial:
 truncated:
   human_matches_any:
   - partial
-  - truncat
+  - truncated
+- truncation
   - cut
   - '64'
   - artifact
   - incomplete
-  - summar
+  - summarized
+- summary
   summary_must_differ_from_positive: true
 blocked:
   human_matches_any:

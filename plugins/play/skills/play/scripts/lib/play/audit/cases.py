@@ -40,7 +40,7 @@ DEFAULT_EXPECT: dict[str, Any] = {
         "summary_must_differ_from_positive": True,
     },
     "truncated": {
-        "human_matches_any": ["partial", "truncat", "cut", "64", "artifact", "incomplete", "summar"],
+        "human_matches_any": ["partial", "truncated", "truncation", "cut", "64", "artifact", "incomplete", "summarized", "summary"],
         "summary_must_differ_from_positive": True,
     },
     "blocked": {
