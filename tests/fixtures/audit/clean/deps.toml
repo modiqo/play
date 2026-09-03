@@ -1,0 +1,11 @@
+schema_version = 1
+
+[[tools]]
+id = "sh"
+command = "sh"
+required = true
+
+[[tools]]
+id = "git"
+command = "git"
+required = true

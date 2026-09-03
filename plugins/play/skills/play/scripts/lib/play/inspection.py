@@ -12,6 +12,24 @@ from .registry import PlayNotFoundError, RegistryReadError, load_play_inspection
 from .render import json_text
 
 
+def attach_report_card(disclosure: dict[str, Any], reference: str) -> None:
+    """Append the advisory audit card. Never raises; never blocks the disclosure."""
+    try:
+        from .audit import card, safe_audit
+        from .audit.cli import resolve_target
+
+        root, resolved = resolve_target(reference)
+        if root is None:
+            return
+        envelope = safe_audit(root, reference=resolved)
+        text = card(envelope)
+        if text:
+            disclosure["audit_card"] = text
+            disclosure["audit_summary"] = envelope.get("summary")
+    except BaseException:  # noqa: BLE001 - advisory by contract
+        return
+
+
 SCHEMA = "play.run-disclosure/v1"
 
 
@@ -271,6 +289,8 @@ def render_markdown(disclosure: dict[str, Any]) -> str:
         lines.append("Eligible after explicit approval of the exact reference and displayed parameters.")
     else:
         lines.append("Not runnable: " + ("; ".join(preflight["blockers"]) or "preflight failed"))
+    if disclosure.get("audit_card"):
+        lines.extend(["", "## Before you run", "", "```text", str(disclosure["audit_card"]), "```"])
     lines.extend(["", disclosure["approval"]["notice"]])
     return "\n".join(lines)
 
@@ -279,9 +299,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("reference")
     parser.add_argument("--json", action="store_true", dest="as_json")
+    parser.add_argument("--card", action="store_true", help="append the advisory audit report card")
     args = parser.parse_args()
     try:
         disclosure = inspect_for_run(args.reference)
+        if args.card:
+            attach_report_card(disclosure, args.reference)
     except RegistryReadError as error:
         if args.as_json:
             print(

@@ -1,0 +1,6 @@
+schema_version = 1
+
+[[tools]]
+id = "echo"
+command = "echo"
+required = true
