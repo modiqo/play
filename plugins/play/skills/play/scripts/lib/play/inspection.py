@@ -245,6 +245,8 @@ def render_markdown(disclosure: dict[str, Any]) -> str:
         "",
         f"Reference: `{disclosure['exact_reference']}` · {identity['visibility']}",
     ]
+    if disclosure.get("audit_card"):
+        lines.extend(["", "## Report card", "", "```text", str(disclosure["audit_card"]), "```"])
     base_reference = str(disclosure["exact_reference"]).rsplit("@", 1)[0]
     if "/" in base_reference:
         lines.append(
@@ -286,8 +288,10 @@ def render_markdown(disclosure: dict[str, Any]) -> str:
         lines.append("Eligible after explicit approval of the exact reference and displayed parameters.")
     else:
         lines.append("Not runnable: " + ("; ".join(preflight["blockers"]) or "preflight failed"))
+    summary = disclosure.get("audit_summary") or {}
     if disclosure.get("audit_card"):
-        lines.extend(["", "## Before you run", "", "```text", str(disclosure["audit_card"]), "```"])
+        verdict = "yes" if summary.get("can_run_here") else f"not yet: {summary.get('cannot_run_reason')}"
+        lines.append(f"Report card says it can run here: {verdict}. Author work order: `play audit {base_reference} --author`.")
     lines.extend(["", disclosure["approval"]["notice"]])
     return "\n".join(lines)
 

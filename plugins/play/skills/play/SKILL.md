@@ -353,8 +353,10 @@ or inspect continuation machinery.
 Every Play inspection now ends with a report card: what the Play does in order,
 what it touches, what this machine has, and whether it can run here. The card is
 advisory. It never withholds the run prompt, and an audit that cannot run is
-simply absent. Present the card as part of the disclosure; do not summarize it
-away and do not turn it into a list of problems for a consumer.
+simply absent. Show the "Report card" block of the disclosure verbatim; it is one screen by
+design. Do not summarize it away, do not turn it into a list of problems for a
+consumer, and do not run `play audit` again for the same reference unless the
+user asks for the author work order.
 
 On the creation side, after the verified run and before `rote play release`,
 the authoring specialist runs `scripts/bin/play-audit fixtures <path>` to pack
