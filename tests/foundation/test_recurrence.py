@@ -11,6 +11,7 @@ from io import StringIO
 from pathlib import Path
 
 from scripts.lib.play.recurrence import (
+    _validate_declared_parameters,
     RecurrenceError,
     enable_tulving,
     main,
@@ -723,3 +724,35 @@ class RecurrenceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DeclaredParameterValidationTest(unittest.TestCase):
+    """A schedule runs unattended, so its parameters are checked against the Play's declared inputs first."""
+
+    DECLARED = {
+        "parameters": [
+            {"name": "query", "type": "string", "required": False, "default": "newer_than:1d", "description": "Gmail query"},
+            {"name": "count", "type": "integer", "required": False, "default": "10", "description": "How many"},
+            {"name": "mailbox", "type": "string", "required": True, "description": "Which mailbox to read"},
+        ]
+    }
+
+    def test_unknown_parameter_is_rejected_with_the_declared_names(self) -> None:
+        with self.assertRaises(RecurrenceError) as caught:
+            _validate_declared_parameters("modiqo/x@1.0.0", {"max_results": "10", "mailbox": "inbox"}, lambda _ref: self.DECLARED)
+        self.assertIn("unknown Play parameter(s): max_results", str(caught.exception))
+        self.assertIn("count, mailbox, query", str(caught.exception))
+
+    def test_missing_required_parameter_names_what_to_ask_for(self) -> None:
+        with self.assertRaises(RecurrenceError) as caught:
+            _validate_declared_parameters("modiqo/x@1.0.0", {"count": "10"}, lambda _ref: self.DECLARED)
+        self.assertIn("mailbox (string): Which mailbox to read", str(caught.exception))
+
+    def test_optional_parameters_may_be_omitted(self) -> None:
+        _validate_declared_parameters("modiqo/x@1.0.0", {"mailbox": "inbox"}, lambda _ref: self.DECLARED)
+
+    def test_unreadable_inspection_does_not_block_scheduling(self) -> None:
+        def broken(_ref: str):
+            raise RuntimeError("registry unreachable")
+
+        _validate_declared_parameters("modiqo/x@1.0.0", {"anything": "goes"}, broken)

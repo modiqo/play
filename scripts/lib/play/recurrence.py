@@ -389,6 +389,7 @@ def schedule_play(
     resolver: Resolver = shutil.which,
     runner: InputRunner = _schedule_runner,
     probe_runner: Runner = _run,
+    inspector: Callable[[str], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Schedule one exact Play through an already installed Tulving binary."""
 
@@ -421,6 +422,7 @@ def schedule_play(
     invalid = sorted(name for name in normalized_parameters if not _PARAMETER_NAME.fullmatch(name))
     if invalid:
         raise RecurrenceError("invalid Play parameter name(s): " + ", ".join(invalid))
+    _validate_declared_parameters(normalized_reference, normalized_parameters, inspector)
     argv = [
         "rote",
         "play",
@@ -531,6 +533,46 @@ def forward_tulving(
     if executable is None:
         raise RecurrenceError(TULVING_INSTALL_GUIDANCE)
     return runner([executable, *arguments])
+
+
+def _default_inspector(reference: str) -> Mapping[str, Any]:
+    from .inspection import inspect_for_run
+
+    return inspect_for_run(reference)
+
+
+def _validate_declared_parameters(
+    reference: str,
+    parameters: Mapping[str, object],
+    inspector: Callable[[str], Mapping[str, Any]] | None,
+) -> None:
+    """A schedule runs unattended, so it is checked against the Play's declared
+    inputs now: unknown names are rejected and required inputs must be present.
+    An inspection that cannot be read leaves the parameters as given."""
+    try:
+        disclosure = (inspector or _default_inspector)(reference)
+    except Exception:  # noqa: BLE001 - the registry may be unreachable; rote validates again at run time
+        return
+    declared = disclosure.get("parameters")
+    if not isinstance(declared, list):
+        return
+    by_name = {str(p.get("name")): p for p in declared if isinstance(p, Mapping) and p.get("name")}
+    unknown = sorted(name for name in parameters if name not in by_name)
+    if unknown:
+        raise RecurrenceError(
+            "unknown Play parameter(s): " + ", ".join(unknown)
+            + "; this Play declares: " + (", ".join(sorted(by_name)) or "none")
+        )
+    missing = [
+        f"{name} ({str(spec.get('type') or 'string')}): {str(spec.get('description') or '').strip() or 'no description'}"
+        for name, spec in by_name.items()
+        if spec.get("required") and name not in parameters and spec.get("default") in (None, "")
+    ]
+    if missing:
+        raise RecurrenceError(
+            "the Play needs values for required parameter(s) before it can run unattended; ask for: "
+            + "; ".join(missing)
+        )
 
 
 def _parse_parameters(values: Sequence[str]) -> dict[str, str]:
