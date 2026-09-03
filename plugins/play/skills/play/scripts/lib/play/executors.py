@@ -12,6 +12,7 @@ RUNTIME_COMMANDLESS_ACTIONS = frozenset(
         "present_play_management",
         "present_search_results",
         "present_exploration_transition",
+        "present_report_card",
         "build_receipt",
         "replay_onboarding_result",
         "classify_adequacy",

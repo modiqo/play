@@ -64,7 +64,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(84, len(self.runtime.bundle.states))
+        self.assertEqual(85, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -147,6 +147,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             {
                 "exact_reference": "modiqo/hello@0.1.0",
                 "disclosure_sha256": "d" * 64,
+                "audit_card": "",
+                "audit_verdict": "not assessed",
             }
         )
         context["request"] = dict(context["request"])
@@ -425,6 +427,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             **context["inspection"],
             "exact_reference": "crucible-heavybit/landing-page-assessment@0.2.0",
             "disclosure_sha256": "a" * 64,
+            "audit_card": "",
+            "audit_verdict": "not assessed",
         }
         context["authentication"] = {
             **context["authentication"],
@@ -496,6 +500,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             **context["inspection"],
             "exact_reference": "modiqo/hello@0.2.2",
             "disclosure_sha256": "a" * 64,
+            "audit_card": "",
+            "audit_verdict": "not assessed",
         }
         bound = replace(
             session,
@@ -578,6 +584,8 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "inspection": {
                     "exact_reference": "modiqo/list-top-committers@0.1.0",
                     "disclosure_sha256": "a" * 64,
+                    "audit_card": "",
+                    "audit_verdict": "not assessed",
                 },
             }
         )
@@ -596,6 +604,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             **context["inspection"],
             "exact_reference": "modiqo/list-top-committers@0.1.0",
             "disclosure_sha256": "a" * 64,
+            "audit_card": "",
+            "audit_verdict": "not assessed",
         }
         context["authentication"] = {
             **context["authentication"],
@@ -664,6 +674,8 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "inspection": {
                     "exact_reference": "crucible-heavybit/landing-page-assessment@0.2.0",
                     "disclosure_sha256": "a" * 64,
+                    "audit_card": "",
+                    "audit_verdict": "not assessed",
                 },
             }
         )
@@ -1180,6 +1192,8 @@ class ControllerRuntimeTest(unittest.TestCase):
                         "effects": {"summary": "No declared writes."},
                         "blockers": [],
                         "disclosure_sha256": "a" * 64,
+                        "audit_card": "",
+                        "audit_verdict": "not assessed",
                         "preflight": {
                             "run_eligible": True,
                             "play_local_state": "missing",
@@ -1283,6 +1297,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             "effects": {"summary": "No declared writes."},
             "blockers": [],
             "disclosure_sha256": "a" * 64,
+            "audit_card": "",
+            "audit_verdict": "not assessed",
             "preflight": {
                 "run_eligible": True,
                 "play_local_state": "missing",
@@ -1459,6 +1475,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             "exact_reference": "modiqo/list-top-committers@0.1.4",
             "local_change": "install",
             "disclosure_sha256": "a" * 64,
+            "audit_card": "",
+            "audit_verdict": "not assessed",
             "parameters": [
                 {
                     "name": "owner",
@@ -1538,6 +1556,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             "effects": {"summary": "No declared writes."},
             "blockers": [],
             "disclosure_sha256": "a" * 64,
+            "audit_card": "",
+            "audit_verdict": "not assessed",
             "identity": {
                 "name": "hello",
                 "description": "Hello",
@@ -2969,6 +2989,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             **context["inspection"],
             "exact_reference": "crucible-heavybit/landing-page-assessment@0.2.0",
             "disclosure_sha256": "a" * 64,
+            "audit_card": "",
+            "audit_verdict": "not assessed",
             "local_change": "none",
         }
         context["authentication"] = {
@@ -3051,6 +3073,8 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "effects": {"summary": "No declared writes."},
                 "blockers": [],
                 "disclosure_sha256": "a" * 64,
+                "audit_card": "",
+                "audit_verdict": "not assessed",
                 "identity": {
                     "name": "hello",
                     "description": "Hello",
@@ -3174,6 +3198,8 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "effects": {"summary": "No declared writes."},
                 "blockers": [],
                 "disclosure_sha256": "b" * 64,
+                "audit_card": "",
+                "audit_verdict": "not assessed",
                 "identity": {
                     "name": "retrieve-rideshare-receipts",
                     "description": "Retrieve rideshare receipts",
@@ -3394,6 +3420,8 @@ class ControllerRuntimeTest(unittest.TestCase):
                         "operations": [],
                         "effects": {},
                         "disclosure_sha256": "a" * 64,
+                        "audit_card": "",
+                        "audit_verdict": "not assessed",
                     }
                 },
                 guards={},
@@ -4175,3 +4203,59 @@ class PublicationCredentialGateResultTest(unittest.TestCase):
         self.assertEqual("credential contract check did not verify", event.payload["reason"])
         self.assertEqual("contract_check_failed", event.payload["failure_class"])
         self.assertEqual([], event.payload["credential_names"])
+
+
+class ReportCardReplayTest(unittest.TestCase):
+    """A consumer can ask to see the report card before approving a run."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.runtime = ControllerRuntime(ROOT, trajectory_verifier=lambda session, event: {})
+
+    def test_card_choice_replays_the_card_and_returns_to_the_prompt(self) -> None:
+        session = self.runtime.initial_session(run_id="card-1", task_key="card-1", request_original="play run x")
+        context = dict(session.context)
+        context["state"] = "use_offer"
+        context["inspection"] = dict(context["inspection"])
+        context["inspection"].update({
+            "complete": True, "exact_reference": "owner/name@1.0.0", "disclosure_sha256": "0" * 64,
+            "audit_card": "owner/name@1.0.0\n\nWhat it does, in order\n  1. go  runs a local command  git",
+            "audit_verdict": "can run here: yes",
+        })
+        session = replace(session, cursor=replace(session.cursor, state=StateId("use_offer")), context=context)
+        advanced = self.runtime.advance_session(
+            session, ControllerEvent(EventId("play_card_requested"), payload={"prompt_version": "1", "selected_at": "now"}, guards={})
+        )
+        self.assertEqual("use_card", advanced.projection.state["id"])
+        instruction = advanced.projection.instruction
+        assert instruction is not None
+        self.assertEqual("present_report_card", instruction["id"])
+        event, presentation = _execute_instruction(instruction, projection=advanced.projection.as_dict(), context=advanced.session.context, root=ROOT)
+        self.assertEqual("report_card_presented", event.id)
+        assert presentation is not None
+        self.assertIn("runs a local command  git", presentation)
+        back = self.runtime.advance_session(advanced.session, event)
+        self.assertEqual("use_offer", back.projection.state["id"])
+        instruction_after = back.projection.as_dict()["instruction"]
+        self.assertEqual("prompt", instruction_after["type"])
+        self.assertEqual("approve_play_run", instruction_after["id"])
+        self.assertIn("Report card: can run here: yes.", instruction_after["question"])
+        self.assertIn("Show the report card first", json.dumps(instruction_after))
+
+    def test_missing_card_replays_a_pointer_not_an_error(self) -> None:
+        session = self.runtime.initial_session(run_id="card-2", task_key="card-2", request_original="play run x")
+        context = dict(session.context)
+        context["state"] = "use_card"
+        context["inspection"] = dict(context["inspection"])
+        context["inspection"].update({
+            "complete": True, "exact_reference": "owner/name@1.0.0", "disclosure_sha256": "0" * 64,
+            "audit_card": "",
+            "audit_verdict": "not assessed",
+        })
+        session = replace(session, cursor=replace(session.cursor, state=StateId("use_card")), context=context)
+        projection = self.runtime.project_session(session)
+        instruction = projection.instruction
+        assert instruction is not None
+        event, presentation = _execute_instruction(instruction, projection=projection.as_dict(), context=session.context, root=ROOT)
+        self.assertEqual("report_card_presented", event.id)
+        self.assertIn("play audit owner/name", str(presentation))

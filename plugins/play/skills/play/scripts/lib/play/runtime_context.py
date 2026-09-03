@@ -17,9 +17,11 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "4d48660fdc7172b6cc3f236f8d7388c3d492d6b0dc334f201718e1d13f2783c5"
+SUPPORTED_MUTATION_SET_SHA256 = "956d2db385a4576a73ff406618a9d9b3f398325b643280a7361a0ccb23ee859a"
 
 
+# Reviewed 2026-09-03: `record_report_card_replay` merges an empty prompt payload
+# (prompt_version, selected_at) or the replay presentation and patches nothing.
 def validate_mutation_contract(mutations: list[str]) -> None:
     canonical = "\n".join(sorted(mutations)).encode()
     digest = hashlib.sha256(canonical).hexdigest()

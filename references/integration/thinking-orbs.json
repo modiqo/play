@@ -248,6 +248,10 @@
       "orb": "listening",
       "label": "Waiting for remote pull approval…"
     },
+    "use_card": {
+      "orb": "connecting",
+      "label": "Showing the report card…"
+    },
     "use_prepare": {
       "orb": "connecting",
       "label": "Binding the exact Play run handoff…"

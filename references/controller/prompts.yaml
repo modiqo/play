@@ -191,13 +191,16 @@ prompts:
       exploration_goal_supplied: [prompt_version, selected_at, request.requested_outcome]
 
   approve_play_run:
-    question: Pull or replace this remote Play as disclosed, then run it with the displayed parameters and effects?
+    question: "Report card: {inspection.audit_verdict}. Pull or replace this remote Play as disclosed, then run it with the displayed parameters and effects?"
+    template_fields: [inspection.audit_verdict]
     selection: single
     choices:
       - {id: run, label: Pull and run, description: "Authorize rote to install or replace the exact remote Play and dependencies, then execute it with the displayed parameters.", event: play_run_approved}
+      - {id: card, label: Show the report card first, description: "See what this Play does, what it touches, and what this machine has, then decide.", event: play_card_requested}
       - {id: cancel, label: Not now, description: "Stop without installing, replacing, authenticating, or running anything.", event: play_run_declined}
     events:
       play_run_approved: [prompt_version, selected_at, inspection.exact_reference, inspection.disclosure_sha256, request.parameters]
+      play_card_requested: [prompt_version, selected_at]
       play_run_declined: [prompt_version, selected_at]
 
   supply_play_parameter:

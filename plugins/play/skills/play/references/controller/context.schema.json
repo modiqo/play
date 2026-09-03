@@ -230,16 +230,37 @@
       "additionalProperties": false,
       "properties": {
         "decision": {
-          "enum": ["unclassified", "capture", "normal"]
+          "enum": [
+            "unclassified",
+            "capture",
+            "normal"
+          ]
         },
-        "reason": {"$ref": "#/$defs/nullableString"},
-        "task_class": {"$ref": "#/$defs/nullableString"},
-        "reference": {"$ref": "#/$defs/nullableString"},
-        "workspace": {"$ref": "#/$defs/nullableString"},
+        "reason": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "task_class": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "reference": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "workspace": {
+          "$ref": "#/$defs/nullableString"
+        },
         "status": {
-          "enum": ["unclassified", "normal", "active", "verified", "settled", "discarded"]
+          "enum": [
+            "unclassified",
+            "normal",
+            "active",
+            "verified",
+            "settled",
+            "discarded"
+          ]
         },
-        "trajectory_ref": {"$ref": "#/$defs/nullableString"}
+        "trajectory_ref": {
+          "$ref": "#/$defs/nullableString"
+        }
       }
     },
     "save_judge": {
@@ -684,6 +705,14 @@
         },
         "disclosure_sha256": {
           "$ref": "#/$defs/nullableString"
+        },
+        "audit_card": {
+          "type": "string",
+          "description": "The advisory report card rendered at inspection, empty when the audit was unavailable."
+        },
+        "audit_verdict": {
+          "type": "string",
+          "description": "One line: whether the Play can run on this machine, or why not yet."
         }
       }
     },
@@ -999,8 +1028,15 @@
           ]
         },
         "login_provider": {
-          "type": ["string", "null"],
-          "enum": [null, "google", "github"]
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            null,
+            "google",
+            "github"
+          ]
         },
         "login_status": {
           "enum": [
@@ -2171,7 +2207,11 @@
           "$ref": "#/$defs/nullableString"
         },
         "coverage": {
-          "enum": ["unknown", "complete", "partial"]
+          "enum": [
+            "unknown",
+            "complete",
+            "partial"
+          ]
         },
         "public_play_count": {
           "type": "integer",

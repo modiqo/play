@@ -1,0 +1,16 @@
+schema_version = 1
+
+[[tools]]
+id = "find"
+command = "find"
+required = true
+
+[[tools]]
+id = "git"
+command = "git"
+required = true
+
+[[tools]]
+id = "rsync"
+command = "rsync"
+required = true

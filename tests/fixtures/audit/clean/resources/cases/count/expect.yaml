@@ -1,0 +1,34 @@
+schema_version: 1
+partial:
+  human_matches_any:
+  - partial
+  - skipped
+  - could not
+  - unreadable
+  - not permitted
+  - incomplete
+  - failed
+  - unavailable
+  summary_must_differ_from_positive: true
+truncated:
+  human_matches_any:
+  - partial
+  - truncated
+- truncation
+  - cut
+  - '64'
+  - artifact
+  - incomplete
+  - summarized
+- summary
+  summary_must_differ_from_positive: true
+blocked:
+  human_matches_any:
+  - unavailable
+  - blocked
+  - did not run
+  - skipped
+  - failed
+  - could not
+  - upstream
+  summary_must_differ_from_positive: true

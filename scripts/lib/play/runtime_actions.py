@@ -252,6 +252,17 @@ def _blocked_action_event(
 def _commandless_result(
     action_id: str, context: Mapping[str, Any]
 ) -> dict[str, Any]:
+    if action_id == "present_report_card":
+        inspection = context.get("inspection")
+        card = inspection.get("audit_card") if isinstance(inspection, Mapping) else None
+        reference = inspection.get("exact_reference") if isinstance(inspection, Mapping) else None
+        markdown = (
+            f"## Report card\n\n```text\n{card}\n```"
+            if isinstance(card, str) and card.strip()
+            else f"No report card was recorded for `{reference}`; the audit was unavailable at inspection. "
+                 f"Run `play audit {str(reference).rsplit('@', 1)[0]}` for a fresh look."
+        )
+        return {"presentation": {"markdown": markdown}, "presentation_markdown": markdown}
     if action_id == "present_exploration_transition":
         state = context.get("state")
         outcome = _path_value(context, "request.requested_outcome")
@@ -603,6 +614,12 @@ def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, An
         intent = raw.get("intent")
         derived["onboarding"] = {"classify_ns": raw.get("classify_ns")}
         derived["request"] = {"intent": intent, "requested_outcome": intent}
+    elif event_id in {"play_inspected", "play_not_runnable"}:
+        # The card is advisory: an inspection without one still satisfies the contract.
+        card = raw.get("audit_card")
+        verdict = raw.get("audit_verdict")
+        derived["audit_card"] = card if isinstance(card, str) else ""
+        derived["audit_verdict"] = verdict if isinstance(verdict, str) and verdict.strip() else "not assessed"
     elif event_id == "play_reference_unresolved":
         error = raw.get("error")
         if isinstance(error, Mapping):

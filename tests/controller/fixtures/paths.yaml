@@ -42,6 +42,17 @@ cases:
     terminal: completed
     includes_once: [onboarding_setup, onboarding_identity, onboarding_experience, onboarding_first_present, onboarding_first_record, onboarding_first_offer]
 
+  - name: consumer sees the report card before approving a run
+    steps:
+      - {state: onboarding_first_offer, event: onboarding_starter_selected, target: use_inspect}
+      - {state: use_inspect, event: play_inspected, target: use_decide}
+      - {state: use_decide, event: remote_pull_required, target: use_offer}
+      - {state: use_offer, event: play_card_requested, target: use_card}
+      - {state: use_card, event: report_card_presented, target: use_offer}
+      - {state: use_offer, event: play_run_declined, target: completed}
+    terminal: completed
+    includes_once: [use_card]
+
   - name: first-use Hello preserves inspection approval detail verification and activation
     steps:
       - {state: onboarding_first_offer, event: onboarding_starter_selected, target: use_inspect}

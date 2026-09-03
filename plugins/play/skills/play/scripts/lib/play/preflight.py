@@ -32,6 +32,8 @@ HARNESS_COMMANDS = harness_commands()
 HARNESS_LABELS = harness_labels()
 REQUIRED_PLAY_EXECUTABLES = (
     "play",
+    "play-audit",
+    "play-audit-corpus",
     "play-machine",
     "play-bootstrap",
     "play-birth",

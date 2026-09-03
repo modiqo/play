@@ -1,0 +1,6 @@
+schema_version = 1
+
+[[tools]]
+id = "sh"
+command = "sh"
+required = true

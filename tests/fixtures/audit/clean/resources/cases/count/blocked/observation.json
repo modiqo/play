@@ -1,0 +1,9 @@
+{
+ "status": "blocked",
+ "output": {
+  "reason": "upstream_failed",
+  "blocked_by": [
+   "upstream"
+  ]
+ }
+}

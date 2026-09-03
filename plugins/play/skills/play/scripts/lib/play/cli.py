@@ -69,6 +69,18 @@ ROUTING
   direct: <request>             Bypass Play for one agent request
   continue exploration          Return to a paused exploration
 
+INSPECT & IMPROVE
+  play audit <play URI|path>    Advisory report card for a pulled Play
+  play audit <ref> --author     Author work order with owners and fixes
+  play audit <ref> --profile stock-macos|ubuntu-lts
+                                See the card as a stock consumer would
+  play audit history <ref>      Timeline of audits, rehearsals, and handoffs
+  play audit show <ref>         Render a stored audit
+  play audit fixtures <path>    Pack fixtures from the last run and negative cases
+  play audit rehearse <path>    See the Play as consumers will; prove negative cases
+  play audit handoff <ref> ...  Hand chosen findings to the fixing skill; --close records the delta
+  play audit send <ref>         Write the report for a Play's author
+
 RECOVERY & DIAGNOSTICS
   play update ...               Download the latest Play and review its plan
   play backup ...               Manage Play backups
@@ -218,6 +230,7 @@ def main(
         return _execute("play-recurring", recurring_arguments, executor)
 
     delegated = {
+        "audit": "play-audit",
         "routing": "play-routing",
         "backup": "play-bootstrap",
         "restore": "play-bootstrap",

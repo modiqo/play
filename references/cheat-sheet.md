@@ -360,6 +360,12 @@ $play list                                 # Browse authorized inventories
 play cheat-sheet                           # Open this page
 play update                                # Safely converge to the latest Play
 play recurring last [schedule-id]          # Latest completed scheduled run
+play audit <play URI|path>                 # Advisory report card for a pulled Play
+play audit <ref> --author                  # Author work order: owners and fixes
+play audit history <ref>                   # Timeline of audits, rehearsals, handoffs
+play audit fixtures <path>                 # Pack fixtures + negative cases (never run by rote play run)
+play audit rehearse <path>                 # Cards per host profile; negative cases through the presentation
+play audit handoff <ref> --rule ID         # Fix packet for the owning skill; --close records the delta
 
 direct: <request>                          # Bypass Play + Rote for one whole turn
 without play: <request>                    # Equivalent spelling

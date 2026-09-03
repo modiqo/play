@@ -35,6 +35,25 @@ GuardId = NewType("GuardId", str)
 MutationId = NewType("MutationId", str)
 
 
+_PROMPT_DEFAULTS: dict[str, dict[str, str]] = {
+    # Advisory fields that a checkpoint recorded before the report card existed will lack.
+    "inspection": {"audit_verdict": "not assessed", "audit_card": ""},
+}
+
+
+def _with_prompt_defaults(context: Mapping[str, Any]) -> dict[str, Any]:
+    patched = dict(context)
+    for root, defaults in _PROMPT_DEFAULTS.items():
+        current = patched.get(root)
+        if isinstance(current, Mapping):
+            merged = dict(current)
+            for key, value in defaults.items():
+                if not isinstance(merged.get(key), str) or not merged.get(key):
+                    merged[key] = value
+            patched[root] = merged
+    return patched
+
+
 class ControllerRuntimeError(RuntimeError):
     """The controller bundle or a requested transition is invalid."""
 
@@ -432,7 +451,7 @@ class ControllerRuntime:
             prompt = self.bundle.prompts[state.prompt]
             boundary = "human"
             question = parse_question(state.prompt, dict(prompt))
-            rendered = native_payload(question, "generic", context or {})
+            rendered = native_payload(question, "generic", _with_prompt_defaults(context or {}))
             instruction = {
                 "type": "prompt",
                 "id": state.prompt,
@@ -442,7 +461,7 @@ class ControllerRuntime:
                 "choices": rendered["choices"],
                 "input": rendered["input"],
                 "events": dict(prompt.get("events", {})),
-                "presentation": _prompt_presentation(question, rendered, context or {}),
+                "presentation": _prompt_presentation(question, rendered, _with_prompt_defaults(context or {})),
             }
         else:
             raise ControllerRuntimeError(

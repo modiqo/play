@@ -37,6 +37,9 @@ class PlayCliTest(unittest.TestCase):
         self.assertIn("play-journey view --active", result.stdout)
         self.assertIn("play cheat-sheet", result.stdout)
         self.assertIn("play guide [topic]", result.stdout)
+        self.assertIn("INSPECT & IMPROVE", result.stdout)
+        self.assertIn("play audit <play URI|path>", result.stdout)
+        self.assertIn("play audit history <ref>", result.stdout)
         self.assertIn(FIELD_GUIDE, result.stdout)
         self.assertIn("play recurring probe", result.stdout)
         self.assertIn("play recurring list", result.stdout)
@@ -71,6 +74,19 @@ class PlayCliTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(f"play {(ROOT / 'VERSION').read_text().strip()}\n", result.stdout)
+
+    def test_audit_delegates_to_play_audit_with_its_arguments(self) -> None:
+        calls: list[tuple[str, list[str]]] = []
+
+        def executor(path: str, argv: list[str]) -> None:
+            calls.append((path, argv))
+
+        self.assertEqual(0, main(["audit", "owner/name@1.0.0", "--author"], executor=executor))
+        self.assertEqual(1, len(calls))
+        self.assertTrue(calls[0][0].endswith("/play-audit"))
+        self.assertEqual(["owner/name@1.0.0", "--author"], calls[0][1][1:])
+        self.assertEqual(0, main(["audit"], executor=executor))
+        self.assertEqual(["--help"], calls[1][1][1:])
 
     def test_journey_live_expands_to_the_active_viewer(self) -> None:
         calls: list[tuple[str, list[str]]] = []
