@@ -234,7 +234,7 @@ def _rehearse(args: argparse.Namespace) -> int:
 def _handoff(args: argparse.Namespace) -> int:
     root, reference = _package_root(args.target)
     if root is None:
-        print(f"no installed Play at {args.target}; handoff works on a local package", file=sys.stderr)
+        print(f"handoff is for the author's local package; {args.target} is not installed here. To tell the author what you found, use `play audit send {args.target}`.", file=sys.stderr)
         return 0
     if args.close:
         result = handoff.close(reference, root, run_ref=args.run_ref)

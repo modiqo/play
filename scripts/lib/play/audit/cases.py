@@ -69,9 +69,36 @@ def latest_run_input(play_name: str) -> Path | None:
     return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
-def _fixture_yaml(step_dir: Path, status: dict[str, Any], stdout_name: str) -> str:
+_CHANGES = {"created", "modified", "unchanged", "deleted", "missing"}
+
+
+def _declared_files(step: dict[str, Any], recorded_files: Any) -> list[dict[str, Any]]:
+    """rote requires one fixture entry per file the step declares (stdin file and
+    every capture.files item), keyed by the declared label and path string."""
+    observed: dict[tuple[str, str], str] = {}
+    if isinstance(recorded_files, list):
+        for item in recorded_files:
+            if isinstance(item, dict) and isinstance(item.get("label"), str):
+                observed[(str(item.get("kind") or ""), item["label"])] = str(item.get("change") or "created")
+    entries: list[dict[str, Any]] = []
+    stdin = step.get("stdin")
+    if isinstance(stdin, dict) and isinstance(stdin.get("file"), str):
+        change = observed.get(("declared_input", "stdin"), "unchanged")
+        entries.append({"kind": "declared_input", "label": "stdin", "path": stdin["file"],
+                        "change": change if change in _CHANGES - {"missing", "created"} else "unchanged"})
+    capture = step.get("capture")
+    files = capture.get("files") if isinstance(capture, dict) else None
+    for item in files if isinstance(files, list) else []:
+        if isinstance(item, dict) and isinstance(item.get("label"), str) and isinstance(item.get("path"), str):
+            change = observed.get(("declared_output", item["label"]), "created")
+            entries.append({"kind": "declared_output", "label": item["label"], "path": item["path"],
+                            "change": change if change in _CHANGES else "created"})
+    return entries
+
+
+def _fixture_yaml(step_dir: Path, status: dict[str, Any], stdout_name: str, files: list[dict[str, Any]]) -> str:
     rel = f"resources/{FIXTURES_DIR}/{step_dir.name}"
-    return yaml.safe_dump({
+    spec: dict[str, Any] = {
         "schema_version": 1,
         "kind": "process.exec",
         "status": {"exit": status.get("exit", {"kind": "code", "code": 0}),
@@ -79,7 +106,16 @@ def _fixture_yaml(step_dir: Path, status: dict[str, Any], stdout_name: str) -> s
                    "timeout_ms": int(status.get("timeout_ms", 30000))},
         "stdout": f"{rel}/{stdout_name}",
         "stderr": f"{rel}/stderr.txt",
-    }, sort_keys=False)
+    }
+    if files:
+        spec["files"] = files
+    return yaml.safe_dump(spec, sort_keys=False)
+
+
+def _cut(text: str) -> str:
+    """The first half of a stream, the way a preview cap leaves it; never empty."""
+    sample = text if text.strip() else '{"items": ["one", "two", "three", "four"], "note": "cut here'
+    return sample[: max(1, len(sample) // 2)]
 
 
 def _looks_like_json(text: str) -> bool:
@@ -116,7 +152,7 @@ def scaffold(package: Package, recorded: dict[str, Any] | None, *, write: bool =
                 fixture_dir.mkdir(parents=True, exist_ok=True)
                 (fixture_dir / stdout_name).write_text(stdout_text)
                 (fixture_dir / "stderr.txt").write_text(stderr_text)
-                (fixture_dir / "fixture.yaml").write_text(_fixture_yaml(fixture_dir, status, stdout_name))
+                (fixture_dir / "fixture.yaml").write_text(_fixture_yaml(fixture_dir, status, stdout_name, _declared_files(step, body.get("files"))))
             result.written.append(f"resources/{FIXTURES_DIR}/{name}/fixture.yaml")
             result.declared.append(name)
             positive_stdout = stdout_text
@@ -127,8 +163,10 @@ def scaffold(package: Package, recorded: dict[str, Any] | None, *, write: bool =
         negatives = {
             # rote fails a step whose process exits 1, even when stdout held the answer (modiqo/rote#2177).
             "partial": presentation.outcome_failed("find: /Users/you/Library/Protected: Operation not permitted\n"),
+            # rote keeps the first 64 KiB and sets truncated=true; a JSON stream cut mid-way
+            # is no longer valid JSON, which is how modiqo/rote#2180 surfaces to a presentation.
             "truncated": presentation.outcome_completed(presentation.completed_body(
-                positive_stdout or "x" * 64, timeout_ms=timeout_ms, truncated=True)),
+                _cut(positive_stdout), timeout_ms=timeout_ms, truncated=True)),
             "blocked": presentation.outcome_blocked([str(d) for d in (step.get("depends_on") or ["upstream"])]),
         }
         if write:

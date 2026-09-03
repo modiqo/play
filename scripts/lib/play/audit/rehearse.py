@@ -50,6 +50,7 @@ class Rehearsal:
     lint: dict[str, Any] = field(default_factory=dict)
     cases: list[CaseResult] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    base_quality: str = "none"
 
     @property
     def verdict(self) -> str:
@@ -57,8 +58,12 @@ class Rehearsal:
             return "presentation misreports a negative case"
         if self.lint.get("ran") and not self.lint.get("runtime_checks_passed", True):
             return "rote lint runtime checks failed"
+        if self.base_quality == "synthetic":
+            return "not rehearsed: no recorded run or fixtures"
         if not self.cases:
             return "no negative cases packed"
+        if any(c.verdict == "weak" for c in self.cases):
+            return "ready, with weak reporting"
         return "ready"
 
     def to_dict(self) -> dict[str, Any]:
@@ -67,6 +72,7 @@ class Rehearsal:
             "reference": self.reference,
             "digest": self.digest,
             "verdict": self.verdict,
+            "baseline": self.base_quality,
             "profiles": {name: env.get("summary") for name, env in self.envelopes.items()},
             "lint": self.lint,
             "cases": [c.to_dict() for c in self.cases],
@@ -98,21 +104,26 @@ def _lint(package: Package) -> dict[str, Any]:
     }
 
 
-def _check(expect: dict[str, Any], case: str, human: str, summary: str, positive_summary: str) -> tuple[str, str]:
+def _check(expect: dict[str, Any], case: str, human: str, summary: str, positive_human: str, positive_summary: str) -> tuple[str, str]:
+    """pass: the presentation names the degraded result. weak: it changed its
+    output but did not name it. fail: it said exactly what it said for the
+    positive run, or said something the case forbids."""
     rules = expect.get(case) or {}
-    problems: list[str] = []
-    needles = rules.get("human_matches_any") or []
-    if needles and not any(re.search(needle, human, re.I) for needle in needles):
-        problems.append(f"human output mentions none of {needles}")
-    if rules.get("summary_must_differ_from_positive") and summary.strip() and summary.strip() == positive_summary.strip():
-        problems.append("summary is identical to the positive run's summary")
     forbidden = rules.get("human_must_not_match") or []
     for needle in forbidden:
         if re.search(needle, human, re.I):
-            problems.append(f"human output must not mention {needle!r}")
-    if problems:
-        return "fail", "; ".join(problems)
-    return "pass", "presentation names the degraded result"
+            return "fail", f"human output must not mention {needle!r}"
+    identical_human = human.strip() == positive_human.strip()
+    identical_summary = summary.strip() == positive_summary.strip()
+    if identical_human and identical_summary:
+        return "fail", "output is identical to the positive run; the degraded step went unnoticed"
+    needles = rules.get("human_matches_any") or []
+    named = any(re.search(needle, human, re.I) for needle in needles) if needles else True
+    if named:
+        return "pass", "presentation names the degraded result"
+    if rules.get("summary_must_differ_from_positive") and not identical_summary:
+        return "weak", f"summary changed but the human output names none of {needles}"
+    return "weak", f"output changed but names none of {needles}"
 
 
 def rehearse(root: Path, *, profiles: tuple[str, ...] = DEFAULT_PROFILES, reference: str | None = None,
@@ -148,27 +159,38 @@ def rehearse(root: Path, *, profiles: tuple[str, ...] = DEFAULT_PROFILES, refere
                 recorded = json.loads(recorded_path.read_text())
             except (OSError, json.JSONDecodeError):
                 recorded = None
-        base = presentation.base_input(package, recorded)
-        positive = presentation.render(package, base, "summary")
-        positive_summary = positive.stdout if positive.ok else ""
-        if not positive.ok:
-            result.notes.append(f"positive rendering failed: {positive.stderr.strip()[:200]}")
-        for step, entry in packed.items():
-            for case, observation in entry["cases"].items():
-                payload = presentation.with_outcome(base, step, observation)
-                human = presentation.render(package, payload, "human")
-                summary = presentation.render(package, payload, "summary")
-                if not human.ok:
-                    result.cases.append(CaseResult(step, case, "error", f"presentation crashed: {human.stderr.strip().splitlines()[-1][:160] if human.stderr.strip() else 'no output'}"))
-                    continue
-                verdict, detail = _check(entry["expect"], case, human.stdout, summary.stdout, positive_summary)
-                result.cases.append(CaseResult(step, case, verdict, detail, human.stdout, summary.stdout))
+        base, quality = presentation.base_input(package, recorded)
+        result.base_quality = quality
+        if quality == "synthetic":
+            result.notes.append("no recorded run and no declared fixtures: the positive baseline would be empty output, so negative cases were not judged; run the Play once or pack fixtures")
+        else:
+            if quality == "mixed":
+                result.notes.append("some process steps have no fixture; their baseline is empty output")
+            positive_h = presentation.render(package, base, "human")
+            positive_s = presentation.render(package, base, "summary")
+            if not positive_h.ok:
+                result.notes.append(f"positive rendering failed: {positive_h.error_line}")
+            for step, entry in packed.items():
+                for case, observation in entry["cases"].items():
+                    payload = presentation.with_outcome(base, step, observation)
+                    human = presentation.render(package, payload, "human")
+                    summary = presentation.render(package, payload, "summary")
+                    if not human.ok:
+                        if human.harness_fault:
+                            result.cases.append(CaseResult(step, case, "error", f"rehearsal harness: {human.error_line}"))
+                        else:
+                            result.cases.append(CaseResult(step, case, "fail", f"presentation threw on a {case} step: {human.error_line}"))
+                        continue
+                    verdict, detail = _check(entry["expect"], case, human.stdout, summary.stdout, positive_h.stdout, positive_s.stdout)
+                    result.cases.append(CaseResult(step, case, verdict, detail, human.stdout, summary.stdout))
     if persist:
         store.append_history(package.reference, {
             "event": "rehearsal", "digest": package.digest, "verdict": result.verdict,
             "cases_pass": sum(c.verdict == "pass" for c in result.cases),
             "cases_fail": sum(c.verdict == "fail" for c in result.cases),
             "cases_error": sum(c.verdict == "error" for c in result.cases),
+            "cases_weak": sum(c.verdict == "weak" for c in result.cases),
+            "baseline": result.base_quality,
             "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         })
     return result
@@ -188,7 +210,7 @@ def render_text(result: Rehearsal) -> str:
     else:
         lines += ["", f"rote play lint: {lint.get('reason')}"]
     if result.cases:
-        lines += ["", "Negative cases"]
+        lines += ["", f"Negative cases (baseline: {result.base_quality})"]
         for c in result.cases:
             lines.append(f"  {c.verdict:5s} {c.step}/{c.case}: {c.detail}")
             if c.verdict != "pass" and c.summary.strip():

@@ -18,9 +18,9 @@
     "timeout_ms": 5000
    },
    "stdout": {
-    "bytes": 100003,
-    "text": "42\n",
-    "preview_bytes": 3,
+    "bytes": 100001,
+    "text": "4",
+    "preview_bytes": 1,
     "truncated": true,
     "encoding": "utf8"
    },

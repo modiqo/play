@@ -577,7 +577,7 @@ class CasesScaffoldTest(NoProbe):
         with tempfile.TemporaryDirectory() as temp:
             root = _copy_fixture("partial-scan", temp)
             pkg = package_mod.load(root)
-            recorded = presentation.base_input(pkg, None)
+            recorded, _ = presentation.base_input(pkg, None)
             recorded["steps"]["find"]["outcome"] = presentation.outcome_completed(presentation.completed_body("/a/.git\n/b/.git\n", timeout_ms=30000))
             result = cases.scaffold(pkg, recorded)
             self.assertIn("resources/presentation-fixtures/find/fixture.yaml", result.written)
@@ -702,3 +702,48 @@ class NewSubcommandsCliTest(NoProbe):
             self.assertIn("remaining", out)
             code, out = self._run("history", f"{Path(temp).name}/partial-scan")
             self.assertIn("handoff", out)
+
+
+class FixtureFileManifestTest(NoProbe):
+    def test_declared_capture_files_get_a_manifest_entry(self) -> None:
+        step = {"type": "process.exec", "argv": ["python3", "x.py", "$out"], "timeout_ms": 1000,
+                "stdin": {"file": "input.txt"}, "capture": {"files": [{"label": "report", "path": "$out"}]}}
+        recorded = [{"kind": "declared_output", "label": "report", "path": "r.json", "change": "created"},
+                    {"kind": "declared_input", "label": "stdin", "path": "input.txt", "change": "unchanged"}]
+        entries = cases._declared_files(step, recorded)
+        self.assertEqual([
+            {"kind": "declared_input", "label": "stdin", "path": "input.txt", "change": "unchanged"},
+            {"kind": "declared_output", "label": "report", "path": "$out", "change": "created"},
+        ], entries)
+
+    def test_input_files_never_report_created(self) -> None:
+        step = {"type": "process.exec", "argv": ["cat"], "stdin": {"file": "in.txt"}}
+        entries = cases._declared_files(step, [{"kind": "declared_input", "label": "stdin", "change": "created"}])
+        self.assertEqual("unchanged", entries[0]["change"])
+
+
+@unittest.skipIf(presentation.available() is not None, "rote deno runtime or SDK not installed")
+class RehearsalVerdictTest(NoProbe):
+    def test_a_presentation_that_throws_on_a_degraded_step_fails_not_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = _copy_fixture("clean", temp)
+            body = (root / "main.ts").read_text()
+            body = body[: body.index("const step = ctx.step(")] + (
+                'const step = ctx.requireAvailable(stepName("count"));\n'
+                'out.human(String((step.body as any)?.stdout?.text ?? ""));\nout.summary("counted");\nout.result({});\n')
+            (root / "main.ts").write_text(body)
+            result = rehearse.rehearse(root, profiles=("live",), run_lint=False, persist=False)
+            by_case = {c.case: c for c in result.cases}
+            self.assertEqual("fail", by_case["blocked"].verdict)
+            self.assertIn("threw", by_case["blocked"].detail)
+            self.assertEqual("weak", by_case["truncated"].verdict, "the cut text changes the output but the flag is never named")
+            self.assertEqual("fixtures", result.base_quality)
+
+    def test_no_fixtures_and_no_run_means_not_rehearsed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = _copy_fixture("partial-scan", temp)
+            cases.scaffold(package_mod.load(root), None)
+            result = rehearse.rehearse(root, profiles=("live",), run_lint=False, persist=False)
+            self.assertEqual("synthetic", result.base_quality)
+            self.assertEqual("not rehearsed: no recorded run or fixtures", result.verdict)
+            self.assertEqual([], result.cases)
