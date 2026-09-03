@@ -4096,3 +4096,82 @@ class ControllerRuntimeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PublicationCredentialGateResultTest(unittest.TestCase):
+    """The credential gate result must select its event from the shape the gate emits."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.runtime = ControllerRuntime(ROOT, trajectory_verifier=lambda session, event: {})
+        requirements = cls.runtime.bundle.event_requirements
+        cls.projection = {
+            "accepted_events": {
+                event: {"required_payload": list(requirements[(StateId("publication_credentials"), EventId(event))])}
+                for event in (
+                    "associated_credentials_verified",
+                    "associated_credentials_invalid",
+                    "action_blocked",
+                )
+            }
+        }
+        cls.instruction = {
+            "id": "inspect_publication_credentials",
+            "owner": "flow-runtime",
+            "command": "scripts/bin/play-publication-gate credentials --stdin --json",
+            "input": {},
+        }
+
+    def _execute(self, run, stdout: dict[str, Any], returncode: int = 0):
+        run.return_value = SimpleNamespace(returncode=returncode, stderr="", stdout=json.dumps(stdout))
+        return _execute_instruction(
+            self.instruction, projection=self.projection, context={}, root=ROOT
+        )
+
+    @patch("play.runtime_actions.subprocess.run")
+    def test_verified_gate_result_selects_verified_event(self, run) -> None:
+        # Exact top-level shape emitted by publication_gate.validate_credential_contracts.
+        event, presentation = self._execute(
+            run,
+            {
+                "schema": "play.publication-gate/v1",
+                "kind": "credential_contracts",
+                "ok": True,
+                "credential_status": "verified",
+                "adapter_contracts": [],
+                "credential_contract_sha256": "e3b0" * 16,
+                "credential_check_ns": 1,
+                "evidence_refs": ["sha256:" + "e3b0" * 16],
+            },
+        )
+        self.assertIsNone(presentation)
+        self.assertEqual("associated_credentials_verified", event.id)
+        validation = event.payload["publication_validation"]
+        self.assertEqual("verified", validation["credential_status"])
+        self.assertEqual("e3b0" * 16, validation["credential_contract_sha256"])
+
+    @patch("play.runtime_actions.subprocess.run")
+    def test_nested_validation_shape_still_selects_verified_event(self, run) -> None:
+        event, _ = self._execute(
+            run,
+            {
+                "publication_validation": {
+                    "credential_status": "verified",
+                    "adapter_contracts": [],
+                    "credential_contract_sha256": "ab" * 32,
+                    "credential_check_ns": 1,
+                    "evidence_refs": [],
+                }
+            },
+        )
+        self.assertEqual("associated_credentials_verified", event.id)
+
+    @patch("play.runtime_actions.subprocess.run")
+    def test_unverified_gate_result_without_reason_blocks_instead_of_crashing(self, run) -> None:
+        event, presentation = self._execute(
+            run, {"ok": True, "credential_status": "unknown", "evidence_refs": []}
+        )
+        self.assertEqual("associated_credentials_invalid", event.id)
+        self.assertEqual("credential contract check did not verify", event.payload["reason"])
+        self.assertEqual("contract_check_failed", event.payload["failure_class"])
+        self.assertEqual([], event.payload["credential_names"])

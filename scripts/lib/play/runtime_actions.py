@@ -607,6 +607,21 @@ def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, An
         error = raw.get("error")
         if isinstance(error, Mapping):
             derived["reason"] = error.get("message")
+    elif event_id == "associated_credentials_invalid":
+        # The invalid event requires a reason; a gate result that reached this
+        # branch without one must block with a named cause, never crash.
+        error = raw.get("error")
+        reason = raw.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            reason = (
+                error.get("message")
+                if isinstance(error, Mapping) and isinstance(error.get("message"), str)
+                else None
+            ) or "credential contract check did not verify"
+        derived["reason"] = reason
+        derived.setdefault("failure_class", "contract_check_failed")
+        derived.setdefault("credential_names", [])
+        derived.setdefault("evidence_refs", [])
     elif event_id in {"awareness_ready", "awareness_unchanged"}:
         canonical = json.dumps(raw, sort_keys=True, separators=(",", ":"))
         digest_ref = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
@@ -774,11 +789,18 @@ def _select_event(
             else "public_owner_context_ready"
         )
     if action_id == "inspect_publication_credentials":
+        # play-publication-gate reports credential_status at the top level of
+        # its result; older fixtures nested it under publication_validation.
+        # Accept both so a verified gate is never routed to the invalid event.
         validation = raw.get("publication_validation")
+        status = (
+            validation.get("credential_status")
+            if isinstance(validation, Mapping)
+            else raw.get("credential_status")
+        )
         return (
             "associated_credentials_verified"
-            if isinstance(validation, Mapping)
-            and validation.get("credential_status") == "verified"
+            if status == "verified"
             else "associated_credentials_invalid"
         )
     success = [event for event in accepted if event != "action_blocked"]
