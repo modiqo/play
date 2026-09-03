@@ -360,6 +360,9 @@ $play list                                 # Browse authorized inventories
 play cheat-sheet                           # Open this page
 play update                                # Safely converge to the latest Play
 play recurring last [schedule-id]          # Latest completed scheduled run
+play audit <play URI|path>                 # Advisory report card for a pulled Play
+play audit <ref> --author                  # Author work order: owners and fixes
+play audit history <ref>                   # Timeline of audits for a Play
 
 direct: <request>                          # Bypass Play + Rote for one whole turn
 without play: <request>                    # Equivalent spelling
