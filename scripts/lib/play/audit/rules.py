@@ -94,8 +94,8 @@ _RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "STEP_NO_TIMEOUT", "fact", OWNER_AUTHORING,
-        "step `{step}` has no `timeout_ms`.",
-        "Add `timeout_ms` to step `{step}` sized to its expected duration.",
+        "{count} step(s) have no `timeout_ms` and inherit rote's 30 s default: {step}.",
+        "Add `timeout_ms` to each step, sized to its expected duration; a scan over a large tree needs more than 30 s.",
     ),
     Rule(
         "INTERPRETER_FLOOR_MISSING", "fact", OWNER_AUTHORING,
@@ -155,6 +155,7 @@ _RULES: tuple[Rule, ...] = (
         "ADAPTER_SOURCE_PROVENANCE_DIFFERS", "fact", OWNER_REGISTRY,
         "the Play pins `{pinned}` for `{adapter}` but the installed copy comes from `{installed}` with the same fingerprint; rote refuses this on the consumer's machine.",
         "Pin the canonical adapter for this fingerprint, or wait for rote to resolve by fingerprint (modiqo/rote#2181).",
+        scope="host",
         related_issue=ISSUE + "2181",
     ),
     # ── judgments ────────────────────────────────────────────────────────

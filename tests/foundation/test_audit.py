@@ -128,6 +128,8 @@ class FixtureFindingsTest(NoProbe):
     def test_partial_scan(self) -> None:
         envelope = audit("partial-scan")
         self.assertEqual({"FANOUT_OVER_PREVIEW", "STEP_NO_TIMEOUT"}, ids(envelope, "facts"))
+        timeout = next(f for f in envelope["facts"] if f["id"] == "STEP_NO_TIMEOUT")
+        self.assertEqual("find", timeout["evidence"]["step"])
         self.assertEqual({"UNRELIABLE_EXIT_STATUS", "TOOL_DECLARED_UNUSED"}, ids(envelope, "judgments"))
         unused = next(item for item in envelope["judgments"] if item["id"] == "TOOL_DECLARED_UNUSED")
         self.assertEqual("rsync", unused["evidence"]["command"])
@@ -148,6 +150,18 @@ class FixtureFindingsTest(NoProbe):
         self.assertEqual([("a PEP 604 union in an evaluated annotation", "3.10"), ("an unguarded `import tomllib`", "3.11")], needs)
         self.assertEqual([], envelope["judgments"])
 
+    def test_runtime_pipe_expressions_are_not_unions_even_without_future_import(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "pipes"
+            (root / "resources").mkdir(parents=True)
+            (root / "main.ts").write_text((FIXTURES / "pyfloor" / "main.ts").read_text())
+            (root / "deps.toml").write_text((FIXTURES / "pyfloor" / "deps.toml").read_text())
+            (root / "resources" / "check.py").write_text(
+                "import os\nmode = os.O_RDONLY | os.O_NONBLOCK\nmerged = {'a': 1} | {'b': 2}\n"
+                "flags = 0\nflags |= 4\nnames = {'x'} | {'y'}\n")
+            envelope = safe_audit(root, reference="audit/pipes", read_adapters=False, persist=False)
+        self.assertNotIn("PY_FLOOR_TOO_LOW", ids(envelope, "facts"))
+
     def test_python_floor_negative_controls(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "neg"
@@ -157,9 +171,12 @@ class FixtureFindingsTest(NoProbe):
                 'schema_version = 1\n\n[[tools]]\nid = "python3"\ncommand = "python3"\nrequired = true\nversion_requirement = ">=3.11.0"\n')
             (root / "resources" / "check.py").write_text(
                 "from __future__ import annotations\n"
-                "import sys\n"
+                "import sys, os\n"
                 "try:\n    import tomllib\nexcept ImportError:\n    tomllib = None\n"
                 "x = a | b\n"
+                "mode = os.O_RDONLY | os.O_NONBLOCK\n"
+                "merged = {'a': 1} | {'b': 2}\n"
+                "names = {'x'} | {'y'}\n"
                 "def f(v: int | None) -> str | None:\n    return None\n")
             envelope = safe_audit(root, reference="audit/neg", read_adapters=False, persist=False)
         self.assertNotIn("PY_FLOOR_TOO_LOW", ids(envelope, "facts"))
@@ -216,6 +233,49 @@ class PerCommandFindingsTest(NoProbe):
         self.assertEqual(1, len(floors))
         self.assertEqual("s0, s1, s2", floors[0]["evidence"]["step"])
         self.assertEqual({"file": "deps.toml"}, floors[0]["location"])
+
+
+class ReachFromInlineCodeTest(NoProbe):
+    def _play(self, temp: str, argv_yaml: str, deps: str, body: str = "const x = 1;\n") -> Path:
+        root = Path(temp) / "inline"
+        root.mkdir()
+        (root / "main.ts").write_text(
+            "/**\n * @rote-frontmatter\n * ---\n * name: inline\n * description: i\n * metadata:\n"
+            " *   version: 1.0.0\n *   execution_model: steps_with_presentation\n * parameters:\n"
+            " * - name: repo\n *   type: string\n *   required: true\n * steps:\n *   go:\n"
+            " *     type: process.exec\n" + argv_yaml + " *     timeout_ms: 1000\n * ---\n */\n" + body)
+        (root / "deps.toml").write_text(deps)
+        return root
+
+    def test_tool_used_inside_inline_shell_is_not_unused(self) -> None:
+        deps = 'schema_version = 1\n\n[[tools]]\nid = "sh"\ncommand = "sh"\nrequired = true\n\n[[tools]]\nid = "wc"\ncommand = "wc"\nrequired = true\n'
+        with tempfile.TemporaryDirectory() as temp:
+            root = self._play(temp, " *     argv: [sh, -c, 'ls ${repo} | wc -l']\n", deps)
+            envelope = safe_audit(root, reference="audit/inline", read_adapters=False, persist=False)
+        self.assertNotIn("TOOL_DECLARED_UNUSED", ids(envelope, "judgments"))
+        self.assertNotIn("PARAM_UNREFERENCED", ids(envelope, "judgments"), "${repo} is a parameter read")
+        self.assertIn("wc", envelope["reach"]["commands"])
+
+    def test_unused_tool_is_not_claimed_when_a_spawn_is_dynamic(self) -> None:
+        deps = 'schema_version = 1\n\n[[tools]]\nid = "python3"\ncommand = "python3"\nrequired = true\nversion_requirement = ">=3.10"\n\n[[tools]]\nid = "git"\ncommand = "git"\nrequired = true\n'
+        with tempfile.TemporaryDirectory() as temp:
+            root = self._play(temp, " *     argv: [python3, '@resource{run.py}', $repo]\n", deps)
+            (root / "resources").mkdir()
+            (root / "resources" / "run.py").write_text("import subprocess, sys\ncmd = sys.argv[1:]\nsubprocess.run(cmd)\n")
+            envelope = safe_audit(root, reference="audit/inline", read_adapters=False, persist=False)
+        self.assertNotIn("TOOL_DECLARED_UNUSED", ids(envelope, "judgments"))
+        self.assertIn("DYNAMIC_COMMAND_UNRESOLVABLE", ids(envelope, "judgments"))
+
+    def test_shipped_tests_are_not_the_plays_reach(self) -> None:
+        deps = 'schema_version = 1\n\n[[tools]]\nid = "python3"\ncommand = "python3"\nrequired = true\nversion_requirement = ">=3.10"\n'
+        with tempfile.TemporaryDirectory() as temp:
+            root = self._play(temp, " *     argv: [python3, '@resource{run.py}', $repo]\n", deps)
+            (root / "resources" / "tests").mkdir(parents=True)
+            (root / "resources" / "run.py").write_text("print('ok')\n")
+            (root / "resources" / "tests" / "test_run.py").write_text("import subprocess\nsubprocess.run(['rote', 'play', 'run', 'x'])\ndef f(v: int | None): pass\n")
+            envelope = safe_audit(root, reference="audit/inline", read_adapters=False, persist=False)
+        self.assertNotIn("SUBPROCESS_UNDECLARED", ids(envelope, "facts"))
+        self.assertNotIn("PY_FLOOR_TOO_LOW", ids(envelope, "facts"))
 
 
 class ConsumerCardTest(NoProbe):

@@ -41,7 +41,7 @@ BASHISMS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 _RESOURCE_TOKEN = re.compile(r"@resource\{([^}]+)\}")
 _RESOURCE_PATH = re.compile(r"(?<![\w/])resources/([\w./-]+)")
-_PARAM = re.compile(r"\$([A-Za-z_][A-Za-z0-9_-]*)")
+_PARAM = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_-]*)\}?")
 _HOME_PATH = re.compile(r"(/Users/[^/\s'\"]+|/home/[^/\s'\"]+)")
 
 
@@ -52,6 +52,7 @@ class StepAnalysis:
     params_read: set[str] = field(default_factory=set)
     undeclared: dict[str, list[str]] = field(default_factory=dict)
     floorless: dict[str, list[str]] = field(default_factory=dict)
+    no_timeout: list[str] = field(default_factory=list)
     collected: Collected = field(default_factory=Collected)
 
 
@@ -95,7 +96,7 @@ def analyze(package: Package) -> StepAnalysis:
         loc = Location(path=f"steps.{name}")
         argv_raw = step.get("argv")
         argv = [str(item) for item in argv_raw] if isinstance(argv_raw, list) else []
-        command = argv[0] if argv else None
+        command = argv[0].rsplit("/", 1)[-1] if argv and argv[0].startswith("/") else (argv[0] if argv else None)
         kind, label = _kind_label(step, command)
         shape = StepShape(name=name, kind=kind, label=label)
         depends = step.get("depends_on")
@@ -127,7 +128,7 @@ def analyze(package: Package) -> StepAnalysis:
             result.commands_run.add(command)
             shape.commands.append(command)
             if "timeout_ms" not in step:
-                out.add(rule("STEP_NO_TIMEOUT").finding(loc, step=name))
+                result.no_timeout.append(name)
             if package.deps_present and command not in package.tools and not command.startswith("@"):
                 result.undeclared.setdefault(command, []).append(name)
             tool = package.tools.get(command)
@@ -178,6 +179,9 @@ def analyze(package: Package) -> StepAnalysis:
     for command, step_names in sorted(result.undeclared.items()):
         out.add(rule("TOOL_UNDECLARED").finding(
             Location(file="deps.toml"), step=", ".join(step_names), command=command))
+    if result.no_timeout:
+        out.add(rule("STEP_NO_TIMEOUT").finding(
+            Location(path="steps"), step=", ".join(result.no_timeout), count=len(result.no_timeout)))
     for command, step_names in sorted(result.floorless.items()):
         out.add(rule("INTERPRETER_FLOOR_MISSING").finding(
             Location(file="deps.toml"), step=", ".join(step_names), command=command,

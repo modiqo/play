@@ -51,6 +51,8 @@ class Frontmatter:
     error: str | None = None
     # 1-based line of the frontmatter's first YAML line in main.ts, for locations.
     line_offset: int = 0
+    # Number of lines in main.ts before the body starts; add to a body line to get a file line.
+    body_line_offset: int = 0
 
     @property
     def metadata(self) -> dict[str, Any]:
@@ -157,17 +159,23 @@ def extract(source: str) -> Frontmatter:
                 break
         offset += len(line)
     body = source[close + 2 :] if close != -1 else ""
+    body_line_offset = source[: close + 2].count("\n") if close != -1 else 0
     if yaml_start is None or yaml_end is None:
-        return Frontmatter(body=body, error="frontmatter fences not found (expected `* ---` lines before the comment closes)")
+        return Frontmatter(body=body, error="frontmatter fences not found (expected `* ---` lines before the comment closes)",
+                           body_line_offset=body_line_offset)
     text = "\n".join(_strip_prefix(line) for line in source[yaml_start:yaml_end].splitlines())
     line_offset = source[:yaml_start].count("\n") + 1
+    result = Frontmatter(text=text, body=body, line_offset=line_offset, body_line_offset=body_line_offset)
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as error:
-        return Frontmatter(text=text, body=body, error=f"frontmatter YAML: {error}", line_offset=line_offset)
+        result.error = f"frontmatter YAML: {error}"
+        return result
     if not isinstance(data, dict):
-        return Frontmatter(text=text, body=body, error="frontmatter is not a mapping", line_offset=line_offset)
-    return Frontmatter(data=data, text=text, body=body, line_offset=line_offset)
+        result.error = "frontmatter is not a mapping"
+        return result
+    result.data = data
+    return result
 
 
 def _all_indices(source: str, needle: str) -> list[int]:

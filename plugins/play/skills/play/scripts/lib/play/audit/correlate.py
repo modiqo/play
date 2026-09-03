@@ -24,16 +24,25 @@ def correlate(package: Package, steps: StepAnalysis, bodies: BodyAnalysis) -> Co
     if process_commands and not package.deps_present:
         out.add(rule("DEPS_TOML_MISSING").finding(Location(file="deps.toml"), commands=", ".join(sorted(process_commands))))
 
-    if package.deps_present and not package.deps_error:
+    # Only when every command the Play runs is known: a dynamic spawn or an
+    # unread inline body could be the caller of any declared tool.
+    unread = any(shape.unread_body for shape in steps.shapes)
+    runtime_deps = front.metadata.get("runtime_dependencies")
+    declared_runtimes = set(runtime_deps) if isinstance(runtime_deps, dict) else set()
+    if package.deps_present and not package.deps_error and bodies.available and not bodies.reach_is_partial and not unread:
         for command, tool in sorted(package.tools.items()):
             if tool.required and command not in process_commands and command not in _spawned(bodies) \
-                    and command not in bodies.shell_commands:
+                    and command not in bodies.shell_commands and command not in bodies.shell_mentions \
+                    and command not in declared_runtimes:
                 out.add(rule("TOOL_DECLARED_UNUSED").finding(Location(file="deps.toml"), command=command))
 
-    read = steps.params_read | bodies.params_read
-    for param in front.parameter_names:
-        if param not in read and param.replace("-", "_") not in read:
-            out.add(rule("PARAM_UNREFERENCED").finding(Location(path=f"parameters.{param}"), param=param))
+    # A body that reads its parameters dynamically (Deno.args, destructuring,
+    # Object.entries) can consume any of them; the rule cannot prove otherwise.
+    read = steps.params_read | bodies.params_read | bodies.params_named_as_strings
+    if bodies.available and not bodies.params_read_dynamically:
+        for param in front.parameter_names:
+            if param not in read and param.replace("-", "_") not in read:
+                out.add(rule("PARAM_UNREFERENCED").finding(Location(path=f"parameters.{param}"), param=param))
 
     manifest = package.manifest
     if manifest is not None:

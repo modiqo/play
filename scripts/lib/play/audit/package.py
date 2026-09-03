@@ -39,6 +39,7 @@ class Package:
     resources: dict[str, Path] = field(default_factory=dict)
     python_resources: list[Path] = field(default_factory=list)
     shell_resources: list[Path] = field(default_factory=list)
+    script_resources: list[Path] = field(default_factory=list)  # .js .mjs .cjs .ts
     digest: str = ""
 
     @property
@@ -119,6 +120,7 @@ def _load_tools(root: Path) -> tuple[dict[str, Tool], bool, str | None]:
             elif manager:
                 hint = str(manager)
         requirement = entry.get("version_requirement")
+        command = command.rsplit("/", 1)[-1] if command.startswith("/") else command
         tools[command] = Tool(
             command=command,
             required=bool(entry.get("required", True)),
@@ -163,6 +165,8 @@ def load(root: Path, reference: str | None = None) -> Package:
                 package.python_resources.append(path)
             elif path.suffix in {".sh", ".bash"}:
                 package.shell_resources.append(path)
+            elif path.suffix in {".js", ".mjs", ".cjs", ".ts"}:
+                package.script_resources.append(path)
 
     package.digest = _install_receipt_digest(root) or _content_digest(root)
     return package
