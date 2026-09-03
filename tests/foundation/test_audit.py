@@ -79,6 +79,36 @@ class FrontmatterTest(unittest.TestCase):
         self.assertEqual("noted", front.data["name"])
         self.assertIn("const x = 1", front.body)
 
+    def test_fence_and_close_on_one_line_marker_on_opener_and_dex_alias(self) -> None:
+        # The shapes rote 0.77 emitted: marker on the `/**` line, `* --- */` closing.
+        source = (
+            "#!/usr/bin/env -S rote play run\n/** @rote-frontmatter\n * ---\n * name: ci\n"
+            " * description: d\n * parameters: []\n * metadata:\n *   version: 0.1.0\n"
+            " * steps:\n *   investigate:\n *     type: process.exec\n *     argv: [python3, x.py]\n"
+            " * --- */\nconst sdk = await import(\"__ROTE_PRESENTATION_SDK__\");\n"
+        )
+        front = frontmatter.extract(source)
+        self.assertIsNone(front.error, front.error)
+        self.assertEqual("ci", front.data["name"])
+        self.assertIn("investigate", front.steps)
+        self.assertIn("const sdk", front.body)
+        dex = frontmatter.extract(source.replace("@rote-frontmatter", "@dex-frontmatter"))
+        self.assertIsNone(dex.error)
+
+    def test_marker_outside_a_jsdoc_block_is_ignored(self) -> None:
+        front = frontmatter.extract("// @rote-frontmatter\n// ---\n// name: x\n// ---\n")
+        self.assertEqual("no @rote-frontmatter block", front.error)
+
+    def test_a_dash_fence_inside_block_scalar_content_does_not_close_the_yaml(self) -> None:
+        source = (
+            "/**\n * @rote-frontmatter\n * ---\n * name: s\n * description: |\n *   line one\n *     ---\n"
+            " *   line two\n * metadata:\n *   version: 1.0.0\n * steps: {}\n * ---\n */\n"
+        )
+        front = frontmatter.extract(source)
+        self.assertIsNone(front.error, front.error)
+        self.assertEqual("s", front.data["name"])
+        self.assertIn("---", front.data["description"])
+
     def test_nested_parameters_and_suppressions(self) -> None:
         front = frontmatter.extract((FIXTURES / "nested-params" / "main.ts").read_text())
         self.assertFalse(front.parameters_top_level)

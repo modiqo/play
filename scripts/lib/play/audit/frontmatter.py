@@ -8,14 +8,39 @@ error string so the runner can record an unknown instead of a wrong finding.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
 import yaml
 
-_BLOCK = re.compile(r"@rote-frontmatter[ \t]*\n(.*?)\n[ \t]*\*/", re.S)
-_PREFIX = re.compile(r"^[ \t]*\*[ ]?")
+_MARKERS = ("@rote-frontmatter", "@dex-frontmatter")
+
+
+def _marker_in_jsdoc(source: str, position: int) -> bool:
+    """Mirror of rote: the marker's line starts with `*` or `/**`, inside an open `/**` block."""
+    line_start = source.rfind("\n", 0, position) + 1
+    prefix = source[line_start:position].lstrip()
+    if not (prefix.startswith("/**") or prefix.startswith("*")):
+        return False
+    before = source[:position]
+    opened, closed = before.rfind("/**"), before.rfind("*/")
+    return opened != -1 and (closed == -1 or opened > closed)
+
+
+def _fence(line: str) -> bool:
+    rest = line.strip()
+    if not rest.startswith("*"):
+        return False
+    return rest[1:] in ("---", " ---")
+
+
+def _strip_prefix(line: str) -> str:
+    trimmed = line.strip()
+    if trimmed.startswith("* "):
+        return trimmed[2:]
+    if trimmed.startswith("*"):
+        return trimmed[1:].lstrip()
+    return trimmed
 
 
 @dataclass
@@ -105,23 +130,37 @@ class Frontmatter:
 
 
 def extract(source: str) -> Frontmatter:
-    """Parse the frontmatter block out of a main.ts source string."""
-    match = _BLOCK.search(source)
-    if match is None:
+    """Parse the frontmatter block out of a main.ts source string, the way rote does.
+
+    The first marker that sits inside an open JSDoc block wins. The YAML is the
+    text between the first two ``* ---`` fence lines after it, bounded by the
+    comment's ``*/``; a fence and the close may share a line (``* --- */``).
+    """
+    marker = min(
+        (index for name in _MARKERS for index in _all_indices(source, name) if _marker_in_jsdoc(source, index)),
+        default=-1,
+    )
+    if marker < 0:
         return Frontmatter(body=source, error="no @rote-frontmatter block")
-    raw_lines = match.group(1).splitlines()
-    stripped = [_PREFIX.sub("", line) for line in raw_lines]
-    # The YAML document sits between the first two '---' markers. Authors
-    # often append usage notes after the closing marker, inside the comment.
-    if stripped and stripped[0].strip() == "---":
-        stripped = stripped[1:]
-        end = next((i for i, line in enumerate(stripped) if line.strip() == "---"), len(stripped))
-        stripped = stripped[:end]
-    elif stripped and stripped[-1].strip() == "---":
-        stripped = stripped[:-1]
-    text = "\n".join(stripped)
-    line_offset = source[: match.start(1)].count("\n") + 1
-    body = source[match.end() :]
+    close = source.find("*/", marker)
+    bound = close if close != -1 else len(source)
+    lines = source[marker:bound].splitlines(keepends=True)
+    offset = marker
+    yaml_start: int | None = None
+    yaml_end: int | None = None
+    for line in lines:
+        if _fence(line):
+            if yaml_start is None:
+                yaml_start = offset + len(line)
+            else:
+                yaml_end = offset
+                break
+        offset += len(line)
+    body = source[close + 2 :] if close != -1 else ""
+    if yaml_start is None or yaml_end is None:
+        return Frontmatter(body=body, error="frontmatter fences not found (expected `* ---` lines before the comment closes)")
+    text = "\n".join(_strip_prefix(line) for line in source[yaml_start:yaml_end].splitlines())
+    line_offset = source[:yaml_start].count("\n") + 1
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as error:
@@ -129,3 +168,12 @@ def extract(source: str) -> Frontmatter:
     if not isinstance(data, dict):
         return Frontmatter(text=text, body=body, error="frontmatter is not a mapping", line_offset=line_offset)
     return Frontmatter(data=data, text=text, body=body, line_offset=line_offset)
+
+
+def _all_indices(source: str, needle: str) -> list[int]:
+    found: list[int] = []
+    start = 0
+    while (index := source.find(needle, start)) != -1:
+        found.append(index)
+        start = index + len(needle)
+    return found
