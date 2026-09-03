@@ -13,6 +13,8 @@
  * - name: repo
  *   type: string
  *   required: true
+ * presentation_fixtures:
+ *   count: resources/presentation-fixtures/count/fixture.yaml
  * steps:
  *   count:
  *     type: process.exec
@@ -28,9 +30,16 @@ const { FlowOutput, loadPresentationContext, stepName } = sdk;
 const out = new FlowOutput();
 const ctx = await loadPresentationContext();
 const step = ctx.step(stepName("count"));
-const body: any = step.outcome.status === "completed" ? step.outcome.output.body : null;
-const text = body?.stdout?.text ?? "";
-const partial = body?.stdout?.truncated === true;
-out.human(`${text}${partial ? " (partial)" : ""}`);
-out.summary("counted");
-out.result({ text, partial });
+if (step.outcome.status !== "completed" && step.outcome.status !== "restored") {
+  const reason = step.outcome.status === "blocked" ? "blocked by an upstream failure" : "the count step failed";
+  out.human(`count unavailable: ${reason}`);
+  out.summary("count unavailable");
+  out.result({ text: null, partial: false, unavailable: reason });
+} else {
+  const body: any = step.outcome.output.body;
+  const text = body?.stdout?.text ?? "";
+  const partial = body?.stdout?.truncated === true;
+  out.human(`${text}${partial ? " (partial: output was truncated at 64 KiB)" : ""}`);
+  out.summary(partial ? "counted (partial)" : "counted");
+  out.result({ text, partial });
+}

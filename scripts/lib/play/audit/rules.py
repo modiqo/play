@@ -158,7 +158,17 @@ _RULES: tuple[Rule, ...] = (
         scope="host",
         related_issue=ISSUE + "2181",
     ),
+    Rule(
+        "PRESENTATION_FIXTURE_MISSING", "fact", OWNER_AUTHORING,
+        "the presentation reads step(s) {step} but no `presentation_fixtures` entry covers them; `rote play lint` cannot exercise the rendering.",
+        "Run `play audit fixtures <path>` after a verified run to record each step's observation and declare it.",
+    ),
     # ── judgments ────────────────────────────────────────────────────────
+    Rule(
+        "NEGATIVE_CASES_MISSING", "judgment", OWNER_TROUBLESHOOTING,
+        "no negative cases are packed under resources/cases; nothing proves the presentation reports a failed, blocked, or truncated step honestly.",
+        "Run `play audit fixtures <path>` to pack partial, truncated, and blocked cases per step, then `play audit rehearse`.",
+    ),
     Rule(
         "PARAM_UNREFERENCED", "judgment", OWNER_AUTHORING,
         "parameter `{param}` is declared but no step argv, for_each, or presentation body reads it.",

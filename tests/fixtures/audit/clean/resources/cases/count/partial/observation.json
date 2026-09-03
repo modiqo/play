@@ -1,0 +1,15 @@
+{
+ "status": "failed",
+ "output": {
+  "message": "@1 process exited with code 1; stderr: find: /Users/you/Library/Protected: Operation not permitted",
+  "duration": 5,
+  "diagnostic": {
+   "response_id": 1,
+   "exit": {
+    "kind": "code",
+    "code": 1
+   },
+   "stderr": "find: /Users/you/Library/Protected: Operation not permitted\n"
+  }
+ }
+}

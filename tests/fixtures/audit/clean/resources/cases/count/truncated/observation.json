@@ -1,0 +1,36 @@
+{
+ "status": "completed",
+ "output": {
+  "shape": "single",
+  "response_id": 1,
+  "duration": 5,
+  "body": {
+   "schema_version": 1,
+   "kind": "process.exec",
+   "status": {
+    "spawned": true,
+    "exit": {
+     "kind": "code",
+     "code": 0
+    },
+    "timed_out": false,
+    "duration_ms": 5,
+    "timeout_ms": 5000
+   },
+   "stdout": {
+    "bytes": 100003,
+    "text": "42\n",
+    "preview_bytes": 3,
+    "truncated": true,
+    "encoding": "utf8"
+   },
+   "stderr": {
+    "bytes": 0,
+    "text": "",
+    "preview_bytes": 0,
+    "truncated": false,
+    "encoding": "utf8"
+   }
+  }
+ }
+}

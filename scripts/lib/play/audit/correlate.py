@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .bodies import BodyAnalysis
@@ -43,6 +44,17 @@ def correlate(package: Package, steps: StepAnalysis, bodies: BodyAnalysis) -> Co
         for param in front.parameter_names:
             if param not in read and param.replace("-", "_") not in read:
                 out.add(rule("PARAM_UNREFERENCED").finding(Location(path=f"parameters.{param}"), param=param))
+
+    # Fixture coverage: steps the presentation reads by name need a declared fixture.
+    if front.execution_model == "steps_with_presentation" and front.body:
+        referenced = set(re.findall(r'stepName\(\s*["\']([A-Za-z_][\w-]*)["\']\s*\)', front.body))
+        process_steps = {name for name, step in front.steps.items() if str(step.get("type") or "") == "process.exec"}
+        fixtures = front.presentation_fixtures
+        uncovered = sorted(name for name in referenced & process_steps if name not in fixtures)
+        if uncovered:
+            out.add(rule("PRESENTATION_FIXTURE_MISSING").finding(Location(path="presentation_fixtures"), step=", ".join(uncovered)))
+        if process_steps and not (package.root / "resources" / "cases").is_dir():
+            out.add(rule("NEGATIVE_CASES_MISSING").finding(Location(file="resources/cases")))
 
     manifest = package.manifest
     if manifest is not None:

@@ -296,7 +296,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("reference")
     parser.add_argument("--json", action="store_true", dest="as_json")
-    parser.add_argument("--card", action="store_true", help="append the advisory audit report card")
+    parser.add_argument("--card", action="store_true", default=True, help="append the advisory audit report card (default)")
+    parser.add_argument("--no-card", action="store_false", dest="card", help="skip the advisory audit report card")
     args = parser.parse_args()
     try:
         disclosure = inspect_for_run(args.reference)

@@ -1,0 +1,64 @@
+{
+ "flow": {
+  "name": "clean",
+  "description": "A well-formed Play"
+ },
+ "run": {
+  "run_id": "rehearsal",
+  "started_at": "2026-09-03T17:45:53Z",
+  "total_duration": 0,
+  "status": "succeeded"
+ },
+ "params": {
+  "repo": ""
+ },
+ "steps": {
+  "count": {
+   "definition": {
+    "kind": "process.exec",
+    "argv": [
+     "sh",
+     "@resource{count.sh}",
+     "$repo"
+    ],
+    "timeout_ms": 5000
+   },
+   "outcome": {
+    "status": "completed",
+    "output": {
+     "shape": "single",
+     "response_id": 1,
+     "duration": 5,
+     "body": {
+      "schema_version": 1,
+      "kind": "process.exec",
+      "status": {
+       "spawned": true,
+       "exit": {
+        "kind": "code",
+        "code": 0
+       },
+       "timed_out": false,
+       "duration_ms": 5,
+       "timeout_ms": 5000
+      },
+      "stdout": {
+       "bytes": 3,
+       "text": "42\n",
+       "preview_bytes": 3,
+       "truncated": false,
+       "encoding": "utf8"
+      },
+      "stderr": {
+       "bytes": 0,
+       "text": "",
+       "preview_bytes": 0,
+       "truncated": false,
+       "encoding": "utf8"
+      }
+     }
+    }
+   }
+  }
+ }
+}

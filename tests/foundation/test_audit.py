@@ -14,7 +14,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.audit import adapters, card, corpus, fetch, frontmatter, host, rules, store  # noqa: E402
+from play.audit import adapters, card, cases, corpus, fetch, frontmatter, handoff, host, presentation, rehearse, rules, store  # noqa: E402
+from play.audit import package as package_mod  # noqa: E402
 from play.audit.cli import audit_target, main, resolve_target  # noqa: E402
 from play.audit.runner import safe_audit  # noqa: E402
 
@@ -127,10 +128,10 @@ class FixtureFindingsTest(NoProbe):
 
     def test_partial_scan(self) -> None:
         envelope = audit("partial-scan")
-        self.assertEqual({"FANOUT_OVER_PREVIEW", "STEP_NO_TIMEOUT"}, ids(envelope, "facts"))
+        self.assertEqual({"FANOUT_OVER_PREVIEW", "STEP_NO_TIMEOUT", "PRESENTATION_FIXTURE_MISSING"}, ids(envelope, "facts"))
         timeout = next(f for f in envelope["facts"] if f["id"] == "STEP_NO_TIMEOUT")
         self.assertEqual("find", timeout["evidence"]["step"])
-        self.assertEqual({"UNRELIABLE_EXIT_STATUS", "TOOL_DECLARED_UNUSED"}, ids(envelope, "judgments"))
+        self.assertEqual({"UNRELIABLE_EXIT_STATUS", "TOOL_DECLARED_UNUSED", "NEGATIVE_CASES_MISSING"}, ids(envelope, "judgments"))
         unused = next(item for item in envelope["judgments"] if item["id"] == "TOOL_DECLARED_UNUSED")
         self.assertEqual("rsync", unused["evidence"]["command"])
         self.assertEqual("rote-troubleshooting", next(f for f in envelope["facts"] if f["id"] == "FANOUT_OVER_PREVIEW")["owner"])
@@ -138,7 +139,7 @@ class FixtureFindingsTest(NoProbe):
     def test_stranded_body(self) -> None:
         envelope = audit("stranded")
         self.assertEqual({"BODY_STRANDED", "DEPS_TOML_MISSING", "PARAMETERS_UNDER_METADATA", "STEP_NO_TIMEOUT"}, ids(envelope, "facts"))
-        self.assertEqual({"PARAM_UNREFERENCED"}, ids(envelope, "judgments"))
+        self.assertEqual({"PARAM_UNREFERENCED"}, ids(envelope, "judgments"), "no steps_with_presentation, so no fixture rules")
         self.assertEqual([("INLINE_BODY_UNREAD", "steps.scan")], [(u["kind"], u["subject"]) for u in envelope["unknowns"]])
         self.assertEqual(["scan"], envelope["reach"]["unread_bodies"])
 
@@ -148,7 +149,7 @@ class FixtureFindingsTest(NoProbe):
         self.assertEqual({"INTERPRETER_FLOOR_MISSING", "PY_FLOOR_TOO_LOW"}, ids(envelope, "facts"))
         needs = sorted((f["evidence"]["construct"], f["evidence"]["needs"]) for f in facts if f["id"] == "PY_FLOOR_TOO_LOW")
         self.assertEqual([("a PEP 604 union in an evaluated annotation", "3.10"), ("an unguarded `import tomllib`", "3.11")], needs)
-        self.assertEqual([], envelope["judgments"])
+        self.assertEqual({"NEGATIVE_CASES_MISSING"}, ids(envelope, "judgments"))
 
     def test_runtime_pipe_expressions_are_not_unions_even_without_future_import(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -185,12 +186,13 @@ class FixtureFindingsTest(NoProbe):
     def test_missing_resource_and_home_path(self) -> None:
         envelope = audit("missing-resource")
         self.assertEqual({"ABSOLUTE_HOME_PATH", "DEPENDS_ON_UNKNOWN", "RESOURCE_MISSING"}, ids(envelope, "facts"))
+        self.assertEqual({"NEGATIVE_CASES_MISSING"}, ids(envelope, "judgments"))
 
     def test_spawned_commands(self) -> None:
         envelope = audit("spawns")
         self.assertEqual({"DENO_COMMAND_UNDECLARED", "SUBPROCESS_UNDECLARED"}, ids(envelope, "facts"))
-        self.assertEqual({"DYNAMIC_COMMAND_UNRESOLVABLE"}, ids(envelope, "judgments"))
-        commands = {f["evidence"]["command"] for f in envelope["facts"]}
+        self.assertEqual({"DYNAMIC_COMMAND_UNRESOLVABLE", "NEGATIVE_CASES_MISSING"}, ids(envelope, "judgments"))
+        commands = {f["evidence"]["command"] for f in envelope["facts"] if "command" in f["evidence"]}
         self.assertEqual({"gh", "docker"}, commands, "python3 is declared and must not be flagged")
         self.assertTrue(all("line" in f["location"] for f in envelope["facts"]))
 
@@ -403,10 +405,10 @@ class StoreTest(NoProbe):
             self.assertIsNotNone(by_digest)
             entries = store.history("audit/partial-scan")
             self.assertEqual(["audit"], [e["event"] for e in entries])
-            self.assertEqual(2, entries[0]["open_facts"])
+            self.assertEqual(3, entries[0]["open_facts"])
             fixed = audit("clean", persist=False)
             delta = store.delta(first, fixed)
-            self.assertEqual(4, len(delta["closed"]))
+            self.assertEqual(6, len(delta["closed"]))
             self.assertEqual([], delta["new"])
             self.assertEqual(first["subject"]["digest"], delta["digest_before"])
 
@@ -561,3 +563,142 @@ class CorpusToolTest(NoProbe):
 
     def test_verify_fact_returns_none_for_rules_it_cannot_check(self) -> None:
         self.assertIsNone(corpus.verify_fact(FIXTURES / "clean", {"id": "MANIFEST_DRIFT", "evidence": {}, "location": {}}))
+
+
+def _copy_fixture(name: str, temp: str) -> Path:
+    import shutil
+    root = Path(temp) / name
+    shutil.copytree(FIXTURES / name, root)
+    return root
+
+
+class CasesScaffoldTest(NoProbe):
+    def test_scaffold_writes_fixtures_cases_and_declares_them(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = _copy_fixture("partial-scan", temp)
+            pkg = package_mod.load(root)
+            recorded = presentation.base_input(pkg, None)
+            recorded["steps"]["find"]["outcome"] = presentation.outcome_completed(presentation.completed_body("/a/.git\n/b/.git\n", timeout_ms=30000))
+            result = cases.scaffold(pkg, recorded)
+            self.assertIn("resources/presentation-fixtures/find/fixture.yaml", result.written)
+            self.assertIn("resources/cases/find/blocked/observation.json", result.written)
+            self.assertTrue(result.frontmatter_changed)
+            text = (root / "main.ts").read_text()
+            self.assertIn(" * presentation_fixtures:\n *   find: resources/presentation-fixtures/find/fixture.yaml", text)
+            fixture = (root / "resources/presentation-fixtures/find/fixture.yaml").read_text()
+            self.assertIn("timeout_ms: 30000", fixture, "fixture timeout must equal the step timeout or rote lint rejects it")
+            self.assertTrue((root / "resources/cases/find/expect.yaml").is_file())
+            reloaded = package_mod.load(root)
+            self.assertEqual(["find", "check"], list(reloaded.frontmatter.presentation_fixtures), "every completed process step gets a fixture")
+            self.assertEqual([], cases.is_reachable_from_steps(reloaded), "cases must never be reachable from a step")
+            packed = cases.load_cases(reloaded)
+            self.assertEqual({"blocked", "partial", "truncated"}, set(packed["find"]["cases"]))
+            self.assertEqual("failed", packed["find"]["cases"]["partial"]["status"])
+
+    def test_scaffold_is_idempotent_on_the_frontmatter(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = _copy_fixture("clean", temp)
+            pkg = package_mod.load(root)
+            recorded = json.loads((FIXTURES / "clean-run.json").read_text())
+            first = cases.scaffold(pkg, recorded)
+            second = cases.scaffold(package_mod.load(root), recorded)
+            self.assertFalse(first.frontmatter_changed, "the exemplar already declares its fixture")
+            self.assertFalse(second.frontmatter_changed)
+            self.assertEqual(1, (root / "main.ts").read_text().count("presentation_fixtures:"))
+
+    def test_dry_run_writes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = _copy_fixture("partial-scan", temp)
+            before = sorted(str(p) for p in root.rglob("*"))
+            result = cases.scaffold(package_mod.load(root), None, write=False)
+            self.assertEqual(before, sorted(str(p) for p in root.rglob("*")))
+            self.assertTrue(any("no completed observation" in s for s in result.skipped))
+
+    def test_fixture_rules_fire_and_clear(self) -> None:
+        envelope = audit("partial-scan")
+        self.assertIn("PRESENTATION_FIXTURE_MISSING", ids(envelope, "facts"))
+        self.assertIn("NEGATIVE_CASES_MISSING", ids(envelope, "judgments"))
+        clean = audit("clean")
+        self.assertNotIn("PRESENTATION_FIXTURE_MISSING", ids(clean, "facts"))
+        self.assertNotIn("NEGATIVE_CASES_MISSING", ids(clean, "judgments"))
+
+
+@unittest.skipIf(presentation.available() is not None, "rote deno runtime or SDK not installed")
+class RehearsalTest(NoProbe):
+    def test_negative_cases_render_through_the_presentation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"PLAY_HOME": temp}):
+            root = _copy_fixture("clean", temp)
+            result = rehearse.rehearse(root, profiles=("live", "stock-macos"), run_lint=False, persist=True)
+            verdicts = {(c.step, c.case): c.verdict for c in result.cases}
+            self.assertEqual({("count", "blocked"), ("count", "partial"), ("count", "truncated")}, set(verdicts))
+            # The exemplar's presentation reports every degraded case honestly.
+            self.assertEqual({"pass"}, set(verdicts.values()), verdicts)
+            self.assertEqual("ready", result.verdict)
+            self.assertIn("stock-macos", result.cards)
+            text = rehearse.render_text(result)
+            self.assertIn("Negative cases", text)
+            self.assertIn("Card on a stock Mac", text)
+            history = store.history(result.reference)
+            self.assertEqual("rehearsal", history[-1]["event"])
+
+    def test_missing_cases_is_a_note_not_an_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = _copy_fixture("partial-scan", temp)
+            result = rehearse.rehearse(root, profiles=("live",), run_lint=False, persist=False)
+            self.assertEqual([], result.cases)
+            self.assertEqual("no negative cases packed", result.verdict)
+            self.assertTrue(any("play audit fixtures" in n for n in result.notes))
+
+
+class HandoffTest(NoProbe):
+    def test_create_then_close_records_the_delta(self) -> None:
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"PLAY_HOME": temp}):
+            root = _copy_fixture("partial-scan", temp)
+            packet, path, error = handoff.create("audit/partial-scan", root, rule_ids=["STEP_NO_TIMEOUT"])
+            self.assertIsNone(error)
+            assert path is not None
+            self.assertTrue(path.is_file())
+            self.assertEqual(1, packet["count"])
+            self.assertEqual(["rote-flow-authoring"], list(packet["owners"]))
+            self.assertIn("play audit handoff audit/partial-scan --close", packet["instructions"])
+            # Apply the fix, then close.
+            text = (root / "main.ts").read_text().replace(" *     - .git\n", " *     - .git\n *     timeout_ms: 5000\n", 1)
+            (root / "main.ts").write_text(text)
+            result = handoff.close("audit/partial-scan", root, run_ref="run-1")
+            closed = result["delta"]["closed"]
+            self.assertTrue(any(item.startswith("STEP_NO_TIMEOUT@") for item in closed), closed)
+            events = [e["event"] for e in store.history("audit/partial-scan")]
+            self.assertEqual(["audit", "handoff", "audit", "handoff_closed"], events)
+
+    def test_all_selects_every_finding(self) -> None:
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"PLAY_HOME": temp}):
+            root = _copy_fixture("stranded", temp)
+            packet, _, error = handoff.create("audit/stranded", root, rule_ids=None)
+            self.assertIsNone(error)
+            self.assertGreaterEqual(packet["count"], 5)
+
+
+class NewSubcommandsCliTest(NoProbe):
+    def _run(self, *argv: str) -> tuple[int, str]:
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            code = main(list(argv))
+        return code, buffer.getvalue()
+
+    def test_fixtures_and_send_and_handoff_through_the_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"PLAY_HOME": temp}):
+            root = _copy_fixture("partial-scan", temp)
+            code, out = self._run("fixtures", str(root), "--from-run", str(FIXTURES / "clean-run.json"), "--dry-run")
+            self.assertEqual(0, code)
+            self.assertIn("would write", out)
+            code, out = self._run("send", str(root), "--out", str(Path(temp) / "report.md"))
+            self.assertEqual(0, code)
+            self.assertIn("report written", out)
+            self.assertIn("## Audit of", (Path(temp) / "report.md").read_text())
+            code, out = self._run("handoff", str(root), "--rule", "FANOUT_OVER_PREVIEW")
+            self.assertEqual(0, code)
+            self.assertIn("# Audit handoff", out)
+            code, out = self._run("handoff", str(root), "--close")
+            self.assertIn("remaining", out)
+            code, out = self._run("history", f"{Path(temp).name}/partial-scan")
+            self.assertIn("handoff", out)

@@ -665,7 +665,7 @@ actions:
     input_required: [match.reference, request.parameters]
     command: scripts/bin/play-inspect <match.reference> --json
     command_policy:
-      - Invoke first-class rote play inspect through the reusable wrapper; never pull, install, replace, authenticate, or run during this state.
+      - Invoke first-class rote play inspect through the reusable wrapper; never install, replace, authenticate, or run during this state. The advisory report card may pull the package into a temporary folder that is removed afterwards; it never touches the install store.
       - Present the exact version, purpose, parameters, declared operations, dependencies, credentials, local convergence, blockers, and declared write permissions.
       - When generic adapter operations do not prove read/write semantics, label the effect unknown rather than claiming read-only execution.
       - An explicit run request selects what to inspect; it is not approval to execute after disclosure.
@@ -788,6 +788,8 @@ actions:
     command_policy:
       - Crystallize to the play-shape standard, not just a valid file. One reading = one step; steps carry author-chosen intent names (probe_harnesses, never python3_2); independent steps are roots so the runner parallelizes; depends_on declares ordering and @step{...} refs declare every consumed value (scalar, piped through join when needed, with a self-sufficient fallback in the script).
       - Encode the failure contract at capture time. Expected absence prints {"ok":true,"warning":...} and exits zero so the presentation renders one labeled unknown; real faults write stderr and exit nonzero. Interactive subcommands inside steps carry their --yes equivalent because steps have no TTY.
+      - Exit status is not a fault signal for find, grep, diff, or rsync; a partial traversal exits 1 with its output intact. Wrap them so the step survives and report the unreachable paths as skipped.
+      - After the candidate exists, run `scripts/bin/play-audit <candidate-path> --author --no-store` and carry its findings into the authoring handoff; the audit is advisory and never gates.
     events:
       candidate_ready: [candidate.reference, candidate.reusable, candidate.contract]
       not_reusable: [reason, evidence_refs]
@@ -803,6 +805,7 @@ actions:
       - Before `rote play release`, run `scripts/bin/play-tag-hints --request <request.original> --play <path-to-main.ts> --json` and add every suggested tag under metadata.discoverability.tags, so the card covers the outcome words of the request that created it; a Play whose card cannot be found by its own originating request is not discoverable.
       - Release only a play that meets the shape standards; author-named steps, a real DAG with both edge kinds declared, degrade-never-die failure handling, honest deps.toml with per-step timeout_ms, and a classified presentation with a per-step stage ledger; never an information dump.
       - Test the negative space before release; one degraded-source run must complete with a labeled unknown, and one injected hard fault must fail closed with working --resume. Verify the final DAG from the run output's layer lines (or the registry-resolved play-dag Play); multi-source work rendering as one step means the shape standards were skipped."
+      - After the verified run, pack its observations with `scripts/bin/play-audit fixtures <path>` so positive fixtures and per-step negative cases ship with the Play, then run `scripts/bin/play-audit rehearse <path>` and show the author the stock-macOS card and any negative case the presentation misreports. Offer `scripts/bin/play-audit handoff <path> --rule ...` for the findings the author chooses; release proceeds regardless of the audit.
       - Never delegate an end-to-end release-and-publish request. The specialist must return control to Play so birth_capture can record the immutable owner-local birth before publication begins.
       - Emit flow_released only with candidate.publication_status=unpublished. If a registry publication already occurred, emit publication_boundary_violated; never reinterpret the published artifact as a valid pre-publication birth.
     events:
@@ -933,6 +936,7 @@ actions:
       - Use a fresh temporary working directory under /tmp so repository and workspace files cannot make the smoke test pass.
       - Reuse only the current host's Rote installation and credential store; do not read credential values or claim the result proves every consumer is configured.
       - Retain only bounded metadata, latency, byte count, and output/error digests; do not put the Play's primary payload or credential values into controller context.
+      - Record the published card with `scripts/bin/play-audit <publication.uri>` so the audit history for the Play carries the publication's digest.
     events:
       public_smoke_verified: [publication_validation.smoke_status, publication_validation.smoke_exact_reference, publication_validation.smoke_run_ref, publication_validation.smoke_output_sha256, publication_validation.smoke_output_bytes, publication_validation.smoke_ns, publication_validation.isolated_workdir]
       public_smoke_failed: [reason, failure_class, credential_names, evidence_refs]
