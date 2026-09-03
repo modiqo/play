@@ -348,6 +348,26 @@ diagnostic for explicit install/repair work, not an execution gate. A continuati
 real model, approval, specialist, or user-choice boundary; keep its short ID opaque and never narrate
 or inspect continuation machinery.
 
+## Audit: advisory, never gating
+
+Every Play inspection now ends with a report card: what the Play does in order,
+what it touches, what this machine has, and whether it can run here. The card is
+advisory. It never withholds the run prompt, and an audit that cannot run is
+simply absent. Present the card as part of the disclosure; do not summarize it
+away and do not turn it into a list of problems for a consumer.
+
+On the creation side, after the verified run and before `rote play release`,
+the authoring specialist runs `scripts/bin/play-audit fixtures <path>` to pack
+the run's observations as fixtures plus partial, truncated, and blocked cases per
+step, then `scripts/bin/play-audit rehearse <path>` to show the author the
+stock-macOS card and any negative case the presentation misreports. Offer
+`scripts/bin/play-audit handoff <path> --rule ...` for findings the author
+chooses to fix; release proceeds whatever they choose.
+
+For a user asking about a Play they did not write, `play audit <ref> --author`
+is the work order and `play audit <ref> --report` the note for its author.
+Facts are provable from the package; judgments are advisory and say so.
+
 ## Cross-harness bootstrap
 
 For an explicit request to install or restore Play across harnesses, use the bundled
