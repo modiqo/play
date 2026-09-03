@@ -21,8 +21,13 @@ def attach_report_card(disclosure: dict[str, Any], reference: str) -> None:
         envelope = audit_target(reference)
         text = card(envelope)
         if text:
+            summary = envelope.get("summary") or {}
             disclosure["audit_card"] = text
-            disclosure["audit_summary"] = envelope.get("summary")
+            disclosure["audit_summary"] = summary
+            disclosure["audit_verdict"] = (
+                "can run here: yes" if summary.get("can_run_here")
+                else f"not yet: {summary.get('cannot_run_reason') or 'a requirement is missing'}"
+            )
     except BaseException:  # noqa: BLE001 - advisory by contract
         return
 
@@ -288,10 +293,8 @@ def render_markdown(disclosure: dict[str, Any]) -> str:
         lines.append("Eligible after explicit approval of the exact reference and displayed parameters.")
     else:
         lines.append("Not runnable: " + ("; ".join(preflight["blockers"]) or "preflight failed"))
-    summary = disclosure.get("audit_summary") or {}
     if disclosure.get("audit_card"):
-        verdict = "yes" if summary.get("can_run_here") else f"not yet: {summary.get('cannot_run_reason')}"
-        lines.append(f"Report card says it can run here: {verdict}. Author work order: `play audit {base_reference} --author`.")
+        lines.append(f"Report card: {disclosure.get('audit_verdict') or 'not assessed'}. Author work order: `play audit {base_reference} --author`.")
     lines.extend(["", disclosure["approval"]["notice"]])
     return "\n".join(lines)
 
@@ -305,6 +308,8 @@ def main() -> int:
     args = parser.parse_args()
     try:
         disclosure = inspect_for_run(args.reference)
+        disclosure.setdefault("audit_card", "")
+        disclosure.setdefault("audit_verdict", "not assessed")
         if args.card:
             attach_report_card(disclosure, args.reference)
     except RegistryReadError as error:

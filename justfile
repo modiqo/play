@@ -13,9 +13,9 @@ check: package-check
     scripts/bin/play-question choose_creator_path --harness codex --check
     scripts/bin/play-question choose_creator_path --harness claude --check
     scripts/bin/play-question choose_creator_path --harness kimi --check
-    scripts/bin/play-question approve_play_run --harness codex --check
-    scripts/bin/play-question approve_play_run --harness claude --check
-    scripts/bin/play-question approve_play_run --harness kimi --check
+    scripts/bin/play-question approve_play_run --harness codex --context-json '{"inspection":{"audit_verdict":"can run here: yes"}}' --check
+    scripts/bin/play-question approve_play_run --harness claude --context-json '{"inspection":{"audit_verdict":"can run here: yes"}}' --check
+    scripts/bin/play-question approve_play_run --harness kimi --context-json '{"inspection":{"audit_verdict":"can run here: yes"}}' --check
     scripts/bin/play-question choose_search_result --harness codex --check
     scripts/bin/play-question choose_search_result --harness claude --check
     scripts/bin/play-question choose_search_result --harness kimi --check

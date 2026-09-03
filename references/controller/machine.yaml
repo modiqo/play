@@ -425,7 +425,17 @@ states:
     prompt: approve_play_run
     "on":
       play_run_approved: [{target: use_prepare, mutate: approve_inspected_run}]
+      play_card_requested: [{target: use_card, mutate: record_report_card_replay}]
       play_run_declined: [{target: completed, mutate: record_run_dismissal}]
+
+  use_card:
+    owner: play
+    checkpoint: after
+    requires: [inspection.exact_reference, inspection.audit_card]
+    entry: {action: present_report_card}
+    "on":
+      report_card_presented: [{target: use_offer, mutate: record_report_card_replay}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
 
   use_prepare:
     owner: play

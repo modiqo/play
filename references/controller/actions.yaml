@@ -138,6 +138,7 @@ mutations:
   - record_play_run_handoff
   - record_use_authentication_required
   - record_run_dismissal
+  - record_report_card_replay
   - record_controller_run
   - record_incomplete_output
   - record_verification
@@ -625,6 +626,16 @@ actions:
       uncertain_match: [match.reference, match.covered, match.uncovered, confidence, capture.decision, capture.reason, capture.task_class]
       no_match: [match.covered, match.uncovered, confidence, capture.decision, capture.reason, capture.task_class]
 
+  present_report_card:
+    kind: deterministic
+    owner: play
+    effect: none
+    input_required: [inspection.exact_reference, inspection.audit_card]
+    command_policy:
+      - Replay the inspection's report card exactly as recorded, as its own message, then return to the same run approval prompt. Never re-run the audit here.
+    events:
+      report_card_presented: [presentation.markdown]
+
   route_inspected_play:
     kind: evaluator
     owner: play
@@ -671,8 +682,8 @@ actions:
       - An explicit run request selects what to inspect; it is not approval to execute after disclosure.
       - If and only if first-class inspection reports play-not-found, return play_reference_unresolved so the controller can search by the requested name; other inspection failures block.
     events:
-      play_inspected: [inspection.complete, inspection.exact_reference, inspection.description, inspection.parameters, inspection.local_change, inspection.dependencies, inspection.operations, inspection.effects, inspection.disclosure_sha256]
-      play_not_runnable: [inspection.complete, inspection.exact_reference, inspection.description, inspection.parameters, inspection.blockers, inspection.dependencies, inspection.operations, inspection.effects, inspection.disclosure_sha256]
+      play_inspected: [inspection.complete, inspection.exact_reference, inspection.description, inspection.parameters, inspection.local_change, inspection.dependencies, inspection.operations, inspection.effects, inspection.disclosure_sha256, inspection.audit_card, inspection.audit_verdict]
+      play_not_runnable: [inspection.complete, inspection.exact_reference, inspection.description, inspection.parameters, inspection.blockers, inspection.dependencies, inspection.operations, inspection.effects, inspection.disclosure_sha256, inspection.audit_card, inspection.audit_verdict]
       play_reference_unresolved: [reason]
 
   run_registry_play:
