@@ -1,15 +1,45 @@
 #!/usr/bin/env python3
-"""Thin entrypoint for the advisory Play audit."""
+"""Thin entrypoint for the advisory Play audit.
+
+The audit's body rules need the pinned ``ast-grep-py`` wheel. When the
+interpreter running this script lacks it, re-exec under ``uv run`` against the
+Play project so the locked environment is used, the way play-journey does.
+Without uv the audit still runs; body rules are reported as skipped.
+"""
 
 from __future__ import annotations
 
+import importlib.util
+import os
+import shutil
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+ROOT = Path(__file__).resolve().parents[2]
+_MISSING = [name for name in ("yaml", "ast_grep_py") if importlib.util.find_spec(name) is None]
+if _MISSING and os.environ.get("PLAY_AUDIT_UV_BOOTSTRAPPED") != "1":
+    uv = shutil.which("uv")
+    if uv is not None:
+        environment = os.environ.copy()
+        environment["PLAY_AUDIT_UV_BOOTSTRAPPED"] = "1"
+        os.execve(uv, [uv, "run", "--quiet", "--project", str(ROOT), str(Path(__file__).resolve()), *sys.argv[1:]], environment)
 
-from play.audit.cli import main
+sys.path.insert(0, str(ROOT / "scripts" / "lib"))
+
+
+def _main() -> int:
+    try:
+        from play.audit.cli import main
+    except ImportError as error:
+        # Advisory by contract: never a traceback, never a non-zero exit.
+        print(
+            f"audit unavailable: {error}. Install uv, or the pinned Play Python "
+            f"dependencies for {sys.executable}, to enable the audit.",
+            file=sys.stderr,
+        )
+        return 0
+    return main()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_main())
