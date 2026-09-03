@@ -160,8 +160,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif not entries:
             print(f"no audits recorded for {args.reference}")
         else:
-            for entry in entries:
-                print(f"{entry.get('at')}  {entry.get('event'):<8} v{entry.get('version')}  {str(entry.get('digest'))[:23]}  facts {entry.get('open_facts')}  judgments {entry.get('judgments')}  unknowns {entry.get('unknowns')}")
+            print(render.history(entries))
         return 0
     if args.command == "show":
         envelope = store.load(args.reference, digest=args.digest)

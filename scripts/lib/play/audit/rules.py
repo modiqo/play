@@ -69,7 +69,7 @@ _RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "TOOL_UNDECLARED", "fact", OWNER_AUTHORING,
-        "step `{step}` runs `{command}`, which deps.toml does not declare.",
+        "`{command}` is run by step(s) {step} but deps.toml does not declare it.",
         "Add a `[[tools]]` entry for `{command}` to deps.toml.",
     ),
     Rule(
@@ -99,7 +99,7 @@ _RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "INTERPRETER_FLOOR_MISSING", "fact", OWNER_AUTHORING,
-        "step `{step}` runs `{command}` and deps.toml declares it without a `version_requirement`; a stock macOS ships python3 3.9.6.",
+        "`{command}` is run by step(s) {step}; deps.toml declares it without a `version_requirement`, and a stock macOS ships python3 3.9.6.",
         "Add `version_requirement = \">={floor}\"` to the `{command}` entry in deps.toml.",
         related_issue=ISSUE + "2179",
     ),

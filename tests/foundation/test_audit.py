@@ -154,6 +154,40 @@ class FixtureFindingsTest(NoProbe):
         self.assertEqual(1, envelope["summary"]["suppressed"])
 
 
+class HostPathTest(NoProbe):
+    def test_saved_consumer_path_wins_over_the_venv_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            fake = Path(temp) / "bin"
+            fake.mkdir()
+            (fake / "python3").write_text("#!/bin/sh\n")
+            (fake / "python3").chmod(0o755)
+            with patch.dict(os.environ, {"PLAY_AUDIT_HOST_PATH": str(fake)}):
+                envelope = audit("pyfloor")
+        need = next(n for n in envelope["host"]["needs"] if n["name"] == "python3")
+        self.assertEqual(str(fake / "python3"), need["path"])
+
+
+class PerCommandFindingsTest(NoProbe):
+    def test_interpreter_floor_is_one_finding_per_tool_naming_every_step(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "multi"
+            root.mkdir()
+            steps = "".join(
+                f" *   s{i}:\n *     type: process.exec\n *     argv: [python3, -c, 'print({i})']\n *     timeout_ms: 1000\n"
+                for i in range(3)
+            )
+            (root / "main.ts").write_text(
+                "/**\n * @rote-frontmatter\n * ---\n * name: multi\n * description: m\n * metadata:\n"
+                " *   version: 1.0.0\n *   execution_model: steps_with_presentation\n * parameters: []\n"
+                f" * steps:\n{steps} * ---\n */\nconst x = 1;\n")
+            (root / "deps.toml").write_text('schema_version = 1\n\n[[tools]]\nid = "python3"\ncommand = "python3"\nrequired = true\n')
+            envelope = safe_audit(root, reference="audit/multi", read_adapters=False, persist=False)
+        floors = [f for f in envelope["facts"] if f["id"] == "INTERPRETER_FLOOR_MISSING"]
+        self.assertEqual(1, len(floors))
+        self.assertEqual("s0, s1, s2", floors[0]["evidence"]["step"])
+        self.assertEqual({"file": "deps.toml"}, floors[0]["location"])
+
+
 class ConsumerCardTest(NoProbe):
     def test_card_never_shows_judgments_rule_ids_or_counts(self) -> None:
         for name in ("partial-scan", "stranded", "spawns", "pyfloor"):
@@ -304,14 +338,15 @@ class CliTest(NoProbe):
     def test_default_is_the_card_and_exit_is_always_zero(self) -> None:
         code, out = self._run(str(FIXTURES / "partial-scan"), "--no-adapters", "--no-store")
         self.assertEqual(0, code)
-        self.assertIn("Shape", out)
+        self.assertIn("What it does, in order", out)
         self.assertNotIn("UNRELIABLE_EXIT_STATUS", out)
 
     def test_author_and_json_modes(self) -> None:
         code, out = self._run(str(FIXTURES / "stranded"), "--author", "--no-adapters", "--no-store")
         self.assertEqual(0, code)
         self.assertIn("BODY_STRANDED", out)
-        self.assertIn("→ rote-flow-authoring", out)
+        self.assertIn("owner rote-flow-authoring", out)
+        self.assertIn("Next", out)
         code, out = self._run(str(FIXTURES / "stranded"), "--json", "--no-adapters", "--no-store")
         self.assertEqual("play-audit/1", json.loads(out)["schema"])
 

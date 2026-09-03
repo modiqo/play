@@ -22,6 +22,7 @@ if _MISSING and os.environ.get("PLAY_AUDIT_UV_BOOTSTRAPPED") != "1":
     if uv is not None:
         environment = os.environ.copy()
         environment["PLAY_AUDIT_UV_BOOTSTRAPPED"] = "1"
+        environment.setdefault("PLAY_AUDIT_HOST_PATH", os.environ.get("PATH", ""))
         os.execve(uv, [uv, "run", "--quiet", "--project", str(ROOT), str(Path(__file__).resolve()), *sys.argv[1:]], environment)
 
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))

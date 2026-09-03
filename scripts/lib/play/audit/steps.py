@@ -50,6 +50,8 @@ class StepAnalysis:
     shapes: list[StepShape] = field(default_factory=list)
     commands_run: set[str] = field(default_factory=set)
     params_read: set[str] = field(default_factory=set)
+    undeclared: dict[str, list[str]] = field(default_factory=dict)
+    floorless: dict[str, list[str]] = field(default_factory=dict)
     collected: Collected = field(default_factory=Collected)
 
 
@@ -127,11 +129,10 @@ def analyze(package: Package) -> StepAnalysis:
             if "timeout_ms" not in step:
                 out.add(rule("STEP_NO_TIMEOUT").finding(loc, step=name))
             if package.deps_present and command not in package.tools and not command.startswith("@"):
-                out.add(rule("TOOL_UNDECLARED").finding(loc, step=name, command=command))
+                result.undeclared.setdefault(command, []).append(name)
             tool = package.tools.get(command)
             if command in INTERPRETERS and tool is not None and not tool.version_requirement:
-                out.add(rule("INTERPRETER_FLOOR_MISSING").finding(
-                    loc, step=name, command=command, floor=INTERPRETER_FLOORS.get(command, "latest")))
+                result.floorless.setdefault(command, []).append(name)
             if command in UNRELIABLE_EXIT:
                 out.add(rule("UNRELIABLE_EXIT_STATUS").finding(loc, step=name, command=command))
             if command in MACOS_ONLY:
@@ -172,6 +173,15 @@ def analyze(package: Package) -> StepAnalysis:
                             result.commands_run.add(tool_name)
         result.shapes.append(shape)
 
+    # One finding per command, naming every step that runs it, so an author
+    # with eight python3 steps sees one item to fix rather than eight.
+    for command, step_names in sorted(result.undeclared.items()):
+        out.add(rule("TOOL_UNDECLARED").finding(
+            Location(file="deps.toml"), step=", ".join(step_names), command=command))
+    for command, step_names in sorted(result.floorless.items()):
+        out.add(rule("INTERPRETER_FLOOR_MISSING").finding(
+            Location(file="deps.toml"), step=", ".join(step_names), command=command,
+            floor=INTERPRETER_FLOORS.get(command, "latest")))
     if fixtures:
         for fixture_name, spec in fixtures.items():
             for value in _strings(spec):

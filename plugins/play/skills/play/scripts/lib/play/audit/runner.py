@@ -118,6 +118,7 @@ def audit_package(
         package=package, steps=step_analysis, host=host, collected=out,
         elapsed_ms=int((time.monotonic() - started) * 1000),
         resource_commands=body_analysis.shell_commands | {s.command for s in body_analysis.spawns if s.command},
+        signin=[f"adapter/{adapter_id}" for adapter_id, info in infos.items() if info.auth_required],
     )
     if persist:
         stored, error = store.persist(envelope)
@@ -131,6 +132,7 @@ def audit_package(
 def build_envelope(
     *, package: package_mod.Package, steps: steps_mod.StepAnalysis, host: host_mod.Host | None,
     collected: Collected, elapsed_ms: int, resource_commands: set[str] | None = None,
+    signin: list[str] | None = None,
 ) -> dict[str, Any]:
     suppressions = package.frontmatter.suppressions
     facts: list[dict[str, Any]] = []
@@ -160,6 +162,7 @@ def build_envelope(
         "subject": {
             "reference": package.reference,
             "version": package.version,
+            "description": str(package.frontmatter.data.get("description") or "") or None,
             "digest": package.digest,
             "path": str(package.root),
             "audit_version": _AUDIT_VERSION,
@@ -168,7 +171,7 @@ def build_envelope(
         },
         "host": host.to_dict() if host else None,
         "shape": [shape.to_dict() for shape in steps.shapes],
-        "reach": _reach(package, steps, resource_commands or set()),
+        "reach": {**_reach(package, steps, resource_commands or set()), "services_requiring_signin": signin or []},
         "facts": facts,
         "judgments": judgments,
         "unknowns": unknowns,

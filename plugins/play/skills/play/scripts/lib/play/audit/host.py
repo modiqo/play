@@ -127,8 +127,11 @@ def live(package: Package, *, commands: set[str] | None = None, probe: bool = Tr
     tools = dict(package.tools)
     for command in sorted(commands or set()):
         tools.setdefault(command, Tool(command=command, required=True, version_requirement=None, install_hint=None))
+    # When the entrypoint re-executed under uv, PATH now starts with the Play
+    # venv; the consumer's real PATH was saved so we resolve what they have.
+    search_path = os.environ.get("PLAY_AUDIT_HOST_PATH") or os.environ.get("PATH")
     for command, tool in sorted(tools.items()):
-        path = shutil.which(command)
+        path = shutil.which(command, path=search_path)
         found = _probe_version(command, path) if (path and probe) else None
         host.needs.append(_need(tool, found, path, path is not None))
     return host
