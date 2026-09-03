@@ -14,7 +14,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.audit import adapters, card, fetch, frontmatter, host, rules, store  # noqa: E402
+from play.audit import adapters, card, corpus, fetch, frontmatter, host, rules, store  # noqa: E402
 from play.audit.cli import audit_target, main, resolve_target  # noqa: E402
 from play.audit.runner import safe_audit  # noqa: E402
 
@@ -528,3 +528,36 @@ class PullTest(NoProbe):
             envelope = audit_target("owner/name", pull=False, persist=False)
         self.assertEqual("audit_unavailable", envelope["status"])
         self.assertIn("pull it first", envelope["reason"])
+
+
+class CorpusToolTest(NoProbe):
+    def test_report_cross_checks_every_fact_over_the_fixtures(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / "corpus"
+            out.mkdir()
+            for name in ("clean", "partial-scan", "stranded", "pyfloor", "missing-resource", "spawns"):
+                envelope = audit(name)
+                envelope["subject"]["kept_at"] = str(FIXTURES / name)
+                (out / f"audit__{name}.json").write_text(json.dumps(envelope))
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = corpus.report(out)
+        text = buffer.getvalue()
+        self.assertEqual(0, code, text)
+        self.assertIn("contradicted: 0", text)
+        self.assertIn("BODY_STRANDED", text)
+        self.assertIn("verified", text)
+
+    def test_report_exits_nonzero_on_a_contradicted_fact(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / "corpus"
+            out.mkdir()
+            envelope = audit("missing-resource")
+            envelope["subject"]["kept_at"] = str(FIXTURES / "clean")  # wrong package: the facts cannot hold
+            (out / "audit__bad.json").write_text(json.dumps(envelope))
+            with redirect_stdout(io.StringIO()):
+                code = corpus.report(out)
+        self.assertEqual(1, code)
+
+    def test_verify_fact_returns_none_for_rules_it_cannot_check(self) -> None:
+        self.assertIsNone(corpus.verify_fact(FIXTURES / "clean", {"id": "MANIFEST_DRIFT", "evidence": {}, "location": {}}))

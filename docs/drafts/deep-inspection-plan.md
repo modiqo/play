@@ -4,6 +4,10 @@ Status: v3, in progress on branch `feat/play-audit` since 2026-09-03.
 
 Shipped on the branch (milestone 1 plus the adapter and profile parts of 3): the fan-out runner with the fail-safe wrapper, the envelope, every fact and judgment rule listed below except `ADAPTER_AUTH_MISMATCH`, the consumer card, the author view, the inbox report, persistence and history under `PLAY_HOME`, `play-audit` with `history` and `show`, host profiles for stock macOS and Ubuntu LTS, adapter correlation through `rote adapter info`, and the card inside `play-inspect --card`. Not yet: corpus precision tooling, owner-skill handoff packets and the delta loop through rote-troubleshooting, `prepare_candidate` and `author_release` wiring, release rehearsal, and the card on by default.
 
+## Corpus measurement, 2026-09-03
+
+`play-audit-corpus` pulled 212 public Plays, kept 205 packages, and audited each. Every fact was re-derived from the package on disk by independent code: 295 facts verified, 0 contradicted. The sweep found and fixed, before this measurement: a union rule that matched any `|` in an assignment (39 false positives), wrong body line numbers, an unreferenced-parameter judgment blind to dynamic reads, and an unused-tool judgment blind to inline shell, `find -exec`, JavaScript resources, runtime dependencies, and path-declared tools. Remaining judgment hits were hand-labelled: unreferenced parameter 6/6 true, unused tool 3/3 true; dynamic-command and truncation-handling judgments are true by construction. Portability judgments had no hits in the corpus and stay unmeasured.
+
 ## Why
 
 Five community reports in one week (modiqo/rote #2177 to #2181) had one shape: rote held the evidence and the surface reported green. A scan of the 13 Plays installed on one machine found 49 static findings across 11 kinds, including three of modiqo's own Plays. Play sits at the two moments that matter, before an author releases and before a consumer approves a run, and today it checks nothing about the Play itself.

@@ -164,11 +164,13 @@ _RULES: tuple[Rule, ...] = (
         "parameter `{param}` is declared but no step argv, for_each, or presentation body reads it.",
         "Wire `{param}` into a step or the presentation, or remove it from `parameters`.",
         related_issue=ISSUE + "2178",
+        precision=1.0,  # 6/6 labelled true on the 2026-09-03 registry corpus
     ),
     Rule(
         "TOOL_DECLARED_UNUSED", "judgment", OWNER_AUTHORING,
         "deps.toml declares `{command}` but no step runs it.",
         "Remove the stale `[[tools]]` entry or add the step that needs it.",
+        precision=1.0,  # 3/3 labelled true on the 2026-09-03 registry corpus
     ),
     Rule(
         "UNRELIABLE_EXIT_STATUS", "judgment", OWNER_TROUBLESHOOTING,
