@@ -162,7 +162,10 @@ Continue only when its Tulving capability is `ready`.
 If Tulving is unavailable, report that recurring Plays are off and do not invoke `tulving add`.
 Schedule only an exact versioned reference from a verified receipt. Preserve approved parameters as
 repeated `--parameter name=value` arguments. Require `--why`, default to `--for 30d`, and reject
-bare or latest references.
+bare or latest references. A schedule runs unattended, so the runtime checks the parameters against
+the Play's declared inputs before anything is created: an unknown name is refused with the declared
+names, and a missing required input is refused with its description. When that happens, ask the user
+for the named values the same way a run would, then schedule again; never invent a value.
 
 Translate recurring intent into Tulving fields:
 
