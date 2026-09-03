@@ -8,13 +8,14 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.audit import adapters, card, frontmatter, host, rules, store  # noqa: E402
-from play.audit.cli import main, resolve_target  # noqa: E402
+from play.audit import adapters, card, fetch, frontmatter, host, rules, store  # noqa: E402
+from play.audit.cli import audit_target, main, resolve_target  # noqa: E402
 from play.audit.runner import safe_audit  # noqa: E402
 
 FIXTURES = ROOT / "tests" / "fixtures" / "audit"
@@ -315,7 +316,8 @@ class CliTest(NoProbe):
         self.assertEqual("play-audit/1", json.loads(out)["schema"])
 
     def test_unresolvable_reference_is_unavailable_not_a_crash(self) -> None:
-        with patch.dict(os.environ, {"ROTE_HOME": tempfile.mkdtemp()}):
+        with patch.dict(os.environ, {"ROTE_HOME": tempfile.mkdtemp()}), \
+                patch("play.audit.fetch.pull", return_value=(None, "could not pull nobody/nothing: Flow not found")):
             code, out = self._run("nobody/nothing@1.0.0", "--json", "--no-store")
         self.assertEqual(0, code)
         self.assertEqual("audit_unavailable", json.loads(out)["status"])
@@ -343,3 +345,61 @@ class CliTest(NoProbe):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PullTest(NoProbe):
+    def test_pull_lands_in_a_temporary_home_that_borrows_the_real_login(self) -> None:
+        with tempfile.TemporaryDirectory() as real:
+            (Path(real) / "config").mkdir()
+            (Path(real) / "flows" / "x").mkdir(parents=True)
+            with patch.dict(os.environ, {"ROTE_HOME": real}), patch("play.audit.fetch.shutil.which", return_value="/usr/bin/rote"):
+                seen: dict[str, Any] = {}
+
+                def runner(argv: list[str], env: dict[str, str]) -> tuple[int, str, str]:
+                    seen["argv"] = argv
+                    home = Path(env["ROTE_HOME"])
+                    seen["links"] = sorted(p.name for p in home.iterdir())
+                    target = home / "flows" / "owner" / "name"
+                    target.mkdir(parents=True)
+                    (target / "main.ts").write_text((FIXTURES / "clean" / "main.ts").read_text())
+                    return 0, "ok", ""
+
+                pulled, error = fetch.pull("owner", "name", runner=runner)
+                self.assertIsNone(error)
+                assert pulled is not None
+                self.assertEqual(["rote", "registry", "play", "pull", "owner/name", "--yes", "--no-deps"], seen["argv"])
+                self.assertIn("config", seen["links"], "login and caches are shared")
+                self.assertEqual(["config", "flows"], seen["links"], "the real flows store is never linked")
+                self.assertTrue((pulled.root / "main.ts").is_file())
+                pulled.cleanup()
+                self.assertFalse(pulled.temp_home.exists())
+
+    def test_pull_failure_is_reported_and_leaves_nothing_behind(self) -> None:
+        with patch("play.audit.fetch.shutil.which", return_value="/usr/bin/rote"):
+            pulled, error = fetch.pull("nobody", "nothing", runner=lambda argv, env: (1, "", "error: Flow not found: nobody/nothing"))
+        self.assertIsNone(pulled)
+        self.assertIn("Flow not found", str(error))
+
+    def test_audit_target_pulls_when_not_installed(self) -> None:
+        def fake_pull(owner: str, name: str, *, runner=None):
+            home = Path(tempfile.mkdtemp())
+            root = home / "flows" / owner / name
+            root.mkdir(parents=True)
+            for item in (FIXTURES / "partial-scan").iterdir():
+                (root / item.name).write_text(item.read_text())
+            return fetch.Pulled(root=root, temp_home=home, owner=owner, name=name), None
+
+        with patch.dict(os.environ, {"ROTE_HOME": tempfile.mkdtemp()}), patch("play.audit.fetch.pull", side_effect=fake_pull):
+            envelope = audit_target("https://play.modiqo.ai/owner/scan@0.0.9", read_adapters=False, persist=False)
+        self.assertEqual("ok", envelope["status"])
+        self.assertEqual("pulled", envelope["subject"]["source"])
+        self.assertEqual("owner/scan", envelope["subject"]["reference"])
+        self.assertIn("FANOUT_OVER_PREVIEW", {f["id"] for f in envelope["facts"]})
+        self.assertTrue(any(u["kind"] == "VERSION_DIFFERS" for u in envelope["unknowns"]), "requested 0.0.9, pulled 0.1.0")
+        self.assertFalse(Path(envelope["subject"]["path"]).exists(), "temporary pull is cleaned up")
+
+    def test_no_pull_keeps_the_old_behaviour(self) -> None:
+        with patch.dict(os.environ, {"ROTE_HOME": tempfile.mkdtemp()}):
+            envelope = audit_target("owner/name", pull=False, persist=False)
+        self.assertEqual("audit_unavailable", envelope["status"])
+        self.assertIn("pull it first", envelope["reason"])

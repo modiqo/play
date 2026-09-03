@@ -15,13 +15,10 @@ from .render import json_text
 def attach_report_card(disclosure: dict[str, Any], reference: str) -> None:
     """Append the advisory audit card. Never raises; never blocks the disclosure."""
     try:
-        from .audit import card, safe_audit
-        from .audit.cli import resolve_target
+        from .audit import card
+        from .audit.cli import audit_target
 
-        root, resolved = resolve_target(reference)
-        if root is None:
-            return
-        envelope = safe_audit(root, reference=resolved)
+        envelope = audit_target(reference)
         text = card(envelope)
         if text:
             disclosure["audit_card"] = text
