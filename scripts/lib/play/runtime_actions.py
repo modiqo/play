@@ -448,21 +448,8 @@ def _commandless_result(
             raise ControllerRuntimeError("Play output context is malformed")
         primary = output.get("primary")
         full_output_digest = _verified_full_output_digest(output)
-        complete = (
-            output.get("mode") == "detailed"
-            and output.get("detail") == "full"
-            and (
-                output.get("truncated") is False
-                or (
-                    output.get("truncated") is True
-                    and isinstance(output.get("full_output_ref"), str)
-                    and bool(output.get("full_output_ref"))
-                    and full_output_digest is not None
-                )
-            )
-            and primary is not None
-            and primary != ""
-        )
+        failed_postconditions = _output_envelope_failures(output, full_output_digest)
+        complete = not failed_postconditions
         try:
             encoded = (
                 full_output_digest.encode()
@@ -486,10 +473,53 @@ def _commandless_result(
             }
         return {
             "event": "outcome_not_verified",
-            "failed_postconditions": ["Play output was incomplete or truncated"],
+            "failed_postconditions": failed_postconditions,
             "evidence_refs": [evidence_ref],
         }
     raise ControllerRuntimeError(f"no deterministic renderer for {action_id}")
+
+
+def _output_envelope_failures(
+    output: Mapping[str, Any], full_output_digest: str | None
+) -> list[str]:
+    """Name every field that keeps the result envelope from verifying.
+
+    The specialist that reports an exploration outcome fills these fields by hand,
+    so a rejection must say which field, what it held, and what verifies. A
+    bare "incomplete or truncated" sent one consumer through two clean Rote
+    workspaces hunting a trajectory fault that never existed.
+    """
+
+    failures: list[str] = []
+    mode = output.get("mode")
+    if mode != "detailed":
+        failures.append(f"output.mode is {mode!r}; report \"detailed\"")
+    detail = output.get("detail")
+    if detail != "full":
+        failures.append(
+            f"output.detail is {detail!r}; report \"full\" when output.primary is the "
+            "complete user-visible result, even when that result is itself a summary"
+        )
+    primary = output.get("primary")
+    if primary is None or primary == "":
+        failures.append("output.primary is empty; return the complete result inline")
+    truncated = output.get("truncated")
+    reference = output.get("full_output_ref")
+    if truncated is True:
+        if not isinstance(reference, str) or not reference:
+            failures.append(
+                "output.truncated is true without output.full_output_ref; return the "
+                "complete result inline with output.truncated false"
+            )
+        elif full_output_digest is None:
+            failures.append(
+                f"output.full_output_ref {reference!r} is not an owner-private Play "
+                "run-output artifact; return the complete result inline with "
+                "output.truncated false and output.full_output_ref null"
+            )
+    elif truncated is not False:
+        failures.append(f"output.truncated is {truncated!r}; report false")
+    return failures
 
 
 def _capture_classification(

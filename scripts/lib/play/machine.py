@@ -763,6 +763,18 @@ def validate_bundle(
         "captured exploration must enter Rote routing, verify the outcome, then judge its recorded trajectory",
     )
     check(
+        _target(states, "exploration_verify", "outcome_not_verified") == "exploration_execute"
+        and states.get("exploration_verify", {})
+        .get("on", {})
+        .get("outcome_not_verified", [{}])[0]
+        .get("guard")
+        == "exploration_output_retry_available"
+        and _target(states, "exploration_verify", "outcome_not_verified", 1) == "blocked"
+        and "evidence.failed_postconditions"
+        in actions.get("execute_captured_exploration", {}).get("input_required", []),
+        "a rejected exploration result envelope must return to the specialist once with its reasons, then block",
+    )
+    check(
         actions.get("record_standby", {}).get("command")
         == "scripts/bin/play-standby record --stdin --json",
         "the capture decision and preference ledger must use the deterministic standby recorder",

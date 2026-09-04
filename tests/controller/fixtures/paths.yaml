@@ -666,3 +666,19 @@ cases:
       - {state: exploration_one_off_present, event: exploration_one_off_presented, target: exited}
     terminal: exited
     excludes: [use_inspect]
+
+  - name: rejected exploration result envelope is corrected once before verification
+    steps:
+      - {state: exploration_execute, event: exploration_outcome_ready, target: exploration_verify}
+      - {state: exploration_verify, event: outcome_not_verified, guards: {exploration_output_retry_available: true}, target: exploration_execute}
+      - {state: exploration_execute, event: exploration_outcome_ready, target: exploration_verify}
+      - {state: exploration_verify, event: outcome_verified, target: exploration_complete_present}
+      - {state: exploration_complete_present, event: exploration_completion_presented, target: save_judge}
+    terminal: save_judge
+    excludes: [blocked]
+
+  - name: second rejected exploration result envelope blocks
+    steps:
+      - {state: exploration_execute, event: exploration_outcome_ready, target: exploration_verify}
+      - {state: exploration_verify, event: outcome_not_verified, guards: {exploration_output_retry_available: false}, target: blocked}
+    terminal: blocked
