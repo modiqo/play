@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import unittest
 from copy import deepcopy
@@ -12,6 +13,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
+from play import runtime_context
 from play.machine import MachineValidationError, validate_bundle
 from play.handoff import capability_policy
 from play.executors import action_executor
@@ -112,6 +114,50 @@ class MachineConformanceTest(unittest.TestCase):
             "use_authentication_offer: required context path 'authentication.undeclared' is absent from context schema",
             caught.exception.errors,
         )
+
+    def test_every_state_requirement_has_a_writer(self) -> None:
+        """A required context path must be produced somewhere before its state is entered.
+
+        Otherwise a supported path reaches the state and fails its entry check with
+        no event the harness could emit to satisfy it (exploration.human_name was
+        required by birth_present after the state that wrote it had been removed).
+        """
+        required = {
+            path
+            for state in MACHINE["states"].values()
+            for path in state.get("requires", [])
+        }
+        written: set[str] = set()
+        for action in ACTIONS.values():
+            for fields in action.get("events", {}).values():
+                if isinstance(fields, list):
+                    written.update(fields)
+                elif isinstance(fields, dict):
+                    for nested in fields.values():
+                        written.update(nested or [])
+        for patch in runtime_context._CONSTANT_PATCHES.values():
+            written.update(patch)
+        source = Path(runtime_context.__file__).read_text()
+        written.update(
+            f"{root}.{field}"
+            for root, field in re.findall(r'\["([a-z_]+)"\]\["([a-z_]+)"\]\s*=', source)
+        )
+        initial = runtime_context.initial_context(
+            run_id="run", task_key="task", machine_version="0", request_original="x"
+        )
+
+        def present(payload: dict, prefix: str = "") -> set[str]:
+            found: set[str] = set()
+            for key, value in payload.items():
+                path = f"{prefix}{key}"
+                if isinstance(value, dict):
+                    found |= present(value, path + ".")
+                elif value is not None:
+                    found.add(path)
+            return found
+
+        written |= present(initial)
+        self.assertEqual([], sorted(required - written))
 
     def test_unknown_event_is_rejected(self) -> None:
         with self.assertRaises(KeyError):

@@ -959,7 +959,7 @@ actions:
     kind: deterministic
     owner: play
     effect: read
-    input_required: [birth.sha256, birth.flow_fingerprint, birth.exact_reference, birth.registry_content_hash, birth.binding_ref, publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.uri, publication.install_uri, publication.content_hash, publication.inspect_ref, publication_validation.credential_status, publication_validation.smoke_status, play.version, exploration.human_name, onboarding.email_handle]
+    input_required: [birth.sha256, birth.flow_fingerprint, birth.exact_reference, birth.registry_content_hash, birth.binding_ref, publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.uri, publication.install_uri, publication.content_hash, publication.inspect_ref, publication_validation.credential_status, publication_validation.smoke_status, play.version, onboarding.email_handle]
     command: scripts/bin/play-certificate --stdin --json
     command_policy:
       - Run only after canonical inspection matches the authorized publication and the immutable owner-local birth certificate is bound to the same exact reference and registry content hash.

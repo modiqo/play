@@ -113,6 +113,16 @@ class CertificatePresentationTest(unittest.TestCase):
             "onboarding": {"email_handle": None},
         }
 
+    def test_farewell_falls_back_to_the_onboarding_handle(self) -> None:
+        payload = self.payload()
+        payload["exploration"] = {"human_name": None}
+        payload["onboarding"] = {"email_handle": "careerforjay"}
+
+        result = build_certificate_presentation(payload, home=self.home)
+
+        self.assertIn("Human domain expert: careerforjay", result["presentation_markdown"])
+        self.assertIn("Dear careerforjay. It was a pleasure", result["presentation_markdown"])
+
     def test_public_certificate_visualizes_trace_uri_copy_and_farewell(self) -> None:
         result = build_certificate_presentation(self.payload(), home=self.home)
 

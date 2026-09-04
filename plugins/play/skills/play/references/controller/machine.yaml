@@ -828,7 +828,7 @@ states:
   birth_present:
     owner: play
     checkpoint: both
-    requires: [birth.sha256, birth.flow_fingerprint, birth.exact_reference, birth.registry_content_hash, birth.binding_ref, publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.uri, publication.install_uri, publication.content_hash, publication.inspect_ref, publication_validation.credential_status, publication_validation.smoke_status, play.version, exploration.human_name, onboarding.email_handle]
+    requires: [birth.sha256, birth.flow_fingerprint, birth.exact_reference, birth.registry_content_hash, birth.binding_ref, publication.canonical_reference, publication.visibility, publication.owner, publication.title, publication.description, publication.uri, publication.install_uri, publication.content_hash, publication.inspect_ref, publication_validation.credential_status, publication_validation.smoke_status, play.version, onboarding.email_handle]
     entry: {action: present_birth_certificate}
     "on":
       birth_certificate_presented:
