@@ -35,9 +35,10 @@ GuardId = NewType("GuardId", str)
 MutationId = NewType("MutationId", str)
 
 
-_PROMPT_DEFAULTS: dict[str, dict[str, str]] = {
-    # Advisory fields that a checkpoint recorded before the report card existed will lack.
+_PROMPT_DEFAULTS: dict[str, dict[str, Any]] = {
+    # Fields that a checkpoint recorded before they existed will lack.
     "inspection": {"audit_verdict": "not assessed", "audit_card": ""},
+    "evidence": {"failed_postconditions": []},
 }
 
 
@@ -48,8 +49,11 @@ def _with_prompt_defaults(context: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(current, Mapping):
             merged = dict(current)
             for key, value in defaults.items():
-                if not isinstance(merged.get(key), str) or not merged.get(key):
-                    merged[key] = value
+                present = merged.get(key)
+                # A string default also replaces an empty string; any other default
+                # fills only an absent value, so a live list is never clobbered on decode.
+                if present is None or (isinstance(value, str) and present == ""):
+                    merged[key] = copy.deepcopy(value)
             patched[root] = merged
     return patched
 
@@ -1237,6 +1241,11 @@ def _derive_session_guards(
     )
     values[GuardId("exploration_goal_is_required")] = (
         _path_value(context, "exploration.goal_status") == "required"
+    )
+    # One corrective resubmission: the first rejected envelope goes back to the
+    # specialist with its reasons; a second rejection blocks.
+    values[GuardId("exploration_output_retry_available")] = not _path_value(
+        context, "evidence.failed_postconditions"
     )
     values[GuardId("exploration_goal_is_ready")] = (
         _path_value(context, "exploration.goal_status") == "ready"

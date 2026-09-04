@@ -2004,7 +2004,8 @@
         "responses",
         "artifacts",
         "verification",
-        "failed_receipt"
+        "failed_receipt",
+        "failed_postconditions"
       ],
       "additionalProperties": false,
       "properties": {
@@ -2022,6 +2023,10 @@
         },
         "failed_receipt": {
           "$ref": "#/$defs/nullableString"
+        },
+        "failed_postconditions": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Why Play rejected the last result envelope; empty once an outcome verifies."
         }
       }
     },

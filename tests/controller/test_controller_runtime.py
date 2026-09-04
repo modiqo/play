@@ -4205,6 +4205,103 @@ class PublicationCredentialGateResultTest(unittest.TestCase):
         self.assertEqual([], event.payload["credential_names"])
 
 
+class ExplorationOutputRejectionTest(unittest.TestCase):
+    """A wrongly tagged result envelope goes back to the specialist with reasons, once."""
+
+    RECEIPT = {"status": "verified", "trajectory_ref": "sha256:" + "a" * 64, "reference": "cap-1", "workspace": "ws-1"}
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.runtime = ControllerRuntime(ROOT, trajectory_verifier=lambda session, event: dict(cls.RECEIPT))
+
+    def _executing_session(self, run_id: str):
+        session = self.runtime.initial_session(run_id=run_id, task_key=run_id, request_original="summarize my gmail")
+        context = json.loads(json.dumps(session.context))
+        context["state"] = "exploration_execute"
+        context["request"].update({"intent": "summarize my gmail", "requested_outcome": "Gmail paginated read, fan-out, summarize"})
+        context["search"]["complete"] = True
+        context["capture"].update({"reference": "cap-1", "workspace": "ws-1", "status": "active", "decision": "capture"})
+        context["execution"].update({"workspace": "ws-1", "workspace_path": "/tmp/ws-1"})
+        context["consent"]["explore"] = "approved"
+        return replace(session, cursor=replace(session.cursor, state=StateId("exploration_execute")), context=context)
+
+    @staticmethod
+    def _envelope_event(**output: Any) -> ControllerEvent:
+        envelope: dict[str, Any] = {
+            "mode": "detailed", "detail": "full", "source": "structured_responses", "format": "markdown",
+            "primary": "## Summary\n12 threads", "manifest": {"response_refs": ["r1"], "artifact_refs": [], "effects": []},
+            "truncated": False, "full_output_ref": None,
+        }
+        envelope.update(output)
+        return ControllerEvent(
+            EventId("exploration_outcome_ready"),
+            payload={"capture": {"status": None, "trajectory_ref": None}, "evidence": {"verification": None}, "output": envelope},
+            guards={},
+        )
+
+    def test_rejected_envelope_returns_to_the_specialist_with_named_fields(self) -> None:
+        session = self._executing_session("reject-1")
+        advanced = self.runtime.advance_session(session, self._envelope_event(detail="summary"))
+        yielded = advance_until_yield(self.runtime, advanced.session, root=ROOT)
+        self.assertEqual("exploration_execute", yielded.projection["state"]["id"])
+        self.assertFalse(yielded.projection["state"]["terminal"])
+        reasons = yielded.session.context["evidence"]["failed_postconditions"]
+        self.assertEqual(1, len(reasons))
+        self.assertIn("output.detail is 'summary'", reasons[0])
+        self.assertIn("even when that result is itself a summary", reasons[0])
+        instruction = yielded.projection["instruction"]
+        self.assertEqual("execute_captured_exploration", instruction["id"])
+        self.assertEqual(reasons, instruction["input"]["evidence"]["failed_postconditions"])
+        self.assertIn("failed_postconditions", " ".join(instruction["command_policy"]))
+
+        corrected = self.runtime.advance_session(yielded.session, self._envelope_event())
+        settled = advance_until_yield(self.runtime, corrected.session, root=ROOT)
+        self.assertEqual("save_judge", settled.projection["state"]["id"])
+        self.assertEqual([], settled.session.context["evidence"]["failed_postconditions"])
+
+    def test_second_rejected_envelope_blocks(self) -> None:
+        session = self._executing_session("reject-2")
+        first = advance_until_yield(
+            self.runtime, self.runtime.advance_session(session, self._envelope_event(mode=None)).session, root=ROOT
+        )
+        self.assertEqual("exploration_execute", first.projection["state"]["id"])
+        second = advance_until_yield(
+            self.runtime,
+            self.runtime.advance_session(first.session, self._envelope_event(truncated=True, full_output_ref="file:/tmp/ws-1/summary.md")).session,
+            root=ROOT,
+        )
+        self.assertEqual("blocked", second.projection["state"]["id"])
+        reasons = second.session.context["evidence"]["failed_postconditions"]
+        self.assertEqual(1, len(reasons))
+        self.assertIn("not an owner-private Play run-output artifact", reasons[0])
+
+    def test_every_failing_field_is_named_at_once(self) -> None:
+        session = self._executing_session("reject-3")
+        yielded = advance_until_yield(
+            self.runtime,
+            self.runtime.advance_session(session, self._envelope_event(mode=None, detail=None, primary="", truncated=True)).session,
+            root=ROOT,
+        )
+        reasons = yielded.session.context["evidence"]["failed_postconditions"]
+        self.assertEqual(4, len(reasons))
+        self.assertTrue(reasons[0].startswith("output.mode is None"))
+        self.assertTrue(reasons[1].startswith("output.detail is None"))
+        self.assertTrue(reasons[2].startswith("output.primary is empty"))
+        self.assertTrue(reasons[3].startswith("output.truncated is true without output.full_output_ref"))
+
+    def test_rejection_reasons_survive_the_continuation_round_trip(self) -> None:
+        session = self._executing_session("reject-4")
+        yielded = advance_until_yield(
+            self.runtime, self.runtime.advance_session(session, self._envelope_event(detail="summary")).session, root=ROOT
+        )
+        restored = decode_session(encode_session(yielded.session))
+        self.assertEqual(yielded.session.context["evidence"]["failed_postconditions"], restored.context["evidence"]["failed_postconditions"])
+        legacy = json.loads(json.dumps(session.context))
+        del legacy["evidence"]["failed_postconditions"]
+        restored_legacy = decode_session(encode_session(replace(session, context=legacy)))
+        self.assertEqual([], restored_legacy.context["evidence"]["failed_postconditions"])
+
+
 class ReportCardReplayTest(unittest.TestCase):
     """A consumer can ask to see the report card before approving a run."""
 

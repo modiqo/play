@@ -236,6 +236,7 @@ def initial_context(
             "artifacts": [],
             "verification": None,
             "failed_receipt": None,
+            "failed_postconditions": [],
         },
         "candidate": {
             "reference": None,
@@ -474,6 +475,7 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "enter_captured_exploration": {
         "mode": "create",
         "consent.explore": "approved",
+        "evidence.failed_postconditions": [],
     },
     "enter_awareness_use": {"mode": "use"},
     "set_awareness_search": {"mode": "awareness"},
@@ -830,6 +832,7 @@ def _apply_mutation_semantics(
         if isinstance(trajectory_ref, str) and trajectory_ref:
             context["evidence"]["verification"] = trajectory_ref
     elif mutation == "record_verification":
+        context["evidence"]["failed_postconditions"] = []
         refs = payload.get("evidence_refs")
         if isinstance(refs, list) and refs:
             trajectory_ref = context["capture"].get("trajectory_ref")
@@ -934,6 +937,11 @@ def _merge_event_aliases(context: dict[str, Any], payload: Mapping[str, Any]) ->
     effects = payload.get("effects")
     if isinstance(effects, list):
         context["output"]["manifest"]["effects"] = effects
+    failed_postconditions = payload.get("failed_postconditions")
+    if isinstance(failed_postconditions, list):
+        context["evidence"]["failed_postconditions"] = [
+            item for item in failed_postconditions if isinstance(item, str) and item
+        ]
     owner = payload.get("owner")
     if isinstance(owner, str) and owner:
         context["publication"]["owner"] = owner

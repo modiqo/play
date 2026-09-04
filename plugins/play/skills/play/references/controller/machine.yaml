@@ -628,7 +628,9 @@ states:
     entry: {action: verify_play_output}
     "on":
       outcome_verified: [{target: exploration_complete_present, mutate: record_verification}]
-      outcome_not_verified: [{target: blocked, mutate: record_failed_receipt}]
+      outcome_not_verified:
+        - {guard: exploration_output_retry_available, target: exploration_execute, mutate: record_failed_receipt}
+        - {target: blocked, mutate: record_failed_receipt}
       play_drifted: [{target: blocked, mutate: record_failed_receipt}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
