@@ -21,6 +21,25 @@ class ElicitationError(ValueError):
 
 NATIVE_SURFACES = native_prompt_surfaces()
 
+# Codex's request_user_input rejects any option.description longer than 240
+# characters; every native surface shares that ceiling so a projected choice
+# never fails at the harness after the runtime has already committed to it.
+CHOICE_DESCRIPTION_LIMIT = 240
+_CLIP_MARK = "\u2026"
+
+
+def clip_choice_description(text: str, limit: int = CHOICE_DESCRIPTION_LIMIT) -> str:
+    """Return ``text`` collapsed to one line and cut on a word boundary to fit ``limit``."""
+
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    cut = collapsed[: limit - len(_CLIP_MARK)]
+    head = cut.rpartition(" ")[0]
+    if len(head) < limit // 2:
+        head = cut
+    return head.rstrip(" ,;:\u00b7-\u2014") + _CLIP_MARK
+
 
 @dataclass(frozen=True)
 class Choice:
@@ -73,6 +92,11 @@ def parse_question(prompt_id: str, prompt: dict[str, Any]) -> Question:
         required = ("id", "label", "description", "event")
         if any(not isinstance(raw.get(field), str) or not raw[field] for field in required):
             raise ElicitationError(f"{prompt_id}: every choice needs id, label, description, event")
+        if len(raw["description"]) > CHOICE_DESCRIPTION_LIMIT:
+            raise ElicitationError(
+                f"{prompt_id}: choice {raw['id']!r} description is "
+                f"{len(raw['description'])} characters; max {CHOICE_DESCRIPTION_LIMIT}"
+            )
         choices.append(
             Choice(
                 id=raw["id"],
@@ -214,7 +238,7 @@ def _dynamic_choices(source: ChoiceSource, context: Mapping[str, Any]) -> tuple[
             Choice(
                 id=choice_id,
                 label=raw[source.label_field],
-                description=raw[source.description_field],
+                description=clip_choice_description(raw[source.description_field]),
                 event=source.event,
                 recommended=recommended,
                 value_field=source.value_field,

@@ -1459,6 +1459,26 @@ class SearchTest(unittest.TestCase):
             choices,
         )
 
+    def test_play_choices_fit_the_harness_description_limit(self):
+        choices = PLAY_SEARCH.build_play_choices(
+            [
+                {
+                    "name": "hello",
+                    "reference": "modiqo/hello@0.4.0",
+                    "primary_scope": "remote_public",
+                    "ownership": "team",
+                    "selection_description": (
+                        "Is it down, or is it just you? " * 8
+                        + "Remote public match; pulling requires your approval."
+                    ),
+                }
+            ]
+        )
+        description = choices[0]["description"]
+        self.assertLessEqual(len(description), 240)
+        self.assertTrue(description.startswith("your team \u00b7 Is it down, or is it just you?"))
+        self.assertTrue(description.endswith("\u2026"))
+
     def test_markdown_includes_uri_and_next_command(self):
         results = [
             {

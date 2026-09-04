@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .commands import CommandError, run_json
+from .elicitation import clip_choice_description
 from .normalize import (
     NormalizationError,
     normalize_query,
@@ -1053,7 +1054,7 @@ def build_play_choices(results: list[dict]) -> list[dict]:
             {
                 "reference": reference,
                 "label": reference.partition("@")[0],
-                "description": (
+                "description": clip_choice_description(
                     f"{OWNERSHIP_LABELS[result['ownership']]} · {result['selection_description']}"
                     if result.get("ownership") in OWNERSHIP_LABELS
                     else result["selection_description"]

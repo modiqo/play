@@ -9,7 +9,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.elicitation import (
+    CHOICE_DESCRIPTION_LIMIT,
     ElicitationError,
+    clip_choice_description,
     markdown_fallback,
     native_payload,
     parse_question,
@@ -166,6 +168,69 @@ class ElicitationTest(unittest.TestCase):
         self.assertTrue(payload["choices"][0]["recommended"])
         self.assertIn("already claimed", payload["question"])
         self.assertIn("Chetan (chetanconikee)", markdown_fallback(question, context))
+
+    def test_clip_choice_description_cuts_on_a_word_boundary(self) -> None:
+        self.assertEqual("short text", clip_choice_description("short   text"))
+        words = " ".join(f"word{index}" for index in range(80))
+        clipped = clip_choice_description(words)
+        self.assertLessEqual(len(clipped), CHOICE_DESCRIPTION_LIMIT)
+        self.assertTrue(clipped.endswith("\u2026"))
+        self.assertTrue(words.startswith(clipped[:-1] + " "))
+
+    def test_dynamic_choice_descriptions_fit_the_native_limit(self) -> None:
+        question = parse_question(
+            "choose_search_result",
+            {
+                "question": "Which Play should be inspected?",
+                "selection": "single",
+                "choices_from": {
+                    "context": "search.play_choices",
+                    "id_field": "reference",
+                    "label_field": "label",
+                    "description_field": "description",
+                    "value_source_field": "reference",
+                    "value_field": "match.reference",
+                    "event": "search_result_selected",
+                },
+                "choices": [],
+            },
+        )
+        long_description = "your team \u00b7 " + "Reads live service status. " * 20
+        context = {
+            "search": {
+                "play_choices": [
+                    {
+                        "reference": "modiqo/hello",
+                        "label": "modiqo/hello",
+                        "description": long_description,
+                    }
+                ]
+            }
+        }
+        payload = native_payload(question, "codex", context)
+        description = payload["choices"][0]["description"]
+        self.assertLessEqual(len(description), CHOICE_DESCRIPTION_LIMIT)
+        self.assertTrue(description.startswith("your team \u00b7 Reads live service status."))
+        self.assertIn(description, markdown_fallback(question, context))
+
+    def test_authored_choice_descriptions_over_the_limit_are_rejected(self) -> None:
+        with self.assertRaises(ElicitationError) as caught:
+            parse_question(
+                "too_long",
+                {
+                    "question": "Continue?",
+                    "selection": "single",
+                    "choices": [
+                        {
+                            "id": "go",
+                            "label": "Go",
+                            "description": "x" * (CHOICE_DESCRIPTION_LIMIT + 1),
+                            "event": "went",
+                        }
+                    ],
+                },
+            )
+        self.assertIn("max 240", str(caught.exception))
 
 
 if __name__ == "__main__":
