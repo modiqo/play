@@ -76,6 +76,10 @@ def initial_context(
             "effects": {},
             "blockers": [],
             "disclosure_sha256": None,
+            # Advisory: `_merge_known` keeps only seeded keys, so the card must exist here
+            # for `play_inspected` to record it and for `use_card` to find it later.
+            "audit_card": "",
+            "audit_verdict": "not assessed",
         },
         "parameter_input": {
             "name": None,

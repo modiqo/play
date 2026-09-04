@@ -4242,6 +4242,90 @@ class ReportCardReplayTest(unittest.TestCase):
         self.assertIn("Report card: can run here: yes.", instruction_after["question"])
         self.assertIn("Show the report card first", json.dumps(instruction_after))
 
+    def test_inspection_records_the_card_and_the_card_choice_finds_it(self) -> None:
+        """The card recorded by play_inspected must survive to use_card on the real path.
+
+        Regression: the initial inspection block lacked the advisory keys, so the merge
+        dropped them and `use_card` failed with "missing required fields:
+        inspection.audit_card" even though the audit itself had succeeded.
+        """
+        session = self.runtime.initial_session(run_id="card-3", task_key="card-3", request_original="play run owner/name")
+        context = dict(session.context)
+        context["state"] = "use_inspect"
+        context["match"] = dict(context["match"])
+        context["match"]["reference"] = "owner/name"
+        session = replace(session, cursor=replace(session.cursor, state=StateId("use_inspect")), context=context)
+        card = "owner/name@1.0.0\n\nWhat it does, in order\n  1. go  runs a local command  git"
+        inspected = self.runtime.advance_session(
+            session,
+            ControllerEvent(
+                EventId("play_inspected"),
+                payload={
+                    "inspection": {
+                        "complete": True,
+                        "exact_reference": "owner/name@1.0.0",
+                        "description": "d",
+                        "parameters": [],
+                        "local_change": "install",
+                        "dependencies": {},
+                        "operations": [],
+                        "effects": {},
+                        "disclosure_sha256": "0" * 64,
+                        "audit_card": card,
+                        "audit_verdict": "can run here: yes",
+                    }
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("use_decide", inspected.projection.state["id"])
+        self.assertEqual(card, inspected.session.context["inspection"]["audit_card"])
+        self.assertEqual("can run here: yes", inspected.session.context["inspection"]["audit_verdict"])
+        offered = self.runtime.advance_session(
+            inspected.session,
+            ControllerEvent(EventId("remote_pull_required"), payload={"request": {"parameters": {}}}, guards={}),
+        )
+        self.assertEqual("use_offer", offered.projection.state["id"])
+        self.assertIn("Report card: can run here: yes.", offered.projection.as_dict()["instruction"]["question"])
+        carded = self.runtime.advance_session(
+            offered.session,
+            ControllerEvent(EventId("play_card_requested"), payload={"prompt_version": "1", "selected_at": "now"}, guards={}),
+        )
+        self.assertEqual("use_card", carded.projection.state["id"])
+        instruction = carded.projection.instruction
+        assert instruction is not None
+        event, presentation = _execute_instruction(
+            instruction, projection=carded.projection.as_dict(), context=carded.session.context, root=ROOT
+        )
+        self.assertEqual("report_card_presented", event.id)
+        self.assertIn("runs a local command  git", str(presentation))
+
+    def test_session_token_minted_before_the_card_still_reaches_use_card(self) -> None:
+        """A checkpoint recorded before the advisory fields existed resumes with them seeded."""
+        session = self.runtime.initial_session(run_id="card-4", task_key="card-4", request_original="play run x")
+        context = dict(session.context)
+        context["state"] = "use_offer"
+        context["inspection"] = {
+            key: value for key, value in context["inspection"].items() if key not in {"audit_card", "audit_verdict"}
+        }
+        context["inspection"].update({"complete": True, "exact_reference": "owner/name@1.0.0", "disclosure_sha256": "0" * 64})
+        legacy = replace(session, cursor=replace(session.cursor, state=StateId("use_offer")), context=context)
+        restored = decode_session(encode_session(legacy))
+        self.assertEqual("", restored.context["inspection"]["audit_card"])
+        self.assertEqual("not assessed", restored.context["inspection"]["audit_verdict"])
+        carded = self.runtime.advance_session(
+            restored,
+            ControllerEvent(EventId("play_card_requested"), payload={"prompt_version": "1", "selected_at": "now"}, guards={}),
+        )
+        self.assertEqual("use_card", carded.projection.state["id"])
+        instruction = carded.projection.instruction
+        assert instruction is not None
+        event, presentation = _execute_instruction(
+            instruction, projection=carded.projection.as_dict(), context=carded.session.context, root=ROOT
+        )
+        self.assertEqual("report_card_presented", event.id)
+        self.assertIn("play audit owner/name", str(presentation))
+
     def test_missing_card_replays_a_pointer_not_an_error(self) -> None:
         session = self.runtime.initial_session(run_id="card-2", task_key="card-2", request_original="play run x")
         context = dict(session.context)
