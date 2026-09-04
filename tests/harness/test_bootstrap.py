@@ -919,6 +919,74 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("completed", steps[-1].status)
         self.assertIn("0.4.36", steps[-1].detail)
 
+    def _marketplace_runner(self, before: str | None, after: str) -> MagicMock:
+        installed_before = (
+            [{"pluginId": "play@play-skills", "version": before, "enabled": True}]
+            if before
+            else []
+        )
+        runner = MagicMock()
+        runner.side_effect = [
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps({"marketplaces": [{"name": "play-skills"}]}),
+                stderr="",
+            ),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps({"installed": installed_before}),
+                stderr="",
+            ),
+            MagicMock(returncode=0, stdout="updated\n", stderr=""),
+            MagicMock(returncode=0, stdout="removed\n", stderr=""),
+            MagicMock(returncode=0, stdout="installed\n", stderr=""),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "installed": [
+                            {"pluginId": "play@play-skills", "version": after, "enabled": True}
+                        ]
+                    }
+                ),
+                stderr="",
+            ),
+        ]
+        return runner
+
+    def test_newer_marketplace_release_verifies_instead_of_rolling_back(self) -> None:
+        """The marketplace tracks main; a pinned older archive must accept a newer plugin."""
+        runner = self._marketplace_runner("0.3.0", "0.4.91")
+
+        steps = converge_play_marketplace(
+            "codex", "/bin/codex", expected_version="0.4.90", runner=runner
+        )
+
+        self.assertEqual("completed", steps[-1].status)
+        self.assertIn("0.4.91", steps[-1].detail)
+        self.assertIn("newer than 0.4.90", steps[-1].detail)
+
+    def test_older_marketplace_release_still_fails_verification(self) -> None:
+        runner = self._marketplace_runner("0.3.0", "0.4.90")
+
+        steps = converge_play_marketplace(
+            "codex", "/bin/codex", expected_version="0.4.91", runner=runner
+        )
+
+        self.assertEqual("failed", steps[-1].status)
+        self.assertIn("Expected Play 0.4.91 or newer", steps[-1].detail)
+
+    def test_newer_healthy_plugin_is_kept_without_reinstall(self) -> None:
+        runner = self._marketplace_runner("0.4.91", "0.4.91")
+
+        steps = converge_play_marketplace(
+            "codex", "/bin/codex", expected_version="0.4.90", runner=runner
+        )
+
+        self.assertEqual(2, runner.call_count)
+        self.assertEqual("unchanged", steps[-1].status)
+        self.assertIn("newer than 0.4.90", steps[-1].detail)
+
     def test_claude_marketplace_convergence_refreshes_user_scope(self) -> None:
         runner = MagicMock()
         runner.side_effect = [

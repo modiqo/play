@@ -2359,6 +2359,32 @@ def _plugin_skill_root(root: Path | None) -> Path | None:
     return packaged if packaged.is_dir() else root
 
 
+def _release_key(version: object) -> tuple[int, ...] | None:
+    if not isinstance(version, str):
+        return None
+    try:
+        return tuple(int(part) for part in version.strip().lstrip("v").split("."))
+    except ValueError:
+        return None
+
+
+def _plugin_release_state(installed: object, expected: str) -> str | None:
+    """Return "current" for the expected release, "newer" when the marketplace is ahead.
+
+    The marketplace tracks the repository's main branch while the installer pins one
+    release archive, so a newer plugin is an accepted outcome, never a failed install.
+    An older or unreadable plugin still fails so a stale marketplace cannot pass.
+    """
+
+    if installed == expected:
+        return "current"
+    have = _release_key(installed)
+    want = _release_key(expected)
+    if have is None or want is None:
+        return None
+    return "newer" if have > want else None
+
+
 def converge_play_marketplace(
     harness: str,
     executable: str,
@@ -2446,11 +2472,19 @@ def converge_play_marketplace(
             else None
         )
         plugin_errors = existing.get("errors") if existing else None
-        current = (
+        release_state = (
+            _plugin_release_state(existing.get("version"), expected_version)
+            if existing is not None
+            else None
+        )
+        healthy_existing = (
             existing is not None
-            and existing.get("version") == expected_version
             and existing.get("enabled") is not False
             and not plugin_errors
+        )
+        current = (
+            healthy_existing
+            and release_state == "current"
             and expected_fingerprint is not None
             and installed_fingerprint == expected_fingerprint
         )
@@ -2460,6 +2494,24 @@ def converge_play_marketplace(
                     "verify_play_plugin",
                     "unchanged",
                     f"Play {expected_version} is installed, enabled, healthy, and byte-current.",
+                    command=plugin_list,
+                    target=harness,
+                    changed=False,
+                    evidence=json.dumps(existing, sort_keys=True),
+                )
+            )
+            return steps
+        if healthy_existing and release_state == "newer":
+            assert existing is not None
+            steps.append(
+                Step(
+                    "verify_play_plugin",
+                    "unchanged",
+                    (
+                        f"Play {existing.get('version')} is installed, enabled, and healthy; "
+                        f"the marketplace already serves a release newer than "
+                        f"{expected_version}, so it was kept."
+                    ),
                     command=plugin_list,
                     target=harness,
                     changed=False,
@@ -2620,20 +2672,26 @@ def converge_play_marketplace(
     enabled = installed.get("enabled") if installed else None
     plugin_errors = installed.get("errors") if installed else None
     healthy = not plugin_errors
-    verified = installed_version == expected_version and enabled is not False and healthy
+    release_state = _plugin_release_state(installed_version, expected_version)
+    verified = release_state is not None and enabled is not False and healthy
+    if verified and release_state == "newer":
+        detail = (
+            f"Play {installed_version} is installed, enabled, and healthy; "
+            f"the marketplace serves a release newer than {expected_version}."
+        )
+    elif verified:
+        detail = f"Play {installed_version} is installed, enabled, and healthy."
+    else:
+        detail = (
+            f"Expected Play {expected_version} or newer enabled after reinstall; "
+            f"found version={installed_version!r}, enabled={enabled!r}, "
+            f"errors={plugin_errors!r}."
+        )
     steps.append(
         Step(
             "verify_play_plugin",
             "completed" if verified else "failed",
-            (
-                f"Play {installed_version} is installed, enabled, and healthy."
-                if verified
-                else (
-                    f"Expected Play {expected_version} enabled after reinstall; "
-                    f"found version={installed_version!r}, enabled={enabled!r}, "
-                    f"errors={plugin_errors!r}."
-                )
-            ),
+            detail,
             command=plugin_list,
             target=harness,
             evidence=json.dumps(installed, sort_keys=True) if installed else None,
