@@ -121,6 +121,8 @@ class MachineConformanceTest(unittest.TestCase):
         Otherwise a supported path reaches the state and fails its entry check with
         no event the harness could emit to satisfy it (exploration.human_name was
         required by birth_present after the state that wrote it had been removed).
+        Writers are declared, never inferred from source: action and prompt event
+        fields, constant patches, derived writes proven below, and non-null defaults.
         """
         required = {
             path
@@ -128,8 +130,8 @@ class MachineConformanceTest(unittest.TestCase):
             for path in state.get("requires", [])
         }
         written: set[str] = set()
-        for action in ACTIONS.values():
-            for fields in action.get("events", {}).values():
+        for document in (*ACTIONS.values(), *PROMPTS.values()):
+            for fields in document.get("events", {}).values():
                 if isinstance(fields, list):
                     written.update(fields)
                 elif isinstance(fields, dict):
@@ -137,11 +139,8 @@ class MachineConformanceTest(unittest.TestCase):
                         written.update(nested or [])
         for patch in runtime_context._CONSTANT_PATCHES.values():
             written.update(patch)
-        source = Path(runtime_context.__file__).read_text()
-        written.update(
-            f"{root}.{field}"
-            for root, field in re.findall(r'\["([a-z_]+)"\]\["([a-z_]+)"\]\s*=', source)
-        )
+        for paths in runtime_context._DERIVED_WRITES.values():
+            written.update(paths)
         initial = runtime_context.initial_context(
             run_id="run", task_key="task", machine_version="0", request_original="x"
         )
@@ -158,6 +157,37 @@ class MachineConformanceTest(unittest.TestCase):
 
         written |= present(initial)
         self.assertEqual([], sorted(required - written))
+
+    def test_derived_writes_are_produced_by_their_mutation(self) -> None:
+        """Every declared derived write must appear after applying its mutation."""
+        sample_payloads = {
+            "record_exploration_route_failure": {
+                "reason": "adapter returned 403",
+                "recoverable": True,
+                "owner": "rote-specialist",
+                "evidence_refs": [],
+            },
+        }
+        self.assertEqual(
+            sorted(sample_payloads), sorted(runtime_context._DERIVED_WRITES)
+        )
+        initial = runtime_context.initial_context(
+            run_id="run", task_key="task", machine_version="0", request_original="x"
+        )
+        for mutation, paths in runtime_context._DERIVED_WRITES.items():
+            updated = runtime_context.apply_event(
+                initial,
+                event_id="sample",
+                payload=sample_payloads[mutation],
+                state="sample",
+                transition_seq=1,
+                mutation=mutation,
+            )
+            for path in paths:
+                value = updated
+                for part in path.split("."):
+                    value = value[part]
+                self.assertIsNotNone(value, f"{mutation} did not write {path}")
 
     def test_unknown_event_is_rejected(self) -> None:
         with self.assertRaises(KeyError):

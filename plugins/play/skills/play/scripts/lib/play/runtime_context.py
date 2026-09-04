@@ -391,6 +391,14 @@ def apply_event(
     return updated
 
 
+# Required context paths that a mutation derives from its event payload instead of
+# copying a declared field. The conformance suite proves each entry by applying the
+# mutation, so a required path can never again outlive the code that writes it.
+_DERIVED_WRITES: dict[str, tuple[str, ...]] = {
+    "record_exploration_route_failure": ("exploration.route_failure",),
+}
+
+
 _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "start_greeting_onboarding": {
         "onboarding.intent": "greeting",
