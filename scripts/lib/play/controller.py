@@ -818,7 +818,9 @@ def session_from_dict(payload: Mapping[str, Any]) -> RuntimeSession:
     return RuntimeSession(
         schema=_required_string(payload, "schema"),
         cursor=cursor_from_dict(cursor),
-        context=dict(context),
+        # A token minted before the report card existed lacks the advisory fields;
+        # seed them so `use_card` can gate on presence without failing the resume.
+        context=_with_prompt_defaults(context),
         preflight_ready=payload.get("preflight_ready") is True,
     )
 
