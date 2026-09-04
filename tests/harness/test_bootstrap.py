@@ -310,7 +310,7 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertEqual(["codex", "claude"], plan["selected_harnesses"])
         self.assertEqual("not_installed", plan["play"]["update_status"])
-        self.assertEqual("0.4.93", plan["play"]["target_version"])
+        self.assertEqual("0.4.94", plan["play"]["target_version"])
         convergence = next(action for action in plan["actions"] if action["id"] == "converge_rote_skills")
         self.assertIsNone(convergence["command"])
         self.assertEqual([], convergence["targets"])
@@ -956,28 +956,28 @@ class BootstrapTest(unittest.TestCase):
 
     def test_newer_marketplace_release_verifies_instead_of_rolling_back(self) -> None:
         """The marketplace tracks main; a pinned older archive must accept a newer plugin."""
-        runner = self._marketplace_runner("0.3.0", "0.4.93")
+        runner = self._marketplace_runner("0.3.0", "0.4.94")
 
         steps = converge_play_marketplace(
             "codex", "/bin/codex", expected_version="0.4.90", runner=runner
         )
 
         self.assertEqual("completed", steps[-1].status)
-        self.assertIn("0.4.93", steps[-1].detail)
+        self.assertIn("0.4.94", steps[-1].detail)
         self.assertIn("newer than 0.4.90", steps[-1].detail)
 
     def test_older_marketplace_release_still_fails_verification(self) -> None:
         runner = self._marketplace_runner("0.3.0", "0.4.90")
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.93", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.94", runner=runner
         )
 
         self.assertEqual("failed", steps[-1].status)
-        self.assertIn("Expected Play 0.4.93 or newer", steps[-1].detail)
+        self.assertIn("Expected Play 0.4.94 or newer", steps[-1].detail)
 
     def test_newer_healthy_plugin_is_kept_without_reinstall(self) -> None:
-        runner = self._marketplace_runner("0.4.93", "0.4.93")
+        runner = self._marketplace_runner("0.4.94", "0.4.94")
 
         steps = converge_play_marketplace(
             "codex", "/bin/codex", expected_version="0.4.90", runner=runner
@@ -1196,7 +1196,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.93",
+                                "version": "0.4.94",
                                 "enabled": True,
                             }
                         ]
@@ -1207,7 +1207,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.93", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.94", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -1708,7 +1708,7 @@ class BootstrapTest(unittest.TestCase):
                 "steps": [],
                 "play": {
                     "before": {"version": "0.4.74"},
-                    "after": {"version": "0.4.93"},
+                    "after": {"version": "0.4.94"},
                 },
                 "rote": {
                     "before": {"version": "1.2.3"},
@@ -1723,7 +1723,7 @@ class BootstrapTest(unittest.TestCase):
         )
 
         self.assertIn("Components", rendered)
-        self.assertIn("Play       0.4.74 → 0.4.93", rendered)
+        self.assertIn("Play       0.4.74 → 0.4.94", rendered)
         self.assertIn("Rote       1.2.3 → 1.2.4", rendered)
         self.assertIn("Tulving    0.1.2 → 0.1.3", rendered)
 
@@ -2525,7 +2525,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.93 is installed and enabled.",
+                "Play 0.4.94 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -2602,7 +2602,7 @@ class BootstrapTest(unittest.TestCase):
                 "record-play-install",
                 "playoffs",
                 "fresh",
-                "0.4.93",
+                "0.4.94",
                 "codex",
             ],
             commands,
@@ -2635,7 +2635,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.93", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.94", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 
