@@ -16,7 +16,12 @@ from pathlib import Path
 
 
 SCHEMA = "play.activation-profile/v1"
-ACTIVATION_POLICY = "explicit-invocation/v1"
+# v2: Codex metadata stays implicit-off, but Claude Code's
+# `disable-model-invocation` is never written. That flag blocks every
+# model-initiated call, including the specialist hand-off an explicitly
+# invoked Play makes through the Skill tool. Play's own standby rule keeps
+# rote skills quiet outside a Play interaction.
+ACTIVATION_POLICY = "explicit-invocation/v2"
 PORTABLE_MARKER_SCHEMA = "play.portable-install/v1"
 SOURCE = Path(
     os.environ.get("PLAY_PROFILE_SOURCE", Path(__file__).resolve().parents[2])
@@ -289,7 +294,8 @@ def restore(path: Path, record: dict[str, object]) -> None:
         parent.rmdir()
 
 
-def explicit_skill_markdown(original: bytes) -> bytes:
+def invocable_skill_markdown(original: bytes) -> bytes:
+    """Return SKILL.md with any `disable-model-invocation` line removed."""
     text = original.decode("utf-8")
     lines = text.splitlines(keepends=True)
     if not lines or lines[0].strip() != "---":
@@ -305,8 +311,6 @@ def explicit_skill_markdown(original: bytes) -> bytes:
         for line in lines[1:closing]
         if not re.match(r"^disable-model-invocation\s*:", line)
     ]
-    newline = "\r\n" if lines[0].endswith("\r\n") else "\n"
-    frontmatter.append(f"disable-model-invocation: true{newline}")
     return "".join(
         [lines[0], *frontmatter, lines[closing], *lines[closing + 1 :]]
     ).encode()
@@ -345,10 +349,11 @@ def play_is_explicit() -> bool:
 
 
 def rote_is_explicit(skill: Path) -> bool:
+    """True when rote is implicit-off for Codex and still invocable from Play."""
     markdown = read_bytes(skill / "SKILL.md").decode("utf-8")
     metadata = skill / "agents" / "openai.yaml"
     return (
-        bool(re.search(r"(?m)^disable-model-invocation:\s*true\s*$", markdown))
+        not re.search(r"(?m)^disable-model-invocation:\s*true\s*$", markdown)
         and metadata.is_file()
         and bool(
             re.search(
@@ -480,7 +485,7 @@ def verify_state(state: dict[str, object]) -> list[str]:
     for value in state["rote_skills"]:
         skill = Path(str(value))
         if not rote_is_explicit(skill):
-            problems.append(f"rote skill is not explicit-only: {skill}")
+            problems.append(f"rote skill is not explicit-only or is locked from Play: {skill}")
     return problems
 
 
@@ -661,7 +666,7 @@ def reconcile(state: dict[str, object]) -> None:
                 if not current_matches:
                     backups[str(path)] = snapshot(path)
                 if path == markdown:
-                    content = explicit_skill_markdown(read_bytes(path))
+                    content = invocable_skill_markdown(read_bytes(path))
                     mode_bits = path.stat().st_mode & 0o777
                 else:
                     content = explicit_openai_yaml(read_bytes(path) if path.exists() else None)
@@ -816,7 +821,7 @@ def install() -> None:
             backups[str(metadata)] = snapshot(metadata)
             atomic_write(
                 markdown,
-                explicit_skill_markdown(read_bytes(markdown)),
+                invocable_skill_markdown(read_bytes(markdown)),
                 markdown.stat().st_mode & 0o777,
             )
             original_metadata = read_bytes(metadata) if metadata.exists() else None

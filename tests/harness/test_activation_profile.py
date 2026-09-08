@@ -90,8 +90,8 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertIn(str(ROOT / "scripts/bin/play"), self.cli_launcher.read_text())
 
         for skill in (self.roots[0] / "rote", self.roots[1] / "rote-shell"):
-            self.assertIn(
-                "disable-model-invocation: true", (skill / "SKILL.md").read_text()
+            self.assertNotIn(
+                "disable-model-invocation", (skill / "SKILL.md").read_text()
             )
             self.assertIn(
                 "allow_implicit_invocation: false",
@@ -165,7 +165,7 @@ class ActivationProfileTest(unittest.TestCase):
         result = self.run_profile("install")
 
         self.assertIn("reconciled", result.stdout)
-        self.assertIn("disable-model-invocation: true", markdown.read_text())
+        self.assertNotIn("disable-model-invocation", markdown.read_text())
         self.assertIn("allow_implicit_invocation: false", metadata.read_text())
         self.run_profile("uninstall")
         self.assertEqual(refreshed_markdown, markdown.read_bytes())
@@ -198,8 +198,8 @@ class ActivationProfileTest(unittest.TestCase):
 
         self.assertIn("reconciled", result.stdout)
         self.assertTrue((new_root / "play").is_symlink())
-        self.assertIn(
-            "disable-model-invocation: true", (new_skill / "SKILL.md").read_text()
+        self.assertNotIn(
+            "disable-model-invocation", (new_skill / "SKILL.md").read_text()
         )
         self.run_profile("uninstall")
         self.assertEqual(original, (new_skill / "SKILL.md").read_bytes())
@@ -230,8 +230,7 @@ class ActivationProfileTest(unittest.TestCase):
             metadata = skill / "agents" / "openai.yaml"
             markdown.write_text(
                 markdown.read_text().replace(
-                    "disable-model-invocation: true",
-                    "disable-model-invocation: false",
+                    "---\n\n", "disable-model-invocation: false\n---\n\n", 1
                 )
             )
             metadata.write_text(
@@ -250,17 +249,81 @@ class ActivationProfileTest(unittest.TestCase):
 
         self.assertIn("reconciled", result.stdout)
         migrated = json.loads(self.state.read_text())
-        self.assertEqual("explicit-invocation/v1", migrated["activation_policy"])
+        self.assertEqual("explicit-invocation/v2", migrated["activation_policy"])
         for value in migrated["rote_skills"]:
             skill = Path(value)
-            self.assertIn(
-                "disable-model-invocation: true", (skill / "SKILL.md").read_text()
+            self.assertNotIn(
+                "disable-model-invocation", (skill / "SKILL.md").read_text()
             )
             self.assertIn(
                 "allow_implicit_invocation: false",
                 (skill / "agents" / "openai.yaml").read_text(),
             )
 
+        self.run_profile("uninstall")
+        for path, content in self.originals.items():
+            self.assertEqual(content, path.read_bytes())
+
+    def test_install_unlocks_rote_skill_locked_for_claude_code(self) -> None:
+        skill = self.roots[1] / "rote-shell"
+        markdown = skill / "SKILL.md"
+        locked = (
+            b"---\nname: rote-shell\ndescription: test\n"
+            b"disable-model-invocation: true\n---\n\n# Test\n"
+        )
+        markdown.write_bytes(locked)
+        self.originals[markdown] = locked
+
+        self.run_profile("install")
+
+        self.assertNotIn("disable-model-invocation", markdown.read_text())
+        self.assertIn(
+            "allow_implicit_invocation: false",
+            (skill / "agents" / "openai.yaml").read_text(),
+        )
+        self.run_profile("verify")
+        self.run_profile("uninstall")
+        self.assertEqual(locked, markdown.read_bytes())
+
+    def test_verify_rejects_rote_skill_relocked_for_claude_code(self) -> None:
+        self.run_profile("install")
+        markdown = self.roots[0] / "rote" / "SKILL.md"
+        markdown.write_text(
+            markdown.read_text().replace(
+                "---\n\n", "disable-model-invocation: true\n---\n\n", 1
+            )
+        )
+
+        result = self.run_profile("verify", expected=1)
+
+        self.assertIn("locked from Play", result.stderr)
+
+    def test_install_migrates_v1_profile_that_locked_rote_for_claude_code(self) -> None:
+        self.run_profile("install")
+        state = json.loads(self.state.read_text())
+        state["activation_policy"] = "explicit-invocation/v1"
+        for value in state["rote_skills"]:
+            markdown = Path(value) / "SKILL.md"
+            markdown.write_text(
+                markdown.read_text().replace(
+                    "---\n\n", "disable-model-invocation: true\n---\n\n", 1
+                )
+            )
+            state["backups"][str(markdown)]["managed_sha256"] = hashlib.sha256(
+                markdown.read_bytes()
+            ).hexdigest()
+        self.state.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+
+        result = self.run_profile("install")
+
+        self.assertIn("reconciled", result.stdout)
+        migrated = json.loads(self.state.read_text())
+        self.assertEqual("explicit-invocation/v2", migrated["activation_policy"])
+        for value in migrated["rote_skills"]:
+            self.assertNotIn(
+                "disable-model-invocation", (Path(value) / "SKILL.md").read_text()
+            )
+        self.run_profile("verify")
         self.run_profile("uninstall")
         for path, content in self.originals.items():
             self.assertEqual(content, path.read_bytes())

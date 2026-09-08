@@ -864,7 +864,10 @@ just install
 `install` discovers every supported local harness and every skills root containing Rote skills —
 including `~/.agents/skills` — links this Play skill into each, and applies the activation metadata in
 [`agents/openai.yaml`](agents/openai.yaml) (`allow_implicit_invocation: false`). Play and Rote stay
-explicit-only until the user invokes Play. Play's
+explicit-only until the user invokes Play. On Claude Code the profile never writes
+`disable-model-invocation` into a Rote skill: that flag blocks every model-initiated call, including
+the specialist hand-off an explicitly invoked Play makes through the Skill tool. Play's standby rule
+keeps Rote quiet outside a Play interaction instead. Play's
 structured prompts map to Kimi's `askquestion` control
 (`scripts/bin/play-question <prompt> --harness kimi`), and `just harness kimi` /
 `just smoke kimi` start and smoke-test the harness like Codex and Claude Code.
@@ -980,8 +983,9 @@ the revised skill.
 
 `install` detects Codex, Claude Code, Kimi, Cursor, Hermes, OpenCode, and DeepSeek Harness. It
 discovers their skill roots containing `rote` or `rote-*`. It links this Play skill into each root.
-It also keeps every Rote skill explicit-only. It snapshots the original Rote activation files so
-the change is reversible. Restart running harnesses after enabling the profile.
+It also keeps every Rote skill explicit-only for Codex and strips any `disable-model-invocation`
+line so Play can still hand off to Rote on Claude Code. It snapshots the original Rote activation
+files so the change is reversible. Restart running harnesses after enabling the profile.
 
 It is also the convergence command after `rote harness setup`, a plugin refresh, or a newly added
 harness. If Rote replaced managed skill files, `just install` preserves those refreshed files as the
