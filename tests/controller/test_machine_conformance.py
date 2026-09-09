@@ -757,6 +757,42 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertNotIn("search_empty_offer", MACHINE["states"])
         self.assertNotIn("choose_empty_search_path", PROMPTS)
 
+    def test_creator_no_match_authorizes_exploration_only_after_a_clean_search(self) -> None:
+        """A single misranked search must never be enough to start building from scratch.
+
+        A compound request ("today's meetings and the weather") searched once on its
+        blended phrasing ranked both existing Plays out; the binary classifier then
+        emitted creator_no_match and an unguarded transition authorized capture.
+        """
+        branches = MACHINE["states"]["creator_classify"]["on"]["creator_no_match"]
+        self.assertEqual("creator_search_is_clean", branches[0]["guard"])
+        self.assertEqual("standby_exit", branches[0]["target"])
+        self.assertEqual("creator_offer", branches[1]["target"])
+        self.assertEqual("record_creator_coverage", branches[1]["mutate"])
+        self.assertEqual(
+            "creator_offer",
+            MACHINE["states"]["creator_classify"]["on"]["creator_partial_coverage"][0]["target"],
+        )
+        self.assertEqual(
+            "start_scoped_exploration",
+            MACHINE["states"]["creator_offer"]["on"]["creator_create_selected"][0]["mutate"],
+        )
+        # The classifier is runtime-owned: the evidence cannot be discarded by a model.
+        self.assertEqual(
+            "runtime",
+            action_executor("classify_creator_options", ACTIONS["classify_creator_options"]),
+        )
+        self.assertIn("--decompose", ACTIONS["search_creator_plays"]["command"])
+        self.assertIn("--limit 5", ACTIONS["search_creator_plays"]["command"])
+        policy = " ".join(ACTIONS["search_creator_plays"]["command_policy"])
+        self.assertIn("OR-relaxed", policy)
+        self.assertIn("separable outcomes", policy)
+        self.assertIn("not proof of absence", policy)
+        events = ACTIONS["classify_creator_options"]["events"]
+        self.assertIn("match.coverage", events["creator_partial_coverage"])
+        self.assertIn("match.play_choices", events["creator_match_ready"])
+        self.assertEqual("match.play_choices", PROMPTS["choose_creator_path"]["choices_from"]["context"])
+
     def test_exploration_intent_and_existing_release_publication_are_typed(self) -> None:
         qualify = ACTIONS["qualify_request"]
         creation_fields = qualify["events"]["play_creation_request"]

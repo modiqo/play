@@ -2049,6 +2049,336 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual(["email"], yielded.session.context["match"]["uncovered"])
         self.assertEqual("normal", yielded.session.context["capture"]["decision"])
 
+    # ---- compound outcomes on the creator path -------------------------------
+
+    @staticmethod
+    def _creator_result(
+        reference: str, description: str, classification: str, uncovered: list[str]
+    ) -> dict[str, Any]:
+        name = reference.rsplit("/", 1)[-1]
+        return {
+            "name": name,
+            "description": description,
+            "reference": reference,
+            "exact_reference": f"{reference}@0.1.0",
+            "version": "0.1.0",
+            "status": "released",
+            "sources": ["remote_public"],
+            "score": 1.0 if classification == "full" else 0.75,
+            "coverage": 1.0 if classification == "full" else 0.75,
+            "match_classification": classification,
+            "match_basis": "complete" if classification == "full" else "partial",
+            "uncovered_terms": uncovered,
+            "argument_terms": [],
+            "matched_adapters": [],
+            "labels": [],
+            "tags": [],
+            "primary_scope": "remote_public",
+            "ownership": "community",
+            "uri": f"https://play.modiqo.ai/{reference}",
+            "run_command": f"rote play run {reference}",
+            "inspect_command": f"rote play inspect {reference} --json",
+            "hint_kind": "play",
+            "local_availability": "not_found",
+            "execution_resolution": "pull_required",
+            "selection_description": f"{description} Remote public match; pulling requires your approval.",
+        }
+
+    @staticmethod
+    def _sub_outcome(outcome: str, results: list[dict[str, Any]]) -> dict[str, Any]:
+        top = results[0] if results else None
+        return {
+            "outcome": outcome,
+            "phrasings": [outcome],
+            "query": outcome,
+            "result_refs": [result["reference"] for result in results],
+            "results": results,
+            "classification": (
+                "none" if top is None else "full" if top["match_classification"] == "full" else "partial"
+            ),
+            "reference": top["reference"] if top else None,
+            "uncovered_terms": list(top["uncovered_terms"]) if top else [],
+        }
+
+    def _creator_session(
+        self, results: list[dict[str, Any]], sub_outcomes: list[dict[str, Any]]
+    ):
+        session = self.runtime.initial_session(
+            run_id="run-compound",
+            task_key="task-compound",
+            request_original=(
+                "$play explore check my calendar for active meetings for today "
+                "and also weather in san francisco"
+            ),
+        )
+        context: dict[str, Any] = copy.deepcopy(dict(session.context))
+        context["state"] = "creator_classify"
+        context["mode"] = "create"
+        context["request"]["intent"] = "daily calendar and weather briefing"
+        context["request"]["requested_outcome"] = (
+            "check my calendar for active meetings for today and also weather in san francisco"
+        )
+        context["search"].update(
+            {
+                "complete": True,
+                "query": "daily calendar and weather briefing",
+                "sources": ["local", "remote_private", "remote_public", "remote_baseline"],
+                "result_refs": [result["reference"] for result in results]
+                + [
+                    reference
+                    for entry in sub_outcomes
+                    for reference in entry["result_refs"]
+                    if reference not in {result["reference"] for result in results}
+                ],
+                "results": results,
+                "play_choices": [],
+                "sub_outcomes": sub_outcomes,
+            }
+        )
+        return session.__class__(
+            schema=session.schema,
+            cursor=replace(session.cursor, state=StateId("creator_classify")),
+            context=context,
+            preflight_ready=True,
+        )
+
+    def _hey_rote(self) -> dict[str, Any]:
+        return self._creator_result(
+            "harshitborana75/hey-rote",
+            "Daily briefing from your calendar with rote",
+            "partial",
+            ["weather"],
+        )
+
+    def _calendar_play(self) -> dict[str, Any]:
+        return self._creator_result(
+            "modiqo/check-calendar-meetings",
+            "Check calendar for active meetings today",
+            "full",
+            [],
+        )
+
+    def _weather_play(self) -> dict[str, Any]:
+        return self._creator_result(
+            "modiqo/weather-updates-for-cities",
+            "Weather updates for a list of cities",
+            "partial",
+            ["san", "francisco"],
+        )
+
+    def test_compound_outcome_with_both_halves_covered_offers_both_plays(self) -> None:
+        weather = dict(self._weather_play(), match_classification="full", uncovered_terms=[])
+        projected = self._creator_session(
+            [self._hey_rote()],
+            [
+                self._sub_outcome("daily calendar", [self._calendar_play()]),
+                self._sub_outcome("weather in san francisco", [weather]),
+            ],
+        )
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("creator_match_ready", yielded.trace[0].event)
+        self.assertEqual("creator_offer", yielded.projection["state"]["id"])
+        context = yielded.session.context
+        self.assertEqual("full", context["match"]["classification"])
+        self.assertEqual("modiqo/check-calendar-meetings", context["match"]["reference"])
+        self.assertEqual(
+            ["daily calendar", "weather in san francisco"], context["match"]["covered"]
+        )
+        self.assertEqual([], context["match"]["uncovered"])
+        # No capture was created: nothing needed exploring.
+        self.assertEqual("unclassified", context["capture"]["decision"])
+        choices = yielded.projection["instruction"]["choices"]
+        references = [
+            choice["payload"]["match.reference"] for choice in choices if "payload" in choice
+        ]
+        self.assertEqual(
+            ["modiqo/check-calendar-meetings", "modiqo/weather-updates-for-cities"], references
+        )
+        self.assertIn("2 of 2 outcomes", yielded.projection["instruction"]["question"])
+        self.assertEqual(
+            ["creator_use_selected", "creator_use_selected", "creator_adapt_selected", "creator_create_selected"],
+            [choice["event"] for choice in choices],
+        )
+
+    def test_compound_outcome_with_one_half_covered_scopes_capture_to_the_other(self) -> None:
+        projected = self._creator_session(
+            [self._hey_rote()],
+            [
+                self._sub_outcome("daily calendar", [self._calendar_play()]),
+                self._sub_outcome("weather in san francisco", [self._weather_play()]),
+            ],
+        )
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("creator_partial_coverage", yielded.trace[0].event)
+        self.assertEqual("creator_offer", yielded.projection["state"]["id"])
+        context = yielded.session.context
+        self.assertEqual("partial", context["match"]["classification"])
+        self.assertEqual(["daily calendar"], context["match"]["covered"])
+        self.assertEqual(["weather in san francisco"], context["match"]["uncovered"])
+        coverage = {entry["sub_outcome"]: entry for entry in context["match"]["coverage"]}
+        self.assertEqual("full", coverage["daily calendar"]["classification"])
+        self.assertEqual("partial", coverage["weather in san francisco"]["classification"])
+        self.assertEqual(
+            ["san", "francisco"], coverage["weather in san francisco"]["uncovered_terms"]
+        )
+        # The weather Play is an arguable fit; it is shown with its gap for the user to judge.
+        descriptions = " ".join(
+            choice["description"] for choice in yielded.projection["instruction"]["choices"]
+        )
+        self.assertIn("does not cover san, francisco", descriptions)
+
+        chosen = self.runtime.advance_session(
+            yielded.session,
+            ControllerEvent(
+                id=EventId("creator_create_selected"),
+                payload={"prompt_version": "1", "selected_at": "2026-09-08T00:00:00Z"},
+                guards={},
+            ),
+        )
+        self.assertEqual("standby_exit", str(chosen.session.cursor.state))
+        context = chosen.session.context
+        self.assertEqual("create", context["mode"])
+        self.assertEqual("capture", context["capture"]["decision"])
+        self.assertEqual("weather in san francisco", context["request"]["requested_outcome"])
+        self.assertEqual("weather in san francisco", context["exploration"]["goal"])
+        self.assertEqual(
+            [{"sub_outcome": "daily calendar", "reference": "modiqo/check-calendar-meetings"}],
+            context["creator"]["baselines"],
+        )
+        self.assertIn("modiqo/check-calendar-meetings", context["capture"]["reason"])
+
+    def test_compound_outcome_with_neither_half_covered_starts_full_capture(self) -> None:
+        projected = self._creator_session(
+            [],
+            [
+                self._sub_outcome("daily calendar", []),
+                self._sub_outcome("weather in san francisco", []),
+            ],
+        )
+        projection = self.runtime.project_session(projected).as_dict()
+        event, _ = _execute_instruction(
+            projection["instruction"],
+            projection=projection,
+            context=projected.context,
+            root=ROOT,
+        )
+        self.assertEqual("creator_no_match", str(event.id))
+        self.assertEqual(
+            ["daily calendar", "weather in san francisco"], event.payload["match"]["uncovered"]
+        )
+        self.assertEqual([], event.payload["match"]["play_choices"])
+
+        advanced = self.runtime.advance_session(projected, event)
+        self.assertEqual("standby_exit", str(advanced.session.cursor.state))
+        context = advanced.session.context
+        self.assertEqual("capture", context["capture"]["decision"])
+        self.assertEqual("none", context["match"]["classification"])
+        self.assertEqual(
+            "check my calendar for active meetings for today and also weather in san francisco",
+            context["request"]["requested_outcome"],
+        )
+        self.assertEqual([], context["creator"]["baselines"])
+
+    def test_naming_one_play_does_not_cover_the_other_half_of_a_compound_request(self) -> None:
+        """The request contains the calendar Play's name, so the blended search calls it full
+        by identity and files "weather san francisco" under arguments. That must not read
+        as whole-request coverage."""
+        by_identity = dict(
+            self._calendar_play(),
+            match_basis="identity",
+            argument_terms=["weather", "san", "francisco"],
+        )
+        projected = self._creator_session(
+            [by_identity],
+            [
+                self._sub_outcome("check calendar meetings", [self._calendar_play()]),
+                self._sub_outcome("weather in san francisco", [self._weather_play()]),
+            ],
+        )
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("creator_partial_coverage", yielded.trace[0].event)
+        context = yielded.session.context
+        self.assertEqual(["weather in san francisco"], context["match"]["uncovered"])
+
+    def test_atomic_outcome_with_a_full_match_is_unchanged(self) -> None:
+        projected = self._creator_session([self._calendar_play()], [])
+        projected.context["request"]["intent"] = "check calendar meetings"
+        projected.context["request"]["requested_outcome"] = "check calendar meetings"
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("creator_match_ready", yielded.trace[0].event)
+        self.assertEqual("creator_offer", yielded.projection["state"]["id"])
+        context = yielded.session.context
+        self.assertEqual("modiqo/check-calendar-meetings", context["match"]["reference"])
+        self.assertEqual(["check calendar meetings"], context["match"]["covered"])
+        self.assertEqual(1, len(context["match"]["coverage"]))
+        self.assertEqual("unclassified", context["capture"]["decision"])
+
+    def test_partial_hit_with_uncovered_terms_never_becomes_no_match(self) -> None:
+        """Regression: hey-rote at coverage 0.75 with uncovered ["weather"] emitted creator_no_match."""
+        projected = self._creator_session([self._hey_rote()], [])
+
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+
+        self.assertEqual("creator_partial_coverage", yielded.trace[0].event)
+        self.assertEqual("creator_offer", yielded.projection["state"]["id"])
+        context = yielded.session.context
+        self.assertEqual("harshitborana75/hey-rote", context["match"]["reference"])
+        self.assertEqual("unclassified", context["capture"]["decision"])
+        self.assertEqual(["weather"], context["match"]["coverage"][0]["uncovered_terms"])
+
+    def test_no_match_claim_over_surviving_partial_hit_is_offered_not_explored(self) -> None:
+        """A creator_no_match event cannot authorize capture while the search holds a partial hit."""
+        projected = self._creator_session([self._hey_rote()], [])
+
+        advanced = self.runtime.advance_session(
+            projected,
+            ControllerEvent(
+                id=EventId("creator_no_match"),
+                payload={
+                    "match": {
+                        "covered": [],
+                        "uncovered": ["daily calendar and weather briefing"],
+                        "coverage": [],
+                        "play_choices": [],
+                        "summary": "No existing Play covers the request.",
+                    },
+                    "confidence": 0.0,
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("creator_offer", str(advanced.session.cursor.state))
+        self.assertEqual("unclassified", advanced.session.context["capture"]["decision"])
+
+        clean = self._creator_session([], [])
+        advanced = self.runtime.advance_session(
+            clean,
+            ControllerEvent(
+                id=EventId("creator_no_match"),
+                payload={
+                    "match": {
+                        "covered": [],
+                        "uncovered": ["daily calendar and weather briefing"],
+                        "coverage": [],
+                        "play_choices": [],
+                        "summary": "No existing Play covers the request.",
+                    },
+                    "confidence": 0.0,
+                },
+                guards={},
+            ),
+        )
+        self.assertEqual("standby_exit", str(advanced.session.cursor.state))
+        self.assertEqual("capture", advanced.session.context["capture"]["decision"])
+
     def test_explicit_explore_no_match_converts_original_outcome_to_capture(self) -> None:
         from play.runtime_context import apply_event, initial_context
 

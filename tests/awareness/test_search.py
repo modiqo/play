@@ -823,6 +823,182 @@ class SearchTest(unittest.TestCase):
             PLAY_SEARCH.outcome_query("https://modiqo.ai/pricing"),
         )
 
+    def test_conjoined_outcomes_are_separable_only_with_enough_vocabulary(self):
+        self.assertEqual(
+            ["daily calendar", "weather briefing"],
+            PLAY_SEARCH.separable_outcomes("daily calendar and weather briefing"),
+        )
+        self.assertEqual(
+            ["check my calendar for active meetings for today", "weather in san francisco"],
+            PLAY_SEARCH.separable_outcomes(
+                "check my calendar for active meetings for today and also weather in san francisco"
+            ),
+        )
+        # A one-word remainder would make any Play mentioning it a full match.
+        self.assertEqual(
+            ["compare revenue and cost"],
+            PLAY_SEARCH.separable_outcomes("compare revenue and cost"),
+        )
+        # A separator inside an argument value never splits the request.
+        self.assertEqual(
+            ["open https://example.com/a,b and summarize the page"],
+            PLAY_SEARCH.separable_outcomes("open https://example.com/a,b and summarize the page"),
+        )
+        self.assertEqual(
+            ["retrieve PostHog daily active users"],
+            PLAY_SEARCH.separable_outcomes("retrieve PostHog daily active users"),
+        )
+
+    def test_outcome_groups_align_phrasings_by_shared_vocabulary(self):
+        groups = PLAY_SEARCH.outcome_groups(
+            [
+                "daily calendar and weather briefing",
+                "check my calendar for active meetings for today and also weather in san francisco",
+            ]
+        )
+        self.assertEqual(
+            [
+                ["daily calendar", "check my calendar for active meetings for today"],
+                ["weather briefing", "weather in san francisco"],
+            ],
+            groups,
+        )
+        self.assertEqual([], PLAY_SEARCH.outcome_groups(["retrieve PostHog daily active users"]))
+
+    def test_compound_request_is_searched_per_outcome_and_reports_coverage(self):
+        """Regression: the blended phrase ranked only briefing Plays, so both halves were missed."""
+
+        def item(reference, description):
+            owner, name = reference.split("/")
+            return {
+                "play_id": f"play-{name}",
+                "reference": f"{reference}@0.1.0",
+                "owner": {"kind": "organization", "slug": owner},
+                "name": name,
+                "description": description,
+                "version": "0.1.0",
+                "visibility": "public",
+                "status": "released",
+                "rank": 0.5,
+                "tags": [],
+                "requires_adapters": [],
+            }
+
+        catalog = [
+            item("harshitborana75/hey-rote", "Daily briefing from your calendar with rote"),
+            item("modiqo/agenda-check", "Check the calendar for active meetings today"),
+            item("modiqo/weather-updates-for-cities", "Weather updates for a list of cities"),
+        ]
+
+        def fake_run(command, **_kwargs):
+            if "--source" not in command:
+                return {"flows": []}
+            query = command[3].casefold()
+            terms = query.replace(" or ", " ").split()
+            return {
+                "items": [
+                    entry
+                    for entry in catalog
+                    if any(term in entry["description"].casefold() for term in terms)
+                ]
+            }
+
+        import io
+        import json
+        from contextlib import redirect_stdout
+
+        argv = [
+            "play-search",
+            "check calendar meetings and current weather",
+            "--also",
+            "check my calendar for active meetings for today and also current weather in san francisco",
+            "--limit",
+            "5",
+            "--decompose",
+            "--json",
+        ]
+        buffer = io.StringIO()
+        with mock.patch.object(PLAY_SEARCH, "run_json", side_effect=fake_run), \
+                mock.patch.object(sys, "argv", argv), redirect_stdout(buffer):
+            self.assertEqual(0, PLAY_SEARCH.main())
+        payload = json.loads(buffer.getvalue())
+
+        # The blended phrase is covered by nothing: its best hit is partial...
+        self.assertEqual("partial", payload["results"][0]["match_classification"])
+        self.assertIn("weather", payload["results"][0]["uncovered_terms"])
+        # ...but each half was searched on its own vocabulary and classified alone.
+        by_outcome = {entry["outcome"]: entry for entry in payload["sub_outcomes"]}
+        self.assertEqual(["check calendar meetings", "current weather"], sorted(by_outcome))
+        calendar = by_outcome["check calendar meetings"]
+        self.assertEqual("modiqo/agenda-check", calendar["reference"])
+        self.assertEqual("full", calendar["classification"])
+        self.assertEqual([], calendar["uncovered_terms"])
+        weather = by_outcome["current weather"]
+        self.assertEqual("modiqo/weather-updates-for-cities", weather["reference"])
+        self.assertEqual("partial", weather["classification"])
+        self.assertEqual(["current"], weather["uncovered_terms"])
+        self.assertEqual(
+            {
+                "classification": "partial",
+                "covered": ["check calendar meetings"],
+                "uncovered": ["current weather"],
+            },
+            payload["coverage"],
+        )
+        self.assertIn("modiqo/agenda-check", payload["result_refs"])
+        self.assertIn("modiqo/weather-updates-for-cities", payload["result_refs"])
+
+    def test_naming_one_play_in_a_compound_request_does_not_cover_the_other_half(self):
+        calendar = {
+            "reference": "modiqo/check-calendar-meetings",
+            "match_classification": "full",
+            "match_basis": "identity",
+            "argument_terms": ["weather", "san", "francisco"],
+        }
+        weather = {"reference": "modiqo/weather-updates-for-cities", "match_classification": "partial"}
+        sub_outcomes = [
+            {"outcome": "check calendar meetings", "classification": "full", "results": [calendar]},
+            {"outcome": "weather in san francisco", "classification": "partial", "results": [weather]},
+        ]
+        self.assertFalse(PLAY_SEARCH.blended_covers_whole([calendar], sub_outcomes))
+        self.assertEqual(
+            {
+                "classification": "partial",
+                "covered": ["check calendar meetings"],
+                "uncovered": ["weather in san francisco"],
+            },
+            PLAY_SEARCH.coverage_summary("x", [calendar], sub_outcomes),
+        )
+        complete = dict(calendar, match_basis="complete")
+        self.assertTrue(PLAY_SEARCH.blended_covers_whole([complete], sub_outcomes))
+        # An atomic request named by its Play is still a full identity match.
+        self.assertTrue(PLAY_SEARCH.blended_covers_whole([calendar], []))
+
+    def test_atomic_request_with_decompose_is_unchanged(self):
+        import io
+        import json
+        from contextlib import redirect_stdout
+
+        def fake_run(command, **_kwargs):
+            return {"flows": []} if "--source" not in command else {"items": []}
+
+        buffer = io.StringIO()
+        argv = ["play-search", "retrieve PostHog daily active users", "--decompose", "--json"]
+        with mock.patch.object(PLAY_SEARCH, "run_json", side_effect=fake_run), \
+                mock.patch.object(sys, "argv", argv), redirect_stdout(buffer):
+            self.assertEqual(0, PLAY_SEARCH.main())
+        payload = json.loads(buffer.getvalue())
+        self.assertEqual([], payload["sub_outcomes"])
+        self.assertEqual([], payload["results"])
+        self.assertEqual(
+            {
+                "classification": "none",
+                "covered": [],
+                "uncovered": ["retrieve PostHog daily active users"],
+            },
+            payload["coverage"],
+        )
+
     def test_relaxed_registry_query_joins_outcome_tokens_with_or(self):
         self.assertEqual(
             "assess OR pricing OR page",

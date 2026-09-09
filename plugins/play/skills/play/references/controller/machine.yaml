@@ -295,7 +295,10 @@ states:
     entry: {action: classify_creator_options}
     "on":
       creator_match_ready: [{target: creator_offer, mutate: record_creator_match}]
-      creator_no_match: [{target: standby_exit, mutate: start_empty_search_exploration}]
+      creator_partial_coverage: [{target: creator_offer, mutate: record_creator_coverage}]
+      creator_no_match:
+        - {guard: creator_search_is_clean, target: standby_exit, mutate: start_empty_search_exploration}
+        - {target: creator_offer, mutate: record_creator_coverage}
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
   creator_offer:
@@ -305,7 +308,7 @@ states:
     "on":
       creator_use_selected: [{target: use_inspect, mutate: enter_creator_use}]
       creator_adapt_selected: [{target: standby_exit, mutate: record_creator_standby}]
-      creator_create_selected: [{target: standby_exit, mutate: record_creator_standby}]
+      creator_create_selected: [{target: standby_exit, mutate: start_scoped_exploration}]
 
   management_offer:
     owner: play

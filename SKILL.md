@@ -418,9 +418,21 @@ When an explicitly activated outcome search finds no adequate Play, the runtime 
 the harness continues the unchanged request normally. An explicit Play search may show an empty
 result, then stops without offering creation. Only `$play explore <outcome>`,
 `/play explore <outcome>`, or `/skill:play explore <outcome>` authorizes the creator path. That path searches local and authorized
-registry Plays first. If none matches, the next deterministic transition creates the capture and
-Rote workspace before any work begins, then yields directly to the `rote` specialist without a
-second exploration prompt. That specialist must invoke
+registry Plays first. When the request names separable outcomes (two things joined by "and",
+"also", "then", or a comma, such as today's meetings and the weather), the search runs once per
+sub-outcome as well as on the blended phrase, because a blended phrase ranks Plays that describe
+the combination above the Plays that deliver each half. Keep `request.intent` faithful to the
+user's separable outcomes; never paraphrase two outcomes into one composite noun such as
+"briefing". The runtime classifies the evidence per sub-outcome: full coverage everywhere or a
+blended full match offers the Plays; partial coverage offers every candidate with its
+`uncovered_terms` so the user judges fit; only a search that returned no Play at all, blended or
+per sub-outcome, is a no-match. Never treat a result carrying `match_classification: partial`
+with a non-empty `uncovered_terms` as "nothing exists", and never treat an empty AND-of-terms
+result for a query with surplus terms as proof of absence. Only a clean no-match lets the next
+deterministic transition create the capture and Rote workspace before any work begins and yield
+directly to the `rote` specialist without a second exploration prompt. Choosing to explore from a
+partial offer scopes the capture to the uncovered sub-outcomes; covered sub-outcomes are handed to
+the specialist as `creator.baselines` to run through `rote-flow-run`, never rebuilt by hand. That specialist must invoke
 `rote-task-routing`; API adaptation belongs to `rote-adapter-create`, existing CLI discovery and
 validation belong to `rote-shell` using `rote deps` and `rote proc`, and adapter execution belongs
 to `rote-workspace`. Present the discovered routes, always allow another tool, wait for the user's

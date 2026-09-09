@@ -316,10 +316,11 @@ stateDiagram-v2
     awareness_collect --> awareness_present : current snapshot (new, changed, or unchanged)
     awareness_present --> awareness_offer : catalog summary + random 10
     awareness_offer --> use_inspect : sampled Play selected
-    creator_search --> creator_offer : related Play exists
-    creator_search --> standby_exit : explicit Explore has no match
-    creator_offer --> use_inspect : use existing
-    creator_offer --> standby_exit : adapt / create outside the machine
+    creator_search --> creator_classify : blended + per sub-outcome results
+    creator_classify --> creator_offer : full or partial coverage (per sub-outcome)
+    creator_classify --> standby_exit : explicit Explore, every search clean
+    creator_offer --> use_inspect : use a covering Play
+    creator_offer --> standby_exit : adapt / explore only the uncovered outcomes
     management --> completed
     birth_show --> completed
 

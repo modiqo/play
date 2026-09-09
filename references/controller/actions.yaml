@@ -17,6 +17,7 @@ guards:
   - awareness_snapshot_ready
   - search_is_complete
   - search_only_requested
+  - creator_search_is_clean
   - capture_is_active
   - exploration_goal_is_required
   - exploration_goal_is_ready
@@ -99,6 +100,7 @@ mutations:
   - set_creator_need
   - record_creator_search
   - record_creator_match
+  - record_creator_coverage
   - record_creator_standby
   - enter_creator_use
   - record_non_outcome_exit
@@ -114,6 +116,7 @@ mutations:
   - record_search_results
   - record_search_presentation
   - start_empty_search_exploration
+  - start_scoped_exploration
   - enter_captured_exploration
   - record_exploration_phase
   - record_exploration_prerequisite
@@ -480,18 +483,32 @@ actions:
     owner: play
     effect: read
     input_required: [request.original, request.intent, request.requested_outcome, modality_policy]
-    command: scripts/bin/play-search <request.intent> --also <request.original> --json
+    command: scripts/bin/play-search <request.intent> --also <request.original> --limit 5 --decompose --json
+    command_policy:
+      - This search authorizes building from scratch, so it must be at least as thorough as the run-only search. Search the harness's intent paraphrase and the user's original words together; strip argument values (URLs, paths, handles, dates) and stop words so only outcome vocabulary reaches the AND-of-terms registry search, and add one OR-relaxed registry query so phrasing differences cannot hide an adequate Play.
+      - Normalize once, derive bounded outcome queries, then search local and authorized registry indexes concurrently.
+      - If the request contains separable outcomes (two things joined by "and", "also", "then", or a comma), derive one query per sub-outcome and search each on its own before classifying. A blended phrase such as "calendar and weather briefing" ranks Plays that describe the combination above the Plays that deliver each half, and the halves never surface; report every sub-outcome with its best Play, classification, and uncovered_terms in search.sub_outcomes.
+      - Classify a Play as a full match only when the card accounts for every outcome token of at least one phrasing of that sub-outcome, or when a phrasing names the Play; report any remaining outcome tokens as uncovered_terms.
+      - Never report an empty search while any result, blended or per sub-outcome, carries match_classification "partial" with a non-empty uncovered_terms. An empty result under AND-of-terms matching with surplus terms is not proof of absence.
+      - Rank adequate matches local first, then the identity's own Plays, then team Plays, then remote public, then baseline; ownership never changes a match classification.
+      - Deduplicate aliases and versions by canonical Play reference and return bounded execution metadata.
     events:
-      creator_search_ready: [search.complete, search.query, search.sources, search.result_refs, search.results]
+      creator_search_ready: [search.complete, search.query, search.sources, search.result_refs, search.results, search.sub_outcomes]
 
   classify_creator_options:
-    kind: evaluator
+    kind: deterministic
     owner: play
     effect: none
-    input_required: [request.requested_outcome, search.result_refs, modality_policy]
+    input_required: [request.requested_outcome, search.result_refs, search.results, search.sub_outcomes, modality_policy]
+    command_policy:
+      - Classify from the evidence the search already produced; never re-rank or re-judge fit. Fit is the user's judgement at creator_offer, where every candidate is shown with its coverage and uncovered_terms.
+      - Emit creator_match_ready only when a blended full match exists or every sub-outcome has a full match. Emit creator_partial_coverage when any sub-outcome or the blended search returned a Play but at least one sub-outcome is not fully covered; match.coverage then lists every sub-outcome with its reference (or null), classification, and uncovered_terms.
+      - Emit creator_no_match only when neither the blended search nor any sub-outcome search returned a Play. A partial match with uncovered terms is coverage to present, never "nothing exists".
+      - match.play_choices offers one selection per covered or partially covered sub-outcome so "run this one, explore that one" is expressible at creator_offer.
     events:
-      creator_match_ready: [match.reference, match.covered, match.uncovered, confidence]
-      creator_no_match: [match.covered, match.uncovered, confidence]
+      creator_match_ready: [match.reference, match.covered, match.uncovered, match.coverage, match.play_choices, match.summary, confidence]
+      creator_partial_coverage: [match.reference, match.covered, match.uncovered, match.coverage, match.play_choices, match.summary, confidence]
+      creator_no_match: [match.covered, match.uncovered, match.coverage, match.play_choices, match.summary, confidence]
 
   list_play_management:
     kind: delegated
@@ -554,9 +571,10 @@ actions:
     owner: rote-specialist
     specialist: rote
     effect: mixed
-    input_required: [request.original, request.intent, request.requested_outcome, search.complete, search.sources, search.result_refs, capture.reference, capture.workspace, capture.status, execution.workspace, execution.workspace_path, consent.explore, evidence.failed_postconditions]
+    input_required: [request.original, request.intent, request.requested_outcome, search.complete, search.sources, search.result_refs, capture.reference, capture.workspace, capture.status, execution.workspace, execution.workspace_path, consent.explore, evidence.failed_postconditions, creator.baselines]
     command_policy:
       - Consume Play's completed local and authorized-registry no-match result as the search-first gate; do not repeat Play or Rote play search and do not ask for the outcome again.
+      - "`creator.baselines` lists the sub-outcomes an existing published Play already covers, with that Play's reference. Run each baseline through `rote-flow-run` and treat its result as the delivered half; explore and build only `request.requested_outcome`, which has already been scoped to the uncovered sub-outcomes. Never hand-build an adapter for an outcome a baseline covers."
       - Treat `execution.workspace_path` as the only execution location. Enter that absolute path in the same shell invocation before every Rote command, for example `cd -- <absolute-path> && rote ...`; never run `rote cd` separately, assume a prior shell changed directory, substitute another workspace, or run from the repository.
       - Keep prerequisites, routing, retries, resumed work, and every outcome-bearing operation inside that one workspace. If the harness requires filesystem permission for the workspace, retain the same access when resuming `play-machine`; never repeat successful work merely to repair verification.
       - Enter the already-created capture workspace and invoke rote-task-routing with the original user intent, empty-search evidence, workspace path, and the requirement to create a reusable workflow.

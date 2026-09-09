@@ -691,8 +691,15 @@ def validate_bundle(
         "an existing local Play publication request must inspect that release without search",
     )
     check(
-        _target(states, "creator_classify", "creator_no_match") == "standby_exit",
-        "explicit creator intent without a match must start its captured exploration",
+        _target(states, "creator_classify", "creator_no_match") == "standby_exit"
+        and states["creator_classify"]["on"]["creator_no_match"][0].get("guard")
+        == "creator_search_is_clean"
+        and _target(states, "creator_classify", "creator_no_match", 1) == "creator_offer",
+        "explicit creator intent may start its captured exploration only when every search came back clean; otherwise the coverage is offered",
+    )
+    check(
+        _target(states, "creator_classify", "creator_partial_coverage") == "creator_offer",
+        "partial creator coverage must be offered to the user, never collapsed into no match",
     )
     check(
         _target(states, "invoke", "settled_task_invocation") == "save_judge",

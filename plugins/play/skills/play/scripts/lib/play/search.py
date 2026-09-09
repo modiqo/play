@@ -26,6 +26,7 @@ MAX_DESCRIPTION_CHARS = 480
 _DISCOVERY_STOP_WORDS = {
     "a",
     "about",
+    "also",
     "an",
     "and",
     "are",
@@ -133,6 +134,101 @@ def discovery_queries(query: str) -> list[str]:
     ]
     broad = " ".join(stable)
     return list(dict.fromkeys(candidate for candidate in (query, broad) if candidate))
+
+
+# A request that names two separable outcomes ("today's meetings and the
+# weather") must be searched once per outcome. Scoring the blended phrase ranks
+# Plays that describe the *combination* (briefings, digests) above the Plays
+# that each deliver one half, and the halves then never surface at all.
+_OUTCOME_SEPARATOR = re.compile(
+    r"""
+    \s*(?:
+        ;
+        | ,\s*(?:and\s+)?(?:also\s+)?(?:then\s+)?
+        | \b(?:and\s+also|and\s+then|as\s+well\s+as|along\s+with|together\s+with)\b
+        | \b(?:and|plus|then|also)\b
+    )\s*
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+# The minimum outcome vocabulary a segment must keep to stand on its own. A
+# one-word remainder ("... and cost") would make any Play that mentions the word
+# a full match, so it never becomes a separately searched outcome.
+MIN_SUB_OUTCOME_TOKENS = 2
+
+
+def outcome_tokens(text: str) -> list[str]:
+    """Return the stable outcome vocabulary of one phrasing, in order."""
+
+    try:
+        outcome = outcome_query(text) if text.strip() else ""
+    except NormalizationError:
+        return []
+    discovery = discovery_queries(outcome)
+    semantic = discovery[-1] if discovery else outcome
+    return [token for token in semantic.split() if len(token) > 1]
+
+
+def separable_outcomes(text: str) -> list[str]:
+    """Split one phrasing into separately searchable outcomes.
+
+    Returns the original phrasing alone unless every conjunction-separated
+    segment keeps at least MIN_SUB_OUTCOME_TOKENS outcome tokens and no
+    segment's vocabulary is contained in another's. Argument values are removed
+    first so a URL or path containing a separator cannot split a request.
+    """
+
+    stripped = strip_argument_values(text)
+    segments = [segment for segment in _OUTCOME_SEPARATOR.split(stripped) if segment.strip()]
+    if len(segments) < 2:
+        return [text]
+    token_sets = [set(outcome_tokens(segment)) for segment in segments]
+    if any(len(tokens) < MIN_SUB_OUTCOME_TOKENS for tokens in token_sets):
+        return [text]
+    kept: list[tuple[str, set[str]]] = []
+    for segment, tokens in zip(segments, token_sets):
+        if any(tokens <= other for _, other in kept):
+            continue
+        kept = [(other_segment, other) for other_segment, other in kept if not other <= tokens]
+        kept.append((segment.strip(), tokens))
+    return [segment for segment, _ in kept] if len(kept) >= 2 else [text]
+
+
+def outcome_groups(phrasings: list[str]) -> list[list[str]]:
+    """Group the separable outcomes of several phrasings of one request.
+
+    Each phrasing (the harness's intent paraphrase and the user's own words) is
+    split on its own; segments from different phrasings that share outcome
+    vocabulary describe the same sub-outcome and are searched together, so the
+    best phrasing scores each Play exactly as it does for an atomic request.
+    Returns fewer than two groups when the request is atomic.
+    """
+
+    segments: list[tuple[str, set[str]]] = []
+    for phrasing in phrasings:
+        for segment in separable_outcomes(phrasing):
+            tokens = set(outcome_tokens(segment))
+            if tokens and (segment, tokens) not in segments:
+                segments.append((segment, tokens))
+    parent = list(range(len(segments)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    for left in range(len(segments)):
+        for right in range(left + 1, len(segments)):
+            if segments[left][1] & segments[right][1]:
+                parent[find(left)] = find(right)
+    grouped: dict[int, list[str]] = {}
+    for index, (segment, _) in enumerate(segments):
+        grouped.setdefault(find(index), []).append(segment)
+    groups = list(grouped.values())
+    if len(groups) < 2:
+        return []
+    return groups
 
 
 def relaxed_registry_query(query: str) -> str | None:
@@ -978,6 +1074,7 @@ def render_markdown(
     normalized: str,
     results: list[dict],
     source_health: dict | None = None,
+    sub_outcomes: list[dict] | None = None,
 ) -> str:
     source_label = (
         "local index + cached authorized Play feed"
@@ -989,7 +1086,9 @@ def render_markdown(
     if original.strip().casefold() != normalized:
         lines.extend(["", f"Normalized from: {original.strip()}"])
     if not results:
-        return "\n".join([*lines, "", "No matching Plays found."])
+        return "\n".join(
+            [*lines, "", "No matching Plays found.", *render_sub_outcomes(sub_outcomes or [])]
+        )
     tiers = [result.get("ownership") for result in results]
     segmented = len({tier for tier in tiers if tier}) > 1
     current_tier = None
@@ -1040,7 +1139,136 @@ def render_markdown(
             )
         if result["execution_resolution"] == "pull_required":
             lines.append("   Pulling and running requires a separate approval after inspection.")
+    lines.extend(render_sub_outcomes(sub_outcomes or []))
     return "\n".join(lines)
+
+
+def render_sub_outcomes(sub_outcomes: list[dict]) -> list[str]:
+    """Render per-outcome coverage of a compound request."""
+
+    if not sub_outcomes:
+        return []
+    lines = ["", "Separable outcomes:"]
+    for entry in sub_outcomes:
+        reference = entry.get("reference")
+        classification = entry.get("classification")
+        if classification == "none" or not reference:
+            lines.append(f"- {entry['outcome']}: no existing Play")
+            continue
+        missing = entry.get("uncovered_terms") or []
+        detail = (
+            f" (missing: {', '.join(missing)})"
+            if classification == "partial" and missing
+            else ""
+        )
+        lines.append(f"- {entry['outcome']}: {reference} · {classification}{detail}")
+    return lines
+
+
+def _best_classification(results: list[dict]) -> str:
+    if not results:
+        return "none"
+    top = results[0]
+    return "full" if top.get("match_classification") == "full" else "partial"
+
+
+# A request that names one Play is a full identity match, and its unmatched
+# remainder is treated as that Play's arguments. In a compound request the
+# remainder is the *other* outcome, so identity alone never covers the whole.
+_WHOLE_REQUEST_BASES = {"complete", "adapter"}
+
+
+def blended_covers_whole(results: list[dict], sub_outcomes: list[dict]) -> bool:
+    if _best_classification(results) != "full":
+        return False
+    if not sub_outcomes:
+        return True
+    return results[0].get("match_basis") in _WHOLE_REQUEST_BASES
+
+
+def search_sub_outcomes(
+    groups: list[list[str]], limit: int, *, flow_root: Path
+) -> list[dict]:
+    """Search each separable outcome on its own and report its coverage.
+
+    Every group is scored against its own vocabulary, so a Play that delivers
+    one half of a compound request is classified exactly as it would be for
+    that half asked alone. Groups are searched concurrently; any incomplete
+    search fails closed for the whole request, as the blended search does.
+    """
+
+    def search_group(phrasings: list[str]) -> dict:
+        normalized = list(dict.fromkeys(outcome_query(text) for text in phrasings))
+        local_payload, registry_payload = search_both(
+            normalized, limit, flow_root=flow_root
+        )
+        results = merge_results(
+            local_payload, registry_payload, flow_root, limit, normalized
+        )
+        classification = _best_classification(results)
+        top = results[0] if results else None
+        return {
+            "outcome": min(phrasings, key=len),
+            "phrasings": normalized,
+            "query": normalized[0],
+            "result_refs": [
+                result["reference"] for result in results if result["reference"]
+            ],
+            "results": results,
+            "classification": classification,
+            "reference": top["reference"] if top else None,
+            "uncovered_terms": list(top.get("uncovered_terms") or []) if top else [],
+        }
+
+    with ThreadPoolExecutor(max_workers=len(groups)) as executor:
+        return list(executor.map(search_group, groups))
+
+
+def coverage_summary(
+    outcome: str, results: list[dict], sub_outcomes: list[dict]
+) -> dict:
+    """Classify how much of the request existing Plays account for.
+
+    A full blended match covers everything regardless of the halves. Otherwise
+    every sub-outcome must be fully covered for the request to count as
+    covered; "none" is reserved for a request no search returned a Play for.
+    A request that decomposed into no separable outcomes is judged by its
+    blended search alone.
+    """
+
+    blended = _best_classification(results)
+    if not sub_outcomes:
+        return {
+            "classification": blended,
+            "covered": [outcome] if blended == "full" else [],
+            "uncovered": [] if blended == "full" else [outcome],
+        }
+    names = [entry["outcome"] for entry in sub_outcomes]
+    if blended_covers_whole(results, sub_outcomes):
+        return {"classification": "full", "covered": names, "uncovered": []}
+    covered = [entry["outcome"] for entry in sub_outcomes if entry["classification"] == "full"]
+    uncovered = [name for name in names if name not in covered]
+    if blended == "none" and all(entry["classification"] == "none" for entry in sub_outcomes):
+        classification = "none"
+    elif not uncovered:
+        classification = "full"
+    else:
+        classification = "partial"
+    return {"classification": classification, "covered": covered, "uncovered": uncovered}
+
+
+def merge_sub_outcome_results(results: list[dict], sub_outcomes: list[dict]) -> list[dict]:
+    """Append every sub-outcome Play the blended search did not already return."""
+
+    merged = list(results)
+    seen = {result["reference"] for result in results if result.get("reference")}
+    for entry in sub_outcomes:
+        for result in entry["results"]:
+            reference = result.get("reference")
+            if reference and reference not in seen:
+                seen.add(reference)
+                merged.append(result)
+    return merged
 
 
 def build_play_choices(results: list[dict]) -> list[dict]:
@@ -1079,6 +1307,14 @@ def main() -> int:
         ),
     )
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument(
+        "--decompose",
+        action="store_true",
+        help=(
+            "also search each separable outcome of a compound request on its own "
+            "and report per-outcome coverage; an atomic request is unchanged"
+        ),
+    )
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
     if args.limit < 1:
@@ -1104,6 +1340,12 @@ def main() -> int:
             args.limit,
             phrasings,
         )
+        sub_outcomes: list[dict] = []
+        if args.decompose:
+            groups = outcome_groups([original, *(text for text in args.also if text.strip())])
+            if groups:
+                sub_outcomes = search_sub_outcomes(groups, args.limit, flow_root=flow_root)
+                results = merge_sub_outcome_results(results, sub_outcomes)
     except (SearchError, NormalizationError) as error:
         print(f"play-search: {error}", file=sys.stderr)
         return 1
@@ -1122,6 +1364,8 @@ def main() -> int:
         "result_refs": [result["reference"] for result in results if result["reference"]],
         "results": results,
         "play_choices": build_play_choices(results),
+        "sub_outcomes": sub_outcomes,
+        "coverage": coverage_summary(original, results, sub_outcomes),
         "source_health": local_payload.get("source_health", {}),
     }
     if args.as_json:
@@ -1133,6 +1377,7 @@ def main() -> int:
                 normalized,
                 results,
                 local_payload.get("source_health"),
+                sub_outcomes,
             )
         )
     return 0

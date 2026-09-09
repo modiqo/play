@@ -17,7 +17,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "956d2db385a4576a73ff406618a9d9b3f398325b643280a7361a0ccb23ee859a"
+SUPPORTED_MUTATION_SET_SHA256 = "e00040a0474e5190bda5208467aa1a831ad30b853a4e3db28534a2bdee085f2f"
 
 
 # Reviewed 2026-09-03: `record_report_card_replay` merges an empty prompt payload
@@ -58,12 +58,16 @@ def initial_context(
             "result_refs": [],
             "results": [],
             "play_choices": [],
+            "sub_outcomes": [],
         },
         "match": {
             "classification": None,
             "reference": None,
             "covered": [],
             "uncovered": [],
+            "coverage": [],
+            "play_choices": [],
+            "summary": None,
         },
         "inspection": {
             "complete": False,
@@ -281,7 +285,7 @@ def initial_context(
             "sampled_count": 0,
             "play_choices": [],
         },
-        "creator": {"intent": None, "seed_reference": None},
+        "creator": {"intent": None, "seed_reference": None, "baselines": []},
         "management": {
             "views": ["org_summary", "plays_by_org"],
             "org_summary_ref": None,
@@ -480,6 +484,9 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     },
     "set_creator_request": {"mode": "create"},
     "start_empty_search_exploration": {"mode": "create"},
+    "start_scoped_exploration": {"mode": "create"},
+    "record_creator_match": {"match.classification": "full"},
+    "record_creator_coverage": {"match.classification": "partial"},
     "enter_captured_exploration": {
         "mode": "create",
         "consent.explore": "approved",
@@ -609,6 +616,54 @@ def _apply_mutation_semantics(
         if context["exploration"].get("goal_status") == "unknown":
             context["exploration"]["intent_kind"] = "goal_bound"
             context["exploration"]["goal_status"] = "ready"
+            context["exploration"]["goal"] = outcome
+
+    if mutation == "start_scoped_exploration":
+        # Explore only what no existing Play covers. Covered sub-outcomes become
+        # baselines the specialist runs through rote-flow-run instead of rebuilding.
+        context["creator"].setdefault("baselines", [])
+        coverage = context["match"].get("coverage")
+        entries = [entry for entry in coverage if isinstance(entry, Mapping)] if isinstance(coverage, list) else []
+        covered = [
+            {"sub_outcome": str(entry["sub_outcome"]), "reference": str(entry["reference"])}
+            for entry in entries
+            if entry.get("classification") == "full" and isinstance(entry.get("reference"), str)
+        ]
+        uncovered = [
+            str(entry["sub_outcome"])
+            for entry in entries
+            if entry.get("classification") != "full" and entry.get("sub_outcome")
+        ]
+        outcome = context["request"].get("requested_outcome")
+        if not isinstance(outcome, str) or not outcome.strip():
+            intent = context["request"].get("intent")
+            original = context["request"].get("original")
+            outcome = intent if isinstance(intent, str) and intent.strip() else original
+        if covered and uncovered:
+            outcome = " and ".join(uncovered)
+        context["request"]["requested_outcome"] = outcome
+        context["creator"]["baselines"] = covered
+        context["capture"]["decision"] = "capture"
+        context["capture"]["reason"] = (
+            "The user chose to explore the outcomes no existing Play covers; "
+            + (
+                "covered outcomes are baselines: "
+                + ", ".join(f"{item['sub_outcome']} -> {item['reference']}" for item in covered)
+                if covered
+                else "no existing Play was adequate"
+            )
+            + "."
+        )
+        context["capture"]["task_class"] = None
+        context["capture"]["status"] = "unclassified"
+        context["match"]["classification"] = "partial" if entries and any(
+            entry.get("classification") != "none" for entry in entries
+        ) else "none"
+        if context["exploration"].get("goal_status") == "unknown":
+            context["exploration"]["intent_kind"] = "goal_bound"
+            context["exploration"]["goal_status"] = "ready"
+            context["exploration"]["goal"] = outcome
+        elif context["exploration"].get("goal_status") == "ready":
             context["exploration"]["goal"] = outcome
 
     if mutation == "enter_captured_exploration":

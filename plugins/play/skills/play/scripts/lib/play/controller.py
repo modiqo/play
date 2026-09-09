@@ -39,6 +39,8 @@ _PROMPT_DEFAULTS: dict[str, dict[str, Any]] = {
     # Fields that a checkpoint recorded before they existed will lack.
     "inspection": {"audit_verdict": "not assessed", "audit_card": ""},
     "evidence": {"failed_postconditions": []},
+    # Per-outcome creator coverage; a checkpoint from before it existed has none.
+    "match": {"play_choices": [], "coverage": []},
 }
 
 
@@ -1227,6 +1229,20 @@ def _derive_session_guards(
     )
     values[GuardId("search_is_complete")] = (
         _path_value(event.payload, "search.complete") is True
+    )
+    # The creator path may start a captured exploration only when no search,
+    # blended or per sub-outcome, returned any Play. A partial hit is evidence
+    # the user must see at creator_offer, never proof that nothing exists.
+    creator_results = _path_value(context, "search.results")
+    creator_sub_outcomes = _path_value(context, "search.sub_outcomes")
+    values[GuardId("creator_search_is_clean")] = (
+        isinstance(creator_results, list)
+        and not creator_results
+        and isinstance(creator_sub_outcomes, (list, type(None)))
+        and not any(
+            isinstance(entry, Mapping) and entry.get("results")
+            for entry in creator_sub_outcomes or []
+        )
     )
     values[GuardId("search_only_requested")] = (
         _path_value(context, "last_event.id")

@@ -28,6 +28,17 @@ captured exploration pulses are claimed from an asynchronously built snapshot by
 while the daily recall journal is shown only when the user asks for it. The foreground pulse path
 never invokes Rote or reads its workspace.
 
+The creator path searches with `--decompose`: a request naming separable outcomes is searched
+once per sub-outcome as well as on its blended phrasing, and `search.sub_outcomes` records each
+half's best Play, classification, and `uncovered_terms`. `classify_creator_options` is
+runtime-owned and never re-judges fit: it emits `creator_match_ready` (everything covered),
+`creator_partial_coverage` (some Play returned, at least one sub-outcome not fully covered), or
+`creator_no_match` (no Play returned anywhere). The `creator_no_match` transition to captured
+exploration is guarded by `creator_search_is_clean`, derived from the recorded search results,
+so a no-match claim over a surviving partial hit is offered at `creator_offer` instead. Choosing
+to explore from that offer applies `start_scoped_exploration`: the capture's outcome is narrowed
+to the uncovered sub-outcomes and covered ones are handed over as `creator.baselines`.
+
 An approved empty-search exploration is not a terminal standby. `record_standby` creates the
 capture and workspace, then `capture_is_active` routes through the visible `exploration_begin`
 phase to `exploration_execute`. That delegated state invokes the `rote` entrypoint with the

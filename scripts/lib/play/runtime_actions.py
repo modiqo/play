@@ -40,6 +40,7 @@ _SELECTOR_ACTIONS = {
     "resolve_public_owner",
     "inspect_publication_credentials",
     "classify_adequacy",
+    "classify_creator_options",
     "present_search_results",
     "run_registry_play",
     "verify_play_output",
@@ -442,6 +443,8 @@ def _commandless_result(
         if event in {"partial_match", "uncertain_match"}:
             result["capture"] = capture
         return result
+    if action_id == "classify_creator_options":
+        return _classify_creator_options(context)
     if action_id == "verify_play_output":
         output = context.get("output")
         if not isinstance(output, Mapping):
@@ -477,6 +480,194 @@ def _commandless_result(
             "evidence_refs": [evidence_ref],
         }
     raise ControllerRuntimeError(f"no deterministic renderer for {action_id}")
+
+
+def _classify_creator_options(context: Mapping[str, Any]) -> dict[str, Any]:
+    """Classify creator-path search evidence per sub-outcome.
+
+    The search already reports, for every separable outcome, the best Play and
+    what it leaves uncovered. Nothing here re-judges fit: a full sub-outcome
+    match is offered, a partial one is offered with its gap named, and only a
+    request that no search returned a Play for is a no-match. Partial coverage
+    is never collapsed into "nothing exists".
+    """
+
+    search = context.get("search")
+    request = context.get("request")
+    if not isinstance(search, Mapping) or not isinstance(request, Mapping):
+        raise ControllerRuntimeError("creator classification context is malformed")
+    results = search.get("results")
+    # Contexts persisted before per-outcome search carry no sub_outcomes;
+    # they classify from the blended results exactly as before.
+    sub_outcomes = search.get("sub_outcomes") or []
+    if not isinstance(results, list) or not isinstance(sub_outcomes, list):
+        raise ControllerRuntimeError("creator search results are malformed")
+    outcome = str(
+        request.get("requested_outcome") or request.get("intent") or "requested outcome"
+    )
+
+    def best(entries: list[Any]) -> Mapping[str, Any] | None:
+        for entry in entries:
+            if isinstance(entry, Mapping) and isinstance(entry.get("reference"), str):
+                return entry
+        return None
+
+    def classification_of(result: Mapping[str, Any] | None) -> str:
+        if result is None:
+            return "none"
+        return "full" if result.get("match_classification") == "full" else "partial"
+
+    blended = best(results)
+    coverage: list[dict[str, Any]] = []
+    if sub_outcomes:
+        for entry in sub_outcomes:
+            if not isinstance(entry, Mapping) or not isinstance(entry.get("outcome"), str):
+                raise ControllerRuntimeError("creator sub-outcome is malformed")
+            top = best(list(entry.get("results") or []))
+            coverage.append(
+                {
+                    "sub_outcome": entry["outcome"],
+                    "reference": top.get("reference") if top else None,
+                    "classification": classification_of(top),
+                    "uncovered_terms": [str(term) for term in (top.get("uncovered_terms") or [])]
+                    if top
+                    else [],
+                }
+            )
+    else:
+        coverage.append(
+            {
+                "sub_outcome": outcome,
+                "reference": blended.get("reference") if blended else None,
+                "classification": classification_of(blended),
+                "uncovered_terms": [str(term) for term in (blended.get("uncovered_terms") or [])]
+                if blended
+                else [],
+            }
+        )
+
+    # A blended full match covers the whole request only when every outcome token
+    # is accounted for. A request that names one Play is "full" by identity with
+    # the rest treated as arguments; in a compound request that rest is the
+    # other outcome, so identity never covers the halves.
+    blended_full = (
+        blended is not None
+        and classification_of(blended) == "full"
+        and (not sub_outcomes or blended.get("match_basis") in {"complete", "adapter"})
+    )
+    covered = [
+        entry["sub_outcome"]
+        for entry in coverage
+        if blended_full or entry["classification"] == "full"
+    ]
+    uncovered = [entry["sub_outcome"] for entry in coverage if entry["sub_outcome"] not in covered]
+    any_hit = blended is not None or any(entry["reference"] for entry in coverage)
+
+    choices: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    def add_choice(result: Mapping[str, Any], sub_outcome: str, *, recommended: bool) -> None:
+        reference = str(result["reference"]).partition("@")[0]
+        choice_id = f"use:{reference}"
+        if choice_id in seen_ids:
+            return
+        seen_ids.add(choice_id)
+        classification = classification_of(result)
+        missing = [str(term) for term in (result.get("uncovered_terms") or [])]
+        gap = f"; does not cover {', '.join(missing)}" if classification == "partial" and missing else ""
+        description = (
+            f"{classification} match for \"{sub_outcome}\"{gap}. "
+            f"{result.get('selection_description') or result.get('description') or ''}"
+        ).strip()
+        choices.append(
+            {
+                "id": choice_id,
+                "reference": reference,
+                "label": f"Use {reference}",
+                "description": description,
+                "parameters": {},
+                "recommended": recommended,
+                "sub_outcome": sub_outcome,
+                "classification": classification,
+                "uncovered_terms": missing,
+            }
+        )
+
+    if blended is not None and (blended_full or not sub_outcomes):
+        add_choice(blended, outcome, recommended=blended_full)
+    if sub_outcomes:
+        for entry, cover in zip(sub_outcomes, coverage):
+            top = best(list(entry.get("results") or []))
+            if top is not None:
+                add_choice(top, cover["sub_outcome"], recommended=cover["classification"] == "full")
+    else:
+        for result in results[1:5]:
+            if isinstance(result, Mapping) and isinstance(result.get("reference"), str):
+                add_choice(result, outcome, recommended=False)
+
+    reference = None
+    if blended is not None and blended_full:
+        reference = blended["reference"]
+    else:
+        for entry in coverage:
+            if entry["classification"] == "full":
+                reference = entry["reference"]
+                break
+        if reference is None:
+            for entry in coverage:
+                if entry["reference"]:
+                    reference = entry["reference"]
+                    break
+        if reference is None and blended is not None:
+            reference = blended["reference"]
+
+    if not any_hit:
+        event = "creator_no_match"
+    elif not uncovered:
+        event = "creator_match_ready"
+    else:
+        event = "creator_partial_coverage"
+
+    parts = []
+    for entry in coverage:
+        if entry["reference"] is None:
+            parts.append(f"{entry['sub_outcome']}: no existing Play")
+            continue
+        gap = (
+            f", missing {', '.join(entry['uncovered_terms'])}"
+            if entry["classification"] == "partial" and entry["uncovered_terms"]
+            else ""
+        )
+        parts.append(f"{entry['sub_outcome']}: {entry['reference']} ({entry['classification']}{gap})")
+    if event == "creator_no_match":
+        summary = f"No existing Play covers {outcome}."
+    elif blended is not None and blended_full and len(coverage) > 1:
+        summary = f"{blended['reference']} covers the whole request; per outcome: " + "; ".join(parts) + "."
+    elif len(coverage) == 1:
+        summary = "An existing Play covers this outcome: " + parts[0] + "."
+    else:
+        summary = (
+            f"Existing Plays cover {len(covered)} of {len(coverage)} outcomes: "
+            + "; ".join(parts)
+            + "."
+        )
+
+    confidence = 0.0
+    scored = [entry for entry in coverage if entry["reference"] is not None]
+    if scored:
+        confidence = 1.0 if blended_full else round(
+            sum(1.0 if entry["classification"] == "full" else 0.5 for entry in coverage) / len(coverage), 4
+        )
+    match: dict[str, Any] = {
+        "covered": covered,
+        "uncovered": uncovered,
+        "coverage": coverage,
+        "play_choices": choices,
+        "summary": summary,
+    }
+    if event != "creator_no_match" and isinstance(reference, str):
+        match["reference"] = reference
+    return {"event": event, "match": match, "confidence": confidence}
 
 
 def _output_envelope_failures(

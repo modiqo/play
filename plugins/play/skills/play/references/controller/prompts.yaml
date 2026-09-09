@@ -143,12 +143,21 @@ prompts:
       creator_need_described: [prompt_version, selected_at, request.intent, request.requested_outcome, creator.intent, modality_policy]
 
   choose_creator_path:
-    question: A related Play already exists. How should I proceed?
+    question: "{match.summary} How should I proceed?"
+    template_fields: [match.summary]
     selection: single
+    choices_from:
+      context: match.play_choices
+      id_field: id
+      label_field: label
+      description_field: description
+      value_source_field: reference
+      value_field: match.reference
+      recommended_field: recommended
+      event: creator_use_selected
     choices:
-      - {id: use, label: Inspect existing, description: Inspect the adequate Play, then review setup and effects before deciding whether to run it., event: creator_use_selected, recommended: true}
-      - {id: adapt, label: Adapt existing, description: Use the related Play as evidence while exploring a tailored result., event: creator_adapt_selected}
-      - {id: create, label: Create distinct, description: Explore a separate Play for this outcome., event: creator_create_selected}
+      - {id: adapt, label: Adapt existing, description: Use the closest Play as evidence while exploring a tailored result., event: creator_adapt_selected}
+      - {id: create, label: Explore uncovered, description: Explore a new Play only for what no existing Play covers; covered outcomes become baselines., event: creator_create_selected}
     events:
       creator_use_selected: [prompt_version, selected_at, match.reference, request.parameters]
       creator_adapt_selected: [prompt_version, selected_at, match.reference]

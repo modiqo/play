@@ -434,6 +434,12 @@
           "items": {
             "$ref": "#/$defs/searchChoice"
           }
+        },
+        "sub_outcomes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/searchSubOutcome"
+          }
         }
       }
     },
@@ -641,6 +647,21 @@
         },
         "uncovered": {
           "$ref": "#/$defs/stringArray"
+        },
+        "coverage": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/matchCoverage"
+          }
+        },
+        "play_choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/creatorChoice"
+          }
+        },
+        "summary": {
+          "$ref": "#/$defs/nullableString"
         }
       }
     },
@@ -2292,6 +2313,12 @@
         },
         "seed_reference": {
           "$ref": "#/$defs/nullableString"
+        },
+        "baselines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/creatorBaseline"
+          }
         }
       }
     },
@@ -2717,6 +2744,154 @@
         },
         "payload_ref": {
           "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "searchSubOutcome": {
+      "type": "object",
+      "required": [
+        "outcome",
+        "phrasings",
+        "query",
+        "result_refs",
+        "results",
+        "classification",
+        "reference",
+        "uncovered_terms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "minLength": 1
+        },
+        "phrasings": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1
+        },
+        "result_refs": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/searchResult"
+          }
+        },
+        "classification": {
+          "enum": [
+            "full",
+            "partial",
+            "none"
+          ]
+        },
+        "reference": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "uncovered_terms": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "matchCoverage": {
+      "type": "object",
+      "required": [
+        "sub_outcome",
+        "reference",
+        "classification",
+        "uncovered_terms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sub_outcome": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reference": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "classification": {
+          "enum": [
+            "full",
+            "partial",
+            "none"
+          ]
+        },
+        "uncovered_terms": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "creatorChoice": {
+      "type": "object",
+      "required": [
+        "id",
+        "reference",
+        "label",
+        "description",
+        "parameters",
+        "recommended",
+        "sub_outcome",
+        "classification",
+        "uncovered_terms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "recommended": {
+          "type": "boolean"
+        },
+        "sub_outcome": {
+          "type": "string",
+          "minLength": 1
+        },
+        "classification": {
+          "enum": [
+            "full",
+            "partial"
+          ]
+        },
+        "uncovered_terms": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "creatorBaseline": {
+      "type": "object",
+      "required": [
+        "sub_outcome",
+        "reference"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sub_outcome": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1
         }
       }
     }
