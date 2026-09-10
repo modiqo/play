@@ -350,12 +350,21 @@ class RoteGreetingProbeTest(unittest.TestCase):
         self, _is_file, _access, run, _last_provider
     ) -> None:
         run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="network error"
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="error: failed to connect to https://api.rote.dev\nreported by dave@corp.example",
         )
 
-        with self.assertRaisesRegex(OnboardingError, "without requesting login"):
+        with self.assertRaises(OnboardingError) as raised:
             inspect_identity({"onboarding": {"rote_command": "/opt/bin/rote"}})
 
+        message = str(raised.exception)
+        self.assertIn("`rote whoami --check` exited with status 1", message)
+        self.assertIn("failed to connect to https://api.rote.dev", message)
+        self.assertIn("<email>", message)
+        self.assertNotIn("dave@corp.example", message)
+        self.assertIn("firewall", raised.exception.hint or "")
         run.assert_called_once_with(
             ["/opt/bin/rote", "whoami", "--check"],
             text=True,

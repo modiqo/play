@@ -245,6 +245,7 @@ actions:
     command_policy:
       - Run exactly one `<onboarding.rote_command> whoami` only after the binary probe reports installed.
       - Extract the authenticated email and its local-part handle; retain a digest instead of raw stdout or stderr.
+      - When the check fails for a reason other than a missing login, report the exit status, a short redacted tail of Rote's output, and a proxy/firewall hint; never a bare failure label.
       - If whoami is unauthenticated or lacks an email, enter the harness-owned provider-choice state instead of inventing an identity or printing login commands.
       - A verified identity kicks one detached best-effort warm-up of the owner-private inbox and hub-catalog cache; it never blocks, fails, or delays the identity result.
     events:

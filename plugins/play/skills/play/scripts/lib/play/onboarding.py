@@ -81,6 +81,37 @@ _FAST_AWARENESS = re.compile(
 class OnboardingError(RuntimeError):
     """An onboarding probe or public-card read failed safely."""
 
+    def __init__(self, message: str, *, hint: str | None = None) -> None:
+        super().__init__(message)
+        self.hint = hint
+
+
+_REDACT_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+_REDACT_SECRET = re.compile(r"\b[A-Za-z0-9_-]{32,}\b")
+_ERROR_TAIL_LINES = 3
+_ERROR_TAIL_CHARS = 300
+FIREWALL_HINT = (
+    "If this machine sits behind a corporate proxy or package firewall, allow the Rote CLI to "
+    "reach its API over HTTPS (set HTTPS_PROXY when your network requires it). Then run "
+    "`rote whoami --check` in your own terminal until it succeeds before invoking Play again."
+)
+
+
+def _rote_error_tail(*parts: str | None) -> str:
+    """Return the last few output lines of a failed Rote command, with identities redacted."""
+
+    lines = [
+        line.strip()
+        for part in parts
+        if part
+        for line in part.splitlines()
+        if line.strip()
+    ]
+    tail = " | ".join(lines[-_ERROR_TAIL_LINES:])
+    tail = _REDACT_EMAIL.sub("<email>", tail)
+    tail = _REDACT_SECRET.sub("<redacted>", tail)
+    return tail[:_ERROR_TAIL_CHARS]
+
 
 def _object(value: object, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
@@ -377,8 +408,16 @@ def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
             check=False,
             timeout=15,
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise OnboardingError("Rote identity probe failed") from error
+    except subprocess.TimeoutExpired as error:
+        raise OnboardingError(
+            "Rote did not answer `rote whoami --check` within "
+            f"{int(error.timeout)} seconds.",
+            hint=FIREWALL_HINT,
+        ) from error
+    except OSError as error:
+        raise OnboardingError(
+            f"Rote could not be started for `rote whoami --check`: {error}"
+        ) from error
     recovered_provider = None
     identity_status = rote_session_status(completed)
     if identity_status == "required":
@@ -407,7 +446,13 @@ def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
         part for part in (completed.stdout, completed.stderr) if part
     ]
     if identity_status == "error":
-        raise OnboardingError("Rote identity check failed without requesting login")
+        tail = _rote_error_tail(completed.stdout, completed.stderr)
+        detail = f": {tail}" if tail else " without any output"
+        raise OnboardingError(
+            "Rote could not verify your sign-in. `rote whoami --check` exited with status "
+            f"{completed.returncode}{detail}. This usually means Rote cannot reach its API.",
+            hint=FIREWALL_HINT,
+        )
     email_match = _OK_EMAIL.search(completed.stdout or "")
     if identity_status == "authenticated" and email_match is None:
         try:
@@ -458,10 +503,11 @@ def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _paused_rote_login(
-    provider: str, evidence_refs: list[str], started: int
+    provider: str, evidence_refs: list[str], started: int, detail: str = ""
 ) -> dict[str, Any]:
+    cause = f" ({detail})" if detail else ""
     reason = (
-        f"{provider.title()} sign-in did not complete. Choose a provider to retry; "
+        f"{provider.title()} sign-in did not complete{cause}. Choose a provider to retry; "
         "the pending Play has not run."
     )
     return {
@@ -500,12 +546,22 @@ def login_rote_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         evidence = f"sha256:{hashlib.sha256(str(error).encode()).hexdigest()}"
-        return _paused_rote_login(provider, [evidence], started)
+        detail = (
+            f"`rote login` did not finish within {int(error.timeout)} seconds"
+            if isinstance(error, subprocess.TimeoutExpired)
+            else f"`rote login` could not start: {error}"
+        )
+        return _paused_rote_login(provider, [evidence], started, detail)
 
     combined = "\n".join(
         part for part in (completed.stdout, completed.stderr) if part
     )
     evidence_refs = [f"sha256:{hashlib.sha256(combined.encode()).hexdigest()}"]
+    detail = ""
+    if completed.returncode != 0:
+        tail = _rote_error_tail(completed.stdout, completed.stderr)
+        detail = f"`rote login` exited with status {completed.returncode}"
+        detail += f": {tail}" if tail else ""
     if completed.returncode == 0:
         try:
             identity = inspect_identity(payload)
@@ -513,6 +569,7 @@ def login_rote_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
             evidence_refs.append(
                 f"sha256:{hashlib.sha256(str(error).encode()).hexdigest()}"
             )
+            detail = str(error)
         else:
             identity_ref = identity.get("identity_ref")
             if isinstance(identity_ref, str) and identity_ref:
@@ -532,7 +589,7 @@ def login_rote_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
                     "login_ns": time.perf_counter_ns() - started,
                 }
 
-    return _paused_rote_login(provider, evidence_refs, started)
+    return _paused_rote_login(provider, evidence_refs, started, detail)
 
 
 def _onboarding_identity_key(email: object) -> str:
@@ -1161,6 +1218,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "reason": str(error),
             "evidence_refs": [f"sha256:{digest}"],
         }
+        if error.hint:
+            result["hint"] = error.hint
     print(json_text(result) if args.as_json else json.dumps(result, indent=2, sort_keys=True))
     return 0 if result.get("ok") is True else 1
 

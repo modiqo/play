@@ -293,7 +293,10 @@ run.
   harness's skill mechanism; resume with the one accepted typed receipt event. Interactive
   specialists own their own user questions — ask those directly and continue inside the
   specialist flow; return to the runtime only with a declared receipt event.
-- `terminal`: present the terminal outcome and stop.
+- `terminal`: present the terminal outcome and stop. A `blocked` outcome arrives as a
+  presentation that names the step that stopped, the cause, and the next step. Relay that
+  Markdown verbatim. Never replace it with a generic phrase such as “couldn't continue due to
+  a terminal status”; the cause and the next step are the whole answer.
 
 Present the complete result and its verified receipt unchanged. End that assistant turn after the
 result is visible. Never open a recurrence picker or call another tool in the same turn. A harness

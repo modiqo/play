@@ -3277,8 +3277,50 @@ class ControllerRuntimeTest(unittest.TestCase):
         yielded = advance_until_yield(self.runtime, session, root=ROOT)
 
         self.assertEqual("blocked", yielded.projection["state"]["id"])
-        self.assertEqual(("requested outcome is missing",), yielded.presentations)
         self.assertEqual("action_blocked", yielded.trace[0].event)
+        self.assertEqual(1, len(yielded.presentations))
+        presentation = yielded.presentations[0]
+        self.assertTrue(
+            presentation.startswith(
+                "⛔ **Play stopped while it tried to classify play invocation.**"
+            ),
+            presentation,
+        )
+        self.assertIn("requested outcome is missing", presentation)
+        self.assertIn("then invoke Play again", presentation)
+
+    @patch("play.runtime_actions.subprocess.run")
+    def test_failed_deterministic_command_surfaces_its_structured_reason_and_hint(
+        self, run
+    ) -> None:
+        run.return_value.returncode = 1
+        run.return_value.stderr = ""
+        run.return_value.stdout = json.dumps(
+            {
+                "schema": "play.onboarding/v1",
+                "kind": "identity",
+                "ok": False,
+                "reason": "Rote could not verify your sign-in. `rote whoami --check` exited with status 1: connection refused (proxy blocked).",
+                "hint": "Allow the Rote CLI through the proxy, then retry.",
+                "evidence_refs": ["sha256:" + "c" * 64],
+            }
+        )
+        session = self.runtime.initial_session(
+            run_id="session-structured-failure",
+            task_key="task-structured-failure",
+            request_original="$play",
+        )
+
+        yielded = advance_until_yield(self.runtime, session, root=ROOT)
+
+        self.assertEqual("blocked", yielded.projection["state"]["id"])
+        self.assertEqual("action_blocked", yielded.trace[0].event)
+        self.assertEqual(1, len(yielded.presentations))
+        presentation = yielded.presentations[0]
+        self.assertIn("connection refused (proxy blocked)", presentation)
+        self.assertIn("Allow the Rote CLI through the proxy, then retry.", presentation)
+        self.assertNotIn('"schema"', presentation)
+        self.assertNotIn("evidence_refs", presentation)
 
     @patch("play.runtime_actions.subprocess.run")
     def test_structured_action_blocked_surfaces_its_reason_at_terminal(
@@ -3337,10 +3379,12 @@ class ControllerRuntimeTest(unittest.TestCase):
         yielded = advance_until_yield(self.runtime, bound, root=ROOT)
 
         self.assertEqual("blocked", yielded.projection["state"]["id"])
-        self.assertEqual(
-            ("Crucible authentication output was not recognized",),
-            yielded.presentations,
+        self.assertEqual(1, len(yielded.presentations))
+        self.assertIn(
+            "Crucible authentication output was not recognized",
+            yielded.presentations[0],
         )
+        self.assertIn("Play stopped while it tried to", yielded.presentations[0])
         self.assertEqual("action_blocked", yielded.trace[0].event)
 
     def test_legacy_authentication_failure_blocks_without_a_receipt(self) -> None:

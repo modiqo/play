@@ -195,8 +195,11 @@ def _execute_instruction(
                 timeout=timeout_seconds,
             )
         except (OSError, subprocess.TimeoutExpired) as error:
-            reason = str(error)
-            return _blocked_action_event(instruction, reason), reason
+            reason = _launch_failure_reason(instruction, error)
+            return (
+                _blocked_action_event(instruction, reason),
+                _blocked_presentation(instruction, reason, {}),
+            )
         if completed.returncode != 0:
             raw = {}
             if completed.stdout.strip():
@@ -208,9 +211,11 @@ def _execute_instruction(
         else:
             raw = _parse_action_output(instruction, completed.stdout)
         if completed.returncode != 0 and recoverable_event is None:
-            reason = (completed.stderr or completed.stdout).strip()
-            reason = reason or f"{instruction['id']} failed"
-            return _blocked_action_event(instruction, reason), reason
+            reason = _failure_reason(instruction, raw, completed)
+            return (
+                _blocked_action_event(instruction, reason),
+                _blocked_presentation(instruction, reason, raw),
+            )
 
     event_id = recoverable_event or _select_event(str(instruction["id"]), raw, projection)
     raw = _derive_result_fields(event_id, raw)
@@ -220,7 +225,7 @@ def _execute_instruction(
     if event_id == "action_blocked" and presentation is None:
         reason = payload.get("reason")
         if isinstance(reason, str) and reason.strip():
-            presentation = reason.strip()
+            presentation = _blocked_presentation(instruction, reason.strip(), raw)
     if event_id == "authentication_receipt_invalid" and presentation is None:
         authentication = payload.get("authentication")
         if isinstance(authentication, Mapping):
@@ -233,6 +238,82 @@ def _execute_instruction(
     ):
         presentation = render_inspection_markdown(raw)
     return ControllerEvent(id=EventId(event_id), payload=payload, guards={}), presentation
+
+
+_BLOCKED_OUTPUT_LINES = 12
+_BLOCKED_OUTPUT_CHARS = 1500
+
+
+def _humanize_action(instruction: Mapping[str, Any]) -> str:
+    action_id = instruction.get("id")
+    if not isinstance(action_id, str) or not action_id:
+        return "continue"
+    return action_id.replace("_", " ")
+
+
+def _trim_output(text: str) -> str:
+    """Keep the tail of a failed command's output so the cause stays visible."""
+
+    lines = [line.rstrip() for line in text.splitlines() if line.strip()]
+    if len(lines) > _BLOCKED_OUTPUT_LINES:
+        lines = ["…", *lines[-_BLOCKED_OUTPUT_LINES:]]
+    joined = "\n".join(lines)
+    if len(joined) > _BLOCKED_OUTPUT_CHARS:
+        joined = "…" + joined[-_BLOCKED_OUTPUT_CHARS:]
+    return joined
+
+
+def _failure_reason(
+    instruction: Mapping[str, Any],
+    raw: Mapping[str, Any],
+    completed: subprocess.CompletedProcess[str],
+) -> str:
+    """Prefer the action's own structured reason over its raw output."""
+
+    declared = raw.get("reason")
+    if isinstance(declared, str) and declared.strip():
+        return declared.strip()
+    text = (completed.stderr or completed.stdout).strip()
+    if text:
+        return _trim_output(text)
+    return (
+        f"{_humanize_action(instruction)} exited with status "
+        f"{completed.returncode} without explaining why"
+    )
+
+
+def _launch_failure_reason(
+    instruction: Mapping[str, Any], error: OSError | subprocess.TimeoutExpired
+) -> str:
+    step = _humanize_action(instruction)
+    if isinstance(error, subprocess.TimeoutExpired):
+        return (
+            f"{step} did not finish within {int(error.timeout)} seconds. "
+            "A proxy or firewall that silently drops connections can cause this."
+        )
+    return f"{step} could not start: {error}"
+
+
+def _blocked_presentation(
+    instruction: Mapping[str, Any], reason: str, raw: Mapping[str, Any]
+) -> str:
+    """Render a blocked outcome the harness can relay verbatim: step, cause, next step."""
+
+    lines = [f"⛔ **Play stopped while it tried to {_humanize_action(instruction)}.**", "", reason]
+    hint = raw.get("hint")
+    if isinstance(hint, str) and hint.strip():
+        lines.extend(["", hint.strip()])
+    next_steps = raw.get("next_steps")
+    steps = (
+        [step.strip() for step in next_steps if isinstance(step, str) and step.strip()]
+        if isinstance(next_steps, list)
+        else []
+    )
+    if steps:
+        lines.extend(["", "**Next steps**", *(f"- {step}" for step in steps)])
+    else:
+        lines.extend(["", "Fix the cause above, then invoke Play again."])
+    return "\n".join(lines)
 
 
 def _blocked_action_event(
