@@ -421,6 +421,52 @@ class InstallAllTest(unittest.TestCase):
         )
         self.uninstall(installed)
 
+    def test_install_hands_a_private_package_index_to_uv_without_the_pypi_pin(self) -> None:
+        install_home = self.home / "portable-private-index"
+        uv_log = self.home / "uv.log"
+        uv = self.bin / "uv"
+        uv.write_text(
+            "#!/bin/sh\nprintf '%s\\n%s\\n' \"$*\" \"${UV_DEFAULT_INDEX:-unset}\" > \"$PLAY_TEST_UV_LOG\"\n",
+            encoding="utf-8",
+        )
+        uv.chmod(0o755)
+        mirror = "https://factory.example.com/api/pypi/simple"
+        self.environment["PLAY_INSTALL_HOME"] = str(install_home)
+        self.environment["PLAY_TEST_UV_LOG"] = str(uv_log)
+        self.environment["PIP_INDEX_URL"] = mirror
+
+        result = self.run_installer("install", "--copy", "--harness", "codex")
+
+        installed = (install_home / "skill").resolve()
+        self.assertEqual(
+            [f"sync --no-dev --inexact --project {installed}", mirror],
+            uv_log.read_text(encoding="utf-8").strip().splitlines(),
+        )
+        self.assertIn(f"Python package index: {mirror} (from PIP_INDEX_URL)", result.stdout)
+        self.assertIn("uv.lock pins https://pypi.org/simple", result.stdout)
+        marker = json.loads((installed / ".play-install.json").read_text(encoding="utf-8"))
+        self.assertEqual({"url": mirror, "source": "PIP_INDEX_URL"}, marker["python_index"])
+        self.uninstall(installed)
+
+    def test_dependency_download_failure_names_the_index_and_the_manual_install(self) -> None:
+        install_home = self.home / "portable-index-failure"
+        uv = self.bin / "uv"
+        uv.write_text(
+            "#!/bin/sh\necho 'error: Failed to fetch: `https://pypi.org/simple/pyyaml/`' >&2\nexit 2\n",
+            encoding="utf-8",
+        )
+        uv.chmod(0o755)
+        self.environment["PLAY_INSTALL_HOME"] = str(install_home)
+
+        result = self.run_installer(
+            "install", "--copy", "--harness", "codex", expected=1
+        )
+
+        self.assertIn("cannot install Play's locked Python dependencies", result.stderr)
+        self.assertIn("Package index used: https://pypi.org/simple (uv default)", result.stderr)
+        self.assertIn("PLAY_PYTHON_INDEX_URL", result.stderr)
+        self.assertIn("python3 -m pip install", result.stderr)
+
     def test_portable_copy_migrates_source_profile_with_backup(self) -> None:
         self.run_installer("install")
         previous_state = self.state.read_bytes()

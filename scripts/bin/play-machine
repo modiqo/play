@@ -4,10 +4,8 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
-import shutil
 import statistics
 import sys
 import tempfile
@@ -18,27 +16,11 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-if importlib.util.find_spec("statemachine") is None:
-    uv = shutil.which("uv")
-    if uv is None or os.environ.get("PLAY_MACHINE_UV_BOOTSTRAPPED") == "1":
-        raise SystemExit(
-            "play-machine requires uv or the pinned Play Python environment"
-        )
-    environment = os.environ.copy()
-    environment["PLAY_MACHINE_UV_BOOTSTRAPPED"] = "1"
-    os.execve(
-        uv,
-        [
-            uv,
-            "run",
-            "--project",
-            str(ROOT),
-            str(Path(__file__).resolve()),
-            *sys.argv[1:],
-        ],
-        environment,
-    )
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
+
+from play.python_environment import ensure_runtime
+
+ensure_runtime("play-machine", ROOT, Path(__file__).resolve(), sys.argv[1:])
 
 from play.controller import (
     ControllerRuntime,

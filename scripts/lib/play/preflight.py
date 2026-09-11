@@ -23,6 +23,14 @@ from .harnesses import (
     supported_harnesses,
 )
 from .identity import rote_session_status
+from .python_environment import (
+    INDEX_OVERRIDE_VARIABLE,
+    lock_indexes,
+    lock_matches_index,
+    missing_runtime_modules,
+    pip_install_command,
+    resolve_package_index,
+)
 
 
 SCHEMA = "play.preflight/v1"
@@ -233,22 +241,51 @@ def _runtime_bundle_check() -> Check:
     )
 
 
-def _python_environment_check() -> Check:
-    environment_ready = importlib.util.find_spec("statemachine") is not None
+def _python_environment_check() -> tuple[Check, dict[str, Any]]:
+    """Report whether Play can import or bootstrap its pinned packages, and from where.
+
+    The second value describes the package index uv would download from and
+    whether ``uv.lock`` agrees with it, so a private-index network learns before
+    the first launch that the pypi.org pin is overridden rather than fatal.
+    """
+
+    missing = missing_runtime_modules()
+    environment_ready = not missing
     uv = shutil.which("uv")
-    return Check(
-        "play_python_environment",
-        environment_ready or uv is not None,
-        (
-            "The pinned Play Python environment is already active."
-            if environment_ready
-            else (
-                f"uv is available at {uv} to bootstrap the pinned Play Python environment."
-                if uv
-                else "Play needs uv or an environment containing its pinned Python dependencies."
+    index = resolve_package_index(ROOT)
+    pinned = list(lock_indexes(ROOT))
+    lock_agrees = lock_matches_index(ROOT, index)
+    python_index: dict[str, Any] = {
+        "url": index.url,
+        "source": index.source,
+        "overrides_default": index.overrides_default,
+        "lock_indexes": pinned,
+        "lock_matches": lock_agrees,
+        "override_variable": INDEX_OVERRIDE_VARIABLE,
+    }
+    if environment_ready:
+        detail = "The pinned Play Python environment is already active."
+    elif uv:
+        detail = (
+            f"uv is available at {uv} to bootstrap the pinned Play Python environment "
+            f"(missing: {', '.join(missing)}) from {index.describe()}."
+        )
+        if pinned and not lock_agrees:
+            detail += (
+                " uv.lock pins " + ", ".join(pinned)
+                + "; uv re-resolves the pinned ranges against the configured index on first use."
             )
-        ),
-    )
+        elif not index.overrides_default:
+            detail += (
+                f" If this network enforces a private package index, set {INDEX_OVERRIDE_VARIABLE} "
+                "(PIP_INDEX_URL and pip.conf are honored too) before the first launch."
+            )
+    else:
+        detail = (
+            "Play needs uv or an environment containing its pinned Python dependencies "
+            f"(missing: {', '.join(missing)}). {pip_install_command(index)}"
+        )
+    return Check("play_python_environment", environment_ready or uv is not None, detail), python_index
 
 
 def inspect(harness: str) -> dict[str, Any]:
@@ -263,7 +300,8 @@ def inspect(harness: str) -> dict[str, Any]:
         )
     )
     checks.append(_runtime_bundle_check())
-    checks.append(_python_environment_check())
+    environment_check, python_index = _python_environment_check()
+    checks.append(environment_check)
     harnesses = inspect_harnesses(harness)
     active_status = next((item for item in harnesses if item["id"] == harness), None)
     if harness != "generic":
@@ -369,6 +407,7 @@ def inspect(harness: str) -> dict[str, Any]:
             "implementation": "python-entrypoint",
             "launcher": play_machine,
             "bootstrap": "active-environment" if checks[2].detail.startswith("The pinned") else "uv",
+            "python_index": python_index,
             "bundled_entrypoints": list(REQUIRED_PLAY_EXECUTABLES),
         },
         "harnesses": harnesses,

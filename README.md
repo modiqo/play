@@ -685,6 +685,26 @@ Omit `PLAY_APPROVE_REMOTE_INSTALLER=1` when Rote is known to be installed, and o
 `PLAY_LOGIN_PROVIDER` when that profile is already authenticated. Set `PLAY_INSTALL_TOP_K=<n>` from
 1 through 3 to change the default number of selected apps.
 
+### Private package index
+
+Play's `uv.lock` pins its Python packages to pypi.org. On a network that enforces a private
+package index, the installer and every launcher resolve that index before the first download,
+in this order: `PLAY_PYTHON_INDEX_URL`, uv's `UV_DEFAULT_INDEX` or `UV_INDEX_URL`, the index
+recorded by a previous install, `PIP_INDEX_URL`, then the `index-url` in pip's configuration
+files. A resolved index replaces the pypi.org pin: the sync drops `--locked`, re-resolves the
+pinned version ranges against that index, and records it in the portable copy so harness hook
+processes with a stripped environment reuse it.
+
+```bash
+curl -fsSL https://getrote.dev/playoffs/install.sh \
+  | env PLAY_PYTHON_INDEX_URL=https://packages.example.com/simple sh
+```
+
+When a download still fails, the launcher names the index it used and prints the exact
+`python3 -m pip install ...` line that installs the pinned packages without uv. Run
+`play-preflight --json` to see the resolved index and whether `uv.lock` agrees with it before
+the first launch.
+
 ### Full Play + Rote bootstrap
 
 From a checkout, run the same guided bootstrap directly:
@@ -797,7 +817,8 @@ without locating the skill directory or its Python environment. `play-machine` i
 entrypoint, not a compiled artifact: the installer writes a small executable launcher that uses the
 pinned environment (bootstrapping through `uv` when needed). The preflight distinguishes a missing
 launcher, an incomplete bundled runtime, an unavailable Python environment bootstrap (`uv` or an
-already active pinned environment), a missing Rote CLI, missing Rote skills in the active harness,
+already active pinned environment, including the package index uv will download from and whether
+`uv.lock` agrees with it), a missing Rote CLI, missing Rote skills in the active harness,
 authentication, and `rote play` capability; it also reports cross-harness coverage and
 multi-select restoration targets. An empty `$play` or `/play` probes
 the local binary and identity. If either

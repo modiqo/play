@@ -115,9 +115,18 @@ check_install_environment() {
     command -v mktemp >/dev/null 2>&1 || fail "mktemp is required"
   fi
   if ! command -v uv >/dev/null 2>&1; then
-    python3 -c 'import jsonschema, statemachine, yaml' >/dev/null 2>&1 \
+    python3 -c 'import ast_grep_py, jsonschema, statemachine, yaml' >/dev/null 2>&1 \
       || fail "uv or the locked Play Python dependencies are required"
   fi
+  case "${PLAY_PYTHON_INDEX_URL:-}" in
+    "") ;;
+    http://*|https://*)
+      case "$PLAY_PYTHON_INDEX_URL" in
+        *[[:space:]]*) fail "PLAY_PYTHON_INDEX_URL must not contain whitespace" ;;
+      esac
+      ;;
+    *) fail "PLAY_PYTHON_INDEX_URL must be an absolute http(s) simple-index URL" ;;
+  esac
   stage_finish
 }
 

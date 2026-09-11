@@ -174,5 +174,41 @@ class PreflightTest(unittest.TestCase):
         )
 
 
+    @patch("scripts.lib.play.preflight.missing_runtime_modules", return_value=["statemachine", "yaml"])
+    @patch("scripts.lib.play.preflight.inspect_harnesses")
+    @patch("scripts.lib.play.preflight.run")
+    @patch("scripts.lib.play.preflight.shutil.which", return_value="/bin/tool")
+    def test_private_index_is_reported_against_the_pypi_pin(
+        self,
+        _which: MagicMock,
+        run_command: MagicMock,
+        inspect_harnesses: MagicMock,
+        _missing: MagicMock,
+    ) -> None:
+        run_command.side_effect = [
+            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
+            MagicMock(returncode=0, stdout="rote play\nUSAGE\n", stderr=""),
+        ]
+        inspect_harnesses.return_value = []
+        mirror = "https://factory.example.com/api/pypi/simple"
+
+        with patch.dict(os.environ, {"PLAY_PYTHON_INDEX_URL": mirror}):
+            payload = inspect("codex")
+
+        environment = next(
+            check for check in payload["checks"] if check["id"] == "play_python_environment"
+        )
+        self.assertTrue(environment["ok"])
+        self.assertIn("missing: statemachine, yaml", environment["detail"])
+        self.assertIn(f"{mirror} (from PLAY_PYTHON_INDEX_URL)", environment["detail"])
+        self.assertIn("uv.lock pins https://pypi.org/simple", environment["detail"])
+        index = payload["runtime"]["python_index"]
+        self.assertEqual(mirror, index["url"])
+        self.assertEqual("PLAY_PYTHON_INDEX_URL", index["source"])
+        self.assertFalse(index["lock_matches"])
+        self.assertEqual(["https://pypi.org/simple"], index["lock_indexes"])
+        self.assertEqual("uv", payload["runtime"]["bootstrap"])
+
+
 if __name__ == "__main__":
     unittest.main()

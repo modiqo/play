@@ -29,6 +29,18 @@ from scripts.lib.play.harnesses import (
     supported_harnesses,
 )
 from scripts.lib.play.journal_settings import ensure_journal_settings
+from scripts.lib.play.python_environment import (
+    explain_bootstrap_failure,
+    lock_indexes,
+    lock_matches_index,
+    looks_like_index_failure,
+    missing_runtime_modules,
+    pip_install_command,
+    record_package_index,
+    resolve_package_index,
+    uv_environment,
+    uv_sync_command,
+)
 
 COPY_MARKER_SCHEMA = "play.portable-install/v1"
 OPENCODE_COMMAND_MARKER = "<!-- managed-by: modiqo/play -->"
@@ -356,41 +368,50 @@ def verify_harness_coverage(harnesses: list[Harness], source: Path) -> None:
 
 
 def install_python_dependencies(source: Path) -> None:
-    """Materialize the locked runtime environment before exposing Play's launchers."""
+    """Materialize the locked runtime environment before exposing Play's launchers.
 
+    ``uv.lock`` pins pypi.org. When the machine resolves a different package index
+    (``PLAY_PYTHON_INDEX_URL``, uv's own index variables, ``PIP_INDEX_URL``, or a
+    pip.conf), the sync drops ``--locked`` so uv re-resolves against that index
+    instead of failing on the pin, and the index is recorded for the launchers.
+    """
+
+    index = resolve_package_index(source)
     uv = shutil.which("uv")
     if uv is None:
-        missing = [
-            module
-            for module in ("jsonschema", "statemachine", "yaml")
-            if importlib.util.find_spec(module) is None
-        ]
+        missing = missing_runtime_modules()
         if missing:
             raise InstallError(
                 "Play needs uv to install its locked Python dependencies "
-                f"(missing: {', '.join(missing)})"
+                f"(missing: {', '.join(missing)}). Install uv, or install them yourself:\n"
+                f"  {pip_install_command(index)}"
             )
         print("  Python dependencies: using the current environment")
         return
 
+    if index.overrides_default:
+        print(f"  Python package index: {index.describe()}")
+        if not lock_matches_index(source, index):
+            print(
+                "  uv.lock pins " + ", ".join(lock_indexes(source))
+                + "; re-resolving the pinned ranges against that index"
+            )
+    command = uv_sync_command(uv, source, index)
     result = subprocess.run(
-        [
-            uv,
-            "sync",
-            "--locked",
-            "--no-dev",
-            "--inexact",
-            "--project",
-            str(source),
-        ],
+        command,
         cwd=source,
+        env=uv_environment(os.environ, index),
         text=True,
         capture_output=True,
         check=False,
     )
     if result.returncode:
         reason = (result.stderr or result.stdout).strip() or "uv sync failed"
-        raise InstallError(f"cannot install Play's locked Python dependencies: {reason}")
+        message = f"cannot install Play's locked Python dependencies: {reason}"
+        if looks_like_index_failure(reason):
+            message += "\n" + explain_bootstrap_failure(source, index, tool="play install")
+        raise InstallError(message)
+    record_package_index(source, index)
     print(f"  Python dependencies: {source / '.venv'}")
 
 
