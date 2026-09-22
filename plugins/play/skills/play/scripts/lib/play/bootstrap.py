@@ -2398,13 +2398,39 @@ def converge_play_marketplace(
     steps: list[Step] = []
     marketplace_list = _marketplace_list_command(harness, executable)
     marketplace_result = runner(marketplace_list)
+    repaired = False
+    # Codex lists registered roots even when their disposable checkout is missing.
+    # Upgrade only Play's broken checkout before asking Codex to inspect it again.
+    if (
+        harness == "codex"
+        and marketplace_result.returncode != 0
+        and re.search(
+            rf"^- `{re.escape(PLAY_MARKETPLACE)}` at .+: "
+            r"marketplace root does not contain a supported manifest$",
+            marketplace_result.stderr,
+            re.MULTILINE,
+        )
+    ):
+        repair_command = [
+            executable, "plugin", "marketplace", "upgrade", PLAY_MARKETPLACE,
+        ]
+        repair_result = runner(repair_command)
+        steps.append(
+            _result_step(
+                "repair_play_marketplace", repair_result, repair_command, target=harness
+            )
+        )
+        if repair_result.returncode != 0:
+            return steps
+        repaired = True
+        marketplace_result = runner(marketplace_list)
     try:
         marketplace_payload = _command_json(marketplace_result, marketplace_list)
         marketplaces = _marketplace_names(
             harness, marketplace_payload
         )
     except BootstrapError as error:
-        return [
+        return steps + [
             Step(
                 "inspect_play_marketplace",
                 "failed",
@@ -2526,12 +2552,16 @@ def converge_play_marketplace(
     )
     refresh_command: list[str] | None = None
     refresh_id = "refresh_play_marketplace"
-    if local_marketplace:
+    if local_marketplace or repaired:
         steps.append(
             Step(
                 "refresh_play_marketplace",
                 "unchanged",
-                f"Local {harness} marketplace reads directly from its configured directory.",
+                (
+                    "Play marketplace was already refreshed during repair."
+                    if repaired
+                    else f"Local {harness} marketplace reads directly from its configured directory."
+                ),
                 target=harness,
                 changed=False,
             )
@@ -2554,7 +2584,7 @@ def converge_play_marketplace(
             PLAY_REPOSITORY,
         ]
         refresh_id = "add_play_marketplace"
-    if not local_marketplace:
+    if not local_marketplace and not repaired:
         assert refresh_command is not None
         refresh_result = runner(refresh_command)
         steps.append(
