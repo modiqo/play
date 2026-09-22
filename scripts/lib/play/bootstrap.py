@@ -679,8 +679,15 @@ def resolve_rote() -> str | None:
 
 
 def run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    # The curl installer opens /dev/tty for prompts; Bun cannot kqueue that device
+    # on macOS. Captured commands need no input; interactive commands use _run_visible.
     return subprocess.run(
-        list(command), text=True, capture_output=True, check=False, timeout=900
+        list(command),
+        stdin=subprocess.DEVNULL,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=900,
     )
 
 

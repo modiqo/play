@@ -2573,6 +2573,23 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("stderr:\nlauncher missing", step.detail)
 
     @patch("scripts.lib.play.bootstrap.subprocess.run")
+    def test_captured_runner_disconnects_terminal_input(self, subprocess_run: MagicMock) -> None:
+        command = ["claude", "plugin", "marketplace", "list", "--json"]
+        completed = subprocess.CompletedProcess(command, 0, "[]\n", "")
+        subprocess_run.return_value = completed
+
+        self.assertIs(completed, run(command))
+
+        subprocess_run.assert_called_once_with(
+            command,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=900,
+        )
+
+    @patch("scripts.lib.play.bootstrap.subprocess.run")
     def test_visible_runner_inherits_terminal_output(self, subprocess_run: MagicMock) -> None:
         subprocess_run.return_value = subprocess.CompletedProcess(["bash"], 0)
 
