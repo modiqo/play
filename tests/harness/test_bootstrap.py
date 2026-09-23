@@ -919,6 +919,104 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("completed", steps[-1].status)
         self.assertIn("0.4.36", steps[-1].detail)
 
+    def test_codex_missing_marketplace_is_repaired_before_install(self) -> None:
+        runner = MagicMock(side_effect=[
+            MagicMock(returncode=1, stdout="", stderr=(
+                "Error: failed to load marketplace(s):\n"
+                "- `play-skills` at /tmp/codex/.tmp/marketplaces/play-skills: "
+                "marketplace root does not contain a supported manifest\n"
+            )),
+            MagicMock(returncode=0, stdout="upgraded\n", stderr=""),
+            MagicMock(returncode=0, stdout=json.dumps({
+                "marketplaces": [{"name": "play-skills"}],
+            }), stderr=""),
+            MagicMock(returncode=0, stdout='{"installed": []}', stderr=""),
+            MagicMock(returncode=0, stdout="installed\n", stderr=""),
+            MagicMock(returncode=0, stdout=json.dumps({
+                "installed": [{"pluginId": "play@play-skills", "version": "0.4.98",
+                               "enabled": True}],
+            }), stderr=""),
+        ])
+
+        steps = converge_play_marketplace(
+            "codex", "/bin/codex", expected_version="0.4.98", runner=runner
+        )
+
+        self.assertEqual([
+            ["/bin/codex", "plugin", "marketplace", "list", "--json"],
+            ["/bin/codex", "plugin", "marketplace", "upgrade", "play-skills"],
+            ["/bin/codex", "plugin", "marketplace", "list", "--json"],
+            ["/bin/codex", "plugin", "list", "--marketplace", "play-skills",
+             "--json", "--available"],
+            ["/bin/codex", "plugin", "add", "play@play-skills"],
+            ["/bin/codex", "plugin", "list", "--marketplace", "play-skills",
+             "--json", "--available"],
+        ], [call.args[0] for call in runner.call_args_list])
+        self.assertEqual("repair_play_marketplace", steps[0].id)
+        self.assertTrue(steps[0].changed)
+        self.assertEqual("verify_play_plugin", steps[-1].id)
+        self.assertEqual("completed", steps[-1].status)
+
+    def test_codex_marketplace_repair_failure_stops_convergence(self) -> None:
+        runner = MagicMock(side_effect=[
+            MagicMock(returncode=1, stdout="", stderr=(
+                "- `play-skills` at /tmp/play-skills: "
+                "marketplace root does not contain a supported manifest\n"
+            )),
+            MagicMock(returncode=1, stdout="", stderr="git fetch failed"),
+        ])
+
+        steps = converge_play_marketplace(
+            "codex", "/bin/codex", expected_version="0.4.98", runner=runner
+        )
+
+        self.assertEqual(2, runner.call_count)
+        self.assertEqual("repair_play_marketplace", steps[-1].id)
+        self.assertEqual("failed", steps[-1].status)
+        self.assertIn("git fetch failed", steps[-1].detail)
+
+    def test_codex_marketplace_repair_rechecks_inspection_once(self) -> None:
+        failure = MagicMock(returncode=1, stdout="", stderr=(
+            "- `play-skills` at /tmp/play-skills: "
+            "marketplace root does not contain a supported manifest\n"
+        ))
+        runner = MagicMock(side_effect=[
+            failure,
+            MagicMock(returncode=0, stdout="upgraded\n", stderr=""),
+            failure,
+        ])
+
+        steps = converge_play_marketplace(
+            "codex", "/bin/codex", expected_version="0.4.98", runner=runner
+        )
+
+        self.assertEqual(3, runner.call_count)
+        self.assertEqual("repair_play_marketplace", steps[0].id)
+        self.assertEqual("inspect_play_marketplace", steps[-1].id)
+        self.assertEqual("failed", steps[-1].status)
+
+    def test_unrelated_marketplace_errors_do_not_trigger_repair(self) -> None:
+        missing_play = (
+            "- `play-skills` at /tmp/play-skills: "
+            "marketplace root does not contain a supported manifest\n"
+        )
+        for harness, returncode, stdout, stderr in [
+            ("codex", 1, "", missing_play.replace("`play-skills`", "`other-skills`")),
+            ("codex", 1, "", "permission denied"),
+            ("codex", 0, "invalid json", ""),
+            ("claude", 1, "", missing_play),
+        ]:
+            with self.subTest(harness=harness, stderr=stderr, stdout=stdout):
+                runner = MagicMock(return_value=MagicMock(
+                    returncode=returncode, stdout=stdout, stderr=stderr,
+                ))
+                steps = converge_play_marketplace(
+                    harness, f"/bin/{harness}", expected_version="0.4.98", runner=runner
+                )
+                self.assertEqual(1, runner.call_count)
+                self.assertEqual("inspect_play_marketplace", steps[-1].id)
+                self.assertEqual("failed", steps[-1].status)
+
     def _marketplace_runner(self, before: str | None, after: str) -> MagicMock:
         installed_before = (
             [{"pluginId": "play@play-skills", "version": before, "enabled": True}]
@@ -2473,6 +2571,23 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("failed", step.status)
         self.assertIn("stdout:\nactivation started", step.detail)
         self.assertIn("stderr:\nlauncher missing", step.detail)
+
+    @patch("scripts.lib.play.bootstrap.subprocess.run")
+    def test_captured_runner_disconnects_terminal_input(self, subprocess_run: MagicMock) -> None:
+        command = ["claude", "plugin", "marketplace", "list", "--json"]
+        completed = subprocess.CompletedProcess(command, 0, "[]\n", "")
+        subprocess_run.return_value = completed
+
+        self.assertIs(completed, run(command))
+
+        subprocess_run.assert_called_once_with(
+            command,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=900,
+        )
 
     @patch("scripts.lib.play.bootstrap.subprocess.run")
     def test_visible_runner_inherits_terminal_output(self, subprocess_run: MagicMock) -> None:
