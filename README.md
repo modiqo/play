@@ -969,6 +969,24 @@ triggering SHA, even if `main` advances while they wait. Production stops if tha
 longer matches `origin/main`, the release tag is missing or outside `main`, or the local, tagged,
 and public GitHub versions disagree. Push the matching release tag before manually deploying.
 
+Prepare the version bump and package metadata changes on a branch and merge them through a PR.
+After the PR is merged, create the release tag with:
+
+```bash
+just release-tag-check                # Preview the tag and commit without creating or pushing it.
+just release-tag                      # Create and push the tag for freshly fetched origin/main.
+# Or pin the merged commit explicitly:
+just release-tag <merged-commit-sha>
+```
+
+The helper reads `VERSION` from the selected commit, derives `vX.Y.Z`, and requires that commit
+to belong to `origin/main`. It works from any checkout branch and ignores uncommitted version
+edits. It creates an annotated tag and pushes only that tag, without changing or pushing `main`.
+An existing local or remote tag pointing elsewhere is rejected; a remote tag already pointing to
+the selected commit returns `already_tagged`. A matching local tag can be pushed again after a
+failed push. The helper never moves an existing tag or bumps versions itself. Tag publication
+does not trigger production deployment; an admin still runs **Deploy Play** manually.
+
 Both environments read the shared installer assets, change only the Play selector in a temporary
 directory, and deploy to `getrote-dev` (`staging` for preview, `main` for production). They wait for
 the selected environment's installer to serve the expected revision and record a JSON receipt in
