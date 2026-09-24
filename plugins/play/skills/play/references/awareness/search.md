@@ -41,6 +41,10 @@ truncation, degraded judgment, and incomplete judgment keep `complete: false`. U
 matches can still be inspected. Empty incomplete results never authorize a conclusion that no
 suitable Play exists, including on the Explore creator path.
 
+An incomplete search without a verified match is not a blocker either. An outcome request exits
+and the harness continues the request normally. Explore shows the creator choice with the evidence
+it has instead of starting a capture, because only a complete, empty search starts one.
+
 Explore can issue up to three additional sub-outcome queries. Each retains the whole request and
 its constraints and uses the same Worker. An incomplete or skipped sub-query keeps the overall
 search incomplete. There is no local, cached-catalog, or raw registry fallback.

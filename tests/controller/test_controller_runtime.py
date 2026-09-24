@@ -1034,7 +1034,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertIn("alpha/weekly-report", yielded.presentations[0])
         self.assertIn("beta/weekly-report", yielded.presentations[0])
 
-    def test_shared_search_incomplete_matches_and_absence_take_distinct_paths(self):
+    def test_incomplete_search_never_blocks_and_never_proves_absence(self):
         from tests.awareness.test_search import response, candidate, group
         from play.search import search_published
         for state, event_id in [('search', 'search_ready'), ('creator_search', 'creator_search_ready')]:
@@ -1048,7 +1048,12 @@ class ControllerRuntimeTest(unittest.TestCase):
                 context['state'] = state
                 projected = replace(session, cursor=replace(session.cursor, state=StateId(state)), context=context, preflight_ready=True)
                 advanced = self.runtime.advance_session(projected, ControllerEvent(id=EventId(event_id), payload=_build_payload(['search.source_health', 'search.complete', 'search.query', 'search.sources', 'search.result_refs', 'search.results', 'search.sub_outcomes' if state == 'creator_search' else 'search.play_choices'], payload, context), guards={}))
-                self.assertEqual(('creator_classify' if state == 'creator_search' else 'classify') if has_match else 'blocked', advanced.session.cursor.state)
+                expected = 'creator_classify' if state == 'creator_search' else 'classify' if has_match else 'exited'
+                self.assertEqual(expected, advanced.session.cursor.state)
+                if state == 'creator_search' and not has_match:
+                    # Empty but incomplete evidence is offered; it never starts a capture.
+                    offered = advance_until_yield(self.runtime, advanced.session, root=ROOT)
+                    self.assertEqual('creator_offer', offered.projection['state']['id'])
                 if has_match:
                     self.assertFalse(advanced.session.context['search']['source_health']['complete'])
                     self.assertEqual('alice/audit-dns@1.2.3', advanced.session.context['search']['results'][0]['reference'])
@@ -4252,7 +4257,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 guards={},
             ),
         )
-        self.assertEqual("blocked", result.cursor.state)
+        self.assertEqual("exited", result.cursor.state)
         self.assertEqual("record_incomplete_search", result.transition.mutation)
 
     def test_complete_run_output_passes_unchanged_to_verification(self) -> None:
@@ -4721,6 +4726,10 @@ class ExplorationOutputRejectionTest(unittest.TestCase):
         reasons = second.session.context["evidence"]["failed_postconditions"]
         self.assertEqual(1, len(reasons))
         self.assertIn("not an owner-private Play run-output artifact", reasons[0])
+        # A guarded fallback into blocked still names the step and its cause.
+        self.assertEqual(1, len(second.presentations))
+        self.assertIn("Play stopped while it tried to verify play output", second.presentations[0])
+        self.assertIn(reasons[0], second.presentations[0])
 
     def test_every_failing_field_is_named_at_once(self) -> None:
         session = self._executing_session("reject-3")

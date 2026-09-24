@@ -193,9 +193,9 @@ class MachineConformanceTest(unittest.TestCase):
         with self.assertRaises(KeyError):
             transition("use_run", "invented_event")
 
-    def test_incomplete_search_is_blocked(self) -> None:
+    def test_incomplete_search_hands_back_to_the_harness(self) -> None:
         self.assertEqual(
-            "blocked", transition("search", "search_ready", {"search_is_complete": False})
+            "exited", transition("search", "search_ready", {"search_is_complete": False})
         )
 
     def test_terminal_states_accept_no_events(self) -> None:

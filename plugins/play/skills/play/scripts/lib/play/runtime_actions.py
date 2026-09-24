@@ -114,6 +114,8 @@ def advance_until_yield(
                 elapsed_ns=time.perf_counter_ns() - started,
             )
         )
+        if presentation is None and str(result.session.cursor.state) == "blocked":
+            presentation = explain_blocked_transition(_humanize_action(instruction), event)
         if presentation is not None:
             presentations.append(presentation)
         current = result.session
@@ -199,7 +201,7 @@ def _execute_instruction(
             reason = _launch_failure_reason(instruction, error)
             return (
                 _blocked_action_event(instruction, reason),
-                _blocked_presentation(instruction, reason, {}),
+                _blocked_presentation(_humanize_action(instruction), reason, {}),
             )
         if completed.returncode != 0:
             raw = {}
@@ -215,7 +217,7 @@ def _execute_instruction(
             reason = _failure_reason(instruction, raw, completed)
             return (
                 _blocked_action_event(instruction, reason),
-                _blocked_presentation(instruction, reason, raw),
+                _blocked_presentation(_humanize_action(instruction), reason, raw),
             )
 
     event_id = recoverable_event or _select_event(str(instruction["id"]), raw, projection)
@@ -226,7 +228,7 @@ def _execute_instruction(
     if event_id == "action_blocked" and presentation is None:
         reason = payload.get("reason")
         if isinstance(reason, str) and reason.strip():
-            presentation = _blocked_presentation(instruction, reason.strip(), raw)
+            presentation = _blocked_presentation(_humanize_action(instruction), reason.strip(), raw)
     if event_id == "authentication_receipt_invalid" and presentation is None:
         authentication = payload.get("authentication")
         if isinstance(authentication, Mapping):
@@ -295,12 +297,28 @@ def _launch_failure_reason(
     return f"{step} could not start: {error}"
 
 
-def _blocked_presentation(
-    instruction: Mapping[str, Any], reason: str, raw: Mapping[str, Any]
-) -> str:
+def explain_blocked_transition(step: str, event: ControllerEvent) -> str:
+    """Render a stop for a transition into `blocked` that brought no presentation.
+
+    Guarded fallbacks and harness-submitted events can reach `blocked` without
+    running a failing command, yet the harness must still relay a cause.
+    """
+
+    reason = event.payload.get("reason")
+    failed = event.payload.get("failed_postconditions")
+    if isinstance(reason, str) and reason.strip():
+        cause = reason.strip()
+    elif isinstance(failed, list) and failed:
+        cause = "These checks failed: " + "; ".join(str(item) for item in failed)
+    else:
+        cause = f"It reported `{event.id}`, and no rule lets Play continue from that result."
+    return _blocked_presentation(step, cause, event.payload)
+
+
+def _blocked_presentation(step: str, reason: str, raw: Mapping[str, Any]) -> str:
     """Render a blocked outcome the harness can relay verbatim: step, cause, next step."""
 
-    lines = [f"⛔ **Play stopped while it tried to {_humanize_action(instruction)}.**", "", reason]
+    lines = [f"⛔ **Play stopped while it tried to {step}.**", "", reason]
     hint = raw.get("hint")
     if isinstance(hint, str) and hint.strip():
         lines.extend(["", hint.strip()])

@@ -30,7 +30,7 @@ from play.controller import (
     event_from_dict,
     session_from_dict,
 )
-from play.runtime_actions import advance_until_yield
+from play.runtime_actions import advance_until_yield, explain_blocked_transition
 from play.continuations import (
     create as create_continuation,
     discard as discard_continuation,
@@ -293,6 +293,7 @@ def main() -> int:
                     request_original=original,
                 )
             event_payload = request.get("event")
+            presentations: list[Any] = []
             if event_payload is not None:
                 if not isinstance(event_payload, dict):
                     raise ControllerRuntimeError("event must be an object")
@@ -306,6 +307,10 @@ def main() -> int:
                     target=str(session.cursor.state),
                     context=session.context,
                 )
+                if str(session.cursor.state) == "blocked":
+                    presentations.append(
+                        explain_blocked_transition(source.replace("_", " "), event)
+                    )
             yielded = advance_until_yield(
                 runtime,
                 session,
@@ -321,7 +326,7 @@ def main() -> int:
                 ),
                 "projection": yielded.projection,
                 "trace": [asdict(item) for item in yielded.trace],
-                "presentations": list(yielded.presentations),
+                "presentations": [*presentations, *yielded.presentations],
             }
         elif args.command == "step":
             request = _read_object()
