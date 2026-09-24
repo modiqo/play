@@ -5268,13 +5268,6 @@ def apply(
     except (BootstrapError, OSError) as error:
         return fail_update("prepare_play_caches", error)
 
-    cache_step = _warm_public_play_cache(
-        source,
-        runner=runner,
-        progress=active_progress,
-    )
-    steps.append(cache_step)
-
     for harness in selected:
         target = plan_targets.get(harness, {})
         executable = target.get("command") if isinstance(target, dict) else None
@@ -5351,11 +5344,18 @@ def apply(
     for harness in selected:
         install_command.extend(["--harness", harness])
     try:
-        install_result = active_progress.command(
-            f"Activating Play in {len(selected)} harness{'es' if len(selected) != 1 else ''}",
-            runner,
-            install_command,
-        )
+        # Cache refresh and installation touch independent owned paths. Join the
+        # refresh before hooks, verification, or rollback can consume that state.
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            cache = executor.submit(
+                _warm_public_play_cache, source, runner=runner, progress=active_progress
+            )
+            install_result = active_progress.command(
+                f"Activating Play in {len(selected)} harness{'es' if len(selected) != 1 else ''}",
+                runner,
+                install_command,
+            )
+            steps.append(cache.result())
     except Exception as error:
         return fail_update("install_play", error)
     steps.append(_result_step("install_play", install_result, install_command))

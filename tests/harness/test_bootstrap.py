@@ -2209,8 +2209,12 @@ class BootstrapTest(unittest.TestCase):
         inbox_cache.write_text("old catalog\n", encoding="utf-8")
         intercept_index = self.home / ".rote-play" / "intercept-index.json"
         intercept_index.write_text("old index\n", encoding="utf-8")
+        install_started = threading.Event()
+        refresh_started = threading.Event()
 
         def replace_caches(*_args: object, **_kwargs: object) -> Step:
+            refresh_started.set()
+            self.assertTrue(install_started.wait(5), "cache refresh must overlap installation")
             inbox_cache.write_text("new catalog\n", encoding="utf-8")
             intercept_index.write_text("new index\n", encoding="utf-8")
             return Step("warm_public_play_cache", "completed", "Cache is ready.")
@@ -2236,6 +2240,8 @@ class BootstrapTest(unittest.TestCase):
         def runner(command: Sequence[str]) -> MagicMock:
             argv = [str(item) for item in command]
             if argv and argv[0].endswith("install-all"):
+                install_started.set()
+                self.assertTrue(refresh_started.wait(5))
                 state.write_text("broken update\n", encoding="utf-8")
                 return MagicMock(returncode=1, stdout="", stderr="install failed")
             if len(argv) > 1 and argv[1] == "version":
