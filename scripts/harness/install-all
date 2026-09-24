@@ -325,7 +325,7 @@ def play_path_for(harness: Harness, source: Path) -> Path | None:
 
 def root_has_rote_provider(root: Path) -> bool:
     try:
-        children = root.iterdir()
+        children = list(root.iterdir())
     except OSError:
         return False
     return any(
