@@ -561,6 +561,13 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
         "capture.decision": "normal",
         "capture.status": "normal",
     },
+    # Incomplete search without a verified match establishes neither fit nor absence.
+    "record_incomplete_search": {
+        "mode": "exited",
+        "match.classification": "uncertain",
+        "capture.decision": "normal",
+        "capture.status": "normal",
+    },
     "enter_direct_use": {
         "mode": "use",
         "capture.decision": "normal",
