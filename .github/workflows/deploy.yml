@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 15
     environment:
       name: ${{ github.event_name == 'push' && 'staging' || 'production' }}
-      url: ${{ github.event_name == 'push' && 'https://staging.getrote.dev/playoffs/install.sh' || 'https://getrote.dev/playoffs/install.sh' }}
+      url: ${{ github.event_name == 'push' && 'https://stg.getrote.dev/playoffs/install.sh' || 'https://getrote.dev/playoffs/install.sh' }}
     env:
       DEPLOYMENT_ENVIRONMENT: ${{ github.event_name == 'push' && 'staging' || 'production' }}
     steps:
