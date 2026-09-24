@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
 import time
 import unittest
+import venv
 from pathlib import Path
 from typing import Any
 
@@ -83,7 +86,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '{\"marketplaces\":[]}'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.102\",\"enabled\":true}],\"available\":[]}'\n"
+                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.103\",\"enabled\":true}],\"available\":[]}'\n"
                     "  else\n"
                     "    printf '%s\\n' '{\"installed\":[],\"available\":[]}'\n"
                     "  fi\n"
@@ -100,7 +103,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '[]'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.102\",\"enabled\":true,\"scope\":\"user\"}]'\n"
+                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.103\",\"enabled\":true,\"scope\":\"user\"}]'\n"
                     "  else\n"
                     "    printf '%s\\n' '[]'\n"
                     "  fi\n"
@@ -370,7 +373,7 @@ class InstallAllTest(unittest.TestCase):
 
         self.run_installer("install", "--copy")
         installed = (install_home / "skill").resolve()
-        self.assertEqual("0.4.102", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.103", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():
@@ -419,6 +422,42 @@ class InstallAllTest(unittest.TestCase):
             f"sync --locked --no-dev --inexact --project {installed}",
             uv_log.read_text(encoding="utf-8").strip(),
         )
+        self.uninstall(installed)
+
+    @unittest.skipUnless(shutil.which("uv"), "uv is needed for the clean-Python install")
+    def test_portable_install_with_dependencies_only_in_managed_environment(self) -> None:
+        clean = self.home / "clean-python"
+        venv.EnvBuilder(with_pip=False).create(clean)
+        python = clean / "bin" / "python3"
+        probe = subprocess.run(
+            [str(python), "-c", "import importlib.util; assert importlib.util.find_spec('yaml') is None"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, probe.returncode, probe.stderr)
+        launcher = self.bin / "python3"
+        launcher.write_text("#!/bin/sh\nexec " + shlex.quote(str(python)) + ' "$@"\n')
+        launcher.chmod(0o755)
+        uv = shutil.which("uv")
+        assert uv is not None
+        (self.bin / "uv").symlink_to(uv)
+        install_home = self.home / "portable-clean-python"
+        self.environment["PLAY_INSTALL_HOME"] = str(install_home)
+
+        _, report = self.run_curl_bootstrap(install_home)
+        self.assertEqual("completed", report["status"])
+        self.assertEqual(["codex", "claude", "kimi"], report["selected_harnesses"])
+
+        installed = install_home / "skill"
+        managed = installed / ".venv" / "bin" / "python3"
+        result = subprocess.run(
+            [str(managed), "-c", "import yaml"], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        policy = self.home / ".rote-play" / "routing.yaml"
+        self.assertEqual({"schema": "play.routing/v1", "routes": []}, yaml.safe_load(policy.read_text()))
+        self.assertEqual(0o600, policy.stat().st_mode & 0o777)
         self.uninstall(installed)
 
     def test_install_hands_a_private_package_index_to_uv_without_the_pypi_pin(self) -> None:
@@ -525,7 +564,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("› Checking Play, Rote, and Tulving updates", result.stderr)
         self.assertIn("✓ Verifying Codex", result.stderr)
         self.assertIn("╭─ ◆ Review setup", result.stdout)
-        self.assertIn("Version: 0.4.102", result.stdout)
+        self.assertIn("Version: 0.4.103", result.stdout)
         self.assertIn("╭─ ◆ Play setup", result.stdout)
         self.assertIn("Status: READY", result.stdout)
         self.assertIn("OS:     ", result.stdout)
@@ -596,7 +635,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("READY TO APPLY · UPDATE", update_result.stdout)
         self.assertEqual("update", update_report["play"]["install_state"])
         self.assertTrue(update_report["backup"]["has_previous_state"])
-        self.assertEqual("0.4.102", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.103", (installed / "VERSION").read_text().strip())
 
         missing = installed / "scripts" / "bin" / "play-digest"
         missing.unlink()

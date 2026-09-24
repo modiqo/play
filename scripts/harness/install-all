@@ -650,7 +650,7 @@ def execute(
         verify_harness_integrations(harnesses)
         verify_play_runtime(source)
         if command == "install":
-            initialize_routing_policy()
+            initialize_routing_policy(source)
             initialize_journals()
     except Exception:
         if destination is not None and copy_disposition != "current":
@@ -671,17 +671,26 @@ def execute(
         )
 
 
-def initialize_routing_policy() -> None:
+def initialize_routing_policy(source: Path) -> None:
     """Create the owner-private routing policy without touching the caller's project."""
 
-    from scripts.lib.play.routing import RoutingError, initialize, user_policy_path
-
-    path = user_policy_path()
-    try:
-        status = "created" if initialize(path, private=True) else "current"
-    except RoutingError as error:
-        raise InstallError(str(error)) from error
-    print(f"Play routing policy {status}: {path}")
+    # uv sync installs dependencies into the portable environment, not into the
+    # Python running this installer. The launcher selects that environment.
+    command = source / "scripts" / "bin" / "play-routing"
+    result = subprocess.run(
+        [str(command), "--user", "init"],
+        cwd=source,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+    if result.returncode:
+        reason = (result.stderr or result.stdout).strip() or "routing initialization failed"
+        raise InstallError(reason)
+    message = result.stdout.strip()
+    if message:
+        print(f"Play routing policy {message}")
 
 
 def initialize_journals() -> None:
