@@ -60,7 +60,7 @@ def request_search(query: str, *, public: bool, org: str | None, limit: int, tim
     environment = REGISTRIES.get(str(config.get("url", "")))
     if environment is None:
         raise CommandError("Shared search requires a production or staging registry.")
-    headers = {"Content-Type": "application/json", "X-Modiqo-Registry-Environment": environment, "User-Agent": "modiqo-play/0.4.101"}
+    headers = {"Content-Type": "application/json", "X-Modiqo-Registry-Environment": environment, "User-Agent": "modiqo-play/0.4.102"}
     if not public:
         try:
             identity = run_rote(["rote", "whoami", "--check"], text=True, capture_output=True, check=False, timeout=timeout_seconds)
