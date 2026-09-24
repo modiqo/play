@@ -294,7 +294,7 @@ class EnsureRuntimeTest(unittest.TestCase):
         self.assertIn("still lacks", str(caught.exception))
 
     def test_launchers_share_the_bootstrap_contract(self) -> None:
-        for name in ("play-machine", "play-intercept", "play-journey", "play-routing", "play-audit", "play-audit-corpus"):
+        for name in ("play-machine", "play-journey", "play-routing", "play-audit", "play-audit-corpus"):
             with self.subTest(launcher=name):
                 text = (ROOT / "scripts" / "bin" / name).read_text(encoding="utf-8")
                 self.assertIn("from play.python_environment import ensure_runtime", text)

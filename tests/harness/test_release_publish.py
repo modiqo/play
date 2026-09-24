@@ -51,12 +51,12 @@ class ReleasePublishTest(unittest.TestCase):
         def execute(command, *, cwd):
             if "deploy" in command:
                 staged = Path(command[command.index("deploy") + 1])
-                self.assertEqual("v0.4.103", selector_release((staged / "playoffs/install.sh").read_text()))
+                self.assertEqual("v0.4.104", selector_release((staged / "playoffs/install.sh").read_text()))
                 self.assertEqual("existing Rote installer", (staged / "install").read_text())
                 return "https://abc123.getrote-dev.pages.dev"
             return ""
         with (
-            patch.object(publish_play, "validate_play_release", return_value=("0.4.103", "v0.4.103")),
+            patch.object(publish_play, "validate_play_release", return_value=("0.4.104", "v0.4.104")),
             patch.object(publish_play.shutil, "which", return_value="/bin/npx"),
             patch.object(publish_play, "git", return_value="a" * 40) as git,
             patch.object(publish_play, "download_assets", side_effect=assets),
@@ -65,7 +65,7 @@ class ReleasePublishTest(unittest.TestCase):
         ):
             result = publish_play.publish(Path("/play"))
         git.assert_called_once_with(Path("/play"), "rev-parse", "HEAD")
-        verify.assert_called_once_with("v0.4.103")
+        verify.assert_called_once_with("v0.4.104")
         self.assertEqual("published", result["status"])
 
     def test_release_tag_requires_semantic_version(self) -> None:

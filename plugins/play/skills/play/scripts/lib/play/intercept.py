@@ -11,9 +11,6 @@ import json
 import re
 import sys
 
-from .search import SearchError, search_published
-
-
 MIN_PROMPT_CHARS = 8
 _BARE_HELLO_REQUEST = re.compile(
     r"^(?:please\s+)?run\s+(?:the\s+)?hello(?:\s+play)?[.!]?$",
@@ -94,6 +91,9 @@ def intercept_prompt(
     action_request = is_action_request(stripped)
     if not action_request and not _is_match_backed_request(stripped):
         return None
+    # Discussion and explicit commands do not need the search dependencies.
+    from .search import SearchError, search_published
+
     try:
         result = search_published(stripped, limit=3, timeout_seconds=3.0)
     except (SearchError, OSError, ValueError):

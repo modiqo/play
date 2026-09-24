@@ -1,4 +1,5 @@
 check: package-check
+    uv run pyright scripts/lib/play/hook_runtime.py scripts/bin/play-intercept tests/foundation/test_hook_runtime.py
     uv run pyright scripts/lib/play/harnesses.py scripts/harness/start-harness
     npm run test:journey-layout
     uv run --frozen scripts/bin/validate-machine

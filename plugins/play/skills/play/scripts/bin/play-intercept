@@ -10,12 +10,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
-from play.python_environment import ensure_runtime
-
-ensure_runtime("play-intercept", ROOT, Path(__file__).resolve(), sys.argv[1:])
-
-from play.intercept import main
+from play.hook_runtime import WORKER_ARGUMENT, run_hook
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    if sys.argv[1:2] == [WORKER_ARGUMENT]:
+        from play.intercept import main
+
+        raise SystemExit(main(sys.argv[2:]))
+    raise SystemExit(run_hook(Path(__file__).resolve(), ROOT, sys.argv[1:]))

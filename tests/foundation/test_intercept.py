@@ -9,7 +9,7 @@ from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
-from play import intercept
+from play import intercept, search
 from play.search import SearchError
 
 
@@ -26,7 +26,7 @@ def result(status="direct", mode="judged", complete=True):
 class InterceptTest(unittest.TestCase):
     def test_direct_match_suggests_pinned_version_without_execution(self):
         with mock.patch.object(
-            intercept, "search_published", return_value=result()
+            search, "search_published", return_value=result()
         ) as call:
             line = intercept.intercept_prompt("Check DNS without changing any records")
         call.assert_called_once_with(
@@ -48,13 +48,13 @@ class InterceptTest(unittest.TestCase):
         for payload in cases:
             with (
                 self.subTest(payload=payload),
-                mock.patch.object(intercept, "search_published", return_value=payload),
+                mock.patch.object(search, "search_published", return_value=payload),
             ):
                 self.assertIsNone(intercept.intercept_prompt("Delete DNS records"))
 
     def test_valid_direct_match_survives_unrelated_group_truncation(self):
         with mock.patch.object(
-            intercept, "search_published", return_value=result(complete=False)
+            search, "search_published", return_value=result(complete=False)
         ):
             self.assertIsNotNone(intercept.intercept_prompt("Check DNS records"))
 
@@ -70,7 +70,7 @@ class InterceptTest(unittest.TestCase):
             "hi",
             "",
         ]
-        with mock.patch.object(intercept, "search_published") as call:
+        with mock.patch.object(search, "search_published") as call:
             for prompt in prompts:
                 self.assertIsNone(intercept.intercept_prompt(prompt), prompt)
             call.assert_not_called()
@@ -82,7 +82,7 @@ class InterceptTest(unittest.TestCase):
             SearchError("sign in"),
             OSError("missing binary"),
         ]:
-            with mock.patch.object(intercept, "search_published", side_effect=error):
+            with mock.patch.object(search, "search_published", side_effect=error):
                 self.assertIsNone(intercept.intercept_prompt("Check DNS records"))
 
     def test_native_hook_envelope_and_invalid_input(self):
@@ -91,7 +91,7 @@ class InterceptTest(unittest.TestCase):
                 "sys.stdin", io.StringIO(json.dumps({"prompt": "Check DNS records"}))
             ),
             mock.patch("sys.stdout", new_callable=io.StringIO) as output,
-            mock.patch.object(intercept, "search_published", return_value=result()),
+            mock.patch.object(search, "search_published", return_value=result()),
         ):
             self.assertEqual(0, intercept.main(["prompt"]))
             payload = json.loads(output.getvalue())
@@ -111,7 +111,7 @@ class InterceptTest(unittest.TestCase):
         with (
             mock.patch("sys.stdin", io.StringIO("{}")),
             mock.patch("sys.stdout", new_callable=io.StringIO) as output,
-            mock.patch.object(intercept, "search_published") as call,
+            mock.patch.object(search, "search_published") as call,
         ):
             self.assertEqual(0, intercept.main(["settle-nudge"]))
             self.assertEqual("", output.getvalue())
