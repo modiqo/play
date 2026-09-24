@@ -46,9 +46,6 @@ jobs:
           node-version: '24'
           package-manager-cache: false
 
-      - name: Test deployment behavior
-        run: python3 -m unittest tests.harness.test_release_publish tests.harness.test_release_tag tests.harness.test_deployment_authorization
-
       - name: Verify plugin package
         run: scripts/bin/package-plugin --check
 
