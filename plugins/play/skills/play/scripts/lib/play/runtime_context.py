@@ -17,7 +17,7 @@ class RuntimeContextError(RuntimeError):
     pass
 
 
-SUPPORTED_MUTATION_SET_SHA256 = "e00040a0474e5190bda5208467aa1a831ad30b853a4e3db28534a2bdee085f2f"
+SUPPORTED_MUTATION_SET_SHA256 = "bdf8fe55f27e5e66fe25e844323453e6eb67969703f58d766180c92764bf7cea"
 
 
 # Reviewed 2026-09-03: `record_report_card_replay` merges an empty prompt payload
@@ -59,6 +59,7 @@ def initial_context(
             "results": [],
             "play_choices": [],
             "sub_outcomes": [],
+            "source_health": {"complete": False, "mode": "", "registry": "", "policy_version": "", "omitted_groups": [], "groups": []},
         },
         "match": {
             "classification": None,
@@ -112,6 +113,8 @@ def initial_context(
             "email_handle": None,
             "identity_ref": None,
             "whoami_ns": None,
+            "company_setup_status": "unchecked",
+            "company_resume_registry": False,
             "login_provider": None,
             "login_status": "not_required",
             "experience_status": "unknown",
@@ -404,6 +407,9 @@ _DERIVED_WRITES: dict[str, tuple[str, ...]] = {
 
 
 _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
+    "select_email_login": {"onboarding.login_provider": "email", "onboarding.login_status": "in_progress"},
+    "select_registry_email_login": {"onboarding.login_provider": "email", "onboarding.login_status": "in_progress", "authentication.status": "approved"},
+    "record_team_admin_invite_request": {"team.status": "inviting", "team.invite_role": "admin"},
     "start_greeting_onboarding": {
         "onboarding.intent": "greeting",
         "capture.decision": "normal",
@@ -446,6 +452,7 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
         "authentication.status": "approved",
     },
     "record_registry_login": {
+        "onboarding.company_resume_registry": True,
         "onboarding.login_status": "authenticated",
         "authentication.status": "authenticated",
     },
@@ -468,7 +475,7 @@ _CONSTANT_PATCHES: dict[str, dict[str, Any]] = {
     "enter_onboarding_team": {"mode": "manage", "team.status": "not_started"},
     "record_team_handle": {"team.status": "creating"},
     "record_team_failure": {"team.status": "failed"},
-    "record_team_invite_request": {"team.status": "inviting"},
+    "record_team_invite_request": {"team.status": "inviting", "team.invite_role": "developer"},
     "record_team_invite_email": {"team.status": "inviting"},
     "finish_team_onboarding": {"team.status": "ready"},
     "set_request_contract": {"mode": "use"},
@@ -765,6 +772,9 @@ def _apply_mutation_semantics(
         context["search"]["results"] = []
         context["search"]["play_choices"] = []
         context["search"]["result_refs"] = [selected] if isinstance(selected, str) else []
+
+    if mutation == "record_company_setup" and context["onboarding"].get("company_resume_registry"):
+        context["mode"] = "use"
 
     if mutation == "record_team_space":
         context["team"]["status"] = "ready"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,8 +13,18 @@ from .state_home import state_path
 
 
 IDENTITY_PREFERENCE_SCHEMA = "play.identity-preference/v1"
-LOGIN_PROVIDERS = frozenset({"google", "github"})
+LOGIN_PROVIDERS = frozenset({"google", "github", "email"})
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
+
+
+def login_command(rote: str, provider: str) -> list[str]:
+    """Keep email entry in Play while Rote owns authentication and session storage."""
+
+    if provider not in LOGIN_PROVIDERS:
+        raise ValueError("Unknown login provider")
+    if provider == "email":
+        return [sys.executable, str(Path(__file__).with_name("email_login.py")), rote]
+    return [rote, "login", "--provider", provider]
 
 
 def default_identity_preference_path() -> Path:
@@ -21,7 +32,7 @@ def default_identity_preference_path() -> Path:
 
 
 def last_login_provider(*, path: Path | None = None) -> str | None:
-    """Return the last Play-verified OAuth provider, or ``None`` safely."""
+    """Return the last Play-verified sign-in method, or ``None`` safely."""
 
     preference_path = path or default_identity_preference_path()
     try:
@@ -101,7 +112,7 @@ def recover_rote_session(
     provider = last_login_provider(path=preference_path)
     if provider is None:
         return "required", None
-    login = login_runner([rote, "login", "--provider", provider])
+    login = login_runner(login_command(rote, provider))
     if login.returncode != 0:
         return "required", provider
     verified = check_runner([rote, "whoami", "--check"])

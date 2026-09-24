@@ -111,9 +111,9 @@ class DigestTest(unittest.TestCase):
             public_limit=5,
         )
         self.assertFalse(digest["org_updates"]["revised_complete"])
-        self.assertIn("Revisions are unavailable", render_markdown(digest))
-        self.assertIn("No new publications were found", render_markdown(digest))
-        self.assertIn("released-version timestamps", render_markdown(digest))
+        self.assertNotIn("Revisions", render_markdown(digest))
+        self.assertIn("No new additions", render_markdown(digest))
+        self.assertNotIn("released-version timestamps", render_markdown(digest))
 
     def test_inspected_update_keeps_latest_selector_and_resolved_version(self) -> None:
         grouped = {
@@ -148,7 +148,7 @@ class DigestTest(unittest.TestCase):
         self.assertEqual("alpha/new-play@1.1.0", item["resolved_reference"])
         self.assertEqual({"days": "7"}, item["parameters"])
 
-    def test_whats_new_lists_sampled_public_cards_directly(self) -> None:
+    def test_whats_new_lists_new_public_titles_without_onboarding(self) -> None:
         grouped = {
             "alpha": [
                 {
@@ -188,14 +188,10 @@ class DigestTest(unittest.TestCase):
         )
         rendered = render_markdown(digest)
         self.assertIn("# What’s new in Plays", rendered)
-        self.assertIn("1 new or revised Play", rendered)
-        self.assertIn("weekly-report", rendered)
-        self.assertIn("`play run hello`", rendered)
-        self.assertIn("`$play run hello`", rendered)
-        self.assertIn("`/play run hello`", rendered)
-        self.assertIn("`/skill:play run hello`", rendered)
-        self.assertIn("`run hello`", rendered)
-        self.assertIn("Play stays out of the way", rendered)
+        self.assertIn("## New in community", rendered)
+        self.assertIn("[weekly-report](https://play.modiqo.ai/alpha/weekly-report)", rendered)
+        self.assertNotIn("A concise weekly", rendered)
+        self.assertNotIn("run hello", rendered)
         self.assertNotIn("| Play |", rendered)
         self.assertEqual("unavailable", digest["capabilities"]["run_metrics"]["status"])
 
@@ -252,12 +248,12 @@ class DigestTest(unittest.TestCase):
         self.assertEqual("parallel", digest["ranking"]["fetch"]["mode"])
         self.assertEqual(15.25, digest["ranking"]["fetch"]["elapsed_ms"])
         rendered = render_markdown(digest)
-        self.assertIn("1 runnable public Play", rendered)
-        self.assertIn("## 1 Play to explore", rendered)
-        self.assertIn("**hello**", rendered)
-        self.assertIn("Counts cover runnable public cards", rendered)
+        self.assertNotIn("runnable public", rendered)
+        self.assertIn("## From Modiqo", rendered)
+        self.assertIn("[hello](https://play.modiqo.ai/modiqo/hello)", rendered)
+        self.assertNotIn("Counts cover", rendered)
 
-    def test_first_digest_congratulates_before_the_summary(self) -> None:
+    def test_first_digest_opens_with_newsletter_without_onboarding(self) -> None:
         digest = build_digest(
             [Organization("modiqo", "Modiqo")],
             {"modiqo": []},
@@ -268,10 +264,10 @@ class DigestTest(unittest.TestCase):
         )
         digest["memory"] = {"status": "initial"}
         rendered = render_markdown(digest)
-        self.assertTrue(rendered.startswith("**Nice—you’ve taken the first step."))
-        self.assertLess(rendered.index("taken the first step"), rendered.index("What’s new"))
+        self.assertTrue(rendered.startswith("# What’s new in Plays"))
+        self.assertNotIn("taken the first step", rendered)
 
-    def test_partial_catalog_uses_at_least_language(self) -> None:
+    def test_partial_catalog_does_not_claim_exhaustive_counts(self) -> None:
         digest = build_digest(
             [Organization("modiqo", "Modiqo")],
             {"modiqo": []},
@@ -291,7 +287,7 @@ class DigestTest(unittest.TestCase):
             ranking_complete=False,
             ranking_omitted_count=1,
         )
-        self.assertIn("at least **1 runnable public Play**", render_markdown(digest))
+        self.assertIn("From the available public catalog", render_markdown(digest))
 
     def test_legacy_cached_digest_without_random_sample_is_not_discovery_compatible(self) -> None:
         digest = build_digest(
@@ -443,7 +439,7 @@ class DigestTest(unittest.TestCase):
         self.assertEqual("degraded", fallback["memory"]["status"])
         rendered = render_markdown(fallback)
         self.assertIn("last verified public Play cache", rendered)
-        self.assertIn("Private and organization-specific updates are unavailable", rendered)
+        self.assertIn("New additions unavailable", rendered)
         self.assertNotIn("rote login", rendered)
         self.assertNotIn("private-org", rendered)
         self.assertNotIn("internal-report", rendered)
@@ -498,7 +494,7 @@ class DigestTest(unittest.TestCase):
 
             self.assertEqual(0, result, stderr.getvalue())
             self.assertFalse(state.exists())
-            self.assertIn("Run `rote login`", stdout.getvalue())
+            self.assertIn("New additions unavailable", stdout.getvalue())
 
     def test_registry_failure_without_public_cache_reports_specific_guidance(self) -> None:
         stdout = StringIO()
@@ -700,9 +696,9 @@ class PublicBaselineTest(unittest.TestCase):
         self.assertIn("public_baseline", digest["sources"])
         self.assertEqual([], digest["organizations"])
         markdown = render_markdown(digest)
-        self.assertIn("**1 runnable public Play** visible to you", markdown)
-        self.assertIn("- **hello** — Say hello.", markdown)
-        self.assertIn("and the public `modiqo` baseline", markdown)
+        self.assertIn("## From Modiqo", markdown)
+        self.assertIn("- [hello](https://play.modiqo.ai/modiqo/hello)", markdown)
+        self.assertNotIn("Say hello.", markdown)
         self.assertTrue(supports_play_discovery(digest))
 
     def test_baseline_member_is_not_double_counted(self) -> None:

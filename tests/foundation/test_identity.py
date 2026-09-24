@@ -8,6 +8,7 @@ from pathlib import Path
 
 from scripts.lib.play.identity import (
     last_login_provider,
+    login_command,
     recover_rote_session,
     remember_login_provider,
     rote_session_status,
@@ -92,6 +93,24 @@ class IdentityPreferenceTest(unittest.TestCase):
         self.assertEqual("error", status)
         self.assertIsNone(provider)
         self.assertEqual([], logins)
+
+    def test_email_recovery_uses_play_form_then_rechecks_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "identity.json"
+            remember_login_provider("email", path=path)
+            checks = iter([
+                subprocess.CompletedProcess([], 77, "", "login required"),
+                subprocess.CompletedProcess([], 0, "ok: person@example.com", ""),
+            ])
+            logins = []
+            status, provider = recover_rote_session(
+                "/bin/rote", preference_path=path,
+                check_runner=lambda _: next(checks),
+                login_runner=lambda command: logins.append(list(command))
+                or subprocess.CompletedProcess(command, 0, "", ""),
+            )
+            self.assertEqual(("recovered", "email"), (status, provider))
+            self.assertEqual([login_command("/bin/rote", "email")], logins)
 
 
 if __name__ == "__main__":

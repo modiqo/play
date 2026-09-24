@@ -578,8 +578,10 @@ def validate_bundle(
     )
     check(
         _target(states, "onboarding_identity", "onboarding_identity_ready")
+        == "onboarding_company_check"
+        and _target(states, "onboarding_company_check", "company_setup_handled", 1)
         == "onboarding_experience"
-        and _target(states, "onboarding_identity", "onboarding_identity_ready", 1)
+        and _target(states, "onboarding_company_check", "company_setup_handled", 2)
         == "use_inspect"
         and _target(states, "onboarding_experience", "onboarding_first_use")
         == "onboarding_first_present"
@@ -672,7 +674,7 @@ def validate_bundle(
         and first_choices.get("done", {}).get("event") == "onboarding_dismissed",
         "first use must recommend inspection of Hello while preserving a clear dismissal",
     )
-    check(actions.get("search_authorized_plays", {}).get("command") == "scripts/bin/play-search <request.intent> --also <request.original> --limit 5 --json", "Play discovery must invoke the bounded local and registry search")
+    check(actions.get("search_authorized_plays", {}).get("command") == "scripts/bin/play-search <request.intent> --also <request.original> --limit 5 --json", "Play discovery must invoke the shared published search client")
     check(_target(states, "qualify", "play_awareness_request") == "awareness_collect", "an awareness request must enter the digest path")
     check(actions.get("collect_awareness_digest", {}).get("effect") == "local-write", "awareness collection may write only remembered local state")
     check(actions.get("collect_awareness_digest", {}).get("command") == "scripts/bin/play-digest --remember --days <awareness.window_days> --json", "awareness must invoke the remembered digest command")
@@ -809,9 +811,9 @@ def validate_bundle(
         check(forbidden not in states, f"{forbidden} must stay inside the rote play run controller")
     check(
         predecessors["use_prepare"]
-        == {"use_decide", "use_offer", "use_authentication_offer", "use_registry_login"},
+        == {"use_decide", "use_offer", "use_authentication_offer"},
         "run handoff preparation may follow only local readiness, remote pull approval, "
-        "verified registry login, or exact static-credential verification",
+        "or exact static-credential verification",
     )
     check(predecessors["use_run"] == {"use_prepare"}, "execution may follow only a prepared run handoff")
     check("use_inspect" in dominators["use_run"], "inspection must dominate execution")

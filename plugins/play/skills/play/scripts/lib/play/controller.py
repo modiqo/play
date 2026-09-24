@@ -1216,6 +1216,8 @@ def _derive_session_guards(
 
     values = dict(event.guards)
     context = session.context
+    values[GuardId("company_resume_registry")] = _path_value(context, "onboarding.company_resume_registry") is True
+    values[GuardId("company_setup_active")] = _path_value(context, "onboarding.company_setup_status") == "required"
     onboarding_intent = _path_value(context, "onboarding.intent")
     values[GuardId("onboarding_is_greeting")] = onboarding_intent == "greeting"
     values[GuardId("onboarding_is_play_uri")] = onboarding_intent == "play_uri"
@@ -1230,6 +1232,12 @@ def _derive_session_guards(
     values[GuardId("search_is_complete")] = (
         _path_value(event.payload, "search.complete") is True
     )
+    verified_results = _path_value(event.payload, "search.results")
+    values[GuardId("search_has_verified_matches")] = isinstance(verified_results, list) and any(
+        isinstance(item, Mapping) and item.get("match_basis") == "jev"
+        and item.get("relevance_status") in {"direct", "partial"}
+        for item in verified_results
+    )
     # The creator path may start a captured exploration only when no search,
     # blended or per sub-outcome, returned any Play. A partial hit is evidence
     # the user must see at creator_offer, never proof that nothing exists.
@@ -1238,6 +1246,7 @@ def _derive_session_guards(
     values[GuardId("creator_search_is_clean")] = (
         isinstance(creator_results, list)
         and not creator_results
+        and _path_value(context, "search.complete") is True
         and isinstance(creator_sub_outcomes, (list, type(None)))
         and not any(
             isinstance(entry, Mapping) and entry.get("results")

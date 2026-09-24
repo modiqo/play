@@ -10,6 +10,9 @@ cases:
         target: onboarding_identity
       - state: onboarding_identity
         event: onboarding_identity_ready
+        target: onboarding_company_check
+      - state: onboarding_company_check
+        event: company_setup_handled
         guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
         target: onboarding_experience
       - {state: onboarding_experience, event: onboarding_returning, target: onboarding_welcome}
@@ -33,6 +36,9 @@ cases:
         target: onboarding_identity
       - state: onboarding_identity
         event: onboarding_identity_ready
+        target: onboarding_company_check
+      - state: onboarding_company_check
+        event: company_setup_handled
         guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
         target: onboarding_experience
       - {state: onboarding_experience, event: onboarding_first_use, target: onboarding_first_present}
@@ -76,7 +82,8 @@ cases:
 
   - name: first-use team creation reuses the typed colleague invite loop
     steps:
-      - {state: onboarding_first_offer, event: onboarding_team_selected, target: onboarding_team_handle}
+      - {state: onboarding_first_offer, event: onboarding_team_selected, target: onboarding_team_name}
+      - {state: onboarding_team_name, event: company_name_described, target: onboarding_team_handle}
       - {state: onboarding_team_handle, event: team_handle_described, target: onboarding_team_create}
       - {state: onboarding_team_create, event: team_space_ready, target: onboarding_team_present}
       - {state: onboarding_team_present, event: team_loop_presented, target: team_invite_offer}
@@ -96,6 +103,9 @@ cases:
         target: onboarding_identity
       - state: onboarding_identity
         event: onboarding_identity_ready
+        target: onboarding_company_check
+      - state: onboarding_company_check
+        event: company_setup_handled
         guards: {onboarding_is_greeting: false, onboarding_is_play_uri: true}
         target: use_inspect
       - {state: use_inspect, event: play_inspected, target: use_decide}
@@ -134,6 +144,9 @@ cases:
         target: onboarding_identity
       - state: onboarding_identity
         event: onboarding_identity_ready
+        target: onboarding_company_check
+      - state: onboarding_company_check
+        event: company_setup_handled
         guards: {onboarding_is_greeting: false, onboarding_is_play_uri: true}
         target: use_inspect
       - {state: use_inspect, event: play_inspected, target: use_decide}
@@ -154,6 +167,9 @@ cases:
       - {state: onboarding_login, event: rote_login_completed, target: onboarding_identity}
       - state: onboarding_identity
         event: onboarding_identity_ready
+        target: onboarding_company_check
+      - state: onboarding_company_check
+        event: company_setup_handled
         guards: {onboarding_is_greeting: true, onboarding_is_play_uri: false}
         target: onboarding_experience
     terminal: onboarding_experience

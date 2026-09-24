@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .digest import collect_digest, render_markdown, supports_play_discovery
+from .digest import collect_digest, newsletter_sections, render_markdown, supports_play_discovery
 from .digest_state import (
     authority_fingerprint,
     default_state_path,
@@ -373,6 +373,8 @@ def refresh_cache(
         "organization_scope": organization_scope,
         "plays": catalog,
     }
+    digest = dict(digest)
+    digest["newsletter"] = newsletter_sections(digest, public_catalog)
     try:
         markdown = render_markdown(dict(digest))
     except (KeyError, TypeError):
@@ -530,5 +532,7 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.as_json:
         print(json_text(cache))
     else:
-        print(cache.get("markdown") or "")
+        digest = dict(cache.get("digest") or {})
+        digest["newsletter"] = newsletter_sections(digest, public_cache_entries(cache))
+        print(render_markdown(digest))
     return 0

@@ -164,7 +164,9 @@ class InboxCacheTest(unittest.TestCase):
         assert stored is not None
         self.assertEqual(2, stored["counts"]["new"])
         self.assertEqual(stored["summary_line"], cached_line(cache_path=self.cache_path))
-        self.assertIn("**hello** — Say hello.", stored["markdown"])
+        self.assertIn("## From Modiqo", stored["markdown"])
+        self.assertNotIn("Say hello.", stored["markdown"])
+        self.assertNotIn("ship-and-tell", stored["markdown"])
         self.assertEqual(
             "acme/play-new-0",
             stored["digest"]["org_updates"]["new"][0]["reference"],

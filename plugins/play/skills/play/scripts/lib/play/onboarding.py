@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .identity import last_login_provider, remember_login_provider, rote_session_status
+from .identity import last_login_provider, login_command, remember_login_provider, rote_session_status
 from .private_store import PrivateStoreError, atomic_write_json, load_json, locked_store
 from .render import json_text
 from .sidekick import CAPTURE_REF, capture_for_settle, load_ledger
@@ -425,7 +425,7 @@ def inspect_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
         if recovered_provider is not None:
             try:
                 login = subprocess.run(
-                    [command, "login", "--provider", recovered_provider],
+                    login_command(command, recovered_provider),
                     text=True,
                     capture_output=True,
                     check=False,
@@ -528,17 +528,17 @@ def _paused_rote_login(
 
 
 def login_rote_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """Run one selected Rote OAuth login and stop after identity verification."""
+    """Run one selected Rote browser login and stop after identity verification."""
 
     started = time.perf_counter_ns()
     onboarding = _object(payload.get("onboarding"), "onboarding")
     command = _validated_rote_command(onboarding.get("rote_command"))
     provider = _string(onboarding.get("login_provider"), "onboarding.login_provider")
-    if provider not in {"google", "github"}:
-        raise OnboardingError("Rote login provider must be google or github")
+    if provider not in {"google", "github", "email"}:
+        raise OnboardingError("Rote login provider must be google, github, or email")
     try:
         completed = subprocess.run(
-            [command, "login", "--provider", provider],
+            login_command(command, provider),
             text=True,
             capture_output=True,
             check=False,
@@ -643,6 +643,42 @@ def check_onboarding_experience(
     }
 
 
+def company_setup(payload: Mapping[str, Any], *, remember: bool = False,
+                  state_path: Path | None = None) -> dict[str, Any]:
+    """Offer company setup once per verified identity, independently of orientation."""
+    onboarding = _object(payload.get("onboarding"), "onboarding")
+    if onboarding.get("identity_status") != "authenticated":
+        raise OnboardingError("company setup requires a verified identity")
+    key = _onboarding_identity_key(onboarding.get("email"))
+    path = state_path or default_onboarding_state_path()
+    if remember:
+        if onboarding.get("company_setup_status") != "required":
+            raise OnboardingError("company setup must be offered before it is remembered")
+        try:
+            with locked_store(path.parent):
+                state = _load_onboarding_state(path)
+                entry = state["identities"].setdefault(key, {})
+                if not isinstance(entry, dict):
+                    raise OnboardingError("invalid company setup marker")
+                entry["company_setup_offered_at"] = datetime.now(timezone.utc).isoformat()
+                atomic_write_json(path, state)
+        except PrivateStoreError as error:
+            raise OnboardingError(str(error)) from error
+    else:
+        state = _load_onboarding_state(path)
+    entry = state["identities"].get(key, {})
+    if not isinstance(entry, dict):
+        raise OnboardingError("invalid company setup marker")
+    handled = isinstance(entry.get("company_setup_offered_at"), str)
+    return {
+        "schema": SCHEMA, "kind": "company_setup", "ok": True,
+        "event": "company_setup_recorded" if remember else (
+            "company_setup_handled" if handled else "company_setup_required"),
+        "onboarding": {"company_setup_status": "handled" if handled else "required"},
+        "evidence_refs": [f"sha256:{key}"],
+    }
+
+
 def render_first_use_orientation(human_name: str) -> str:
     """Explain the human/agent/Rote bargain in short, concrete language."""
 
@@ -719,6 +755,7 @@ def remember_first_use_orientation(
         with locked_store(state_path.parent):
             state = _load_onboarding_state(state_path)
             state["identities"][identity_key] = {
+                **state["identities"].get(identity_key, {}),
                 "orientation_version": ONBOARDING_ORIENTATION_VERSION,
                 "shown_at": datetime.now(timezone.utc).isoformat(),
             }
@@ -792,11 +829,11 @@ def render_team_loop(team_name: str, team_slug: str) -> str:
 
     return "\n".join(
         [
-            f"# Team space ready: {team_name}",
+            f"# Company organization ready: {team_name}",
             "",
-            f"Team handle: `{team_slug}`",
+            f"Organization handle: `{team_slug}`",
             "",
-            "Invite colleagues to review, improve, and use Plays together. Team publication keeps the Play inside the authorized organization.",
+            "Create private Plays for your company and invite colleagues to improve and use them together. Private publication limits access to authorized organization members.",
             "",
             "When a verified Play teaches something worth sharing, choose **Community** after creation. Play will publish only with approval, verify the exact public URI, and produce paste-ready X and LinkedIn explanations of what it does.",
             "",
@@ -1168,6 +1205,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "identity",
             "login",
             "experience",
+            "company-check",
+            "company-record",
             "present-first",
             "mark-first",
             "present-activation",
@@ -1193,6 +1232,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 result = inspect_identity(payload)
             elif args.mode == "login":
                 result = login_rote_identity(payload)
+            elif args.mode in {"company-check", "company-record"}:
+                result = company_setup(payload, remember=args.mode == "company-record")
             elif args.mode == "experience":
                 result = check_onboarding_experience(payload)
             elif args.mode == "present-first":

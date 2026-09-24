@@ -51,11 +51,22 @@ On a fresh home directory, it creates personal skill directories only for agent 
 detects and selects; users never need to pre-create `~/.codex/skills`, `~/.claude/skills`, or another
 harness directory.
 Before changing Play-owned harness state, the wizard verifies the current Rote identity and, when
-needed, asks whether to continue with Google or GitHub. The browser OAuth flow signs in or creates
+needed, asks whether to continue with Google, GitHub, or email. The browser sign-in flow signs in or creates
 the account; the installer then builds and fingerprints the public Play catalog used by **What’s
 New** before activating any harness.
 For Codex and Claude Code, it keeps an already-current Play plugin and refreshes the marketplace
 plus reinstalls only when the installed plugin is missing or stale.
+
+Email sign-in uses a verification code, matching the website. Play opens a local browser form;
+enter the email and code there. The form uses the existing `rote login --otp` interface
+in released Rote 0.85.0 or newer. Rote verifies the code and saves the login.
+
+Codes travel through stdin and never enter chat or process arguments. This works with released Rote.
+
+After verified sign-in, Play offers to create a company organization for private Plays. Choose a
+company name and handle, then optionally invite a colleague as a developer or organization admin.
+Both steps are optional. Play remembers the choice on this device and resumes the original request.
+Creating an organization does not publish or change the visibility of existing Plays.
 
 The installer opens a checkbox menu with the top three detected apps checked. Use the arrow keys to
 move, Space to toggle an app, or Enter to confirm. Press `a` to select all detected apps.
@@ -126,7 +137,7 @@ Use explicit Explore when you want to create a reusable method:
 $play explore deploy staging and post the summary
 ```
 
-Explore searches local and authorized registry Plays first. If none fits, Play records the work
+Explore searches published Plays through the shared Worker first. If none fits, Play records the work
 from the start, creates a Rote workspace, and returns a `cap_...` handle. After the result is verified,
 the agent may run:
 
@@ -152,13 +163,13 @@ checks, or tool approvals. A later explicit `$play` invocation works normally.
 
 | You do this | Play does this | You stay in control of |
 |---|---|---|
-| A hook detects a relevant Play | Searches installed Plays and the refreshed authorized catalog cache, then shows one non-blocking line | Whether to invoke the suggested Play later |
+| A hook detects a relevant Play | Searches published Plays through the shared Worker, then suggests a direct match in one non-blocking line | Whether to invoke the suggested Play later |
 | Prefix a request with `direct:` | Bypasses Play and Rote for the whole turn: no machine, search, adapter, workspace, capture, or preference write | The direct task and its normal harness permissions |
 | Inspect a matching Play | Shows inputs, setup, credentials by name, and declared effects | Whether the exact version may run |
 | No matching Play exists | Says nothing and lets the harness continue normally | The original task, with no Play interruption |
-| Invoke `$play explore <outcome>` or `/play explore <outcome>` | Searches local and authorized registry Plays, then starts captured exploration only when none fits | The exploration goal, route, effects, and whether to crystallize the result |
+| Invoke `$play explore <outcome>` or `/play explore <outcome>` | Searches published Plays through the shared Worker, then starts captured exploration only when none fits | The exploration goal, route, effects, and whether to crystallize the result |
 | Finish repeatable work | Checks whether the recorded steps are worth saving | Team, Community, or Skip |
-| Ask “what’s new” | Shows new and revised Plays grouped by organization | Whether to inspect one |
+| Ask “what’s new” | Shows a short newsletter of Modiqo titles and new public community Plays | Whether to inspect one |
 
 Play is designed to be quiet. The prompt hook searches automatically, but its suggestions do not
 enter the Play machine or pause normal work. Conversation, creative work, one-off tasks, and empty
@@ -212,7 +223,7 @@ Play stays predictable by making each layer own one job:
 |---|---|
 | **`SKILL.md`** | Teaches an agent how to enter the runtime and handle its next boundary. |
 | **`play-machine`** | Owns search, inspection, approval, execution control, verification, saving, and fail-closed behavior. |
-| **Structural hooks and journals** | Activate strong cached matches, enforce direct routes, read bounded semantic Journey snapshots, and record typed recall events. |
+| **Structural hooks and journals** | Suggest Worker-confirmed matches, enforce direct routes, read bounded semantic Journey snapshots, and record typed recall events. |
 | **Rote skills** | Own setup, tools, browsers, adapters, workspaces, authoring, and publication. |
 | **Rote CLI and registry** | Run exact Plays locally and distribute authorized Plays. |
 
@@ -314,8 +325,8 @@ stateDiagram-v2
 
     %% ── Awareness, creator, management ──
     awareness_collect --> awareness_present : current snapshot (new, changed, or unchanged)
-    awareness_present --> awareness_offer : catalog summary + random 10
-    awareness_offer --> use_inspect : sampled Play selected
+    awareness_present --> awareness_offer : newsletter titles
+    awareness_offer --> use_inspect : newsletter Play selected
     creator_search --> creator_classify : blended + per sub-outcome results
     creator_classify --> creator_offer : full or partial coverage (per sub-outcome)
     creator_classify --> standby_exit : explicit Explore, every search clean
@@ -567,13 +578,13 @@ logging enabled. The defaults are five new workspace steps, at most one pulse ev
 and 30 days of recall history. Existing explicit journal choices survive reinstall.
 
 Identity is an early setup gate. Before creating a backup or changing managed files, Play runs
-`rote whoami --check`. If that check finds no identity, a browser-capable terminal offers Google
-and GitHub. OAuth login also creates an account for a new provider identity.
+`rote whoami --check`. If that check finds no identity, a browser-capable terminal offers Google,
+GitHub, and email codes. Each method can create a new account.
 
 Rote first refreshes and persists any usable authentication. Exit `77` means login is required, not
 that a network request should be retried.
 
-After a verified login, Play stores only the provider name (`google` or `github`) in owner-private
+After a verified login, Play stores only the provider name (`google`, `github`, or `email`) in owner-private
 state. A later expired login automatically reopens that provider and verifies the result before
 search or setup continues. Play asks when the provider is unknown. Transport failures never trigger
 an OAuth flow.
@@ -583,7 +594,7 @@ It installs Rote when needed, prints the provision-and-claim steps, and pauses w
 Play-owned harness state. Set `PLAY_BROWSER_MODE=headed` or `headless` to override detection.
 
 A non-interactive browser-capable install needs an authenticated profile or
-`PLAY_LOGIN_PROVIDER=google|github`. A non-interactive headless install pauses for remote-machine
+`PLAY_LOGIN_PROVIDER=google|github|email`. A non-interactive headless install pauses for remote-machine
 authentication instead of starting an unreachable OAuth callback.
 
 If registry access fails, check sandbox access, harness permissions, proxies, and firewalls before
@@ -767,8 +778,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.98/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.98 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.99/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.99 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -824,11 +835,12 @@ multi-select restoration targets. An empty `$play` or `/play` probes
 the local binary and identity. If either
 is missing, Play handles the exact gap. A missing binary invokes `rote-setup`, which asks before
 downloaded installer code or optional onboarding. An installed but signed-out Rote shows only the
-Google, GitHub, and **Not now** choices. Play runs the selected OAuth login and verifies
+Google, GitHub, email, and **Not now** choices. Play runs the selected browser sign-in and verifies
 `rote whoami`; it does not enter Rote's adapter setup menu.
 
-A signed-out Play run keeps its exact reference, parameters, disclosure, and approval. After login,
-Play resumes that run automatically instead of asking the user to issue the command again. A failed
+A signed-out Play run keeps its reference and parameters. After login and optional company setup,
+Play resumes inspection of that Play. It refreshes the disclosure and applies the normal approval
+checks without asking the user to issue the command again. A failed
 or deferred login leaves the Play unchanged and does not execute it. Only explicit Play requests
 run the preflight. Ordinary conversation and repository work do not load Play or pay the identity
 and capability probe.
@@ -866,7 +878,7 @@ The public marketplace source is `modiqo/play`, so `.` can be replaced with that
 Rote skill distribution before inspecting Play. It reuses a healthy installation only when its
 version and byte-level plugin payload both match; otherwise it refreshes the marketplace and
 reinstalls. The owner-editable model configuration is preserved, the large model catalog is copied
-only when its content changes, and a complete discovery cache younger than six hours is reused.
+only when its content changes, and a complete inbox cache younger than six hours is reused.
 Every harness still uses the same runtime preflight because plugin metadata alone cannot prove CLI
 installation or login state.
 
@@ -929,7 +941,7 @@ Make this the final step of every Play release, after `main` and its matching ve
 just release-publish
 ```
 
-The command updates `modiqo/rote-releases` and deploys its exact commit to the `getrote-dev` Cloudflare Pages project.
+The command reads the shared installer assets, changes only the Play selector in a temporary directory, and deploys to `getrote-dev`. It does not commit or push to another repository.
 It waits until the public installer serves the tag, then prints a JSON receipt.
 
 Publication stops unless local Play `main` matches `origin/main`, the tag belongs to remote `main`, and both versions match.
@@ -1060,7 +1072,7 @@ Smoke tests start new harness processes and may consume model credits.
 
 ## Everyday Play commands
 
-Find by outcome across local and authorized remote indexes:
+Find published Plays by outcome across community, personal, and accessible organization groups:
 
 ```text
 $play find a Play that retrieves recent emails
@@ -1069,10 +1081,15 @@ $play run the PostHog DAU report
 play search "live status for AI services"
 ```
 
-The shell command uses Play's existing unified search: local Rote Plays are always considered, the
-verified authorized catalog cache is merged in, and the live registry is queried when the cache has
-no adequate match. Add `--json` for a stable agent-facing result.
+The shell command calls the shared Cloudflare search Worker through
+Play’s HTTPS client. Rote refreshes the login; Play sends its access token only to the matching production or staging Worker.
+The Worker retrieves published candidates and uses Jev to judge their fit to the whole request,
+including exclusions. Unpublished local Plays never enter discovery. Add `--json` for structured
+results, `--public` for community only, or `--org <slug>` for one accessible organization.
+This uses the released Rote login interface and requires no custom Rote search command.
 
+Results retain the exact published version judged by the Worker. Direct, partial, and uncertain
+matches remain distinct. An incomplete search never proves that no suitable Play exists.
 For a vague `run` request, Play searches and offers recognizable names. For an exact reference, it
 skips search but never skips inspection or approval. A registry-only result is labeled as available
 in an authorized organization and expected to need a local pull/install. The first-class run later
@@ -1219,9 +1236,11 @@ scripts/bin/play-public-trends --play modiqo/hello@0.2.0 --json
 scripts/bin/play-public-trends --org modiqo --workers 8 --json
 ```
 
-“What’s new” reports the live, coverage-aware count of runnable public Plays visible to the user,
-then presents a random sample of up to ten cards for direct inspection. The sample refreshes with
-the catalog snapshot and remains stable while that cached snapshot is reused.
+“What’s new” shows a lean newsletter: up to five linked Modiqo titles and five new community Plays.
+It uses the cached public catalog when fresh. Descriptions, counters, private updates, and onboarding
+instructions stay out of the newsletter. A community item is new only when its first publication
+falls inside the checked window; revisions do not qualify. Titles appear once across both sections.
+The footer links to the community feed. Structured JSON retains the detailed collection evidence.
 
 Public JSON cards are fetched concurrently and grouped by their declared organization or user owner
 kind. The total is derived from inspected runnable cards, never hard-coded: complete coverage uses an
@@ -1237,38 +1256,35 @@ does not write host state unless `--remember` is explicit.
 
 On normal `$play whats new` requests, Play uses remembered mode. It stores only a stable awareness SHA,
 UTC checkpoint, and authorized-scope contract in `~/.rote-play/digest-state.json`. If the current
-snapshot has the same SHA, Play says nothing changed and still presents the current catalog summary
-and randomized Play choices. The moving time window and randomized display sample are excluded from the SHA, and no inbox contents or
+snapshot has the same SHA, Play says nothing changed and keeps the Modiqo titles while suppressing repeated community announcements. The moving time window and randomized display sample are excluded from the SHA, and no inbox contents or
 credentials are stored.
 
 ### The zero-token inbox and structural hooks
 
 The inbox also has a proactive, zero-token surface. A background refresh caches a precomputed
-one-line summary, the full digest with rendered markdown, and a tiered discovery catalog under
-`~/.rote-play/inbox-cache.json`. Discovery precedence is local installed/unpublished Plays,
-authorized private Plays, authorized public Plays, then the curated public Modiqo baseline.
-The local index is queried and merged even while the verified registry catalog is fresh:
-
+one-line summary, the full digest with rendered markdown, and catalog data under
+`~/.rote-play/inbox-cache.json`. This cache supports browsing and **What’s New**. It does not supply
+search candidates or relevance judgments.
 ```bash
 play-inbox refresh --if-older-than 6   # background-job body; skips when fresh
 play-inbox line                        # instant; prints one line or nothing
 play-inbox details                     # cached full inbox, no network
 ```
 
-The prompt hook performs replayable discovery only:
+The prompt hook suggests published Plays only:
 
 ```bash
-play-intercept prompt            # UserPromptSubmit: strong replayable Play matches only
+play-intercept prompt            # UserPromptSubmit: Worker-confirmed direct matches only
 play-journal show --day today    # Explicit local recall; no state machine or preflight
 ```
 
-The hook never activates Play or Rote. It never loads their state, reads journals, routes
-work, or emits progress at Stop. A strong match produces one quiet suggestion and normal work
-continues. Every other request stays silent.
+The hook requires an action-shaped request and calls the same Worker through Rote with a
+three-second deadline. Only a direct judgment produces one quiet suggestion with an exact published
+reference. Partial, uncertain, unavailable, and timed-out results stay silent. Discussion questions
+never trigger the search. The hook does not execute the suggested Play or enter the controller.
 
-Before matching catalog tokens, the hook requires an action-shaped request and two Play-name token
-matches. A design question stays silent even if its words overlap Play tags or descriptions.
-
+The request keeps exclusions such as “without changing records.” Concrete URLs, paths, email
+addresses, and credential assignments are redacted before search. Quoted task constraints remain.
 Explicit Play requests can inspect or manage the existing user and project routing policy:
 
 ```yaml
@@ -1323,15 +1339,14 @@ Only explicit user/global wording selects `~/.rote-play/routing.yaml`.
 idempotent without overwriting existing policy. The nearest `.play/routing.yaml` inside the current
 Git worktree augments the user policy.
 
-Discovery shares only its local Play index and verified public catalog cache across harnesses. It
-does not read Play preferences, journals, exploration state, or Rote workspaces. A Play saved from one
-harness can still become a discovery candidate in another harness.
-
+All harnesses use the same published search results and current registry authorization. Discovery
+does not read Play preferences, journals, exploration state, or local Play files. A locally saved
+Play becomes searchable only after publication.
 Cache lifecycle: setup synchronously builds a complete, canonically ordered catalog after identity
 verification and records both its stable SHA-256 fingerprint and its authorized-organization
 fingerprint in the bootstrap receipt. **What’s New** therefore has a zero-network first read when
 the user invokes it. Explicit inbox and digest commands refresh a stale cache and retain the last
-verified snapshot if the registry is unavailable. The discovery hook performs no network work.
+verified snapshot if the registry is unavailable. The discovery hook uses the Worker and never falls back to this cache.
 The cache stores exact references, release metadata, labels, tags, and each entry's tier.
 
 Recurring work is optional. Guided setup treats Play, Rote, and

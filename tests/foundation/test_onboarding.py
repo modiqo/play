@@ -288,7 +288,7 @@ class RoteGreetingProbeTest(unittest.TestCase):
                 ["/opt/bin/rote", "whoami", "--check"],
                 ["/opt/bin/rote", "whoami"],
             ],
-            [call.args[0] for call in run.call_args_list],
+            [call.args[0] for call in run.call_args_list if call.args[0][0] == "/opt/bin/rote"],
         )
         popen.assert_called_once()
 
@@ -338,7 +338,7 @@ class RoteGreetingProbeTest(unittest.TestCase):
                 ["/opt/bin/rote", "login", "--provider", "google"],
                 ["/opt/bin/rote", "whoami", "--check"],
             ],
-            [call.args[0] for call in run.call_args_list],
+            [call.args[0] for call in run.call_args_list if call.args[0][0] == "/opt/bin/rote"],
         )
         popen.assert_called_once()
 
@@ -605,9 +605,10 @@ class FirstUseOrientationTest(unittest.TestCase):
 
     def test_team_loop_is_reusable_and_does_not_claim_external_sharing(self) -> None:
         rendered = render_team_loop("Ada Labs", "ada-labs")
-        self.assertIn("Team space ready: Ada Labs", rendered)
-        self.assertIn("Team handle: `ada-labs`", rendered)
-        self.assertIn("review, improve, and use Plays together", rendered)
+        self.assertIn("Company organization ready: Ada Labs", rendered)
+        self.assertIn("Organization handle: `ada-labs`", rendered)
+        self.assertIn("Create private Plays for your company", rendered)
+        self.assertIn("authorized organization members", rendered)
         self.assertIn("learn in real work → teach", rendered)
         self.assertIn("paste-ready X and LinkedIn", rendered)
         self.assertIn("Nothing has been published", rendered)

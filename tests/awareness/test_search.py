@@ -1,1678 +1,338 @@
-import os
+"""Published-only discovery contract and false-positive regressions."""
+
+import io
 import pathlib
+import os
+import tempfile
 import sys
 import unittest
 from unittest import mock
-
+from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "lib"))
+from play import search
 
-from play import search as PLAY_SEARCH
+
+def candidate(
+    status="direct", owner="alice", name="audit-dns", visibility="public"
+) -> dict[str, Any]:
+    ref = f"{owner}/{name}@1.2.3"
+    return dict(
+        reference=ref,
+        url="https://play.modiqo.ai/" + ref,
+        name=name,
+        description="Inspect DNS records without changing them",
+        owner_slug=owner,
+        version="1.2.3",
+        visibility=visibility,
+        relevance=dict(status=status, probability=0.93),
+    )
+
+
+def group(kind="community", owner=None, matches=None, uncertain=None) -> dict[str, Any]:
+    return dict(
+        kind=kind,
+        id=owner or kind,
+        label=owner or "Community",
+        owner_slug=owner,
+        retrieval=dict(status="ok", truncated=False, errors=[]),
+        judgment_complete=True,
+        display_truncated=False,
+        matches=matches or [],
+        uncertain=uncertain or [],
+    )
+
+
+def response(groups=None) -> dict[str, Any]:
+    return dict(
+        schema="modiqo.play-search.v1",
+        registry="production",
+        mode="judged",
+        complete=True,
+        policy_version="test-v1",
+        omitted_groups=[],
+        groups=groups if groups is not None else [group(matches=[candidate()])],
+    )
 
 
 class SearchTest(unittest.TestCase):
-    def setUp(self) -> None:
-        # Never let the developer's real inbox cache leak identity into ranking.
-        self._no_identity = mock.patch.dict(
-            os.environ, {"PLAY_INBOX_CACHE_PATH": "/nonexistent/play-inbox-cache.json"}
-        )
-        self._no_identity.start()
-        self.addCleanup(self._no_identity.stop)
-
-    def test_query_normalization_removes_special_characters_and_duplicate_tokens(self):
-        query = "Live status? (AI models)—AI models; café's latency!"
-        self.assertEqual(
-            "live status ai models cafe s latency",
-            PLAY_SEARCH.normalize_query(query),
-        )
-
-    def test_local_aliases_and_registry_versions_deduplicate_by_canonical_play(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        description = "Live service status"
-        local = {
-            "flows": [
-                {
-                    "name": "hello",
-                    "path": str(flow_root / "warsaw-rust" / "hello" / "main.ts"),
-                    "description": description,
-                    "score": 27.4,
-                },
-                {
-                    "name": "hello",
-                    "path": str(flow_root / "hello" / "main.ts"),
-                    "description": description,
-                    "score": 27.4,
-                },
-            ]
-        }
-        registry = [
-            {
-                "owner_slug": "warsaw-rust",
-                "skill_name": "hello",
-                "skill_description": description,
-                "version": "0.0.1",
-                "rank": 0.6,
-                "status": "approved",
-            },
-            {
-                "owner_slug": "warsaw-rust",
-                "skill_name": "hello",
-                "skill_description": description,
-                "version": "0.1.0",
-                "rank": 0.6,
-                "status": "approved",
-            },
-        ]
-        results = PLAY_SEARCH.merge_results(local, registry, flow_root, 10, "live service status")
-        self.assertEqual(1, len(results))
-        self.assertEqual("warsaw-rust/hello", results[0]["reference"])
-        self.assertEqual("0.1.0", results[0]["version"])
-        self.assertEqual(["local", "remote_private"], results[0]["sources"])
-        self.assertEqual(
-            "https://play.modiqo.ai/warsaw-rust/hello", results[0]["uri"]
-        )
-        self.assertEqual("rote play run warsaw-rust/hello", results[0]["run_command"])
-        self.assertEqual(
-            "rote play inspect warsaw-rust/hello --json",
-            results[0]["inspect_command"],
-        )
-        self.assertEqual("found", results[0]["local_availability"])
-        self.assertEqual("run_local", results[0]["execution_resolution"])
-        self.assertEqual("local", results[0]["primary_scope"])
-
-    def test_argument_tokens_do_not_dilute_a_complete_name_match(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        local = {
-            "flows": [
-                {
-                    "name": "list-top-committers",
-                    "path": str(flow_root / "modiqo" / "list-top-committers" / "main.ts"),
-                    "description": "Lists top contributors for a GitHub repository.",
-                    "score": 20.0,
-                }
-            ]
-        }
-        results = PLAY_SEARCH.merge_results(
-            local, [], flow_root, 10, "list top committers for modiqo rote"
-        )
-        self.assertEqual("full", results[0]["match_classification"])
-        results = PLAY_SEARCH.merge_results(
-            local, [], flow_root, 10, "list something unrelated entirely here"
-        )
-        self.assertEqual([], results)
-
-    def test_one_character_play_name_typo_still_matches_full_identity(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        local = {
-            "flows": [
-                {
-                    "name": "list-top-committers",
-                    "path": str(
-                        flow_root / "modiqo" / "list-top-committers" / "main.ts"
-                    ),
-                    "description": "Lists top contributors for a GitHub repository.",
-                    "score": 20.0,
-                }
-            ]
-        }
-
-        misspelled_query = "can you list top commi" + "ters for modiqo rote"
-        results = PLAY_SEARCH.merge_results(
-            local, [], flow_root, 10, misspelled_query
-        )
-
-        self.assertEqual("list-top-committers", results[0]["name"])
-        self.assertEqual("full", results[0]["match_classification"])
-
-    def test_short_or_unrelated_tokens_do_not_receive_typo_tolerance(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        local = {
-            "flows": [
-                {
-                    "name": "list-top-committers",
-                    "path": str(
-                        flow_root / "modiqo" / "list-top-committers" / "main.ts"
-                    ),
-                    "description": "Lists top contributors for a GitHub repository.",
-                    "score": 20.0,
-                }
-            ]
-        }
-
-        results = PLAY_SEARCH.merge_results(
-            local, [], flow_root, 10, "lost tap computers for modiqo rote"
-        )
-
-        self.assertEqual([], results)
-
-    def test_registry_only_result_discloses_expected_pull_before_selection(self):
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []},
-            [
-                {
-                    "owner_slug": "alpha",
-                    "skill_name": "mail",
-                    "skill_description": "Retrieve recent email",
-                    "version": "1.0.0",
-                    "rank": 1.0,
-                    "status": "approved",
-                }
-            ],
-            pathlib.Path("/tmp/example-flows"),
-            10,
-            "recent email",
-        )
-        self.assertEqual("not_found", results[0]["local_availability"])
-        self.assertEqual("pull_required", results[0]["execution_resolution"])
-        self.assertEqual("remote_private", results[0]["primary_scope"])
-        self.assertIn("pulling requires your approval", results[0]["selection_description"])
-
-    def test_unaddressable_private_record_does_not_abort_other_matches(self):
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []},
-            [
-                {
-                    "owner_slug": None,
-                    "skill_name": "retrieve-rideshare-receipts",
-                    "skill_description": "Retrieve rideshare receipts",
-                    "version": "0.0.6",
-                    "storage_path": "organization_hidden/retrieve/0.0.6/item.flow",
-                },
-                {
-                    "owner_slug": "modiqo",
-                    "skill_name": "retrieve-rideshare-receipts",
-                    "skill_description": "Retrieve rideshare receipts",
-                    "version": "0.1.0",
-                    "visibility": "public",
-                    "storage_path": "organization_public/retrieve/0.1.0/item.flow",
-                },
-            ],
-            pathlib.Path("/tmp/example-flows"),
-            10,
-            "rideshare receipts",
-        )
-        self.assertEqual(1, len(results))
-        self.assertEqual(
-            "modiqo/retrieve-rideshare-receipts@0.1.0",
-            results[0]["exact_reference"],
-        )
-
-    def test_catalog_reconciles_live_visibility_by_stable_play_id(self):
-        reconciled = PLAY_SEARCH.reconcile_registry_items(
-            [
-                {
-                    "skill_id": "play-123",
-                    "owner_slug": "workplace-automation",
-                    "skill_name": "retrieve-recent-emails",
-                    "skill_description": "Retrieve recent email",
-                    "version": "0.1.3",
-                    "storage_path": "organization_759/retrieve/0.1.3/item.flow",
-                }
-            ],
-            [
-                {
-                    "skill_id": "play-123",
-                    "owner_id": "org-759",
-                    "owner_slug": "workplace-automation",
-                    "skill_name": "retrieve-recent-emails",
-                    "skill_description": "Retrieve recent email",
-                    "visibility": "public",
-                }
-            ],
-        )
-        self.assertEqual(1, len(reconciled))
-        self.assertEqual("public", reconciled[0]["visibility"])
-        self.assertEqual("org-759", reconciled[0]["owner_id"])
-        self.assertEqual("remote_public", PLAY_SEARCH.registry_scope(reconciled[0]))
-
-    def test_storage_path_never_grants_public_visibility(self):
-        self.assertEqual(
-            "remote_private",
-            PLAY_SEARCH.registry_scope(
-                {"storage_path": "community_legacy/a-play/1.0.0/item.flow"}
-            ),
-        )
-
-    def test_reorganized_registry_owner_supersedes_stale_local_owner(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        description = "Retrieve recent Gmail messages."
-        results = PLAY_SEARCH.merge_results(
-            {
-                "flows": [
-                    {
-                        "name": "retrieve-recent-emails",
-                        "path": str(
-                            flow_root
-                            / "modiqo"
-                            / "retrieve-recent-emails"
-                            / "main.ts"
-                        ),
-                        "description": description,
-                        "score": 20.0,
-                    }
-                ]
-            },
-            [
-                {
-                    "skill_id": "play-123",
-                    "owner_slug": "workplace-automation",
-                    "skill_name": "retrieve-recent-emails",
-                    "skill_description": description,
-                    "visibility": "public",
-                    "version": "0.1.3",
-                }
-            ],
-            flow_root,
-            10,
-            "retrieve recent emails",
-        )
-        self.assertEqual(1, len(results))
-        self.assertEqual(
-            "workplace-automation/retrieve-recent-emails",
-            results[0]["reference"],
-        )
-        self.assertEqual(
-            "workplace-automation/retrieve-recent-emails@0.1.3",
-            results[0]["exact_reference"],
-        )
-        self.assertIn(
-            "modiqo/retrieve-recent-emails", results[0]["selection_description"]
-        )
-        self.assertEqual("remote_public", results[0]["primary_scope"])
-        self.assertEqual("not_found", results[0]["local_availability"])
-        self.assertEqual("pull_required", results[0]["execution_resolution"])
-
-    def test_local_dag_path_is_exposed_only_as_canonical_reference(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        results = PLAY_SEARCH.merge_results(
-            {
-                "flows": [
-                    {
-                        "name": "local-report",
-                        "path": str(flow_root / "alpha" / "local-report" / "main.ts"),
-                        "description": "Local report",
-                        "score": 1.0,
-                    }
-                ]
-            },
-            [],
-            flow_root,
-            10,
-            "local report",
-        )
-        self.assertEqual(
-            "alpha/local-report",
-            results[0]["reference"],
-        )
-        self.assertEqual("play", results[0]["hint_kind"])
-        self.assertEqual("run_local", results[0]["execution_resolution"])
-        self.assertEqual(
-            "https://play.modiqo.ai/alpha/local-report", results[0]["uri"]
-        )
-        self.assertEqual(
-            "rote play run alpha/local-report",
-            results[0]["run_command"],
-        )
-
-    def test_legacy_local_path_without_owner_is_not_offered_for_execution(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        results = PLAY_SEARCH.merge_results(
-            {
-                "flows": [
-                    {
-                        "name": "legacy-report",
-                        "path": str(flow_root / "legacy-report" / "main.ts"),
-                        "description": "Legacy report",
-                    }
-                ]
-            },
-            [],
-            flow_root,
-            10,
-            "legacy report",
-        )
-        self.assertEqual([], results)
-
-    def test_catalog_cache_backstops_registry_search_recall(self):
-        import json as json_module
-        import tempfile
-
-        def fake_run(command, **_kwargs):
-            return {"flows": []} if command[1:3] == ["play", "search"] else []
-
-        with tempfile.TemporaryDirectory() as temporary:
-            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
-            cache_path.write_text(
-                json_module.dumps(
-                    {
-                        "schema": "play.inbox-cache/v1",
-                        "fetched_at": "2026-08-11T00:00:00+00:00",
-                        "window_days": 7,
-                        "summary_line": None,
-                        "counts": {"new": 0, "revised": 0},
-                        "catalog_complete": True,
-                        "digest": {},
-                        "markdown": None,
-                        "catalog": [
-                            {
-                                "reference": "modiqo/list-top-committers",
-                                "name": "list-top-committers",
-                                "description": "Lists top contributors for a GitHub repository.",
-                                "visibility": "public",
-                            }
-                        ],
-                    }
-                )
-            )
-            with mock.patch.object(
-                PLAY_SEARCH, "run_json", side_effect=fake_run
-            ) as live_search, mock.patch.dict(
-                os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
-            ):
-                local, registry = PLAY_SEARCH.search_both(
-                    "list top committers for modiqo rote", 5
-                )
-            self.assertTrue(
-                all("--source" not in call.args[0] for call in live_search.call_args_list)
-            )
-            self.assertEqual("list-top-committers", registry[0]["skill_name"])
-            results = PLAY_SEARCH.merge_results(
-                local, registry, pathlib.Path("/tmp/none"), 5,
-                "list top committers for modiqo rote",
-            )
-            self.assertEqual("modiqo/list-top-committers", results[0]["reference"])
-            self.assertEqual("full", results[0]["match_classification"])
-
-    def test_cached_search_feed_excludes_private_rows_when_authority_is_unknown(self):
-        import json as json_module
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as temporary:
-            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
-            cache_path.write_text(
-                json_module.dumps(
-                    {
-                        "schema": "play.inbox-cache/v1",
-                        "catalog_complete": True,
-                        "catalog": [
-                            {
-                                "reference": "former-org/private-report",
-                                "name": "private-report",
-                                "visibility": "private",
-                            },
-                            {
-                                "reference": "public-owner/public-report",
-                                "name": "public-report",
-                                "visibility": "public",
-                            },
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            with mock.patch.dict(
-                os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
-            ):
-                cached = PLAY_SEARCH._catalog_items()
-
-        self.assertEqual(["public-report"], [item["skill_name"] for item in cached])
-
-    def test_verified_catalog_recovers_malformed_live_search_for_rideshare_query(self):
-        import json as json_module
-        import tempfile
-
-        query = (
-            "can you retrieve my rideshare receipts between july 15 "
-            "and august 15th 2026"
-        )
-        with tempfile.TemporaryDirectory() as temporary:
-            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
-            cache_path.write_text(
-                json_module.dumps(
-                    {
-                        "schema": "play.inbox-cache/v1",
-                        "catalog_complete": True,
-                        "catalog": [
-                            {
-                                "reference": "modiqo/retrieve-rideshare-receipts",
-                                "name": "retrieve-rideshare-receipts",
-                                "description": (
-                                    "Retrieves rideshare receipts between two dates "
-                                    "from Uber, Lyft, and Waymo."
-                                ),
-                                "visibility": "public",
-                                "skill_id": "rideshare-play",
-                            }
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            with mock.patch.object(
-                PLAY_SEARCH,
-                "run_json",
-                side_effect=PLAY_SEARCH.SearchError("returned malformed JSON"),
-            ), mock.patch.dict(
-                os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
-            ):
-                local, registry = PLAY_SEARCH.search_both(
-                    PLAY_SEARCH.normalize_query(query), 5
-                )
-
-        results = PLAY_SEARCH.merge_results(
-            local,
-            registry,
-            pathlib.Path("/tmp/none"),
-            5,
-            PLAY_SEARCH.normalize_query(query),
-        )
-        self.assertEqual("modiqo/retrieve-rideshare-receipts", results[0]["reference"])
-        self.assertEqual("full", results[0]["match_classification"])
-        self.assertEqual("complete", local["source_health"]["catalog_cache"])
-        self.assertEqual("cached_with_local", local["source_health"]["mode"])
-        self.assertTrue(local["source_health"]["live_errors"])
-        self.assertTrue(
-            all(
-                error["source"] == "local"
-                for error in local["source_health"]["live_errors"]
-            )
-        )
-
-    def test_cached_feed_returns_only_the_adequate_landing_page_match(self):
-        import json as json_module
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as temporary:
-            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
-            cache_path.write_text(
-                json_module.dumps(
-                    {
-                        "schema": "play.inbox-cache/v1",
-                        "catalog_complete": True,
-                        "catalog": [
-                            {
-                                "reference": "modiqo/landing-page-assessment",
-                                "name": "landing-page-assessment",
-                                "description": "Assess landing-page messaging and readiness.",
-                                "visibility": "public",
-                                "version": "0.3.2",
-                                "labels": ["Marketing"],
-                                "tags": ["job-landing-page-review"],
-                                "adapters": ["crucible"],
-                            },
-                            {
-                                "reference": "modiqo/archive-analytics",
-                                "name": "archive-analytics",
-                                "description": "Analyze archived agent telemetry.",
-                                "visibility": "private",
-                            },
-                            {
-                                "reference": "modiqo/create-github-issue",
-                                "name": "create-github-issue",
-                                "description": "Create an issue on GitHub.",
-                                "visibility": "private",
-                            },
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            with mock.patch.object(
-                    PLAY_SEARCH, "run_json", return_value={"flows": []}
-            ) as live_search, \
-                    mock.patch.dict(
-                        os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
-                    ):
-                local, registry = PLAY_SEARCH.search_both(
-                    "find an available landing page readiness play", 5
-                )
-
-        self.assertEqual(2, live_search.call_count)
-        self.assertTrue(
-            all(
-                call.args[0][1:3] == ["play", "search"]
-                for call in live_search.call_args_list
-            )
-        )
-        results = PLAY_SEARCH.merge_results(
-            local,
-            registry,
-            pathlib.Path("/tmp/none"),
-            5,
-            "find an available landing page readiness play",
-        )
-        self.assertEqual(
-            ["modiqo/landing-page-assessment"],
-            [result["reference"] for result in results],
-        )
-        self.assertEqual("full", results[0]["match_classification"])
-
-    def test_complete_catalog_still_merges_local_installed_plays(self):
-        import json as json_module
-        import tempfile
-
-        flow_root = pathlib.Path("/tmp/example-flows")
-        with tempfile.TemporaryDirectory() as temporary:
-            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
-            cache_path.write_text(
-                json_module.dumps(
-                    {
-                        "schema": "play.inbox-cache/v1",
-                        "catalog_complete": True,
-                        "catalog": [],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            local_result = {
-                "flows": [
-                    {
-                        "name": "local-report",
-                        "path": str(flow_root / "acme" / "local-report" / "main.ts"),
-                        "description": "Create a local report",
-                        "score": 1.0,
-                    }
-                ]
-            }
-            with mock.patch.object(
-                PLAY_SEARCH, "run_json", return_value=local_result
-            ), mock.patch.dict(
-                os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
-            ):
-                local, registry = PLAY_SEARCH.search_both(
-                    "local report", 5, flow_root=flow_root
-                )
-
-        results = PLAY_SEARCH.merge_results(
-            local, registry, flow_root, 5, "local report"
-        )
-        self.assertEqual(["acme/local-report"], [item["reference"] for item in results])
-        self.assertEqual("local", results[0]["primary_scope"])
-
-    def test_cached_adapter_associations_find_latest_unique_plays(self):
-        catalog = [
-            {
-                "owner_slug": "modiqo",
-                "skill_name": name,
-                "skill_description": description,
-                "visibility": "public",
-                "version": version,
-                "adapters": ["crucible"],
-                "tags": ["tool-crucible"],
-            }
-            for name, description, version in (
-                (
-                    "founder-daily-operating-brief",
-                    "Rank founder priorities.",
-                    "0.1.2",
-                ),
-                (
-                    "landing-page-assessment",
-                    "Assess landing-page messaging.",
-                    "0.3.2",
-                ),
-                (
-                    "pricing-page-assessment",
-                    "Assess pricing-page decisions.",
-                    "0.3.3",
-                ),
-            )
-        ]
-        catalog.append(
-            {
-                "owner_slug": "modiqo",
-                "skill_name": "archive-analytics",
-                "skill_description": "Analyze archives.",
-                "visibility": "private",
-                "version": "1.0.0",
-                "adapters": ["duckdb"],
-            }
-        )
-
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []},
-            catalog,
-            pathlib.Path("/tmp/none"),
-            10,
-            "what are the heavybit crucible related plays",
-        )
-
-        self.assertEqual(
-            {
-                "modiqo/founder-daily-operating-brief",
-                "modiqo/landing-page-assessment",
-                "modiqo/pricing-page-assessment",
-            },
-            {result["reference"] for result in results},
-        )
-        self.assertTrue(
-            all(result["matched_adapters"] == ["crucible"] for result in results)
-        )
-        self.assertNotIn(
-            "modiqo/archive-analytics",
-            {result["reference"] for result in results},
-        )
-
-    def test_complete_cache_miss_is_confirmed_by_live_registry_search(self):
-        import json as json_module
-        import tempfile
-
-        commands = []
-
-        def fake_run(command, **_kwargs):
-            commands.append(command)
-            if "--source" not in command:
-                return {"flows": []}
-            return {
-                "schema": "rote.remote-play-search.v1",
-                "items": [
-                    {
-                        "play_id": "remote-only",
-                        "reference": "partner/receipt-export@0.4.0",
-                        "owner": {"slug": "partner", "kind": "organization"},
-                        "name": "receipt-export",
-                        "description": "Export rideshare receipts.",
-                        "version": "0.4.0",
-                        "visibility": "public",
-                        "status": "released",
-                    }
-                ],
-            }
-
-        with tempfile.TemporaryDirectory() as temporary:
-            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
-            cache_path.write_text(
-                json_module.dumps(
-                    {
-                        "schema": "play.inbox-cache/v1",
-                        "catalog_complete": True,
-                        "catalog": [],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            with mock.patch.object(
-                PLAY_SEARCH, "run_json", side_effect=fake_run
-            ), mock.patch.dict(
-                os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
-            ):
-                local, registry = PLAY_SEARCH.search_both(
-                    "rideshare receipt export", 5
-                )
-
-        self.assertEqual("live_after_cache_miss", local["source_health"]["mode"])
-        self.assertEqual("receipt-export", registry[0]["skill_name"])
-        self.assertTrue(any("--source" in command for command in commands))
-
-    def test_malformed_live_search_without_verified_catalog_fails_closed(self):
+    def run_search(self, body=None, **kwargs):
         with mock.patch.object(
-            PLAY_SEARCH,
-            "run_json",
-            side_effect=PLAY_SEARCH.SearchError("returned malformed JSON"),
-        ), mock.patch.dict(
-            os.environ, {"PLAY_INBOX_CACHE_PATH": "/nonexistent/inbox.json"}
-        ):
-            with self.assertRaisesRegex(
-                PLAY_SEARCH.SearchError, "no verified complete catalog cache"
-            ):
-                PLAY_SEARCH.search_both("rideshare receipts", 5)
-
-    def test_live_search_accepts_same_typed_rote_result_envelope_as_catalog(self):
-        import subprocess
-
-        def typed_result(command, **_kwargs):
-            if "--source" not in command:
-                payload = '{"flows":[]}'
-            else:
-                payload = '{"schema":"rote.remote-play-search.v1","items":[]}'
-            return subprocess.CompletedProcess(
-                command,
-                0,
-                f"@@status\nok: search ready\n\n@@result\n{payload}\n\n@@next\n- continue\n",
-                "",
+            search, "request_search", return_value=body or response()
+        ) as call:
+            result = search.search_published(
+                "Audit DNS without changing records", **kwargs
             )
+        return result, call
 
-        with mock.patch(
-            "play.commands.subprocess.run", side_effect=typed_result
-        ), mock.patch.dict(
-            os.environ, {"PLAY_INBOX_CACHE_PATH": "/nonexistent/inbox.json"}
-        ):
-            local, registry = PLAY_SEARCH.search_both("rideshare receipts", 5)
-        self.assertEqual([], local["flows"])
-        self.assertEqual([], registry)
-        self.assertEqual([], local["source_health"]["live_errors"])
-
-    def test_cache_miss_runs_live_accessible_registry_search(self):
-        commands = []
-
-        def fake_run(command, **_kwargs):
-            commands.append(command)
-            if "--source" not in command:
-                return {"flows": []}
-            return {
-                "schema": "rote.remote-play-search.v1",
-                "items": [
-                    {
-                        "play_id": "play-123",
-                        "reference": "acme/hello@1.2.3",
-                        "owner": {"kind": "organization", "slug": "acme"},
-                        "name": "hello",
-                        "description": "Say hello to a customer.",
-                        "version": "1.2.3",
-                        "visibility": "private",
-                        "status": "released",
-                        "rank": 0.9,
-                        "tags": ["greeting"],
-                        "requires_adapters": ["slack"],
-                    }
-                ],
-            }
-
-        with mock.patch.object(PLAY_SEARCH, "run_json", side_effect=fake_run), \
-                mock.patch.dict(
-                    os.environ, {"PLAY_INBOX_CACHE_PATH": "/nonexistent/inbox.json"}
-                ):
-            local, registry = PLAY_SEARCH.search_both("hello", 5)
-        self.assertEqual([], local["flows"])
-        self.assertEqual("unavailable", local["source_health"]["catalog_cache"])
-        self.assertEqual("live_after_cache_miss", local["source_health"]["mode"])
-        self.assertEqual("acme", registry[0]["owner_slug"])
-        self.assertEqual("hello", registry[0]["skill_name"])
-        self.assertEqual(["slack"], registry[0]["adapters"])
-        self.assertIn(
-            ["rote", "play", "search", "hello", "--limit", "50", "--json"], commands
+    def test_only_shared_transport_with_accessible_scope(self):
+        result, call = self.run_search()
+        call.assert_called_once_with(
+            "Audit DNS without changing records", public=False, org=None,
+            limit=5, timeout_seconds=25.0,
         )
-        self.assertIn(
+        self.assertTrue(result["complete"])
+        self.assertEqual(["shared_worker"], result["sources"])
+        hit = result["results"][0]
+        self.assertEqual("jev", hit["match_basis"])
+        self.assertEqual("full", hit["match_classification"])
+        self.assertEqual("alice/audit-dns@1.2.3", hit["reference"])
+        self.assertEqual(
+            "rote play inspect alice/audit-dns@1.2.3 --json", hit["inspect_command"]
+        )
+        self.assertEqual("inspect_required", hit["execution_resolution"])
+        self.assertEqual(hit["reference"], result["play_choices"][0]["reference"])
+
+    def test_native_rote_envelope(self):
+        result, _ = self.run_search({"schema": 1, "data": {"result": response()}})
+        self.assertEqual(1, len(result["results"]))
+
+    def test_public_and_org_scopes(self):
+        _, call = self.run_search(public=True)
+        self.assertTrue(call.call_args.kwargs["public"])
+        body = response(
             [
-                "rote", "play", "search", "hello",
-                "--source", "registry", "--scope", "accessible",
-                "--limit", "50", "--json",
-            ],
-            commands,
-        )
-
-    def test_request_values_are_removed_for_parallel_discovery(self):
-        self.assertEqual(
-            ["fetch rideshare receipts for month of july 2026", "rideshare receipts"],
-            PLAY_SEARCH.discovery_queries(
-                "fetch rideshare receipts for month of july 2026"
-            ),
-        )
-
-    def test_argument_values_are_stripped_before_search(self):
-        self.assertEqual(
-            "assess the pricing page at",
-            PLAY_SEARCH.outcome_query(
-                "Assess the pricing page at https://modiqo.ai/pricing"
-            ),
-        )
-        self.assertEqual(
-            "summarize prs for in since",
-            PLAY_SEARCH.outcome_query(
-                "summarize PRs for @octocat in ~/src/repo since 2026-08-01 \"urgent\""
-            ),
-        )
-        self.assertEqual(
-            "email receipts for",
-            PLAY_SEARCH.outcome_query("email receipts for person@example.com"),
-        )
-        # A request that is only an argument still yields a searchable query.
-        self.assertEqual(
-            "https modiqo ai pricing",
-            PLAY_SEARCH.outcome_query("https://modiqo.ai/pricing"),
-        )
-
-    def test_conjoined_outcomes_are_separable_only_with_enough_vocabulary(self):
-        self.assertEqual(
-            ["daily calendar", "weather briefing"],
-            PLAY_SEARCH.separable_outcomes("daily calendar and weather briefing"),
-        )
-        self.assertEqual(
-            ["check my calendar for active meetings for today", "weather in san francisco"],
-            PLAY_SEARCH.separable_outcomes(
-                "check my calendar for active meetings for today and also weather in san francisco"
-            ),
-        )
-        # A one-word remainder would make any Play mentioning it a full match.
-        self.assertEqual(
-            ["compare revenue and cost"],
-            PLAY_SEARCH.separable_outcomes("compare revenue and cost"),
-        )
-        # A separator inside an argument value never splits the request.
-        self.assertEqual(
-            ["open https://example.com/a,b and summarize the page"],
-            PLAY_SEARCH.separable_outcomes("open https://example.com/a,b and summarize the page"),
-        )
-        self.assertEqual(
-            ["retrieve PostHog daily active users"],
-            PLAY_SEARCH.separable_outcomes("retrieve PostHog daily active users"),
-        )
-
-    def test_outcome_groups_align_phrasings_by_shared_vocabulary(self):
-        groups = PLAY_SEARCH.outcome_groups(
-            [
-                "daily calendar and weather briefing",
-                "check my calendar for active meetings for today and also weather in san francisco",
+                group(
+                    "organization",
+                    "team",
+                    [candidate(owner="team", visibility="private")],
+                )
             ]
         )
-        self.assertEqual(
-            [
-                ["daily calendar", "check my calendar for active meetings for today"],
-                ["weather briefing", "weather in san francisco"],
-            ],
-            groups,
+        result, call = self.run_search(body, org="team")
+        self.assertEqual("team", call.call_args.kwargs["org"])
+        self.assertEqual("team", result["results"][0]["ownership"])
+        with self.assertRaises(search.SearchError):
+            self.run_search(public=True, org="team")
+
+    def test_preserves_negation_quotes_and_redacts_parameter_values(self):
+        query = search.relevance_query(
+            'Audit DNS "without changing anything" at https://example.com for a@example.com ~/private.txt token=abc123'
         )
-        self.assertEqual([], PLAY_SEARCH.outcome_groups(["retrieve PostHog daily active users"]))
+        self.assertIn('"without changing anything"', query)
+        for secret in ["example.com", "private.txt", "abc123"]:
+            self.assertNotIn(secret, query)
+        self.assertIn("[credential]", query)
+        self.assertIn("[argument]", query)
 
-    def test_compound_request_is_searched_per_outcome_and_reports_coverage(self):
-        """Regression: the blended phrase ranked only briefing Plays, so both halves were missed."""
-
-        def item(reference, description):
-            owner, name = reference.split("/")
-            return {
-                "play_id": f"play-{name}",
-                "reference": f"{reference}@0.1.0",
-                "owner": {"kind": "organization", "slug": owner},
-                "name": name,
-                "description": description,
-                "version": "0.1.0",
-                "visibility": "public",
-                "status": "released",
-                "rank": 0.5,
-                "tags": [],
-                "requires_adapters": [],
-            }
-
-        catalog = [
-            item("harshitborana75/hey-rote", "Daily briefing from your calendar with rote"),
-            item("modiqo/agenda-check", "Check the calendar for active meetings today"),
-            item("modiqo/weather-updates-for-cities", "Weather updates for a list of cities"),
-        ]
-
-        def fake_run(command, **_kwargs):
-            if "--source" not in command:
-                return {"flows": []}
-            query = command[3].casefold()
-            terms = query.replace(" or ", " ").split()
-            return {
-                "items": [
-                    entry
-                    for entry in catalog
-                    if any(term in entry["description"].casefold() for term in terms)
-                ]
-            }
-
-        import io
-        import json
-        from contextlib import redirect_stdout
-
-        argv = [
-            "play-search",
-            "check calendar meetings and current weather",
-            "--also",
-            "check my calendar for active meetings for today and also current weather in san francisco",
-            "--limit",
-            "5",
-            "--decompose",
-            "--json",
-        ]
-        buffer = io.StringIO()
-        with mock.patch.object(PLAY_SEARCH, "run_json", side_effect=fake_run), \
-                mock.patch.object(sys, "argv", argv), redirect_stdout(buffer):
-            self.assertEqual(0, PLAY_SEARCH.main())
-        payload = json.loads(buffer.getvalue())
-
-        # The blended phrase is covered by nothing: its best hit is partial...
-        self.assertEqual("partial", payload["results"][0]["match_classification"])
-        self.assertIn("weather", payload["results"][0]["uncovered_terms"])
-        # ...but each half was searched on its own vocabulary and classified alone.
-        by_outcome = {entry["outcome"]: entry for entry in payload["sub_outcomes"]}
-        self.assertEqual(["check calendar meetings", "current weather"], sorted(by_outcome))
-        calendar = by_outcome["check calendar meetings"]
-        self.assertEqual("modiqo/agenda-check", calendar["reference"])
-        self.assertEqual("full", calendar["classification"])
-        self.assertEqual([], calendar["uncovered_terms"])
-        weather = by_outcome["current weather"]
-        self.assertEqual("modiqo/weather-updates-for-cities", weather["reference"])
-        self.assertEqual("partial", weather["classification"])
-        self.assertEqual(["current"], weather["uncovered_terms"])
-        self.assertEqual(
-            {
-                "classification": "partial",
-                "covered": ["check calendar meetings"],
-                "uncovered": ["current weather"],
-            },
-            payload["coverage"],
-        )
-        self.assertIn("modiqo/agenda-check", payload["result_refs"])
-        self.assertIn("modiqo/weather-updates-for-cities", payload["result_refs"])
-
-    def test_naming_one_play_in_a_compound_request_does_not_cover_the_other_half(self):
-        calendar = {
-            "reference": "modiqo/check-calendar-meetings",
-            "match_classification": "full",
-            "match_basis": "identity",
-            "argument_terms": ["weather", "san", "francisco"],
-        }
-        weather = {"reference": "modiqo/weather-updates-for-cities", "match_classification": "partial"}
-        sub_outcomes = [
-            {"outcome": "check calendar meetings", "classification": "full", "results": [calendar]},
-            {"outcome": "weather in san francisco", "classification": "partial", "results": [weather]},
-        ]
-        self.assertFalse(PLAY_SEARCH.blended_covers_whole([calendar], sub_outcomes))
-        self.assertEqual(
-            {
-                "classification": "partial",
-                "covered": ["check calendar meetings"],
-                "uncovered": ["weather in san francisco"],
-            },
-            PLAY_SEARCH.coverage_summary("x", [calendar], sub_outcomes),
-        )
-        complete = dict(calendar, match_basis="complete")
-        self.assertTrue(PLAY_SEARCH.blended_covers_whole([complete], sub_outcomes))
-        # An atomic request named by its Play is still a full identity match.
-        self.assertTrue(PLAY_SEARCH.blended_covers_whole([calendar], []))
-
-    def test_atomic_request_with_decompose_is_unchanged(self):
-        import io
-        import json
-        from contextlib import redirect_stdout
-
-        def fake_run(command, **_kwargs):
-            return {"flows": []} if "--source" not in command else {"items": []}
-
-        buffer = io.StringIO()
-        argv = ["play-search", "retrieve PostHog daily active users", "--decompose", "--json"]
-        with mock.patch.object(PLAY_SEARCH, "run_json", side_effect=fake_run), \
-                mock.patch.object(sys, "argv", argv), redirect_stdout(buffer):
-            self.assertEqual(0, PLAY_SEARCH.main())
-        payload = json.loads(buffer.getvalue())
-        self.assertEqual([], payload["sub_outcomes"])
-        self.assertEqual([], payload["results"])
-        self.assertEqual(
-            {
-                "classification": "none",
-                "covered": [],
-                "uncovered": ["retrieve PostHog daily active users"],
-            },
-            payload["coverage"],
-        )
-
-    def test_relaxed_registry_query_joins_outcome_tokens_with_or(self):
-        self.assertEqual(
-            "assess OR pricing OR page",
-            PLAY_SEARCH.relaxed_registry_query("assess the pricing page at"),
-        )
-        self.assertIsNone(PLAY_SEARCH.relaxed_registry_query("pricing"))
-
-    def test_intent_paraphrase_with_target_url_still_finds_the_play(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        registry = [
-            {
-                "owner_slug": "heavybit-crucible",
-                "skill_name": "pricing-page-assessment",
-                "skill_description": "Is my pricing page helping or hurting?",
-                "visibility": "public",
-                "version": "0.4.2",
-                "status": "approved",
-            }
-        ]
-        for query in (
-            "Assess the pricing page at https://modiqo.ai/pricing",
-            "assess the pricing page at https modiqo ai pricing",
-            "can you conduct pricing page assessment on https://modiqo.ai/pricing",
+    def test_original_wording_wins_over_paraphrase(self):
+        with (
+            mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "play-search",
+                    "repair DNS",
+                    "--also",
+                    "Audit DNS without changing anything",
+                    "--json",
+                ],
+            ),
+            mock.patch.object(
+                search, "search_request", return_value={"ok": True}
+            ) as call,
+            mock.patch("sys.stdout", new_callable=io.StringIO),
         ):
-            results = PLAY_SEARCH.merge_results(
-                {"flows": []}, registry, flow_root, 10, query
+            self.assertEqual(0, search.main())
+        self.assertEqual("Audit DNS without changing anything", call.call_args.args[0])
+
+    def test_no_keyword_or_cached_fallback_on_rejection(self):
+        result, call = self.run_search(response([group()]))
+        self.assertEqual([], result["results"])
+        self.assertTrue(result["complete"])
+        self.assertEqual(1, call.call_count)
+
+    def test_uncertain_and_partial_never_become_full(self):
+        body = response(
+            [
+                group(
+                    matches=[candidate("partial")],
+                    uncertain=[
+                        candidate("uncertain", name="other"),
+                        candidate("unverified", name="third"),
+                    ],
+                )
+            ]
+        )
+        result, _ = self.run_search(body)
+        self.assertEqual(
+            ["partial", "uncertain", "uncertain"],
+            [r["match_classification"] for r in result["results"]],
+        )
+        self.assertTrue(all(r["uncovered_terms"] for r in result["results"]))
+        text = search.render_markdown(
+            "", result["query"], result["results"], result["source_health"]
+        )
+        self.assertIn("Possible matches", text)
+
+    def test_incompleteness_survives_each_worker_failure_signal(self):
+        for change in [
+            "complete",
+            "mode",
+            "omitted",
+            "judgment",
+            "retrieval",
+            "truncated",
+            "display",
+        ]:
+            with self.subTest(change=change):
+                body = response()
+                if change == "complete":
+                    body["complete"] = False
+                if change == "mode":
+                    body["mode"] = "degraded"
+                if change == "omitted":
+                    body["omitted_groups"] = [{"owner_slug": "team"}]
+                if change == "judgment":
+                    body["groups"][0]["judgment_complete"] = False
+                if change == "retrieval":
+                    body["groups"][0]["retrieval"]["status"] = "unavailable"
+                if change == "truncated":
+                    body["groups"][0]["retrieval"]["truncated"] = True
+                if change == "display":
+                    body["groups"][0]["display_truncated"] = True
+                result, _ = self.run_search(body)
+                self.assertFalse(result["complete"])
+                self.assertFalse(result["source_health"]["complete"])
+                self.assertEqual(1, len(result["results"]))
+
+    def test_scope_identity_and_contract_fail_closed(self):
+        bodies = []
+        for path, value in [
+            (["registry"], "custom"),
+            (["mode"], []),
+            (["groups", 0, "id"], []),
+            (["groups", 0, "matches", 0, "url"], "https://evil.test/"),
+            (["groups", 0, "matches", 0, "reference"], "local-draft"),
+            (["groups", 0, "matches", 0, "visibility"], "private"),
+            (["groups", 0, "matches", 0, "relevance", "status"], "rejected"),
+            (["groups", 0, "matches", 0, "version"], "9.0.0"),
+        ]:
+            body = response()
+            target = body
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = value
+            bodies.append(body)
+        bodies += [
+            response([]),
+            {"schema": "old-search"},
+            response([group(matches=[candidate(), candidate()])]),
+        ]
+        for body in bodies:
+            with self.subTest(body=body), self.assertRaises(search.SearchError):
+                self.run_search(body)
+        with self.assertRaises(search.SearchError):
+            self.run_search(
+                response([group(), group("personal", "alice")]), public=True
             )
+        with self.assertRaises(search.SearchError):
+            self.run_search(
+                response(
+                    [group("organization", "team", [candidate(owner="outsider")])]
+                ),
+                org="team",
+            )
+
+    def test_transport_failure_is_not_empty_success(self):
+        with mock.patch.object(
+            search, "request_search", side_effect=search.SearchError("timed out")
+        ) as call:
+            with self.assertRaises(search.SearchError):
+                search.search_published("audit DNS")
+            self.assertEqual(1, call.call_count)
+
+    def test_query_bounds_never_silently_truncate_constraints(self):
+        for query in ["", "ab", "x" * 401]:
+            with self.assertRaises(search.SearchError):
+                search.relevance_query(query)
+        for limit in [0, 13]:
+            with self.assertRaises(search.SearchError):
+                self.run_search(limit=limit)
+
+    def test_decomposition_uses_same_worker_and_retains_whole_constraints(self):
+        with (
+            mock.patch.object(
+                search, "separable_outcomes", return_value=["audit DNS", "send report"]
+            ),
+            mock.patch.object(search, "request_search", return_value=response()) as call,
+        ):
+            result = search.search_request(
+                "Audit DNS without changing records and send report", decompose=True
+            )
+        self.assertEqual(3, call.call_count)
+        for invocation in call.call_args_list:
+            self.assertIn("without changing records", invocation.args[0])
+            self.assertFalse(invocation.kwargs["public"])
+        self.assertEqual(2, len(result["sub_outcomes"]))
+
+    def test_unpublished_files_and_cached_names_never_enter_search(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            (root / "audit-dns").mkdir()
+            (root / "audit-dns" / "main.ts").write_text(
+                "name: audit-dns; description: audit DNS without changes"
+            )
+            (root / "catalog.json").write_text('{"plays":[{"name":"audit-dns"}]}')
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "ROTE_HOME": temp,
+                    "PLAY_INTERCEPT_FLOWS_ROOT": temp,
+                    "PLAY_INBOX_CACHE_PATH": str(root / "catalog.json"),
+                },
+            ):
+                result, call = self.run_search(response([group()]))
+            self.assertEqual([], result["results"])
+            self.assertEqual(1, call.call_count)
+
+    def test_audit_corpus_uses_judged_published_versions_and_reports_failure(self):
+        from play.audit import corpus
+
+        body = response(
+            [
+                group(
+                    matches=[candidate()],
+                    uncertain=[candidate("unverified", name="unknown")],
+                )
+            ]
+        )
+        with mock.patch.object(search, "request_search", return_value=body) as call:
             self.assertEqual(
-                ["heavybit-crucible/pricing-page-assessment"],
-                [result["reference"] for result in results],
-                query,
+                ["alice/audit-dns@1.2.3"], corpus.registry_references(["audit DNS"])
             )
-            self.assertEqual("full", results[0]["match_classification"], query)
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []}, registry, flow_root, 10, "list something unrelated entirely"
-        )
-        self.assertEqual([], results)
-
-    def test_best_of_several_phrasings_scores_each_play(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        registry = [
-            {
-                "owner_slug": "heavybit-crucible",
-                "skill_name": "pricing-page-assessment",
-                "skill_description": "Is my pricing page helping or hurting?",
-                "visibility": "public",
-                "version": "0.4.2",
-            }
-        ]
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []},
-            registry,
-            flow_root,
-            10,
-            ["evaluate the plans grid", "pricing page assessment for https://modiqo.ai/pricing"],
-        )
-        self.assertEqual("full", results[0]["match_classification"])
-        self.assertEqual(1.0, results[0]["coverage"])
-
-    def test_live_search_unwraps_rote_machine_envelope_and_empty_pages(self):
-        import subprocess
-
-        def typed_result(command, **_kwargs):
-            if "--source" not in command:
-                payload = (
-                    '{"schema":1,"ok":true,"data":{"status":{"ok":true},'
-                    '"result":{"fields":{"query":"x","reason":"no_plays_directory","total":"0"}}}}'
-                )
-            elif "OR" in " ".join(command):
-                payload = (
-                    '{"schema":1,"ok":true,"data":{"result":{"schema":"rote.remote-play-search.v1",'
-                    '"page":{"count":1,"next_cursor":null},"items":[{"reference":'
-                    '"heavybit-crucible/pricing-page-assessment@0.4.2","name":"pricing-page-assessment",'
-                    '"description":"Is my pricing page helping or hurting?","visibility":"public",'
-                    '"version":"0.4.2","status":"approved","owner":{"slug":"heavybit-crucible"}}]}}}'
-                )
-            else:
-                payload = (
-                    '{"schema":1,"ok":true,"data":{"result":{"schema":"rote.remote-play-search.v1",'
-                    '"page":{"count":0,"next_cursor":null},"items":[]}}}'
-                )
-            return subprocess.CompletedProcess(command, 0, payload, "")
-
-        with mock.patch(
-            "play.commands.subprocess.run", side_effect=typed_result
-        ), mock.patch.dict(
-            os.environ, {"PLAY_INBOX_CACHE_PATH": "/nonexistent/inbox.json"}
+        self.assertFalse(call.call_args.kwargs["public"])
+        with (
+            mock.patch.object(
+                corpus,
+                "search_published",
+                side_effect=search.SearchError("unavailable"),
+            ),
+            mock.patch("sys.stderr", new_callable=io.StringIO),
         ):
-            local, registry = PLAY_SEARCH.search_both("assess the pricing page at", 5)
-        self.assertEqual([], local["flows"])
-        self.assertEqual([], local["source_health"]["live_errors"])
-        self.assertEqual("live_after_cache_miss", local["source_health"]["mode"])
-        self.assertEqual(
-            ["heavybit-crucible"], [item["owner_slug"] for item in registry]
-        )
+            self.assertEqual(1, corpus.main(["refs", "--query", "audit DNS"]))
 
-    def test_argument_values_never_create_a_match(self):
-        """A URL, e-mail, or handle that happens to contain Play vocabulary is not intent."""
-        flow_root = pathlib.Path("/tmp/example-flows")
-        registry = [
-            {
-                "owner_slug": "heavybit-crucible",
-                "skill_name": "pricing-page-assessment",
-                "skill_description": "Is my pricing page helping or hurting?",
-                "visibility": "public",
-                "version": "0.4.2",
-            }
-        ]
-        for query in (
-            "https://modiqo.ai/pricing",
-            "send a note to pricing@example.com",
-            "open ~/docs/pricing-page-assessment.md",
-            "ping @pricing-page on slack",
+    def test_subquery_failure_preserves_primary_matches_and_marks_incomplete(self):
+        with (
+            mock.patch.object(
+                search, "separable_outcomes", return_value=["audit DNS", "send report"]
+            ),
+            mock.patch.object(
+                search,
+                "request_search",
+                side_effect=[response(), search.SearchError("timeout"), response()],
+            ),
         ):
-            results = PLAY_SEARCH.merge_results(
-                {"flows": []}, registry, flow_root, 10, query
-            )
-            self.assertEqual([], results, query)
+            result = search.search_request("Audit DNS and send report", decompose=True)
+        self.assertFalse(result["complete"])
+        self.assertEqual(1, len(result["results"]))
+        self.assertFalse(result["sub_outcomes"][0]["complete"])
 
-    def test_or_relaxed_registry_hits_are_still_filtered_by_coverage(self):
-        """OR-joined registry queries widen recall; scoring must still reject weak hits."""
-        flow_root = pathlib.Path("/tmp/example-flows")
-        registry = [
-            {
-                "owner_slug": "acme",
-                "skill_name": "page-speed-audit",
-                "skill_description": "Audits page load performance.",
-                "visibility": "public",
-                "version": "1.0.0",
-            },
-            {
-                "owner_slug": "acme",
-                "skill_name": "competitor-pricing-scrape",
-                "skill_description": "Scrapes competitor pricing tables.",
-                "visibility": "public",
-                "version": "1.0.0",
-            },
-        ]
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []},
-            registry,
-            flow_root,
-            10,
-            "Assess the pricing page at https://modiqo.ai/pricing",
-        )
-        self.assertEqual([], results)
-
-    def test_two_of_three_outcome_tokens_are_not_a_full_match(self):
-        """"summarize last email" must not run a Play about git commits."""
-        flow_root = pathlib.Path("/tmp/example-flows")
-        registry = [
-            {
-                "owner_slug": "manasds",
-                "skill_name": "last-commit-summary",
-                "skill_description": (
-                    "Return the last commit SHA, author, date, and message for a "
-                    "GitHub repository"
-                ),
-                "visibility": "public",
-                "version": "0.1.0",
-            },
-            {
-                "owner_slug": "modiqo",
-                "skill_name": "retrieve-recent-emails",
-                "skill_description": (
-                    "Retrieves recent Gmail messages matching a Gmail search query"
-                ),
-                "visibility": "public",
-                "version": "0.1.6",
-            },
-        ]
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []}, registry, flow_root, 10, "summarize last email"
-        )
-        self.assertTrue(results)
-        for result in results:
-            self.assertNotEqual("full", result["match_classification"], result["reference"])
-        commit = next(r for r in results if r["name"] == "last-commit-summary")
-        self.assertEqual("partial", commit["match_classification"])
-        self.assertEqual(["email"], commit["uncovered_terms"])
-        self.assertEqual([], commit["argument_terms"])
-
-    def test_complete_outcome_coverage_is_a_full_match_with_empty_remainder(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        registry = [
-            {
-                "owner_slug": "rwnalds",
-                "skill_name": "what-should-i-automate",
-                "skill_description": "Finds the repeated work worth automating.",
-                "visibility": "public",
-                "version": "0.2.1",
-            }
-        ]
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []}, registry, flow_root, 10, "what should i automate"
-        )
-        self.assertEqual("full", results[0]["match_classification"])
-        self.assertEqual("complete", results[0]["match_basis"])
-        self.assertEqual(1.0, results[0]["coverage"])
-        self.assertEqual([], results[0]["uncovered_terms"])
-
-    def test_naming_the_play_keeps_argument_words_out_of_the_remainder(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        registry = [
-            {
-                "owner_slug": "modiqo",
-                "skill_name": "retrieve-rideshare-receipts",
-                "skill_description": "Retrieves rideshare receipts between two dates.",
-                "visibility": "public",
-                "version": "0.1.0",
-            }
-        ]
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []},
-            registry,
-            flow_root,
-            10,
-            "retrieve rideshare receipts for acme between the 15th and 20th",
-        )
-        self.assertEqual("full", results[0]["match_classification"])
-        self.assertEqual("identity", results[0]["match_basis"])
-        self.assertEqual([], results[0]["uncovered_terms"])
-        self.assertEqual(["acme"], results[0]["argument_terms"])
-
-    def test_intent_paraphrase_cannot_hide_a_better_live_match_behind_the_cache(self):
-        """Case 2: a two-thirds cached hit no longer skips the live registry."""
-        import json as json_module
-        import tempfile
-
-        commands = []
-
-        def fake_run(command, **_kwargs):
-            commands.append(command)
-            if "--source" not in command:
-                return {"flows": []}
-            return {
-                "schema": "rote.remote-play-search.v1",
-                "items": [
-                    {
-                        "play_id": "automate-play",
-                        "reference": "rwnalds/what-should-i-automate@0.2.1",
-                        "owner": {"slug": "rwnalds", "kind": "user"},
-                        "name": "what-should-i-automate",
-                        "description": "Finds the repeated work worth automating.",
-                        "version": "0.2.1",
-                        "visibility": "public",
-                        "status": "approved",
-                    }
-                ],
-            }
-
-        phrasings = ["daily work review", "what should i automate"]
-        with tempfile.TemporaryDirectory() as temporary:
-            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
-            cache_path.write_text(
-                json_module.dumps(
-                    {
-                        "schema": "play.inbox-cache/v1",
-                        "catalog_complete": True,
-                        "catalog": [
-                            {
-                                "reference": "modiqo/agent-work-daily-close",
-                                "name": "agent-work-daily-close",
-                                "description": (
-                                    "Audits recent agent sessions for daily work closure."
-                                ),
-                                "visibility": "public",
-                                "version": "1.0.1",
-                            }
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            with mock.patch.object(
-                PLAY_SEARCH, "run_json", side_effect=fake_run
-            ), mock.patch.dict(
-                os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}
-            ):
-                local, registry = PLAY_SEARCH.search_both(phrasings, 5)
-
-        self.assertEqual("live_after_cache_miss", local["source_health"]["mode"])
-        self.assertTrue(any("--source" in command for command in commands))
-        results = PLAY_SEARCH.merge_results(
-            local, registry, pathlib.Path("/tmp/none"), 5, phrasings
-        )
-        self.assertEqual(
-            ["rwnalds/what-should-i-automate"],
-            [result["reference"] for result in results],
-        )
-        self.assertEqual("full", results[0]["match_classification"])
-
-    def test_adapter_name_alone_does_not_make_an_unrelated_request_adequate(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        registry = [
-            {
-                "owner_slug": "modiqo",
-                "skill_name": "retrieve-recent-emails",
-                "skill_description": "Retrieves recent inbox messages.",
-                "visibility": "public",
-                "version": "0.1.6",
-                "adapters": ["gmail"],
-            }
-        ]
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []}, registry, flow_root, 10, "delete every gmail filter"
-        )
-        self.assertEqual(["modiqo/retrieve-recent-emails"], [r["reference"] for r in results])
-        self.assertEqual("partial", results[0]["match_classification"])
-        self.assertEqual("adapter_partial", results[0]["match_basis"])
-        self.assertEqual(["delete", "every", "filter"], results[0]["uncovered_terms"])
-
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []}, registry, flow_root, 10, "gmail plays"
-        )
-        self.assertEqual("full", results[0]["match_classification"])
-        self.assertEqual("adapter", results[0]["match_basis"])
-
-    def test_ordinal_day_tokens_are_arguments_not_outcome_vocabulary(self):
-        self.assertEqual(
-            ["rideshare receipts 15th", "rideshare receipts"],
-            PLAY_SEARCH.discovery_queries("rideshare receipts 15th"),
-        )
-
-    def test_stem_sharing_is_bounded_to_real_inflections(self):
-        from play.normalize import token_is_covered
-
-        self.assertTrue(token_is_covered("assessment", {"assess"}))
-        self.assertTrue(token_is_covered("assess", {"assessment"}))
-        self.assertTrue(token_is_covered("summarize", {"summary"}))
-        self.assertTrue(token_is_covered("receipts", {"receipt"}))
-        self.assertFalse(token_is_covered("internal", {"interval"}))
-        self.assertFalse(token_is_covered("assess", {"asset"}))
-        self.assertFalse(token_is_covered("pricing", {"price"}))
-        self.assertFalse(token_is_covered("page", {"pages"}))  # short tokens stay exact
-
-    def test_filler_only_intent_matches_nothing(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        registry = [
-            {
-                "owner_slug": "heavybit-crucible",
-                "skill_name": "pricing-page-assessment",
-                "skill_description": "Is my pricing page helping or hurting?",
-                "visibility": "public",
-                "version": "0.4.2",
-            }
-        ]
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []}, registry, flow_root, 10, "can you do this for me please"
-        )
-        self.assertEqual([], results)
-
-    def test_scope_priority_is_local_then_private_then_public_then_baseline(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        description = "Retrieve rideshare receipts"
-        local = {
-            "flows": [{
-                "name": "local-receipts",
-                "path": str(flow_root / "local" / "local-receipts" / "main.ts"),
-                "description": description,
-                "score": 0.1,
-            }]
-        }
-        registry = [
-            {
-                "owner_slug": "public-hub",
-                "skill_name": "public-receipts",
-                "skill_description": description,
-                "version": "2.0.0",
-                "rank": 10.0,
-                "status": "approved",
-                "visibility": "public",
-                "storage_path": "community_123/public-receipts/2.0.0/flow",
-            },
-            {
-                "owner_slug": "private-org",
-                "skill_name": "private-receipts",
-                "skill_description": description,
-                "version": "1.0.0",
-                "rank": 1.0,
-                "status": "approved",
-                "visibility": "private",
-                "storage_path": "organization_123/private-receipts/1.0.0/flow",
-            },
-            {
-                "owner_slug": "modiqo",
-                "skill_name": "baseline-receipts",
-                "skill_description": description,
-                "version": "3.0.0",
-                "rank": 20.0,
-                "status": "approved",
-                "visibility": "public",
-                "catalog_tier": "public_baseline",
-            },
-        ]
-        results = PLAY_SEARCH.merge_results(
-            local, registry, flow_root, 10, "rideshare receipts"
-        )
-        self.assertEqual(
-            ["local", "remote_private", "remote_public", "remote_baseline"],
-            [result["primary_scope"] for result in results],
-        )
-
-    def test_identity_owned_plays_rank_ahead_of_equally_adequate_community_plays(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        description = "Finds the repeated work worth automating."
-        registry = [
-            {
-                "owner_slug": "someone",
-                "skill_name": "automation-opportunity-scan",
-                "skill_description": description,
-                "version": "0.1.0",
-                "rank": 30.0,
-                "status": "approved",
-                "visibility": "public",
-            },
-            {
-                "owner_slug": "rwnalds",
-                "skill_name": "what-should-i-automate",
-                "skill_description": description,
-                "version": "0.2.1",
-                "rank": 1.0,
-                "status": "approved",
-                "visibility": "public",
-            },
-            {
-                "owner_slug": "acme",
-                "skill_name": "team-automation-review",
-                "skill_description": description,
-                "version": "1.0.0",
-                "rank": 20.0,
-                "status": "approved",
-                "visibility": "public",
-            },
-        ]
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []},
-            registry,
-            flow_root,
-            10,
-            "automation worth repeated work",
-            ownership=("rwnalds", {"acme"}),
-        )
-        self.assertEqual(
-            [
-                ("rwnalds/what-should-i-automate", "yours"),
-                ("acme/team-automation-review", "team"),
-                ("someone/automation-opportunity-scan", "community"),
-            ],
-            [(result["reference"], result["ownership"]) for result in results],
-        )
-        self.assertTrue(all(result["match_classification"] == "full" for result in results))
-
-    def test_ownership_never_lifts_a_partial_match_over_a_complete_community_match(self):
-        flow_root = pathlib.Path("/tmp/example-flows")
-        registry = [
-            {
-                "owner_slug": "rwnalds",
-                "skill_name": "last-commit-summary",
-                "skill_description": "Return the last commit for a GitHub repository.",
-                "version": "0.1.0",
-                "visibility": "public",
-            },
-            {
-                "owner_slug": "someone",
-                "skill_name": "summarize-last-email",
-                "skill_description": "Summarize the last email in your inbox.",
-                "version": "0.1.0",
-                "visibility": "public",
-            },
-        ]
-        results = PLAY_SEARCH.merge_results(
-            {"flows": []},
-            registry,
-            flow_root,
-            10,
-            "summarize last email",
-            ownership=("rwnalds", set()),
-        )
-        self.assertEqual(["someone/summarize-last-email"], [r["reference"] for r in results])
-        self.assertEqual("community", results[0]["ownership"])
-
-    def test_owner_scope_reads_handle_and_organizations_from_the_inbox_cache(self):
-        import json as json_module
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as temporary:
-            cache_path = pathlib.Path(temporary) / "inbox-cache.json"
-            cache_path.write_text(
-                json_module.dumps(
-                    {
-                        "schema": "play.inbox-cache/v1",
-                        "profile_handle": "rwnalds",
-                        "organization_scope": ["acme", "modiqo"],
-                        "catalog": [],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            with mock.patch.dict(os.environ, {"PLAY_INBOX_CACHE_PATH": str(cache_path)}):
-                self.assertEqual(("rwnalds", {"acme", "modiqo"}), PLAY_SEARCH.owner_scope())
-        self.assertEqual((None, set()), PLAY_SEARCH.owner_scope())
-
-    def test_markdown_segments_by_ownership_only_when_tiers_differ(self):
-        def result(name, owner, ownership):
-            return {
-                "name": name,
-                "version": "0.1.0",
-                "sources": ["remote_public"],
-                "score": 1.0,
-                "match_classification": "full",
-                "ownership": ownership,
-                "uri": f"https://play.modiqo.ai/{owner}/{name}",
-                "run_command": f"rote play run {owner}/{name}",
-                "inspect_command": f"rote play inspect {owner}/{name} --json",
-                "hint_kind": "play",
-                "execution_resolution": "pull_required",
-            }
-
-        mixed = PLAY_SEARCH.render_markdown(
-            "what should i automate",
-            "what should i automate",
-            [
-                result("what-should-i-automate", "rwnalds", "yours"),
-                result("automation-opportunity-scan", "someone", "community"),
-            ],
-        )
-        self.assertIn("\nYours\n", mixed)
-        self.assertIn("\nCommunity\n", mixed)
-        self.assertLess(mixed.index("Yours"), mixed.index("Community"))
-        self.assertIn("**what-should-i-automate** · remote_public · v0.2.1".replace("0.2.1", "0.1.0") + " · full · yours", mixed)
-
-        single = PLAY_SEARCH.render_markdown(
-            "what should i automate",
-            "what should i automate",
-            [result("what-should-i-automate", "rwnalds", "yours")],
-        )
-        self.assertNotIn("\nYours\n", single)
-        self.assertIn(" · full · yours", single)
-
-    def test_partial_rows_name_the_missing_words_instead_of_recommending_inspection(self):
-        def result(name, owner, classification, uncovered):
-            return {
-                "name": name,
-                "version": "0.1.0",
-                "sources": ["remote_public"],
-                "score": 0.68,
-                "match_classification": classification,
-                "uncovered_terms": uncovered,
-                "ownership": "community",
-                "uri": f"https://play.modiqo.ai/{owner}/{name}",
-                "run_command": f"rote play run {owner}/{name}",
-                "inspect_command": f"rote play inspect {owner}/{name} --json",
-                "hint_kind": "play",
-                "execution_resolution": "pull_required",
-            }
-
-        partial_only = PLAY_SEARCH.render_markdown(
-            "summarize last email",
-            "summarize last email",
-            [result("last-commit-summary", "manasds", "partial", ["email"])],
-        )
-        self.assertIn("Closest Plays only. None covers the whole request", partial_only)
-        self.assertIn("Partial: does not cover email", partial_only)
-        self.assertNotIn("Next: inspect", partial_only)
-
-        with_full = PLAY_SEARCH.render_markdown(
-            "retrieve recent emails",
-            "retrieve recent emails",
-            [result("retrieve-recent-emails", "modiqo", "full", [])],
-        )
-        self.assertNotIn("Closest Plays only", with_full)
-        self.assertIn("Next: inspect with", with_full)
-
-    def test_play_choices_lead_with_the_ownership_word(self):
-        choices = PLAY_SEARCH.build_play_choices(
-            [
-                {
-                    "name": "what-should-i-automate",
-                    "reference": "rwnalds/what-should-i-automate@0.2.1",
-                    "primary_scope": "remote_public",
-                    "ownership": "yours",
-                    "selection_description": "Finds the repeated work worth automating.",
-                },
-                {
-                    "name": "team-automation-review",
-                    "reference": "acme/team-automation-review@1.0.0",
-                    "primary_scope": "remote_public",
-                    "ownership": "team",
-                    "selection_description": "Reviews team automation.",
-                },
-            ]
-        )
-        self.assertEqual(
-            [
-                "yours · Finds the repeated work worth automating.",
-                "your team · Reviews team automation.",
-            ],
-            [choice["description"] for choice in choices],
-        )
-
-    def test_play_choices_include_local_and_remote_runnable_plays(self):
-        choices = PLAY_SEARCH.build_play_choices(
-            [
-                {
-                    "name": "mail",
-                    "reference": "alpha/mail@1.0.0",
-                    "primary_scope": "remote_private",
-                    "selection_description": "Inspect mail.",
-                },
-                {
-                    "name": "local",
-                    "reference": "/tmp/local/main.ts",
-                    "primary_scope": "local",
-                    "selection_description": "Run local.",
-                },
-            ]
-        )
-        self.assertEqual(
-            [
-                {
-                    "reference": "alpha/mail@1.0.0",
-                    "label": "alpha/mail",
-                    "description": "Inspect mail.",
-                    "parameters": {},
-                },
-                {
-                    "reference": "/tmp/local/main.ts",
-                    "label": "/tmp/local/main.ts",
-                    "description": "Run local.",
-                    "parameters": {},
-                },
-            ],
-            choices,
-        )
-
-    def test_play_choices_fit_the_harness_description_limit(self):
-        choices = PLAY_SEARCH.build_play_choices(
-            [
-                {
-                    "name": "hello",
-                    "reference": "modiqo/hello@0.4.0",
-                    "primary_scope": "remote_public",
-                    "ownership": "team",
-                    "selection_description": (
-                        "Is it down, or is it just you? " * 8
-                        + "Remote public match; pulling requires your approval."
-                    ),
-                }
-            ]
-        )
-        description = choices[0]["description"]
-        self.assertLessEqual(len(description), 240)
-        self.assertTrue(description.startswith("your team \u00b7 Is it down, or is it just you?"))
-        self.assertTrue(description.endswith("\u2026"))
-
-    def test_markdown_includes_uri_and_next_command(self):
-        results = [
-            {
-                "name": "hello",
-                "version": "0.1.0",
-                "sources": ["local", "registry"],
-                "score": 1.0,
-                "uri": "https://play.modiqo.ai/warsaw-rust/hello",
-                "run_command": "rote play run warsaw-rust/hello",
-                "inspect_command": "rote play inspect warsaw-rust/hello --json",
-                "hint_kind": "play",
-                "execution_resolution": "run_local",
-            }
-        ]
-        output = PLAY_SEARCH.render_markdown("hello?", "hello", results)
-        self.assertIn("URI: https://play.modiqo.ai/warsaw-rust/hello", output)
-        self.assertIn("Next: inspect with `rote play inspect", output)
-        self.assertIn("runs it immediately", output)
+    def test_incomplete_no_results_cannot_claim_absence(self):
+        text = search.render_markdown("", "audit DNS", [], {"complete": False})
+        self.assertIn("Search is incomplete", text)
+        self.assertNotIn("No matching published Plays found", text)
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ from .controller import (
     RuntimeSession,
 )
 from .inspection import render_markdown as render_inspection_markdown
-from .digest import render_markdown as render_digest_markdown
+from .digest import newsletter_choices, render_markdown as render_digest_markdown
 from .executors import RUNTIME_COMMANDLESS_ACTIONS
 from .search import render_markdown as render_search_markdown
 from .state_home import state_path
@@ -34,6 +34,7 @@ _SELECTOR_ACTIONS = {
     "probe_rote_for_onboarding",
     "inspect_onboarding_identity",
     "inspect_onboarding_experience",
+    "inspect_company_setup",
     "login_rote_identity",
     "inspect_registry_play",
     "collect_awareness_digest",
@@ -412,7 +413,7 @@ def _commandless_result(
         return {
             "event": "search_empty" if not results else "search_presented",
             "presentation_markdown": render_search_markdown(
-                original, normalized, results
+                original, normalized, results, dict(search.get("source_health") or {}), list(search.get("sub_outcomes") or [])
             )
         }
     if action_id == "present_awareness_digest":
@@ -490,7 +491,10 @@ def _commandless_result(
         candidate = results[0]
         if not isinstance(candidate, Mapping):
             raise ControllerRuntimeError("adequacy candidate is malformed")
-        classification = candidate.get("match_classification")
+        classification = (
+            {"direct": "full", "partial": "partial"}.get(str(candidate.get("relevance_status")), "uncertain")
+            if candidate.get("match_basis") == "jev" else "uncertain"
+        )
         reference = candidate.get("reference")
         if classification not in {"full", "partial", "uncertain"} or not isinstance(reference, str):
             raise ControllerRuntimeError("adequacy candidate is incomplete")
@@ -596,7 +600,9 @@ def _classify_creator_options(context: Mapping[str, Any]) -> dict[str, Any]:
     def classification_of(result: Mapping[str, Any] | None) -> str:
         if result is None:
             return "none"
-        return "full" if result.get("match_classification") == "full" else "partial"
+        if result.get("match_basis") != "jev" or result.get("relevance_status") not in {"direct", "partial"}:
+            return "uncertain"
+        return "full" if result["relevance_status"] == "direct" else "partial"
 
     blended = best(results)
     coverage: list[dict[str, Any]] = []
@@ -627,14 +633,11 @@ def _classify_creator_options(context: Mapping[str, Any]) -> dict[str, Any]:
             }
         )
 
-    # A blended full match covers the whole request only when every outcome token
-    # is accounted for. A request that names one Play is "full" by identity with
-    # the rest treated as arguments; in a compound request that rest is the
-    # other outcome, so identity never covers the halves.
+    # Only the Worker can establish coverage of the whole request.
     blended_full = (
         blended is not None
         and classification_of(blended) == "full"
-        and (not sub_outcomes or blended.get("match_basis") in {"complete", "adapter"})
+        and blended.get("match_basis") == "jev"
     )
     covered = [
         entry["sub_outcome"]
@@ -648,7 +651,7 @@ def _classify_creator_options(context: Mapping[str, Any]) -> dict[str, Any]:
     seen_ids: set[str] = set()
 
     def add_choice(result: Mapping[str, Any], sub_outcome: str, *, recommended: bool) -> None:
-        reference = str(result["reference"]).partition("@")[0]
+        reference = str(result["reference"])
         choice_id = f"use:{reference}"
         if choice_id in seen_ids:
             return
@@ -712,7 +715,8 @@ def _classify_creator_options(context: Mapping[str, Any]) -> dict[str, Any]:
     parts = []
     for entry in coverage:
         if entry["reference"] is None:
-            parts.append(f"{entry['sub_outcome']}: no existing Play")
+            absence = "no existing Play" if search.get("complete") is True else "no verified match in checked results"
+            parts.append(f"{entry['sub_outcome']}: {absence}")
             continue
         gap = (
             f", missing {', '.join(entry['uncovered_terms'])}"
@@ -725,13 +729,16 @@ def _classify_creator_options(context: Mapping[str, Any]) -> dict[str, Any]:
     elif blended is not None and blended_full and len(coverage) > 1:
         summary = f"{blended['reference']} covers the whole request; per outcome: " + "; ".join(parts) + "."
     elif len(coverage) == 1:
-        summary = "An existing Play covers this outcome: " + parts[0] + "."
+        summary = "A published candidate is available for this outcome: " + parts[0] + "."
     else:
         summary = (
             f"Existing Plays cover {len(covered)} of {len(coverage)} outcomes: "
             + "; ".join(parts)
             + "."
         )
+
+    if search.get("complete") is not True:
+        summary += " Search is incomplete; missing results do not establish absence."
 
     confidence = 0.0
     scored = [entry for entry in coverage if entry["reference"] is not None]
@@ -949,41 +956,9 @@ def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, An
             ranking.get("eligible_count", 0) if isinstance(ranking, Mapping) else 0
         )
         play_choices = []
-        sample = raw.get("public_sample")
-        if isinstance(sample, list):
-            for item in sample:
-                if not isinstance(item, Mapping):
-                    continue
-                reference = item.get("reference")
-                name = item.get("name")
-                if not isinstance(reference, str) or not reference:
-                    continue
-                if not isinstance(name, str) or not name:
-                    continue
-                description = str(item.get("description") or "Inspect this Play.")
-                downloads = item.get("download_count")
-                if isinstance(downloads, int):
-                    description = f"{description} · {downloads} lifetime downloads"
-                recent_at = item.get("recent_at")
-                recent_kind = item.get("recent_kind")
-                if isinstance(recent_at, str) and recent_at:
-                    date = recent_at.split("T", 1)[0]
-                    published_label = (
-                        "released" if recent_kind == "release" else "published"
-                    )
-                    description = f"{description} · {published_label} {date}"
-                parameters = item.get("parameters")
-                play_choices.append(
-                    {
-                        "reference": reference.partition("@")[0],
-                        "label": name,
-                        "description": description,
-                        "parameters": (
-                            dict(parameters) if isinstance(parameters, Mapping) else {}
-                        ),
-                    }
-                )
-        sample_contract = raw.get("sample")
+        for item in newsletter_choices(dict(raw)):
+            play_choices.append({"reference": item["reference"], "label": item["name"],
+                                 "description": "From Modiqo" if item["section"] == "modiqo" else "New in community", "parameters": {}})
         derived["awareness"] = {
             "complete": raw.get("complete") is True,
             "digest_ref": digest_ref,
@@ -993,16 +968,8 @@ def _derive_result_fields(event_id: str, raw: Mapping[str, Any]) -> dict[str, An
                 else "partial"
             ),
             "public_play_count": public_play_count,
-            "sample_strategy": (
-                sample_contract.get("strategy")
-                if isinstance(sample_contract, Mapping)
-                else "random"
-            ),
-            "sample_limit": (
-                sample_contract.get("limit")
-                if isinstance(sample_contract, Mapping)
-                else 10
-            ),
+            "sample_strategy": "newsletter",
+            "sample_limit": 10,
             "sampled_count": len(play_choices),
             "play_choices": play_choices,
         }

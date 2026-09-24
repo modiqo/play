@@ -310,7 +310,7 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertEqual(["codex", "claude"], plan["selected_harnesses"])
         self.assertEqual("not_installed", plan["play"]["update_status"])
-        self.assertEqual("0.4.98", plan["play"]["target_version"])
+        self.assertEqual("0.4.99", plan["play"]["target_version"])
         convergence = next(action for action in plan["actions"] if action["id"] == "converge_rote_skills")
         self.assertIsNone(convergence["command"])
         self.assertEqual([], convergence["targets"])
@@ -623,81 +623,18 @@ class BootstrapTest(unittest.TestCase):
         backup = self.home / ".codex" / "hooks.json.play-backup-second-hooks"
         self.assertEqual(before, backup.read_text(encoding="utf-8"))
 
-    def test_prompt_hook_resolves_a_verified_cached_catalog_entry(self) -> None:
-        cache = self.home / ".rote-play" / "inbox-cache.json"
-        cache.parent.mkdir(parents=True)
-        cache.write_text(
-            json.dumps(
-                {
-                    "schema": "play.inbox-cache/v1",
-                    "catalog_complete": True,
-                    "public_catalog": [
-                        {
-                            "reference": "modiqo/retrieve-rideshare-receipts",
-                            "name": "retrieve-rideshare-receipts",
-                            "description": "Retrieve Uber and Lyft receipts from email.",
-                            "visibility": "public",
-                        }
-                    ],
-                }
-            ),
-            encoding="utf-8",
-        )
-
+    def test_prompt_hook_smoke_check_does_not_require_a_catalog(self) -> None:
         _verify_prompt_intercept(ROOT, verify_catalog=True)
 
-    def test_prompt_hook_catalog_probe_ignores_private_entries(self) -> None:
-        cache = self.home / ".rote-play" / "inbox-cache.json"
-        cache.parent.mkdir(parents=True)
-        cache.write_text(
-            json.dumps(
-                {
-                    "schema": "play.inbox-cache/v1",
-                    "catalog_complete": True,
-                    "public_catalog": [
-                        {
-                            "reference": "private-org/cloudflare-worker-details",
-                            "name": "cloudflare-worker-details",
-                            "description": "Inspect private Cloudflare worker details.",
-                            "visibility": "private",
-                        },
-                        {
-                            "reference": "modiqo/retrieve-rideshare-receipts",
-                            "name": "retrieve-rideshare-receipts",
-                            "description": "Retrieve Uber and Lyft receipts from email.",
-                            "visibility": "public",
-                        },
-                    ],
-                }
-            ),
-            encoding="utf-8",
-        )
-
+    @patch("scripts.lib.play.bootstrap.subprocess.run")
+    def test_prompt_hook_smoke_check_checks_silent_discussion_pass_through(self, run: MagicMock) -> None:
+        run.return_value = subprocess.CompletedProcess([], 0, stdout="", stderr="")
         _verify_prompt_intercept(ROOT, verify_catalog=True)
-
-    def test_prompt_hook_catalog_probe_allows_private_only_cache(self) -> None:
-        cache = self.home / ".rote-play" / "inbox-cache.json"
-        cache.parent.mkdir(parents=True)
-        cache.write_text(
-            json.dumps(
-                {
-                    "schema": "play.inbox-cache/v1",
-                    "catalog_complete": True,
-                    "public_catalog": [],
-                    "catalog": [
-                        {
-                            "reference": "private-org/cloudflare-worker-details",
-                            "name": "cloudflare-worker-details",
-                            "description": "Inspect private Cloudflare worker details.",
-                            "visibility": "private",
-                        }
-                    ],
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        _verify_prompt_intercept(ROOT, verify_catalog=True)
+        self.assertEqual("Should we discuss search behavior?", json.loads(run.call_args.kwargs["input"])["prompt"])
+        self.assertEqual(10, run.call_args.kwargs["timeout"])
+        run.return_value.stdout = "unexpected suggestion"
+        with self.assertRaises(BootstrapError):
+            _verify_prompt_intercept(ROOT)
 
     def test_cursor_hooks_use_native_flat_schema(self) -> None:
         step = install_hooks("cursor", ROOT, run_id="cursor-run")
@@ -933,13 +870,13 @@ class BootstrapTest(unittest.TestCase):
             MagicMock(returncode=0, stdout='{"installed": []}', stderr=""),
             MagicMock(returncode=0, stdout="installed\n", stderr=""),
             MagicMock(returncode=0, stdout=json.dumps({
-                "installed": [{"pluginId": "play@play-skills", "version": "0.4.98",
+                "installed": [{"pluginId": "play@play-skills", "version": "0.4.99",
                                "enabled": True}],
             }), stderr=""),
         ])
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.98", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.99", runner=runner
         )
 
         self.assertEqual([
@@ -967,7 +904,7 @@ class BootstrapTest(unittest.TestCase):
         ])
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.98", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.99", runner=runner
         )
 
         self.assertEqual(2, runner.call_count)
@@ -987,7 +924,7 @@ class BootstrapTest(unittest.TestCase):
         ])
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.98", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.99", runner=runner
         )
 
         self.assertEqual(3, runner.call_count)
@@ -1011,7 +948,7 @@ class BootstrapTest(unittest.TestCase):
                     returncode=returncode, stdout=stdout, stderr=stderr,
                 ))
                 steps = converge_play_marketplace(
-                    harness, f"/bin/{harness}", expected_version="0.4.98", runner=runner
+                    harness, f"/bin/{harness}", expected_version="0.4.99", runner=runner
                 )
                 self.assertEqual(1, runner.call_count)
                 self.assertEqual("inspect_play_marketplace", steps[-1].id)
@@ -1054,28 +991,28 @@ class BootstrapTest(unittest.TestCase):
 
     def test_newer_marketplace_release_verifies_instead_of_rolling_back(self) -> None:
         """The marketplace tracks main; a pinned older archive must accept a newer plugin."""
-        runner = self._marketplace_runner("0.3.0", "0.4.98")
+        runner = self._marketplace_runner("0.3.0", "0.4.99")
 
         steps = converge_play_marketplace(
             "codex", "/bin/codex", expected_version="0.4.90", runner=runner
         )
 
         self.assertEqual("completed", steps[-1].status)
-        self.assertIn("0.4.98", steps[-1].detail)
+        self.assertIn("0.4.99", steps[-1].detail)
         self.assertIn("newer than 0.4.90", steps[-1].detail)
 
     def test_older_marketplace_release_still_fails_verification(self) -> None:
         runner = self._marketplace_runner("0.3.0", "0.4.90")
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.98", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.99", runner=runner
         )
 
         self.assertEqual("failed", steps[-1].status)
-        self.assertIn("Expected Play 0.4.98 or newer", steps[-1].detail)
+        self.assertIn("Expected Play 0.4.99 or newer", steps[-1].detail)
 
     def test_newer_healthy_plugin_is_kept_without_reinstall(self) -> None:
-        runner = self._marketplace_runner("0.4.98", "0.4.98")
+        runner = self._marketplace_runner("0.4.99", "0.4.99")
 
         steps = converge_play_marketplace(
             "codex", "/bin/codex", expected_version="0.4.90", runner=runner
@@ -1294,7 +1231,7 @@ class BootstrapTest(unittest.TestCase):
                         "installed": [
                             {
                                 "pluginId": "play@play-skills",
-                                "version": "0.4.98",
+                                "version": "0.4.99",
                                 "enabled": True,
                             }
                         ]
@@ -1305,7 +1242,7 @@ class BootstrapTest(unittest.TestCase):
         ]
 
         steps = converge_play_marketplace(
-            "codex", "/bin/codex", expected_version="0.4.98", runner=runner
+            "codex", "/bin/codex", expected_version="0.4.99", runner=runner
         )
 
         commands = [call.args[0] for call in runner.call_args_list]
@@ -1806,7 +1743,7 @@ class BootstrapTest(unittest.TestCase):
                 "steps": [],
                 "play": {
                     "before": {"version": "0.4.74"},
-                    "after": {"version": "0.4.98"},
+                    "after": {"version": "0.4.99"},
                 },
                 "rote": {
                     "before": {"version": "1.2.3"},
@@ -1821,7 +1758,7 @@ class BootstrapTest(unittest.TestCase):
         )
 
         self.assertIn("Components", rendered)
-        self.assertIn("Play       0.4.74 → 0.4.98", rendered)
+        self.assertIn("Play       0.4.74 → 0.4.99", rendered)
         self.assertIn("Rote       1.2.3 → 1.2.4", rendered)
         self.assertIn("Tulving    0.1.2 → 0.1.3", rendered)
 
@@ -1986,7 +1923,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("Status: SETUP PAUSED — SIGN IN REQUIRED", rendered)
         self.assertIn("Codex          WAITING FOR SIGN-IN", rendered)
         self.assertIn("Sign in to finish setup", rendered)
-        self.assertIn("choose Google or GitHub", rendered)
+        self.assertIn("choose Google, GitHub, or email", rendered)
         self.assertIn("Play-owned harness state has not been changed", rendered)
         self.assertNotIn("rote login --provider", rendered)
         self.assertNotIn("INCOMPLETE", rendered)
@@ -2640,7 +2577,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.98 is installed and enabled.",
+                "Play 0.4.99 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -2717,7 +2654,7 @@ class BootstrapTest(unittest.TestCase):
                 "record-play-install",
                 "playoffs",
                 "fresh",
-                "0.4.98",
+                "0.4.99",
                 "codex",
             ],
             commands,
@@ -2750,7 +2687,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.98", _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.99", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 

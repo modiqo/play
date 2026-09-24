@@ -265,16 +265,16 @@ class MachineConformanceTest(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            "onboarding_experience",
+            "onboarding_company_check",
             MACHINE["states"]["onboarding_identity"]["on"][
                 "onboarding_identity_ready"
             ][0]["target"],
         )
         self.assertEqual(
             "use_inspect",
-            MACHINE["states"]["onboarding_identity"]["on"][
-                "onboarding_identity_ready"
-            ][1]["target"],
+            MACHINE["states"]["onboarding_company_check"]["on"][
+                "company_setup_handled"
+            ][2]["target"],
         )
         self.assertEqual(
             "onboarding_first_present",
@@ -297,7 +297,7 @@ class MachineConformanceTest(unittest.TestCase):
         first_prompt = PROMPTS["choose_first_use_path"]
         self.assertEqual("Run Hello with Play", first_prompt["choices"][0]["label"])
         self.assertTrue(first_prompt["choices"][0]["recommended"])
-        self.assertEqual("Create team space", first_prompt["choices"][1]["label"])
+        self.assertEqual("Create company organization", first_prompt["choices"][1]["label"])
         self.assertEqual(
             "use_inspect",
             MACHINE["states"]["onboarding_first_offer"]["on"][
@@ -309,7 +309,7 @@ class MachineConformanceTest(unittest.TestCase):
         )
         login_prompt = PROMPTS["choose_login_provider"]
         self.assertEqual(
-            ["google", "github", "defer"],
+            ["google", "github", "email", "defer"],
             [choice["id"] for choice in login_prompt["choices"]],
         )
         self.assertTrue(login_prompt["choices"][0]["recommended"])
@@ -329,7 +329,7 @@ class MachineConformanceTest(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            "use_prepare",
+            "onboarding_company_identity",
             MACHINE["states"]["use_registry_login"]["on"]["rote_login_completed"][0][
                 "target"
             ],
@@ -354,10 +354,10 @@ class MachineConformanceTest(unittest.TestCase):
         available = MACHINE["states"]["onboarding_probe"]["on"]["rote_available"]
         missing = MACHINE["states"]["onboarding_probe"]["on"]["rote_missing"]
         self.assertEqual("onboarding_identity", available[1]["target"])
-        ready = MACHINE["states"]["onboarding_identity"]["on"][
-            "onboarding_identity_ready"
+        ready = MACHINE["states"]["onboarding_company_check"]["on"][
+            "company_setup_handled"
         ]
-        self.assertEqual("use_inspect", ready[1]["target"])
+        self.assertEqual("use_inspect", ready[2]["target"])
         self.assertEqual("onboarding_card_fetch", missing[1]["target"])
         card_action = ACTIONS["fetch_onboarding_play_card"]
         self.assertEqual("read", card_action["effect"])
@@ -433,13 +433,13 @@ class MachineConformanceTest(unittest.TestCase):
 
     def test_team_invite_flow_is_shared_by_onboarding_and_private_creation(self) -> None:
         self.assertEqual(
-            "onboarding_team_handle",
+            "onboarding_team_name",
             MACHINE["states"]["onboarding_first_offer"]["on"][
                 "onboarding_team_selected"
             ][0]["target"],
         )
         self.assertEqual(
-            "onboarding_team_handle",
+            "onboarding_team_name",
             MACHINE["states"]["onboarding_activation_offer"]["on"][
                 "onboarding_team_selected"
             ][0]["target"],
@@ -785,9 +785,9 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertIn("--decompose", ACTIONS["search_creator_plays"]["command"])
         self.assertIn("--limit 5", ACTIONS["search_creator_plays"]["command"])
         policy = " ".join(ACTIONS["search_creator_plays"]["command_policy"])
-        self.assertIn("OR-relaxed", policy)
+        self.assertIn("shared Worker", policy)
         self.assertIn("separable outcomes", policy)
-        self.assertIn("not proof of absence", policy)
+        self.assertIn("not evidence of absence", policy)
         events = ACTIONS["classify_creator_options"]["events"]
         self.assertIn("match.coverage", events["creator_partial_coverage"])
         self.assertIn("match.play_choices", events["creator_match_ready"])
@@ -981,7 +981,6 @@ class MachineConformanceTest(unittest.TestCase):
                 "use_decide",
                 "use_offer",
                 "use_authentication_offer",
-                "use_registry_login",
             },
             incoming,
         )

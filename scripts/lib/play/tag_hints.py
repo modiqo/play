@@ -1,9 +1,8 @@
 """Suggest discoverability tags from the request that created a Play.
 
-A Play is found by token coverage over its name, description, labels, and
-tags. When the originating request carries outcome words the card does not
-cover, the Play cannot be found by the very request it was built for. This
-tool reports those words so they can become tags before release.
+Tags help registry retrieval find candidates before the shared Worker judges
+relevance. This tool suggests request vocabulary missing from the Play metadata;
+it does not establish a relevance match or publish a local Play.
 """
 
 from __future__ import annotations

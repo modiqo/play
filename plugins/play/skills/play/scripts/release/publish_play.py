@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
+import io
 import re
 import shutil
 import subprocess
 import time
+import tarfile
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -17,7 +19,7 @@ from typing import Sequence
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_RELEASES_REPO = ROOT.parent / "rote-releases"
+ASSETS_REPOSITORY = "https://github.com/modiqo/rote-releases.git"
 PUBLIC_SELECTOR = "https://getrote.dev/playoffs/install.sh"
 PAGES_PROJECT = "getrote-dev"
 SELECTOR_RELATIVE = Path("playoffs/install.sh")
@@ -112,17 +114,43 @@ def validate_play_release(play_root: Path) -> tuple[str, str]:
     return version, tag
 
 
-def validate_releases_repo(repository: Path) -> Path:
-    selector_path = repository / SELECTOR_RELATIVE
-    if not selector_path.is_file():
-        raise ReleaseError(f"missing selector: {selector_path}")
-    require_clean_tracked(repository)
-    if git(repository, "branch", "--show-current") != "main":
-        raise ReleaseError("rote-releases publication must run from main")
-    git(repository, "fetch", "origin", "main")
-    if git(repository, "rev-parse", "HEAD") != git(repository, "rev-parse", "origin/main"):
-        raise ReleaseError("local rote-releases main must match origin/main")
-    return selector_path
+def stage_assets(destination: Path, archive: bytes) -> None:
+    """Extract public assets without Git metadata or external filesystem links."""
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as bundle:
+        for member in bundle.getmembers():
+            parts = Path(member.name).parts[1:]
+            if not parts:
+                continue
+            relative = Path(*parts)
+            if relative.is_absolute() or ".." in relative.parts or ".git" in relative.parts:
+                raise ReleaseError("unsafe path in installer asset archive")
+            target = destination / relative
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+            elif member.isfile():
+                source = bundle.extractfile(member)
+                if source is None:
+                    raise ReleaseError("missing installer asset content")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(source.read())
+            else:
+                raise ReleaseError("installer archive contains an unsupported link or file")
+
+
+def download_assets(destination: Path) -> str:
+    revision = run(("git", "ls-remote", ASSETS_REPOSITORY, "refs/heads/main"), cwd=ROOT).split()[0]
+    if not re.fullmatch(r"[a-f0-9]{40}", revision):
+        raise ReleaseError("invalid installer assets revision")
+    request = urllib.request.Request(
+        f"https://codeload.github.com/modiqo/rote-releases/tar.gz/{revision}",
+        headers={"User-Agent": "modiqo-play-release/1"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        archive = response.read(20_000_001)
+    if len(archive) > 20_000_000:
+        raise ReleaseError("installer assets archive exceeds the size limit")
+    stage_assets(destination, archive)
+    return revision
 
 
 def wait_for_public_selector(expected: str, *, timeout_seconds: int = 60) -> str:
@@ -155,58 +183,31 @@ def check(play_root: Path) -> dict[str, object]:
     }
 
 
-def publish(play_root: Path, releases_repo: Path) -> dict[str, object]:
+def publish(play_root: Path) -> dict[str, object]:
     version, tag = validate_play_release(play_root)
-    selector_path = validate_releases_repo(releases_repo)
     if shutil.which("npx") is None:
         raise ReleaseError("npx is required to deploy the Cloudflare Pages project")
-    original = selector_path.read_text(encoding="utf-8")
-    updated = replace_selector(original, tag)
-    changed = updated != original
-    if changed:
-        selector_path.write_text(updated, encoding="utf-8")
-        run(("/bin/sh", "-n", str(selector_path)), cwd=releases_repo)
-        git(releases_repo, "add", str(SELECTOR_RELATIVE))
-        git(
-            releases_repo,
-            "commit",
-            "-m",
-            f"release: select Play {tag}",
-            "-m",
-            "What changed\n- Point the stable Play installer at the new tag.\n\n"
-            "Why\n- The public installer must select the released Play payload.\n\n"
-            "How to verify\n1. Check the selector syntax.\n"
-            "2. Confirm the public selector reports the new tag.",
+    play_commit = git(play_root, "rev-parse", "HEAD")
+    with tempfile.TemporaryDirectory(prefix="play-release-") as temporary:
+        staged = Path(temporary)
+        assets_revision = download_assets(staged)
+        selector = staged / SELECTOR_RELATIVE
+        if not selector.is_file():
+            raise ReleaseError("installer assets are missing the Play selector")
+        selector.write_text(replace_selector(selector.read_text(), tag), encoding="utf-8")
+        run(("/bin/sh", "-n", str(selector)), cwd=staged)
+        deployment = run(
+            ("npx", "--yes", "wrangler@4.137.0", "pages", "deploy", str(staged),
+             "--project-name", PAGES_PROJECT, "--branch", "main",
+             "--commit-hash", play_commit, "--commit-message", f"release: select Play {tag}",
+             "--commit-dirty=false"),
+            cwd=play_root,
         )
-        git(releases_repo, "push", "origin", "main")
-    selector_commit = git(releases_repo, "rev-parse", "HEAD")
-    deployment = run(
-        (
-            "npx",
-            "wrangler",
-            "pages",
-            "deploy",
-            ".",
-            "--project-name",
-            PAGES_PROJECT,
-            "--branch",
-            "main",
-            "--commit-hash",
-            selector_commit,
-            "--commit-message",
-            f"release: select Play {tag}",
-            "--commit-dirty=false",
-        ),
-        cwd=releases_repo,
-    )
     wait_for_public_selector(tag)
     deployment_url_match = re.search(r"https://[a-z0-9]+\.getrote-dev\.pages\.dev", deployment)
     return {
-        "status": "published",
-        "version": version,
-        "tag": tag,
-        "selector_changed": changed,
-        "selector_commit": selector_commit,
+        "status": "published", "version": version, "tag": tag,
+        "play_commit": play_commit, "assets_revision": assets_revision,
         "deployment_url": deployment_url_match.group(0) if deployment_url_match else None,
         "public_selector": PUBLIC_SELECTOR,
     }
@@ -215,17 +216,12 @@ def publish(play_root: Path, releases_repo: Path) -> dict[str, object]:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("check", "publish"))
-    parser.add_argument(
-        "--release-repo",
-        type=Path,
-        default=Path(os.environ.get("PLAY_RELEASES_REPO", DEFAULT_RELEASES_REPO)),
-    )
     args = parser.parse_args(argv)
     try:
         payload = (
             check(ROOT)
             if args.action == "check"
-            else publish(ROOT, args.release_repo.expanduser().resolve())
+            else publish(ROOT)
         )
     except (OSError, ReleaseError) as error:
         parser.exit(1, f"play-release: {error}\n")

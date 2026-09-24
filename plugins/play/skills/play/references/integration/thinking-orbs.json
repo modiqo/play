@@ -392,6 +392,26 @@
     "onboarding_card_offer": {
       "orb": "listening",
       "label": "Waiting for the setup-and-run choice…"
+    },
+    "onboarding_company_identity": {
+      "orb": "connecting",
+      "label": "Verifying your sign-in before company setup…"
+    },
+    "onboarding_company_check": {
+      "orb": "searching",
+      "label": "Checking your company setup preference…"
+    },
+    "onboarding_company_offer": {
+      "orb": "listening",
+      "label": "Waiting for your company setup choice…"
+    },
+    "onboarding_company_record": {
+      "orb": "working",
+      "label": "Remembering your company setup choice…"
+    },
+    "onboarding_team_name": {
+      "orb": "listening",
+      "label": "Listening for your company name…"
     }
   }
 }

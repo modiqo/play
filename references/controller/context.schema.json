@@ -440,6 +440,9 @@
           "items": {
             "$ref": "#/$defs/searchSubOutcome"
           }
+        },
+        "source_health": {
+          "type": "object"
         }
       }
     },
@@ -520,7 +523,8 @@
             "adapter",
             "adapter_partial",
             "partial",
-            "uncertain"
+            "uncertain",
+            "jev"
           ]
         },
         "uncovered_terms": {
@@ -574,18 +578,32 @@
           "enum": [
             "found",
             "not_found",
-            "local_only"
+            "local_only",
+            "unknown"
           ]
         },
         "execution_resolution": {
           "enum": [
             "run_local",
-            "pull_required"
+            "pull_required",
+            "inspect_required"
           ]
         },
         "selection_description": {
           "type": "string",
           "minLength": 1
+        },
+        "relevance_status": {
+          "type": "string"
+        },
+        "group_id": {
+          "type": "string"
+        },
+        "group_label": {
+          "type": "string"
+        },
+        "group_kind": {
+          "type": "string"
         }
       }
     },
@@ -1056,7 +1074,8 @@
           "enum": [
             null,
             "google",
-            "github"
+            "github",
+            "email"
           ]
         },
         "login_status": {
@@ -1188,6 +1207,16 @@
         },
         "evidence_refs": {
           "$ref": "#/$defs/stringArray"
+        },
+        "company_setup_status": {
+          "enum": [
+            "unchecked",
+            "required",
+            "handled"
+          ]
+        },
+        "company_resume_registry": {
+          "type": "boolean"
         }
       }
     },
@@ -2244,7 +2273,10 @@
           "minimum": 0
         },
         "sample_strategy": {
-          "const": "random"
+          "enum": [
+            "random",
+            "newsletter"
+          ]
         },
         "sample_limit": {
           "type": "integer",
@@ -2785,7 +2817,8 @@
           "enum": [
             "full",
             "partial",
-            "none"
+            "none",
+            "uncertain"
           ]
         },
         "reference": {
@@ -2793,6 +2826,9 @@
         },
         "uncovered_terms": {
           "$ref": "#/$defs/stringArray"
+        },
+        "complete": {
+          "type": "boolean"
         }
       }
     },
@@ -2817,7 +2853,8 @@
           "enum": [
             "full",
             "partial",
-            "none"
+            "none",
+            "uncertain"
           ]
         },
         "uncovered_terms": {
@@ -2869,7 +2906,8 @@
         "classification": {
           "enum": [
             "full",
-            "partial"
+            "partial",
+            "uncertain"
           ]
         },
         "uncovered_terms": {

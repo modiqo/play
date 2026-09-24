@@ -11,11 +11,14 @@ route_owners:
   combined: rote-workspace
 
 guards:
+  - company_resume_registry
+  - company_setup_active
   - onboarding_is_greeting
   - onboarding_is_play_uri
   - use_is_onboarding_starter
   - awareness_snapshot_ready
   - search_is_complete
+  - search_has_verified_matches
   - search_only_requested
   - creator_search_is_clean
   - capture_is_active
@@ -40,6 +43,12 @@ guards:
   - saved_inspection_matches_publication
 
 mutations:
+  - select_email_login
+  - select_registry_email_login
+  - record_company_setup
+  - record_company_choice
+  - record_company_name
+  - record_team_admin_invite_request
   - start_greeting_onboarding
   - start_uri_onboarding
   - record_ordinary_invocation
@@ -261,9 +270,10 @@ actions:
     command: scripts/bin/play-onboarding login --stdin --json
     command_policy:
       - Handle only the selected Rote identity login. Do not install or update binaries, install skills, configure adapters, or run another Play.
-      - Run exactly `<onboarding.rote_command> login --provider <onboarding.login_provider>` and let Rote's OAuth browser flow own credentials and consent.
+      - For Google or GitHub, run `<onboarding.rote_command> login --provider <onboarding.login_provider>`.
+      - For email, use Play's local browser form. It calls released Rote `login --otp --otp-email <address> --json` to send a code and adds `--otp-verify` with the code on stdin to verify it. Rote owns authentication and session storage.
       - After the browser flow, run exactly one `<onboarding.rote_command> whoami`; return success only when it reports an authenticated identity.
-      - Never ask for or place OAuth codes, tokens, cookies, or credentials in chat or controller context.
+      - Never ask for or place OAuth codes, email verification codes, tokens, cookies, or credentials in chat or controller context.
       - Return paused when the browser flow does not complete; preserve the provider and the pending Play continuation.
     events:
       rote_login_completed: [onboarding.login_status, onboarding.login_provider, evidence_refs]
@@ -310,14 +320,37 @@ actions:
     events:
       onboarding_first_use_recorded: [onboarding.orientation_status, onboarding.orientation_version, onboarding.experience_ref, onboarding.marker_ns]
 
+  inspect_company_setup:
+    kind: deterministic
+    owner: play
+    effect: read
+    input_required: [onboarding.identity_status, onboarding.email]
+    command: scripts/bin/play-onboarding company-check --stdin --json
+    events:
+      company_setup_required: [onboarding.company_setup_status, evidence_refs]
+      company_setup_handled: [onboarding.company_setup_status, evidence_refs]
+
+  remember_company_setup:
+    kind: deterministic
+    owner: play
+    effect: local-write
+    input_required: [onboarding.identity_status, onboarding.email, onboarding.company_setup_status]
+    command: scripts/bin/play-onboarding company-record --stdin --json
+    command_policy:
+      - Record only a hashed verified identity and the time the company option was handled after a skip or completed setup.
+      - Preserve the original Play and resume inspection of that Play before any execution.
+    events:
+      company_setup_recorded: [onboarding.company_setup_status, evidence_refs]
+
   create_team_space:
     kind: delegated
     owner: rote-specialist
     specialist: rote-org
     effect: external-write
-    input_required: [team.slug]
+    input_required: [team.slug, team.name]
     command_policy:
-      - Invoke rote-org once to create the exact team slug, using a human-readable name derived from that slug, or verify that the authenticated user already administers it.
+      - Invoke rote-org once to create the exact company name and slug, or verify that the authenticated user already administers that organization. Never adopt a matching slug owned by someone else.
+      - Organization setup does not publish a Play or change any existing Play visibility; private publication still requires its own approval.
       - Return live member state; never invent membership, ownership, quota, or organization readiness.
     events:
       team_space_ready: [team.slug, team.name, team.status, team.members, team.evidence_refs]
@@ -465,8 +498,8 @@ actions:
       - Reuse the parallel public-card statistics collector embedded by play-digest for both explicit aliases and inferred awareness intent.
       - Fetch only bounded public cards and retain fetch latency without treating lifetime counters as run analytics.
       - Project a coverage-aware public Play total from inspected runnable cards; never hard-code the catalog size or present authorized scope as a global registry total.
-      - Select an unbiased random sample of at most 10 runnable public Plays whenever the catalog snapshot refreshes. Keep that sample stable while the cached snapshot is reused, and keep randomness outside the catalog-change fingerprint.
-      - Present the sampled Play cards directly; do not group or route them through registry domains or organizations.
+      - Present a lean newsletter with up to five cached Modiqo public titles and five newly published community titles; deduplicate references and suppress repeat announcements.
+      - Show linked titles only. Omit descriptions, counters, private updates, revisions, onboarding material, and raw catalog data.
     events:
       awareness_ready: [awareness.complete, awareness.digest_ref, awareness.coverage, awareness.public_play_count, awareness.sample_strategy, awareness.sample_limit, awareness.sampled_count, awareness.play_choices, evidence_refs]
       awareness_unchanged: [awareness.complete, awareness.digest_ref, awareness.coverage, awareness.public_play_count, awareness.sample_strategy, awareness.sample_limit, awareness.sampled_count, awareness.play_choices, evidence_refs]
@@ -486,15 +519,15 @@ actions:
     input_required: [request.original, request.intent, request.requested_outcome, modality_policy]
     command: scripts/bin/play-search <request.intent> --also <request.original> --limit 5 --decompose --json
     command_policy:
-      - This search authorizes building from scratch, so it must be at least as thorough as the run-only search. Search the harness's intent paraphrase and the user's original words together; strip argument values (URLs, paths, handles, dates) and stop words so only outcome vocabulary reaches the AND-of-terms registry search, and add one OR-relaxed registry query so phrasing differences cannot hide an adequate Play.
-      - Normalize once, derive bounded outcome queries, then search local and authorized registry indexes concurrently.
-      - If the request contains separable outcomes (two things joined by "and", "also", "then", or a comma), derive one query per sub-outcome and search each on its own before classifying. A blended phrase such as "calendar and weather briefing" ranks Plays that describe the combination above the Plays that deliver each half, and the halves never surface; report every sub-outcome with its best Play, classification, and uncovered_terms in search.sub_outcomes.
-      - Classify a Play as a full match only when the card accounts for every outcome token of at least one phrasing of that sub-outcome, or when a phrasing names the Play; report any remaining outcome tokens as uncovered_terms.
-      - Never report an empty search while any result, blended or per sub-outcome, carries match_classification "partial" with a non-empty uncovered_terms. An empty result under AND-of-terms matching with surplus terms is not proof of absence.
-      - Rank adequate matches local first, then the identity's own Plays, then team Plays, then remote public, then baseline; ownership never changes a match classification.
-      - Deduplicate aliases and versions by canonical Play reference and return bounded execution metadata.
+      - Search published Plays only through the environment-pinned shared Worker using Rote authentication. Never query a local index or merge cached catalog candidates.
+      - Prefer the original user wording to the harness paraphrase. Redact concrete sensitive arguments while preserving actions, exclusions, and constraints for Jev.
+      - Request community, personal, and currently accessible organizations together. Preserve their group labels, relevance judgments, and completeness flags.
+      - Only direct Worker judgments establish full matches. Partial, uncertain, and unverified candidates never become full matches through local scoring or ownership.
+      - Retain the exact assessed published version for inspection and execution. Search does not establish local availability or authorize installation.
+      - Incomplete or unavailable search is not evidence of absence. Do not silently use lexical fallbacks.
+      - Search separable outcomes through the same Worker, retaining the whole request constraints in each query; keep failures incomplete.
     events:
-      creator_search_ready: [search.complete, search.query, search.sources, search.result_refs, search.results, search.sub_outcomes]
+      creator_search_ready: [search.source_health, search.complete, search.query, search.sources, search.result_refs, search.results, search.sub_outcomes]
 
   classify_creator_options:
     kind: deterministic
@@ -502,9 +535,9 @@ actions:
     effect: none
     input_required: [request.requested_outcome, search.result_refs, search.results, search.sub_outcomes, modality_policy]
     command_policy:
-      - Classify from the evidence the search already produced; never re-rank or re-judge fit. Fit is the user's judgement at creator_offer, where every candidate is shown with its coverage and uncovered_terms.
+      - Classify from the evidence the search already produced; never re-rank or re-judge fit. Only a direct Jev judgment establishes full coverage; old lexical scores and uncertain judgments cannot. The user sees each candidate and its uncovered_terms at creator_offer.
       - Emit creator_match_ready only when a blended full match exists or every sub-outcome has a full match. Emit creator_partial_coverage when any sub-outcome or the blended search returned a Play but at least one sub-outcome is not fully covered; match.coverage then lists every sub-outcome with its reference (or null), classification, and uncovered_terms.
-      - Emit creator_no_match only when neither the blended search nor any sub-outcome search returned a Play. A partial match with uncovered terms is coverage to present, never "nothing exists".
+      - Emit creator_no_match only when search is complete and neither the blended search nor any sub-outcome search returned a Play. A partial match with uncovered terms is coverage to present, never "nothing exists".
       - match.play_choices offers one selection per covered or partially covered sub-outcome so "run this one, explore that one" is expressible at creator_offer.
     events:
       creator_match_ready: [match.reference, match.covered, match.uncovered, match.coverage, match.play_choices, match.summary, confidence]
@@ -544,14 +577,14 @@ actions:
     input_required: [request.original, request.intent, modality_policy]
     command: scripts/bin/play-search <request.intent> --also <request.original> --limit 5 --json
     command_policy:
-      - Search the harness's intent paraphrase and the user's original words together; strip argument values (URLs, paths, handles, dates) and stop words so only outcome vocabulary reaches the AND-of-terms registry search, and add one OR-relaxed registry query so phrasing differences cannot hide an adequate Play.
-      - Normalize once, derive bounded outcome queries, then search local and authorized registry indexes concurrently.
-      - Partition authorized registry matches into private organizations and the public hub.
-      - Classify a Play as a full match only when the card accounts for every outcome token of at least one phrasing, or when a phrasing names the Play; report any remaining outcome tokens as uncovered_terms so the adequacy guard can downgrade instead of run.
-      - Rank adequate matches local first, then the identity's own Plays, then team Plays, then remote public, then baseline; ownership never changes a match classification.
-      - Deduplicate aliases and versions by canonical Play reference and return bounded execution metadata.
+      - Search published Plays only through the environment-pinned shared Worker using Rote authentication. Never query a local index or merge cached catalog candidates.
+      - Prefer the original user wording to the harness paraphrase. Redact concrete sensitive arguments while preserving actions, exclusions, and constraints for Jev.
+      - Request community, personal, and currently accessible organizations together. Preserve their group labels, relevance judgments, and completeness flags.
+      - Only direct Worker judgments establish full matches. Partial, uncertain, and unverified candidates never become full matches through local scoring or ownership.
+      - Retain the exact assessed published version for inspection and execution. Search does not establish local availability or authorize installation.
+      - Incomplete or unavailable search is not evidence of absence. Do not silently use lexical fallbacks.
     events:
-      search_ready: [search.complete, search.query, search.sources, search.result_refs, search.results, search.play_choices]
+      search_ready: [search.source_health, search.complete, search.query, search.sources, search.result_refs, search.results, search.play_choices]
 
   present_search_results:
     kind: deterministic
@@ -559,10 +592,10 @@ actions:
     effect: none
     input_required: [search.complete, search.query, search.sources, search.results]
     command_policy:
-      - State whether each registry Play was found locally or is expected to need a pull/install.
-      - Use search.play_choices from the reusable search output; local-only Flow gaps remain informational.
+      - Preserve group labels and completeness. Search does not establish local availability; inspection resolves it.
+      - Use search.play_choices from the reusable search output; uncertain candidates remain labeled and require an explicit choice.
       - A selection identifies a Play for read-only inspection and never authorizes execution.
-      - When both local and authorized registry results are empty, emit search_empty so an explicit search can show the empty result and finish without offering exploration.
+      - When the checked published results are empty, emit search_empty so an explicit search can show the empty result and finish without offering exploration.
     events:
       search_presented: [search.query, search.sources, search.result_refs, search.results, search.play_choices]
       search_empty: [search.query, search.sources, search.result_refs, search.results, search.play_choices]

@@ -24,7 +24,7 @@ from play.controller import (
     decode_session,
     encode_session,
 )
-from play.runtime_actions import _execute_instruction, advance_until_yield
+from play.runtime_actions import _build_payload, _execute_instruction, advance_until_yield
 from play.runtime_context import RuntimeContextError, validate_mutation_contract
 from play.handoff import prepare_play_run_handoff
 
@@ -64,7 +64,7 @@ class ControllerRuntimeTest(unittest.TestCase):
 
     def test_compiles_the_authoritative_bundle(self) -> None:
         self.assertEqual("invoke", self.runtime.bundle.initial)
-        self.assertEqual(85, len(self.runtime.bundle.states))
+        self.assertEqual(90, len(self.runtime.bundle.states))
         self.assertEqual(
             {"blocked", "completed", "exited", "receipt"},
             self.runtime.bundle.terminals,
@@ -561,7 +561,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 guards={},
             ),
         )
-        self.assertEqual("use_prepare", resumed.session.cursor.state)
+        self.assertEqual("onboarding_company_identity", resumed.session.cursor.state)
         self.assertEqual("modiqo/hello", resumed.session.context["match"]["reference"])
         self.assertEqual(
             "modiqo/hello@0.2.2",
@@ -972,6 +972,8 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "score": 1.0,
                 "coverage": 1.0,
                 "match_classification": "full",
+                "match_basis": "jev",
+                "relevance_status": "direct",
                 "primary_scope": scope,
                 "uri": f"https://play.modiqo.ai/{reference}@1.0.0",
                 "run_command": f"rote play run {reference}@1.0.0",
@@ -1002,6 +1004,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 id=EventId("search_ready"),
                 payload={
                     "search": {
+                        "source_health": {"complete": True},
                         "complete": True,
                         "query": "weekly report",
                         "sources": ["remote_private", "remote_public"],
@@ -1031,6 +1034,38 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertIn("alpha/weekly-report", yielded.presentations[0])
         self.assertIn("beta/weekly-report", yielded.presentations[0])
 
+    def test_shared_search_incomplete_matches_and_absence_take_distinct_paths(self):
+        from tests.awareness.test_search import response, candidate, group
+        from play.search import search_published
+        for state, event_id in [('search', 'search_ready'), ('creator_search', 'creator_search_ready')]:
+            for has_match in [True, False]:
+                body = response([group(matches=[candidate()] if has_match else [])])
+                body['complete'] = False
+                with patch('play.search.request_search', return_value=body):
+                    payload = search_published('Audit DNS without changing records')
+                session = self.runtime.initial_session(run_id='incomplete', task_key='incomplete', request_original='$play audit DNS')
+                context = copy.deepcopy(dict(session.context))
+                context['state'] = state
+                projected = replace(session, cursor=replace(session.cursor, state=StateId(state)), context=context, preflight_ready=True)
+                advanced = self.runtime.advance_session(projected, ControllerEvent(id=EventId(event_id), payload=_build_payload(['search.source_health', 'search.complete', 'search.query', 'search.sources', 'search.result_refs', 'search.results', 'search.sub_outcomes' if state == 'creator_search' else 'search.play_choices'], payload, context), guards={}))
+                self.assertEqual(('creator_classify' if state == 'creator_search' else 'classify') if has_match else 'blocked', advanced.session.cursor.state)
+                if has_match:
+                    self.assertFalse(advanced.session.context['search']['source_health']['complete'])
+                    self.assertEqual('alice/audit-dns@1.2.3', advanced.session.context['search']['results'][0]['reference'])
+
+    def test_saved_lexical_full_match_cannot_take_full_match_path(self):
+        session = self.runtime.initial_session(run_id='legacy', task_key='legacy', request_original='$play audit DNS without changes')
+        context = copy.deepcopy(dict(session.context))
+        context['state'] = 'classify'
+        legacy = self._creator_result('team/audit-dns', 'Audits and repairs DNS', 'full', [])
+        legacy['match_basis'] = 'identity'
+        legacy.pop('relevance_status')
+        context['search']['results'] = [legacy]
+        projected = replace(session, cursor=replace(session.cursor, state=StateId('classify')), context=context, preflight_ready=True)
+        yielded = advance_until_yield(self.runtime, projected, root=ROOT)
+        self.assertEqual('uncertain_match', yielded.trace[0].event)
+        self.assertEqual('exited', yielded.projection['state']['id'])
+
     def test_search_transition_accepts_public_baseline_scope(self) -> None:
         candidate = {
             "name": "retrieve-rideshare-receipts",
@@ -1043,6 +1078,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             "score": 1.0,
             "coverage": 1.0,
             "match_classification": "full",
+            "match_basis": "jev",
+            "relevance_status": "direct",
             "primary_scope": "remote_baseline",
             "uri": "https://play.modiqo.ai/modiqo/retrieve-rideshare-receipts",
             "run_command": "rote play run modiqo/retrieve-rideshare-receipts",
@@ -1067,6 +1104,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 id=EventId("search_ready"),
                 payload={
                     "search": {
+                        "source_health": {"complete": True},
                         "complete": True,
                         "query": "retrieve rideshare receipts",
                         "sources": ["remote_baseline"],
@@ -1106,6 +1144,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             "score": 1.0,
             "coverage": 1.0,
             "match_classification": "full",
+            "match_basis": "jev",
+            "relevance_status": "direct",
             "matched_adapters": ["gmail"],
             "labels": ["Workplace"],
             "tags": ["job-expense-reconciliation", "tool-gmail"],
@@ -1340,6 +1380,11 @@ class ControllerRuntimeTest(unittest.TestCase):
                     }
                 ),
             ),
+            SimpleNamespace(returncode=0, stderr="", stdout=json.dumps({
+                "event": "company_setup_handled",
+                "onboarding": {"company_setup_status": "handled"},
+                "evidence_refs": ["sha256:company"],
+            })),
             SimpleNamespace(returncode=0, stderr="", stdout=json.dumps(disclosure)),
         ]
         session = self.runtime.initial_session(
@@ -1618,6 +1663,11 @@ class ControllerRuntimeTest(unittest.TestCase):
                     }
                 ),
             ),
+            SimpleNamespace(returncode=0, stderr="", stdout=json.dumps({
+                "event": "company_setup_handled",
+                "onboarding": {"company_setup_status": "handled"},
+                "evidence_refs": ["sha256:company"],
+            })),
             SimpleNamespace(returncode=0, stderr="", stdout=json.dumps(disclosure)),
             SimpleNamespace(
                 returncode=0,
@@ -1694,6 +1744,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "classify_play_invocation",
                 "probe_rote_for_onboarding",
                 "inspect_onboarding_identity",
+                "inspect_company_setup",
                 "inspect_registry_play",
                 "prepare_play_run_handoff",
                 "run_registry_play",
@@ -1791,6 +1842,13 @@ class ControllerRuntimeTest(unittest.TestCase):
                 ),
             ),
         ]
+        responses = run.side_effect
+        responses = list(responses)
+        responses.insert(3, SimpleNamespace(returncode=0, stderr="", stdout=json.dumps({
+            "event": "company_setup_handled", "onboarding": {"company_setup_status": "handled"},
+            "evidence_refs": ["sha256:company"],
+        })))
+        run.side_effect = responses
         session = self.runtime.initial_session(
             run_id="activation-onboarding",
             task_key="activation-onboarding",
@@ -1848,7 +1906,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertEqual("present_search_results", yielded.trace[0].action)
         self.assertEqual("search_empty", yielded.trace[0].event)
         self.assertEqual(1, len(yielded.presentations))
-        self.assertIn("Search: `release notes`", yielded.presentations[0])
+        self.assertIn("Search: release notes", yielded.presentations[0])
         self.assertIsNone(yielded.projection["instruction"])
 
     def test_ordinary_no_match_returns_to_normal_harness_work(self) -> None:
@@ -1912,7 +1970,8 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "score": 1.0,
                 "coverage": 1.0,
                 "match_classification": "full",
-                "match_basis": "complete",
+                "match_basis": "jev",
+                "relevance_status": "direct",
                 "uncovered_terms": [],
                 "argument_terms": [],
                 "matched_adapters": [],
@@ -2009,7 +2068,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             "score": 0.68,
             "coverage": 0.6667,
             "match_classification": "full",
-            "match_basis": "complete",
+            "match_basis": "jev",
+            "relevance_status": "direct",
             "uncovered_terms": ["email"],
             "argument_terms": [],
             "matched_adapters": [],
@@ -2067,7 +2127,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             "score": 1.0 if classification == "full" else 0.75,
             "coverage": 1.0 if classification == "full" else 0.75,
             "match_classification": classification,
-            "match_basis": "complete" if classification == "full" else "partial",
+            "match_basis": "jev",
+            "relevance_status": "direct" if classification == "full" else "partial",
             "uncovered_terms": uncovered,
             "argument_terms": [],
             "matched_adapters": [],
@@ -2167,7 +2228,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
 
     def test_compound_outcome_with_both_halves_covered_offers_both_plays(self) -> None:
-        weather = dict(self._weather_play(), match_classification="full", uncovered_terms=[])
+        weather = dict(self._weather_play(), match_classification="full", relevance_status="direct", uncovered_terms=[])
         projected = self._creator_session(
             [self._hey_rote()],
             [
@@ -2943,6 +3004,13 @@ class ControllerRuntimeTest(unittest.TestCase):
                 guards={},
             ),
         ).session
+        self.assertEqual("onboarding_team_name", selected.cursor.state)
+        selected = self.runtime.advance_session(selected, ControllerEvent(
+            id=EventId("company_name_described"), guards={}, payload={
+                "prompt_version": "1", "selected_at": "2026-09-23T00:00:00Z",
+                "team": {"name": "Ada Labs"},
+            },
+        )).session
         self.assertEqual("onboarding_team_handle", selected.cursor.state)
 
         described = self.runtime.advance_session(
@@ -2983,7 +3051,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         yielded = advance_until_yield(self.runtime, created, root=ROOT)
         self.assertEqual("team_invite_offer", yielded.projection["state"]["id"])
         self.assertEqual("choose_team_invite", yielded.projection["instruction"]["id"])
-        self.assertIn("Team space ready: Ada Labs", yielded.presentations[0])
+        self.assertIn("Company organization ready: Ada Labs", yielded.presentations[0])
 
     def test_session_derives_onboarding_guards_from_context(self) -> None:
         session = self.runtime.initial_session(
@@ -3067,7 +3135,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             ),
         )
 
-        self.assertEqual("use_inspect", identified.session.cursor.state)
+        self.assertEqual("onboarding_company_check", identified.session.cursor.state)
         self.assertEqual(uri, identified.session.context["match"]["reference"])
 
     def test_logged_out_onboarding_selects_provider_and_resumes_identity(self) -> None:
@@ -3108,7 +3176,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         self.assertEqual("onboarding_login_offer", offered.session.cursor.state)
         self.assertEqual(
-            ["google", "github", "defer"],
+            ["google", "github", "email", "defer"],
             [
                 choice["id"]
                 for choice in offered.projection.as_dict()["instruction"]["choices"]
@@ -3611,6 +3679,8 @@ class ControllerRuntimeTest(unittest.TestCase):
             "score": 1.0,
             "coverage": 1.0,
             "match_classification": "full",
+            "match_basis": "jev",
+            "relevance_status": "direct",
             "primary_scope": "remote_private",
             "uri": "https://play.modiqo.ai/modiqo/retrieve-rideshare-receipts@0.0.5",
             "run_command": "rote play run modiqo/retrieve-rideshare-receipts@0.0.5",
@@ -3671,6 +3741,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 "public_sample": [
                     {
                         "reference": "modiqo/release-notes",
+                        "visibility": "public",
                         "name": "release-notes",
                         "description": "Draft checked release notes.",
                         "download_count": 12,
@@ -3715,7 +3786,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         )
         self.assertEqual(1, len(yielded.presentations))
         self.assertIn("What’s new in Plays", yielded.presentations[0])
-        self.assertEqual("random", yielded.session.context["awareness"]["sample_strategy"])
+        self.assertEqual("newsletter", yielded.session.context["awareness"]["sample_strategy"])
         self.assertEqual(10, yielded.session.context["awareness"]["sample_limit"])
         self.assertEqual(1, yielded.session.context["awareness"]["sampled_count"])
         self.assertEqual(
@@ -4115,6 +4186,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 id=EventId("search_ready"),
                 payload={
                     "search": {
+                        "source_health": {"complete": True},
                         "complete": True,
                         "query": "do work",
                         "sources": [],
@@ -4168,6 +4240,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 id=EventId("search_ready"),
                 payload={
                     "search": {
+                        "source_health": {"complete": True},
                         "complete": False,
                         "query": "do work",
                         "sources": [],

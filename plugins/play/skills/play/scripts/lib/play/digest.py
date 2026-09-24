@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import random
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,7 +35,12 @@ from .registry import (
     registry_failure_kind,
 )
 from .render import json_text
-from .timewindow import TimeWindowError, next_checkpoint, parse_timestamp, resolve_window
+from .timewindow import (
+    TimeWindowError,
+    next_checkpoint,
+    parse_timestamp,
+    resolve_window,
+)
 
 
 SCHEMA = "play.digest/v1"
@@ -51,7 +57,9 @@ FINGERPRINT_FIELDS = (
 )
 
 
-def _digest_item(slug: str, flow: dict[str, Any], timestamp: datetime, kind: str) -> dict[str, Any]:
+def _digest_item(
+    slug: str, flow: dict[str, Any], timestamp: datetime, kind: str
+) -> dict[str, Any]:
     parameters = flow.get("default_parameters")
     return {
         "reference": f"{slug}/{flow['name']}",
@@ -75,7 +83,9 @@ def _is_untimestamped_baseline(flow: dict) -> bool:
     baseline card may omit ``created_at`` and still count toward discovery.
     """
 
-    return flow.get("catalog_tier") == PUBLIC_BASELINE_TIER and not flow.get("created_at")
+    return flow.get("catalog_tier") == PUBLIC_BASELINE_TIER and not flow.get(
+        "created_at"
+    )
 
 
 def classify_updates(
@@ -87,7 +97,9 @@ def classify_updates(
         for flow in flows:
             if _is_untimestamped_baseline(flow):
                 continue
-            created = parse_timestamp(flow.get("created_at"), field=f"{slug}/{flow['name']}.created_at")
+            created = parse_timestamp(
+                flow.get("created_at"), field=f"{slug}/{flow['name']}.created_at"
+            )
             if start <= created < end:
                 new.append(_digest_item(slug, flow, created, "new"))
                 continue
@@ -99,7 +111,10 @@ def classify_updates(
                 )
                 if start <= latest < end and latest > created:
                     revised.append(_digest_item(slug, flow, latest, "revised"))
-    order = lambda item: (-parse_timestamp(item["timestamp"], field="timestamp").timestamp(), item["reference"])
+    order = lambda item: (
+        -parse_timestamp(item["timestamp"], field="timestamp").timestamp(),
+        item["reference"],
+    )
     new.sort(key=order)
     revised.sort(key=order)
     return new, revised
@@ -119,7 +134,11 @@ def _eligible_public(flows: list[tuple[str, dict]]) -> list[dict[str, Any]]:
         if not isinstance(downloads, int) or downloads < 0:
             continue
         parameters = flow.get("default_parameters")
-        base_reference = flow.get("base_reference") or flow.get("reference") or f"{slug}/{flow['name']}"
+        base_reference = (
+            flow.get("base_reference")
+            or flow.get("reference")
+            or f"{slug}/{flow['name']}"
+        )
         version = flow.get("version")
         exact_reference = flow.get("exact_reference") or (
             f"{base_reference}@{version}" if version else base_reference
@@ -208,7 +227,9 @@ def rank_public(
             {"owner": owner, "count": count}
             for owner, count in sorted(owner_counts.items())
         ],
-        "candidate_count": candidate_count if candidate_count is not None else len(flows),
+        "candidate_count": candidate_count
+        if candidate_count is not None
+        else len(flows),
         "inspected_count": len(flows),
         "omitted_count": omitted_count,
         "complete": source_complete,
@@ -276,7 +297,13 @@ def awareness_fingerprint(
         ],
         "ranking_coverage": {
             key: ranking.get(key)
-            for key in ("complete", "candidate_count", "inspected_count", "omitted_count", "errors")
+            for key in (
+                "complete",
+                "candidate_count",
+                "inspected_count",
+                "omitted_count",
+                "errors",
+            )
         },
     }
     return stable_sha(snapshot)
@@ -329,9 +356,8 @@ def build_digest(
         for flows in grouped.values()
         for flow in flows
         if not _is_untimestamped_baseline(flow)
-        and parse_timestamp(
-            flow.get("created_at"), field=f"{flow['name']}.created_at"
-        ) < start
+        and parse_timestamp(flow.get("created_at"), field=f"{flow['name']}.created_at")
+        < start
     )
     public_top, ranking = rank_public(
         public_flows,
@@ -369,7 +395,7 @@ def build_digest(
             "release" if isinstance(latest_version_created_at, str) else "publication"
         )
     public_sample = sample_public(all_public)
-    return {
+    digest = {
         "schema": SCHEMA,
         "complete": True,
         "awareness_sha": awareness_fingerprint(
@@ -388,7 +414,8 @@ def build_digest(
             "play_inspect",
         ],
         "organizations": [
-            {"slug": org.slug, "display_name": org.display_name} for org in organizations
+            {"slug": org.slug, "display_name": org.display_name}
+            for org in organizations
         ],
         "baseline": {
             "scope": "public_baseline",
@@ -435,7 +462,8 @@ def build_digest(
                 "creator_metadata": {
                     "status": (
                         "available"
-                        if not update_metadata_errors and update_metadata_omitted_count == 0
+                        if not update_metadata_errors
+                        and update_metadata_omitted_count == 0
                         else "partial"
                     ),
                     "omitted_count": update_metadata_omitted_count,
@@ -476,132 +504,149 @@ def build_digest(
         "next_checkpoint": next_checkpoint(end),
     }
 
+    catalog = [
+        dict(flow, reference=f"{owner}/{flow['name']}")
+        for owner, flows in grouped.items()
+        for flow in flows
+    ]
+    # Public cards can supply Modiqo titles when an organization list is empty.
+    catalog.extend(all_public)
+    digest["newsletter"] = newsletter_sections(digest, catalog)
+    return digest
+
+
+NEWSLETTER_SECTION_LIMIT = 5
+_NEWSLETTER_REFERENCE = re.compile(r"^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$")
+
+
+def newsletter_sections(
+    digest: dict[str, Any], catalog: list[dict] | None = None
+) -> dict[str, Any]:
+    """Project public titles only; a first-publication timestamp establishes newness."""
+    if catalog is None and isinstance(digest.get("newsletter"), dict):
+        return digest["newsletter"]
+    source = (
+        catalog
+        if catalog is not None
+        else [
+            *digest.get("public_top", []),
+            *digest.get("public_sample", []),
+            *digest.get("org_updates", {}).get("new", []),
+        ]
+    )
+    window = digest.get("window", {})
+    try:
+        start = parse_timestamp(window.get("start"), field="window.start")
+        end = parse_timestamp(window.get("end"), field="window.end")
+    except TimeWindowError:
+        start = end = None
+    rows: dict[str, dict] = {}
+    for item in source:
+        if (
+            not isinstance(item, dict)
+            or item.get("visibility") != "public"
+            or item.get("deleted_at")
+        ):
+            continue
+        if (
+            item.get("status") not in (None, "approved", "released", "published")
+            or item.get("play_run_eligible") is False
+        ):
+            continue
+        reference = str(
+            item.get("base_reference") or item.get("reference") or ""
+        ).partition("@")[0]
+        if not _NEWSLETTER_REFERENCE.fullmatch(reference):
+            continue
+        title = " ".join(
+            str(
+                item.get("title") or item.get("name") or reference.split("/")[1]
+            ).split()
+        )[:100]
+        published = item.get("created_at") or (
+            item.get("timestamp") if item.get("kind") == "new" else None
+        )
+        row = {"reference": reference, "name": title, "published_at": published}
+        # Prefer a catalog row with a publication timestamp over a ranking card.
+        if reference not in rows or (not rows[reference]["published_at"] and published):
+            rows[reference] = row
+    new = []
+    for row in rows.values():
+        try:
+            published_at = parse_timestamp(row["published_at"], field="created_at")
+        except TimeWindowError:
+            continue
+        if start is not None and end is not None and start <= published_at < end:
+            new.append(row)
+    new.sort(
+        key=lambda item: (
+            -parse_timestamp(item["published_at"], field="created_at").timestamp(),
+            item["reference"],
+        )
+    )
+    modiqo = sorted(
+        (row for row in rows.values() if row["reference"].startswith("modiqo/")),
+        key=lambda row: (row["name"].casefold(), row["reference"]),
+    )
+    return {
+        "modiqo": modiqo[:NEWSLETTER_SECTION_LIMIT],
+        "community": new[:NEWSLETTER_SECTION_LIMIT],
+        "modiqo_count": len(modiqo),
+        "community_count": len(new),
+    }
+
+
+def newsletter_choices(digest: dict[str, Any]) -> list[dict]:
+    sections = newsletter_sections(digest)
+    availability = digest.get("availability", {})
+    memory = digest.get("memory", {})
+    community = (
+        []
+        if availability.get("status") == "public_cache_only"
+        or memory.get("status") == "unchanged"
+        else list(sections.get("community", []))
+    )
+    since = memory.get("since")
+    if since:
+        community = [
+            row
+            for row in community
+            if parse_timestamp(row["published_at"], field="published_at")
+            >= parse_timestamp(since, field="since")
+        ]
+    seen = {row["reference"] for row in community}
+    modiqo = [row for row in sections.get("modiqo", []) if row["reference"] not in seen]
+    return [dict(row, section="modiqo") for row in modiqo] + [
+        dict(row, section="community") for row in community
+    ]
+
 
 def render_markdown(digest: dict[str, Any]) -> str:
-    memory = digest.get("memory")
-    window = digest["window"]
-    new_items = digest["org_updates"]["new"]
-    revised_items = digest["org_updates"]["revised"]
-    ranking = digest["ranking"]
-    public_count = ranking.get("eligible_count", 0)
-    sample = digest.get("public_sample", [])
-    sample_contract = digest.get("sample", {})
-    availability = digest.get("availability")
-    public_cache_only = (
-        isinstance(availability, dict)
-        and availability.get("status") == "public_cache_only"
-    )
-    coverage_prefix = (
-        "" if ranking.get("complete") is True or public_cache_only else "at least "
-    )
-    public_noun = "Play" if public_count == 1 else "Plays"
-    lines = []
-    if isinstance(memory, dict) and memory.get("status") == "initial":
-        lines.extend(
-            [
-                "**Nice—you’ve taken the first step. Play is connected, and you’re ready to use a reusable workflow.**",
-                "",
-            ]
-        )
-    lines.extend(["# What’s new in Plays", ""])
-    if public_cache_only:
-        assert isinstance(availability, dict)
-        lines.extend(
-            [
-                "Live organization data is unavailable. Play is showing the last verified public Play "
-                f"cache from `{availability.get('cache_fetched_at')}`.",
-                "",
-                "Private and organization-specific updates are unavailable. "
-                f"{availability.get('guidance')}",
-                "",
-            ]
-        )
-    lines.extend(
-        [
-            f"You can explore {coverage_prefix}**{public_count} runnable public {public_noun}** visible to you.",
-            "",
-        ]
-    )
-    if isinstance(memory, dict) and memory.get("status") == "unchanged":
-        lines.extend(["Nothing has changed since your last check; this is the current catalog.", ""])
-    if isinstance(sample, list) and sample:
-        sample_noun = "Play" if len(sample) == 1 else "Plays"
-        lines.extend([f"## {len(sample)} {sample_noun} to explore", ""])
-        for play in sample:
-            if not isinstance(play, dict):
-                continue
-            name = play.get("name") or play.get("reference") or "Unknown"
-            description = play.get("description") or "Inspect this Play."
-            lines.append(f"- **{name}** — {description}")
+    """Render a bounded newsletter, without descriptions or onboarding material."""
+    rows = newsletter_choices(digest)
+    lines = ["# What’s new in Plays", ""]
+    sections = [("modiqo", "From Modiqo"), ("community", "New in community")]
+    for section, heading in sections:
+        lines.extend([f"## {heading}", ""])
+        selected = [row for row in rows if row["section"] == section]
+        for row in selected:
+            title = re.sub(r"([\\`*_[\]<>])", r"\\\1", row["name"])
+            lines.append(f"- [{title}](https://play.modiqo.ai/{row['reference']})")
+        if not selected:
+            if section == "modiqo":
+                lines.append("No additional Modiqo titles in this snapshot.")
+            elif digest.get("availability", {}).get("status") == "public_cache_only":
+                lines.append("New additions unavailable while offline.")
+            elif digest.get("memory", {}).get("status") == "unchanged":
+                lines.append("No new additions since your last check.")
+            else:
+                lines.append("No new additions in the checked publication window.")
         lines.append("")
-    lines.extend(
-        [
-            "**Recommended first move: run Hello through Play.** Hello is a low-risk proof that uses public data, needs no account credentials, and declares no writes.",
-            "",
-            "**Use the form for your harness:**",
-            "",
-            "- **Codex:** `$play run hello`",
-            "- **Claude Code, Cursor, Hermes, OpenCode, or DeepSeek Harness:** `/play run hello`",
-            "- **Kimi Code:** `/skill:play run hello`",
-            "- **Plain-language compatibility:** `play run hello`",
-            "",
-            "Each form activates Play. Play resolves qualified matches and asks which Play you want.",
-            "It shows the exact method and effects before approval. Rote then runs it locally.",
-            "",
-            "- **Use your agent normally:** `run hello`.",
-            "    Omit the Play prefix. Play stays out of the way. Your agent handles the request.",
-            "",
-            f"This is a random sample of {sample_contract.get('sampled_count', len(sample))} Plays from the current catalog. Choose one to inspect, search by outcome, or start with a useful outcome of your own.",
-            "",
-            f"Recent-publication window: `{window['start']}` → `{window['end']}` (UTC)",
-            "",
-        ]
-    )
-    if not public_cache_only and not digest["org_updates"]["revised_complete"]:
-        lines.append(
-            "Revisions are unavailable: registry list lacks released-version timestamps."
-        )
-        lines.append("")
-    if not public_cache_only:
-        inbox_count = len(new_items) + len(revised_items)
-        if inbox_count:
-            lines.append(
-                f"There {'is' if inbox_count == 1 else 'are'} **{inbox_count} new or revised "
-                f"{'Play' if inbox_count == 1 else 'Plays'}** in this window."
-            )
-        elif digest["org_updates"]["revised_complete"]:
-            lines.append("Your recent-publication inbox is clear.")
-        else:
-            lines.append("No new publications were found; revision coverage is unavailable.")
-    if public_cache_only:
-        lines.extend(
-            [
-                "",
-                "Counts come from the cached public catalog and may be stale. Play verifies every "
-                "selected Play again before use.",
-            ]
-        )
+    if digest.get("availability", {}).get("status") == "public_cache_only":
+        lines.append("From the last verified public Play cache; it may be out of date.")
     else:
-        baseline_info = digest.get("baseline")
-        baseline_slugs = (
-            baseline_info.get("organizations") if isinstance(baseline_info, dict) else None
-        )
-        if isinstance(baseline_slugs, list) and baseline_slugs:
-            baseline_text = ", ".join(f"`{slug}`" for slug in baseline_slugs)
-            coverage_text = (
-                "visible through your authorized organizations and the public "
-                f"{baseline_text} baseline"
-            )
-        else:
-            coverage_text = "visible through your authorized organizations"
-        lines.extend(
-            [
-                "",
-                f"Counts cover runnable public cards {coverage_text}; they are not a claim about the global registry.",
-            ]
-        )
-    if not public_cache_only and not ranking["complete"]:
-        lines.append("Coverage is partial because one or more public Plays could not be read.")
+        lines.append("From the available public catalog.")
+    lines.extend(["", "[Browse community Plays](https://www.modiqo.ai/feed)"])
     return "\n".join(lines)
 
 
@@ -671,7 +716,16 @@ def collect_digest(
     baseline organizations the identity is not a member of are read live.
     """
 
-    if min(days, public_limit, inspection_budget, update_metadata_budget, update_inspection_budget) < 1:
+    if (
+        min(
+            days,
+            public_limit,
+            inspection_budget,
+            update_metadata_budget,
+            update_inspection_budget,
+        )
+        < 1
+    ):
         raise ValueError("digest limits and budgets must be at least 1")
     start, resolved_end = resolve_window(
         end=end or datetime.now(timezone.utc),
@@ -703,8 +757,12 @@ def collect_digest(
     )
     grouped, baseline_slugs = merge_public_baseline(authorized, baseline)
     candidate_new, candidate_revised = classify_updates(grouped, start, resolved_end)
-    update_references = [item["reference"] for item in [*candidate_new, *candidate_revised]]
-    metadata_batch = load_registry_flow_infos(update_references, limit=update_metadata_budget)
+    update_references = [
+        item["reference"] for item in [*candidate_new, *candidate_revised]
+    ]
+    metadata_batch = load_registry_flow_infos(
+        update_references, limit=update_metadata_budget
+    )
     update_metadata = {flow["reference"]: flow for _, flow in metadata_batch.flows}
     update_batch = inspect_references(
         update_references,
@@ -771,8 +829,16 @@ def _fresh_cached_digest(
     digest = cache.get("digest")
     if supports_play_discovery(digest):
         assert isinstance(digest, dict)
-        return copy.deepcopy(digest)
-    return _upgrade_cached_discovery(digest, cache.get("catalog"))
+        current = copy.deepcopy(digest)
+    else:
+        current = _upgrade_cached_discovery(digest, cache.get("catalog"))
+    if current is not None:
+        from .inbox_cache import public_cache_entries
+
+        current["newsletter"] = newsletter_sections(
+            current, public_cache_entries(cache)
+        )
+    return current
 
 
 def _cached_public_fallback(
@@ -828,7 +894,9 @@ def _cached_public_fallback(
                 "recent_at": entry.get("latest_version_created_at")
                 or entry.get("created_at"),
                 "recent_kind": (
-                    "release" if entry.get("latest_version_created_at") else "publication"
+                    "release"
+                    if entry.get("latest_version_created_at")
+                    else "publication"
                 ),
             }
         )
@@ -848,8 +916,7 @@ def _cached_public_fallback(
                 {
                     "owner": owner,
                     "count": sum(
-                        item["reference"].startswith(f"{owner}/")
-                        for item in candidates
+                        item["reference"].startswith(f"{owner}/") for item in candidates
                     ),
                 }
                 for owner in owners
@@ -894,6 +961,7 @@ def _cached_public_fallback(
             },
         }
     )
+    fallback["newsletter"] = newsletter_sections(fallback, public_catalog)
     capabilities = fallback.get("capabilities")
     if isinstance(capabilities, dict):
         capabilities["organization_updates"] = {
@@ -916,9 +984,7 @@ def _cached_public_fallback(
     return fallback
 
 
-def _upgrade_cached_discovery(
-    digest: object, catalog: object
-) -> dict[str, Any] | None:
+def _upgrade_cached_discovery(digest: object, catalog: object) -> dict[str, Any] | None:
     """Project a legacy fresh catalog into the current randomized sample contract.
 
     This is deliberately local-only. It lets an immediately invoked What's New
@@ -961,7 +1027,9 @@ def _upgrade_cached_discovery(
                 "recent_at": entry.get("latest_version_created_at")
                 or entry.get("created_at"),
                 "recent_kind": (
-                    "release" if entry.get("latest_version_created_at") else "publication"
+                    "release"
+                    if entry.get("latest_version_created_at")
+                    else "publication"
                 ),
             }
         )
@@ -983,7 +1051,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=1)
     parser.add_argument("--since", help="ISO-8601 start timestamp supplied by the host")
-    parser.add_argument("--checkpoint", type=Path, help="read a host-persisted checkpoint token")
+    parser.add_argument(
+        "--checkpoint", type=Path, help="read a host-persisted checkpoint token"
+    )
     parser.add_argument("--public-limit", type=int, default=10)
     parser.add_argument(
         "--inspection-budget",
@@ -1031,7 +1101,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("digest limits and budgets must be at least 1")
     remember = args.remember or args.state is not None
     if remember and (args.since is not None or args.checkpoint is not None):
-        parser.error("--remember/--state cannot be combined with --since or --checkpoint")
+        parser.error(
+            "--remember/--state cannot be combined with --since or --checkpoint"
+        )
     state_path = args.state or default_state_path()
     remembered: tuple[str, dict[str, Any]] | None = None
     key: str | None = None
@@ -1052,7 +1124,9 @@ def main(argv: list[str] | None = None) -> int:
                     if fallback is None:
                         raise
                     print(
-                        json_text(fallback) if args.as_json else render_markdown(fallback),
+                        json_text(fallback)
+                        if args.as_json
+                        else render_markdown(fallback),
                         flush=True,
                     )
                     return 0
@@ -1096,6 +1170,7 @@ def main(argv: list[str] | None = None) -> int:
                 "scope_key": key,
                 "status": compare_digest(digest, previous),
                 "served_from": served_from,
+                "since": since,
             }
     except RegistryReadError as error:
         print(f"play-digest: {registry_failure_guidance(error)}", file=sys.stderr)
@@ -1109,6 +1184,9 @@ def main(argv: list[str] | None = None) -> int:
         try:
             save_entry(state_path, key=key, scope=scope, digest=digest)
         except DigestStateError as error:
-            print(f"play-digest: digest was shown but memory was not saved: {error}", file=sys.stderr)
+            print(
+                f"play-digest: digest was shown but memory was not saved: {error}",
+                file=sys.stderr,
+            )
             return 1
     return 0

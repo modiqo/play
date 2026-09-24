@@ -7,14 +7,27 @@ live-verified an installed, authenticated Rote identity. Keep canonical URI onbo
 
 Every Play request is identity-gated, including `whats new`. If live preflight is structurally
 healthy and only the `authenticated` check is false, this is normal onboarding—not an error path.
-Keep the original request and continuation intact, hand off to `rote-setup`, and offer Google or
-GitHub sign in/account creation. After the browser flow, require a live `rote whoami`, rerun the
+Keep the original request and continuation intact, hand off to `rote-setup`, and offer Google,
+GitHub, or email sign-in/account creation. After the browser flow, require a live `rote whoami`, rerun the
 complete preflight, and continue the original request. A paused login explains how to resume; it
 must not be relabeled as an installation failure.
 
 Restore activation before evaluating identity. A managed launcher that names a missing recorded
 Play source may migrate to the currently loaded marketplace source. Never take over a different
 source that still exists, and never ask login to compensate for a broken launcher.
+
+## Optional company setup
+
+After verifying identity, offer **Create company organization** or **Not now** once per account
+on this device, including when sign-in began from a Play URI. Ask for the company name and
+organization handle. Create it through `rote-org`, or verify the user already administers it.
+Then offer an optional colleague invitation as a developer (create and publish Plays) or an
+admin (also manage organization settings and members). Show the role before requesting the email.
+
+Keep email sign-in codes in Play's local browser form. Never request verification codes in chat.
+The form uses the released Rote email-code commands; it does not require a custom Rote build.
+Company setup alone does not publish anything; private publication keeps its own approval.
+After completion or skipping, resume the original request. Reinspect a pending Play before running it.
 
 ## Promise
 
@@ -78,18 +91,19 @@ rote play inspect modiqo/hello --json
 rote play run modiqo/hello
 ```
 
-Then offer another Play from the randomized catalog sample, creation from a useful outcome, a team space, or Finish. Explain
+Then offer another Play from the Modiqo titles and new Community Plays, creation from a useful outcome, a team space, or Finish. Explain
 the creation boundary precisely: begin with `$play <do something useful>` so capture classification
 happens before exploration; steer the work; after verification, ask to save the captured method.
 Never suggest that uncaptured work can be converted into a Play retrospectively.
 
 ## Owner-private memory
 
-Use `~/.rote-play/onboarding-state.json` only for first-use orientation memory. Store:
+Use `~/.rote-play/onboarding-state.json` for first-use orientation and company setup memory. Store:
 
 - a SHA-256 digest of the authenticated email;
 - the orientation version;
-- the UTC time when the orientation was presented.
+- the UTC time when the orientation was presented;
+- the UTC time when the company setup offer was completed or skipped.
 
 Use user-only directory and file permissions. Store no email, request, prompt, Play result,
 credential, raw `whoami` output, or controller context. Treat a missing entry as first use, the

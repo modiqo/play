@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in to Play</title>
+<style>
+body{font:17px system-ui,sans-serif;background:#f8f9fa;color:#202124;margin:0;padding:8vh 20px}
+main{max-width:440px;margin:auto;background:white;padding:32px;border:1px solid #ddd}
+h1{font-size:30px}label{display:block;margin-top:24px}input,button{box-sizing:border-box;width:100%;font:inherit;padding:12px;margin-top:10px}button{cursor:pointer;background:#202124;color:white;border:0}button:disabled{opacity:.5;cursor:default}#message{min-height:3em;line-height:1.5}
+</style>
+<main>
+<p>MODIQO / PLAY</p><h1>Sign in with email</h1>
+<p>Use the same account as modiqo.ai. A new email address creates an account.</p>
+<form id="signin">
+<label for="email">Work or personal email</label>
+<input id="email" type="email" autocomplete="email" required maxlength="254" placeholder="you@company.com">
+<button id="send" type="button">Email me a code</button>
+<section id="verification" hidden>
+<label for="code">Code from your email</label>
+<input id="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6">
+<button id="verify" type="submit">Verify and continue</button>
+</section></form>
+<p id="message" role="status" aria-live="polite"></p>
+<p>Enter your code here. Keep it out of chat.</p>
+</main>
+<script>
+const form=document.querySelector('#signin'),email=document.querySelector('#email'),code=document.querySelector('#code'),send=document.querySelector('#send'),verify=document.querySelector('#verify'),message=document.querySelector('#message');
+let complete=false;
+async function submit(action){
+ if(!email.reportValidity())return;
+ if(action==='verify'&&!code.reportValidity())return;
+ send.disabled=verify.disabled=true;
+ try{
+  const response=await fetch(location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,email:email.value.trim(),code:code.value})});
+  const result=await response.json();message.textContent=result.message||'Request failed. Please try again.';
+  if(response.ok&&action==='send'){document.querySelector('#verification').hidden=false;code.required=true;code.focus();}
+  complete=result.complete===true;
+  if(complete){code.value='';form.hidden=true;}
+ }catch{message.textContent='Play is no longer available. Return to Play and start sign-in again.';}
+ finally{send.disabled=verify.disabled=complete;}
+}
+send.addEventListener('click',()=>submit('send'));
+form.addEventListener('submit',event=>{event.preventDefault();submit(document.querySelector('#verification').hidden?'send':'verify');});
+</script>
+</html>

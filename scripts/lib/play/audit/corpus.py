@@ -15,13 +15,13 @@ import argparse
 import collections
 import json
 import re
-import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from . import fetch
+from ..search import SearchError, search_published
 from .runner import safe_audit
 
 try:
@@ -30,23 +30,18 @@ except ImportError:  # pragma: no cover
     _toml = None  # type: ignore[assignment]
 
 DEFAULT_QUERIES = (
-    "git", "github", "python", "docker", "ci", "weather", "audit", "report", "secrets", "release",
-    "calendar", "notion", "review", "deploy", "test", "lint", "security", "env", "repo", "pr",
+    "git", "github", "python", "docker", "continuous integration", "weather", "audit", "report", "secrets", "release",
+    "calendar", "notion", "review", "deploy", "test", "lint", "security", "env", "repo", "pull request",
 )
-_REFERENCE = re.compile(r'"reference":\s*"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@[0-9.]+"')
-
-
 def registry_references(queries: Sequence[str]) -> list[str]:
+    """Collect a sample of judged published Plays through the shared Worker."""
     found: set[str] = set()
     for query in queries:
-        try:
-            completed = subprocess.run(
-                ["rote", "play", "search", query, "--source", "registry", "--json"],
-                capture_output=True, text=True, check=False, timeout=60,
-            )
-        except (OSError, subprocess.SubprocessError):
-            continue
-        found.update(_REFERENCE.findall(completed.stdout))
+        result = search_published(query, limit=12)
+        if not result["complete"]:
+            print("Corpus discovery is incomplete; these references are a sample.", file=sys.stderr)
+        found.update(item["exact_reference"] for item in result["results"]
+                     if item["relevance_status"] in {"direct", "partial"})
     return sorted(found)
 
 
@@ -210,7 +205,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     rep.add_argument("rule", nargs="?")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     if args.command == "refs":
-        for reference in registry_references(args.query or DEFAULT_QUERIES):
+        try:
+            references = registry_references(args.query or DEFAULT_QUERIES)
+        except (SearchError, OSError) as error:
+            print(f"Corpus discovery failed: {error}", file=sys.stderr)
+            return 1
+        for reference in references:
             print(reference)
         return 0
     if args.command == "run":

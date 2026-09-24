@@ -22,7 +22,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from .inbox_cache import public_cache_entries
 from .harnesses import (
     HARNESS_BY_ID,
     HARNESS_SPECS,
@@ -36,7 +35,7 @@ from .harnesses import (
     supported_harnesses,
     target_ids,
 )
-from .identity import remember_login_provider, rote_session_status
+from .identity import login_command, remember_login_provider, rote_session_status
 from .recurrence import (
     RecurrenceError,
     enable_tulving as enable_tulving_support,
@@ -52,7 +51,7 @@ BACKUP_CATALOG_SCHEMA = "play.install-backup-catalog/v1"
 RESTORE_PLAN_SCHEMA = "play.install-restore-plan/v1"
 RESTORE_REPORT_SCHEMA = "play.install-restore-report/v1"
 BACKUP_RETENTION = 10
-LOGIN_PROVIDERS = ("google", "github")
+LOGIN_PROVIDERS = ("google", "github", "email")
 BROWSER_MODES = ("auto", "headed", "headless")
 REMOTE_AUTH_EVIDENCE = "auth:remote-machine"
 REGISTRY_NETWORK_MARKERS = (
@@ -858,9 +857,9 @@ def _registry_network_blocker(action: str) -> str:
 def _registry_credentials_blocker() -> str:
     return (
         "Rote registry credentials are required before Play can be installed. "
-        "On a machine with a browser, choose Google or GitHub. On a headless "
+        "On a machine with a browser, choose Google, GitHub, or email. On a headless "
         "machine, authenticate Rote with `rote provision` and `rote claim`, then retry. "
-        "For unattended browser sign-in, set PLAY_LOGIN_PROVIDER=google or github."
+        "For unattended browser sign-in, set PLAY_LOGIN_PROVIDER=google, github, or email."
     )
 
 
@@ -906,7 +905,7 @@ def _identity_gate(
     remote_auth: bool = False,
     runner: Runner,
 ) -> tuple[Step, bool]:
-    """Verify identity or complete one explicit OAuth provider flow before setup mutates Play."""
+    """Verify identity or complete one explicit browser sign-in flow before setup mutates Play."""
 
     identity = runner([rote, "whoami", "--check"])
     identity_status = rote_session_status(identity)
@@ -936,7 +935,7 @@ def _identity_gate(
         raise BootstrapError(
             f"login provider must be one of: {', '.join(LOGIN_PROVIDERS)}"
         )
-    command = [rote, "login", "--provider", login_provider]
+    command = login_command(rote, login_provider)
     result = _run_login_visible(command, runner)
     if result.returncode != 0:
         detail = (
@@ -3009,88 +3008,19 @@ def _enable_codex_play_hook_state(
 
 
 def _verify_prompt_intercept(source: Path, *, verify_catalog: bool = False) -> None:
-    """Execute silent pass-through and verified cached-catalog probes."""
+    """Verify discussion pass-through without making discovery or auth calls.
 
+    Catalog contents no longer determine hook suggestions. The legacy keyword
+    remains accepted for installer compatibility; Worker behavior has contract tests.
+    """
     command = source / "scripts" / "bin" / "play-intercept"
     try:
-        result = subprocess.run(
-            [str(command), "prompt"],
-            input=json.dumps({"prompt": "export the quarterly numbers"}),
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=30,
-        )
+        result = subprocess.run([str(command), "prompt"], input=json.dumps({"prompt": "Should we discuss search behavior?"}),
+            text=True, capture_output=True, check=False, timeout=10)
     except (OSError, subprocess.TimeoutExpired) as error:
         raise BootstrapError(f"Play prompt hook smoke check failed: {error}") from error
     if result.returncode != 0 or result.stdout.strip():
-        raise BootstrapError(
-            "Play prompt hook smoke check did not pass through silently: "
-            f"{(result.stderr or result.stdout).strip() or f'exit {result.returncode}'}"
-        )
-    if not verify_catalog:
-        return
-    cache_path = Path(
-        os.environ.get(
-            "PLAY_INBOX_CACHE_PATH", _home() / ".rote-play" / "inbox-cache.json"
-        )
-    ).expanduser()
-    # Unit/dry runners can return a synthetic warm-cache receipt without
-    # creating host state. A real installer run writes this file before hook
-    # convergence; whenever it exists, the catalog probe below is mandatory.
-    if not cache_path.is_file():
-        return
-    cache = _load_json(cache_path)
-    catalog = cache.get("catalog")
-    public_catalog = cache.get("public_catalog")
-    if cache.get("catalog_complete") is not True or not (
-        isinstance(catalog, list) or isinstance(public_catalog, list)
-    ):
-        raise BootstrapError(
-            "Play prompt hook catalog smoke check requires a verified complete inbox cache"
-        )
-    safe_catalog = public_cache_entries(cache)
-    candidate = next(
-        (
-            item
-            for item in safe_catalog
-            if isinstance(item, dict)
-            and isinstance(item.get("reference"), str)
-            and isinstance(item.get("name"), str)
-            and len(re.findall(r"[a-z0-9]+", item["name"].casefold())) >= 2
-        ),
-        None,
-    )
-    if candidate is None:
-        return
-    prompt = "find " + str(candidate["name"]).replace("-", " ").replace("_", " ")
-    cached_result = subprocess.run(
-        [str(command), "prompt"],
-        input=json.dumps({"prompt": prompt}),
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=30,
-    )
-    try:
-        cached_payload = json.loads(cached_result.stdout)
-    except json.JSONDecodeError as error:
-        raise BootstrapError(
-            "Play prompt hook cached-catalog smoke check returned invalid output: "
-            f"{(cached_result.stderr or cached_result.stdout).strip() or f'exit {cached_result.returncode}'}"
-        ) from error
-    cached_context = cached_payload.get("hookSpecificOutput", {}).get(
-        "additionalContext"
-    )
-    if (
-        cached_result.returncode != 0
-        or not isinstance(cached_context, str)
-        or str(candidate["reference"]) not in cached_context
-    ):
-        raise BootstrapError(
-            "Play prompt hook did not resolve the verified cached catalog entry: "
-            f"{candidate['reference']}"
-        )
+        raise BootstrapError("Play prompt hook discussion check did not pass through silently")
 
 
 def _managed_hook_entries(harness: str, source: Path) -> dict[str, list[dict[str, Any]]]:
@@ -4481,9 +4411,9 @@ def _render_status_card(report: dict[str, Any]) -> str:
                 [
                     "",
                     "  Sign in to finish setup",
-                    "    Re-run this installer in a terminal and choose Google or GitHub.",
+                    "    Re-run this installer in a terminal and choose Google, GitHub, or email.",
                     "    Headless machine? Use `rote provision` elsewhere, then `rote claim` here.",
-                    "    For unattended browser sign-in, pass PLAY_LOGIN_PROVIDER=google or github.",
+                    "    For unattended browser sign-in, pass PLAY_LOGIN_PROVIDER=google, github, or email.",
                     "    Play-owned harness state has not been changed.",
                 ]
             )
@@ -4939,6 +4869,7 @@ def _login_method_options(browser_mode: str) -> tuple[tuple[str, str], ...]:
     return (
         ("google", "Continue with Google"),
         ("github", "Continue with GitHub"),
+        ("email", "Continue with email code"),
         ("remote", "Sign in from another machine"),
         ("exit", "Exit setup"),
     )
@@ -5025,7 +4956,7 @@ def _run_login_picker(browser_mode: str, stream: Any, output: Any) -> str:
     except termios.error as error:
         raise BootstrapError(
             "sign-in selection needs an interactive terminal; automation must pass "
-            "--login-provider google|github or --remote-auth"
+            "--login-provider google|github|email or --remote-auth"
         ) from error
     try:
         width = max(20, os.get_terminal_size(output.fileno()).columns - 1)
@@ -5072,7 +5003,7 @@ def _run_login_picker(browser_mode: str, stream: Any, output: Any) -> str:
 
 
 def _choose_login_method(browser_mode: str, *, stream=None) -> str:
-    """Choose browser OAuth or a secure handoff from the controlling terminal."""
+    """Choose browser sign-in or a secure handoff from the controlling terminal."""
 
     close_stream = False
     output = sys.stderr
@@ -5089,7 +5020,7 @@ def _choose_login_method(browser_mode: str, *, stream=None) -> str:
             except OSError as error:
                 raise BootstrapError(
                     "sign-in needs an interactive terminal, a pre-claimed Rote identity, "
-                    "or --login-provider google|github"
+                    "or --login-provider google|github|email"
                 ) from error
     elif stream is not sys.stdin:
         output = stream
@@ -5823,7 +5754,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_parser.add_argument(
         "--login-provider",
         choices=LOGIN_PROVIDERS,
-        help="complete first-run Rote sign-in with this OAuth provider",
+        help="complete first-run Rote sign-in with this sign-in method",
     )
     install_parser.add_argument(
         "--remote-auth",

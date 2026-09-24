@@ -501,6 +501,20 @@ class PullTest(NoProbe):
                 pulled.cleanup()
                 self.assertFalse(pulled.temp_home.exists())
 
+    def test_pull_keeps_published_version_but_reads_unversioned_install_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as home, patch.dict(os.environ, {"ROTE_HOME": home}), patch("play.audit.fetch.shutil.which", return_value="/usr/bin/rote"):
+            def runner(argv, env):
+                self.assertIn("owner/name@1.2.3", argv)
+                root = Path(env["ROTE_HOME"]) / "flows" / "owner" / "name"
+                root.mkdir(parents=True)
+                (root / "main.ts").write_text("// published play")
+                return 0, "ok", ""
+            pulled, error = fetch.pull("owner", "name@1.2.3", runner=runner)
+            self.assertIsNone(error)
+            assert pulled is not None
+            self.assertEqual("name", pulled.root.name)
+            pulled.cleanup()
+
     def test_pull_failure_is_reported_and_leaves_nothing_behind(self) -> None:
         with patch("play.audit.fetch.shutil.which", return_value="/usr/bin/rote"):
             pulled, error = fetch.pull("nobody", "nothing", runner=lambda argv, env: (1, "", "error: Flow not found: nobody/nothing"))

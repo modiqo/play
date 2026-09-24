@@ -71,7 +71,7 @@ def pull(owner: str, name: str, *, runner: Runner | None = None) -> tuple[Pulled
     except (OSError, subprocess.SubprocessError) as error:
         shutil.rmtree(home, ignore_errors=True)
         return None, f"rote registry play pull {owner}/{name}: {error}"
-    root = home / "flows" / owner / name
+    root = home / "flows" / owner / name.partition("@")[0]
     if code != 0 or not (root / "main.ts").is_file():
         detail = (stderr or stdout).strip()
         first = next((line.strip() for line in detail.splitlines() if line.strip()), f"exit {code}")

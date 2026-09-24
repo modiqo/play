@@ -83,7 +83,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '{\"marketplaces\":[]}'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.97\",\"enabled\":true}],\"available\":[]}'\n"
+                    "    printf '%s\\n' '{\"installed\":[{\"pluginId\":\"play@play-skills\",\"version\":\"0.4.99\",\"enabled\":true}],\"available\":[]}'\n"
                     "  else\n"
                     "    printf '%s\\n' '{\"installed\":[],\"available\":[]}'\n"
                     "  fi\n"
@@ -100,7 +100,7 @@ class InstallAllTest(unittest.TestCase):
                     "  printf '%s\\n' '[]'\n"
                     "elif [ \"${1:-}\" = plugin ] && [ \"${2:-}\" = list ]; then\n"
                     "  if [ -f \"$marker\" ]; then\n"
-                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.97\",\"enabled\":true,\"scope\":\"user\"}]'\n"
+                    "    printf '%s\\n' '[{\"id\":\"play@play-skills\",\"version\":\"0.4.99\",\"enabled\":true,\"scope\":\"user\"}]'\n"
                     "  else\n"
                     "    printf '%s\\n' '[]'\n"
                     "  fi\n"
@@ -370,7 +370,7 @@ class InstallAllTest(unittest.TestCase):
 
         self.run_installer("install", "--copy")
         installed = (install_home / "skill").resolve()
-        self.assertEqual("0.4.97", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.99", (installed / "VERSION").read_text().strip())
         marker = json.loads((installed / ".play-install.json").read_text())
         self.assertEqual("play.portable-install/v1", marker["schema"])
         for root in self.roots.values():
@@ -525,7 +525,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("› Checking Play, Rote, and Tulving updates", result.stderr)
         self.assertIn("✓ Verifying Codex", result.stderr)
         self.assertIn("╭─ ◆ Review setup", result.stdout)
-        self.assertIn("Version: 0.4.97", result.stdout)
+        self.assertIn("Version: 0.4.99", result.stdout)
         self.assertIn("╭─ ◆ Play setup", result.stdout)
         self.assertIn("Status: READY", result.stdout)
         self.assertIn("OS:     ", result.stdout)
@@ -596,7 +596,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertIn("READY TO APPLY · UPDATE", update_result.stdout)
         self.assertEqual("update", update_report["play"]["install_state"])
         self.assertTrue(update_report["backup"]["has_previous_state"])
-        self.assertEqual("0.4.97", (installed / "VERSION").read_text().strip())
+        self.assertEqual("0.4.99", (installed / "VERSION").read_text().strip())
 
         missing = installed / "scripts" / "bin" / "play-digest"
         missing.unlink()
@@ -829,7 +829,7 @@ class InstallAllTest(unittest.TestCase):
 
         self.assertEqual(1, result.returncode, result.stderr + result.stdout)
         self.assertIn("Rote registry credentials are required", result.stderr)
-        self.assertIn("PLAY_LOGIN_PROVIDER=google or github", result.stderr)
+        self.assertIn("PLAY_LOGIN_PROVIDER=google, github, or email", result.stderr)
         self.assertNotIn("Status: READY", result.stdout)
         self.assertFalse((install_home / "skill").exists())
 

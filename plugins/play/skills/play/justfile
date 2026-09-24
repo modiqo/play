@@ -11,6 +11,7 @@ check: package-check
     uv run pyright scripts/lib/play/audit scripts/bin/play-audit scripts/bin/play-audit-corpus tests/foundation/test_audit.py
     uv run pyright scripts/lib/play/journey_effects.py
     uv run pyright scripts/release/publish_play.py tests/harness/test_release_publish.py
+    uv run pyright scripts/lib/play/email_login.py scripts/lib/play/search_transport.py tests/foundation/test_email_login.py tests/awareness/test_search_transport.py
     scripts/bin/play-question choose_creator_path --harness codex --context-json '{"match":{"summary":"Existing Plays cover 1 of 2 outcomes: daily calendar: modiqo/check-calendar-meetings (full); weather in san francisco: modiqo/weather-updates-for-cities (partial, missing san, francisco).","play_choices":[{"id":"use:modiqo/check-calendar-meetings","reference":"modiqo/check-calendar-meetings","label":"Use modiqo/check-calendar-meetings","description":"full match for daily calendar.","parameters":{},"recommended":true,"sub_outcome":"daily calendar","classification":"full","uncovered_terms":[]}]}}' --check
     scripts/bin/play-question choose_creator_path --harness claude --context-json '{"match":{"summary":"Existing Plays cover 1 of 2 outcomes: daily calendar: modiqo/check-calendar-meetings (full); weather in san francisco: modiqo/weather-updates-for-cities (partial, missing san, francisco).","play_choices":[{"id":"use:modiqo/check-calendar-meetings","reference":"modiqo/check-calendar-meetings","label":"Use modiqo/check-calendar-meetings","description":"full match for daily calendar.","parameters":{},"recommended":true,"sub_outcome":"daily calendar","classification":"full","uncovered_terms":[]}]}}' --check
     scripts/bin/play-question choose_creator_path --harness kimi --context-json '{"match":{"summary":"Existing Plays cover 1 of 2 outcomes: daily calendar: modiqo/check-calendar-meetings (full); weather in san francisco: modiqo/weather-updates-for-cities (partial, missing san, francisco).","play_choices":[{"id":"use:modiqo/check-calendar-meetings","reference":"modiqo/check-calendar-meetings","label":"Use modiqo/check-calendar-meetings","description":"full match for daily calendar.","parameters":{},"recommended":true,"sub_outcome":"daily calendar","classification":"full","uncovered_terms":[]}]}}' --check
@@ -84,9 +85,9 @@ test: check
 release-check:
     scripts/release/publish-play check
 
-# Publish the current Play tag through rote-releases and Cloudflare Pages.
-release-publish release_repo="../rote-releases":
-    scripts/release/publish-play publish --release-repo {{release_repo}}
+# Publish the current Play tag to Cloudflare without changing another repository.
+release-publish:
+    scripts/release/publish-play publish
 
 # Measure warm typed-controller transition latency without model or external I/O.
 benchmark-controller iterations="1000":

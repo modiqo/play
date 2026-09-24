@@ -23,8 +23,7 @@ The harness-native prefix activates Play. Use `$play` in Codex and `/skill:play`
 
 Without that explicit prefix, Play stays silent and out of the agent's way.
 
-A hook line beginning `Play suggestion:` is not Play activation. The hook has already searched
-installed Plays and the refreshed authorized catalog cache. Present only the exact quiet or passive
+A hook line beginning `Play suggestion:` is not Play activation. The hook has already obtained a direct judgment for a published Play from the shared search Worker. Present only the exact quiet or passive
 one-line suggestion quoted by the hook. Do not pause, enter the state machine, search again, pull,
 inspect, run, or invoke Rote. Continue the original request through the normal harness route. The
 user may explicitly invoke the named Play or ask to search later.
@@ -94,7 +93,9 @@ If the unchanged trimmed request is `play what's new`, `$play what's new`, `/pla
 preflight, or create a continuation. Run the bundled
 `scripts/bin/play-digest --remember --days 7`, present its Markdown verbatim, and stop. The digest
 uses the install-warmed catalog cache when fresh and performs its own bounded refresh otherwise. A
-later request must explicitly invoke Play to inspect or run one of the displayed Plays.
+later request must explicitly invoke Play to inspect or run one of the displayed Plays. Show only
+the newsletter’s linked titles; do not append catalog descriptions, metadata, onboarding, or the raw
+JSON. During creation, preserve the active creation context while displaying this newsletter.
 
 For a request whose primary intent is to initialize, inspect, add, update, or remove Play's direct
 routing policy, do not enter the state machine or run preflight. Translate the unchanged request to
@@ -240,7 +241,7 @@ play-machine run-until-yield --stdin --json <<'PLAY_INPUT'
 PLAY_INPUT
 ```
 
-When the discovery hook names a Play, preserve that complete canonical `owner/name` reference in
+When the discovery hook names a Play, preserve that exact published `owner/name@version` reference in
 every `match.reference` event. Never shorten it to the bare Play name, reconstruct an owner, or use
 digest display text as identity. The runtime can resolve a unique bare name from its complete cached
 catalog as a compatibility safeguard, but the hook-supplied canonical reference remains authoritative.
@@ -337,11 +338,18 @@ the exact approved run. An older Play without `adapter.auth.ensure` may also ent
 compatibility path after its run reports authentication is required.
 
 Play keeps registry sign-in recovery inside the pending request. When `rote play run` reports that
-Rote is signed out, show the Google, GitHub, and **Not now** choices.
+Rote is signed out, show the Google, GitHub, email, and **Not now** choices.
 
 The bundled runtime runs only the selected `rote login --provider ...` command and one `rote whoami`
-check. A verified login returns Play to the exact inspected reference, parameters, disclosure, and
-run approval.
+check. After verified sign-in, offer company setup once per identity on this device. The email
+option uses the same Supabase email-code flow as the website. Enter email and codes only in the
+local browser window; never collect them in chat.
+
+Company setup is optional. Ask for the company name and handle, then use `rote-org` to create or
+verify the organization. Once ready, offer a developer invitation for shared Play creation and
+publication, an explicit admin invitation for organization and member management, or Continue.
+Never create an organization, invite anyone, or publish a Play from sign-in alone. Preserve the
+original reference and parameters, then inspect the pending Play again before execution.
 
 Do not invoke the general `rote-setup` wizard. Do not discuss adapters, ask the user to retry the
 Play, or start a new request. A failed login shows the same provider choice without running the
@@ -386,7 +394,7 @@ the user separately approves the official Rote installer. Apply first creates an
 restorable backup manifest under the Play bootstrap state directory, then fully replaces Play-owned
 plugin, skill, hook, launcher, portable-copy, and activation-profile state while preserving
 unrelated harness settings. Installation requires an authenticated Rote identity. A logged-out
-non-interactive install exits before changing Play-owned state unless it names Google or GitHub as
+non-interactive install exits before changing Play-owned state unless it names Google, GitHub, or email as
 the login provider. Re-run interactively when a browser sign-in or harness permission change is
 needed. A successful install prints a tutorial for automatic discovery, non-blocking suggestions,
 silent no-match behavior, explicit Explore commands, and approval before pull or execution.
@@ -402,7 +410,7 @@ over HTTPS. It then enters the first installer's planned, backed-up, verified co
 not ask an already-installed user to paste the curl bootstrap again.
 
 Use `rote whoami --check` at every Play-owned identity boundary. It refreshes usable authentication and
-returns exit `77` only when login is required. After a verified Google or GitHub login, remember
+returns exit `77` only when login is required. After a verified Google, GitHub, or email login, remember
 only that provider name in Play's owner-private state.
 
 On a later exit `77`, run `rote login --provider <remembered-provider>` automatically. Require a
@@ -412,15 +420,15 @@ preference.
 
 ## Stay out of the way
 
-Automatic hook discovery searches installed Plays and the refreshed authorized catalog cache.
-Strong matches produce one quiet suggestion and continue the normal harness route. Weak matches and
-no matches produce no Play output. Discovery never reads Play preferences, journals, exploration
+Automatic hook discovery searches published Plays through the shared Worker. A direct Jev judgment
+produces one quiet suggestion and continues the normal harness route. Partial, uncertain, failed,
+and timed-out searches produce no Play output. Unpublished local Plays are never candidates. Discovery never reads Play preferences, journals, exploration
 state, or Rote workspaces.
 
 When an explicitly activated outcome search finds no adequate Play, the runtime exits quietly and
 the harness continues the unchanged request normally. An explicit Play search may show an empty
 result, then stops without offering creation. Only `$play explore <outcome>`,
-`/play explore <outcome>`, or `/skill:play explore <outcome>` authorizes the creator path. That path searches local and authorized
+`/play explore <outcome>`, or `/skill:play explore <outcome>` authorizes the creator path. That path searches published and authorized
 registry Plays first. When the request names separable outcomes (two things joined by "and",
 "also", "then", or a comma, such as today's meetings and the weather), the search runs once per
 sub-outcome as well as on the blended phrase, because a blended phrase ranks Plays that describe

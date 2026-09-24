@@ -7,10 +7,12 @@ prompts:
     choices:
       - {id: google, label: Continue with Google, description: Opens the Rote Google OAuth flow in your browser., event: onboarding_google_login_selected, recommended: true}
       - {id: github, label: Continue with GitHub, description: Opens the Rote GitHub OAuth flow in your browser., event: onboarding_github_login_selected}
+      - {id: email, label: Continue with email, description: Enter your email and its verification code in the browser., event: onboarding_email_login_selected}
       - {id: defer, label: Not now, description: Stop without signing in; your original request is not executed., event: onboarding_login_deferred}
     events:
       onboarding_google_login_selected: [prompt_version, selected_at]
       onboarding_github_login_selected: [prompt_version, selected_at]
+      onboarding_email_login_selected: [prompt_version, selected_at]
       onboarding_login_deferred: [prompt_version, selected_at]
 
   choose_registry_login_provider:
@@ -20,10 +22,12 @@ prompts:
     choices:
       - {id: google, label: Continue with Google, description: Opens Google sign-in, then resumes this exact Play., event: registry_google_login_selected, recommended: true}
       - {id: github, label: Continue with GitHub, description: Opens GitHub sign-in, then resumes this exact Play., event: registry_github_login_selected}
+      - {id: email, label: Continue with email, description: Enter your email and its verification code in the browser., event: registry_email_login_selected}
       - {id: defer, label: Not now, description: Keep the Play unchanged and stop without running it., event: registry_login_deferred}
     events:
       registry_google_login_selected: [prompt_version, selected_at]
       registry_github_login_selected: [prompt_version, selected_at]
+      registry_email_login_selected: [prompt_version, selected_at]
       registry_login_deferred: [prompt_version, selected_at]
 
   welcome_play_request:
@@ -39,7 +43,7 @@ prompts:
     selection: single
     choices:
       - {id: hello, label: Run Hello with Play, description: "Select this option, or type the form for your harness: $play run hello, /play run hello, or /skill:play run hello.", event: onboarding_starter_selected, recommended: true}
-      - {id: team, label: Create team space, description: "Claim a team handle, then invite colleagues to review and use shared Plays.", event: onboarding_team_selected}
+      - {id: team, label: Create company organization, description: "Claim a team handle, then invite colleagues to review and use shared Plays.", event: onboarding_team_selected}
       - {id: goal, label: Tell me your goal, description: Find an existing Play or work out a checked method together., event: onboarding_goal_selected}
       - {id: useful, label: Browse useful Plays, description: See available Plays before choosing whether to inspect one., event: onboarding_awareness_selected}
       - {id: done, label: Not now, description: Finish the introduction without inspecting or running anything., event: onboarding_dismissed}
@@ -61,9 +65,9 @@ prompts:
     question: What would you like to do next?
     selection: single
     choices:
-      - {id: useful, label: Run another Play, description: Choose from a random sample of 10 public Plays and inspect the method before approving it., event: onboarding_awareness_selected, recommended: true}
+      - {id: useful, label: Run another Play, description: Browse Modiqo titles and new Community Plays before inspecting a method., event: onboarding_awareness_selected, recommended: true}
       - {id: goal, label: Create your own, description: Start with a useful outcome; Play searches first and, when exploration is needed, capture begins before the work so a verified method can be saved., event: onboarding_goal_selected}
-      - {id: team, label: Create team space, description: Claim a team handle and invite colleagues to review and use Plays together., event: onboarding_team_selected}
+      - {id: team, label: Create company organization, description: Claim a team handle and invite colleagues to review and use Plays together., event: onboarding_team_selected}
       - {id: done, label: Finish, description: Keep the verified receipt and stop here., event: onboarding_finished}
     events:
       onboarding_goal_selected: [prompt_version, selected_at]
@@ -83,25 +87,45 @@ prompts:
       onboarding_result_replay_requested: [prompt_version, selected_at]
       onboarding_result_finished: [prompt_version, selected_at, receipt_ref]
 
+  choose_company_setup:
+    question: Would you like to create an organization for your company to keep Plays private and work with colleagues?
+    selection: single
+    choices:
+      - {id: create, label: Create company organization, description: Choose a company name and handle, then optionally invite a colleague., event: onboarding_team_selected, recommended: true}
+      - {id: skip, label: Not now, description: Continue with Play; you can create an organization later., event: company_setup_skipped}
+    events:
+      onboarding_team_selected: [prompt_version, selected_at]
+      company_setup_skipped: [prompt_version, selected_at]
+
+  describe_company_name:
+    question: What is your company name?
+    selection: text
+    input: {id: company_name, label: Company name, event: company_name_described}
+    events:
+      company_name_described: [prompt_version, selected_at, team.name]
+
   describe_team_handle:
-    question: What lowercase team handle should colleagues recognize?
+    question: What lowercase organization handle should colleagues recognize (for example acme-labs)?
     selection: text
     input: {id: team_handle, label: Team handle, event: team_handle_described}
     events:
       team_handle_described: [prompt_version, selected_at, team.slug]
 
   choose_team_invite:
-    question: Would you like to invite a colleague to review and use Plays in this team?
+    question: Would you like to invite a colleague to co-manage Plays in this organization?
     selection: single
     choices:
-      - {id: invite, label: Invite colleague, description: Invite one colleague as a developer; you can add more after each invite., event: team_invite_selected, recommended: true}
+      - {id: invite, label: Invite colleague, description: A developer can create and publish organization Plays; you can add more colleagues afterward., event: team_invite_selected, recommended: true}
+      - {id: admin, label: Invite organization admin, description: An admin can also manage organization settings and members., event: team_admin_invite_selected}
       - {id: done, label: Continue, description: Finish team onboarding for now; members can be invited later., event: team_onboarding_finished}
     events:
-      team_invite_selected: [prompt_version, selected_at, team.slug, team.invite_role]
+      team_invite_selected: [prompt_version, selected_at, team.slug]
+      team_admin_invite_selected: [prompt_version, selected_at, team.slug]
       team_onboarding_finished: [prompt_version, selected_at, team.slug]
 
   describe_team_invite:
-    question: Which colleague should join this team as a developer?
+    question: "Which colleague should join {team.slug} as a {team.invite_role}?"
+    template_fields: [team.slug, team.invite_role]
     selection: text
     input: {id: colleague_email, label: Colleague email, event: team_invite_described}
     events:

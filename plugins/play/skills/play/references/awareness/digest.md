@@ -12,7 +12,7 @@ Use `scripts/bin/play-digest --remember --days <n> --json` for an explicit user 
 explicit time window, authorized organization results, section-level capability status, and a
 declared public ranking metric and scope.
 
-The digest and any inferred awareness invocation must reuse
+The digest and any inferred awareness request must reuse
 `play.public_trends.fetch_authorized_public_stats`; integrations that already have exact public
 references may call `scripts/bin/play-public-trends --play <owner/name[@version]> --json` directly.
 Do not create a second stats-fetching path.
@@ -26,11 +26,13 @@ host or isolated test.
 The awareness SHA represents the current organization publication and inspected public-ranking
 snapshot; it excludes the moving digest window. Compare it with the previous SHA:
 
-- `initial`: present the complete first digest.
-- `changed`: present the new/revised window and current public ranking.
-- `unchanged`: emit `awareness_unchanged`, say that nothing changed, and still present the current
-  catalog summary and randomized Play sample. “What’s new” is also the discovery entrance, so an unchanged
-  acknowledgment must not become a dead end.
+
+- `initial`: present the title-only newsletter.
+
+- `changed`: show Modiqo titles and new public community additions since the checkpoint.
+
+- `unchanged`: retain Modiqo titles and say there are no new additions since the last check.
+  Do not reannounce the cached publication window.
 
 Advance memory only after stdout has been flushed successfully. A failed collection never changes
 the stored SHA or checkpoint. Different authorized organization sets or digest configurations use
@@ -59,57 +61,63 @@ resolved `owner/name@version` is traceability metadata, never the execution sele
 from or failed by Play inspection remains visible for awareness but is not a Use choice until a
 later inspect succeeds.
 
+
 - New means first publication occurred inside the window.
+
 - Revised means a newer released version occurred inside the window. Require
   `latest_version_created_at`; `updated_at` alone may be a metadata edit and is not sufficient.
+
 - Do not treat a visibility-only metadata edit as a revision.
+
 - Include private Plays only from organizations authorized for the current identity.
-- Always merge the public baseline (`play.registry.PUBLIC_BASELINE_ORGANIZATIONS`, currently
-  `modiqo`) into the catalog, count, ranking, and random sample. A signed-in identity with no
-  organization membership must still see every community Play it can run, never
-  “0 runnable public Plays”. Read a baseline organization live only when the identity is not
-  already a member; a membership enumerates the same public Plays and must not be double counted.
-  Label the scope `authorized_organizations_and_public_baseline` and name the baseline in the
-  closing coverage disclosure whenever a non-member baseline contributed Plays.
+
+- Keep the public baseline (`play.registry.PUBLIC_BASELINE_ORGANIZATIONS`, currently `modiqo`) in the catalog, counts, ranking, and compatibility sample.
+  Signed-in users without organization membership must still see the Modiqo public catalog.
+  Fetch a baseline organization only when the identity is not already a member. Membership already enumerates those Plays.
+  Set structured coverage to `authorized_organizations_and_public_baseline` when a non-member baseline contributes Plays.
+
+
 - Enrich new and revised cards with `rote registry play info <reference> --json` for released
   version and author provenance. Read public download and install counters only from the public Play
   card. Neither awareness read implies local installation or run eligibility; inspect a selected
   card before Use.
+
 - Describe public results as trending only when the metric is windowed usage. Lifetime totals must
   be labeled most downloaded and must name their coverage scope.
+
 - Registry Play list/info currently expose no run count. Report run metrics as unavailable and use
   lifetime downloads for ranking until a canonical run metric exists.
+
 - The current registry has no canonical global public enumeration. Label the default ranking
   `authorized_organizations` and report global public ranking as unavailable. Never imply that a
   relevance search or community list is an exhaustive global ranking.
+
 - Report unavailable personal metrics as unavailable, never as zero.
 
 ## Present
 
-Present `# What’s new in Plays` progressively:
+Present `# What’s new in Plays` as a short newsletter:
 
-1. On an `initial` remembered view, put “Nice—you’ve taken the first step” before any heading or
-   catalog data.
-2. Show the number of inspected runnable public Plays. Derive it from the current cards and never
-   hard-code a marketing total.
-3. Select up to ten cards at random whenever the catalog snapshot refreshes and present them
-   directly in `awareness.play_choices`.
-4. Use `select_awareness_play` so a selected card enters inspection immediately. Find by outcome
-   and Create your own remain available beside the sample.
+1. **From Modiqo:** up to five linked public titles from the cached catalog, ordered by title.
+2. **New in community:** up to five public titles, newest first, whose first publication falls inside the window.
+3. Deduplicate titles by owner/name across sections. Different owners remain separate identities.
+4. End with one link to the community feed.
 
-A cached digest is discovery-compatible only when its random sample contract is present, contains
-at most ten unique unversioned references, and reconciles with the runnable public Play total.
-Refresh a legacy cache that lacks this projection.
+Omit descriptions, private organization updates, revision lists, counters, rankings, and onboarding
+instructions. Structured JSON retains collection evidence. Never label a revision or a missing
+timestamp as a new publication. On unchanged snapshots, suppress repeat community announcements.
+An unavailable live registry may show cached Modiqo titles, but must say new additions are unavailable.
+The available public catalog is scoped; the newsletter does not claim global completeness.
 
-Complete inspection coverage supports an exact scoped count. Partial coverage must say “at least”
-and disclose that the scope is the user’s authorized organizations plus the public baseline, not
-the global registry.
+The controller offers the same bounded titles using `awareness.play_choices` and the `newsletter`
+sample strategy. A selection authorizes inspection only. Older cached Markdown is rendered again
+from public catalog rows so it cannot restore the verbose output. Existing random-sample fields
+remain in the JSON cache for compatibility; they do not determine the visible newsletter.
 
 Selecting a Play carries only its exact displayed reference and parameters into read-only
 inspection. After dependencies, local convergence, operations, and effects are disclosed,
 `approve_play_run` is the sole execution gate. Hello uses the same path. Selecting Find by outcome
-enters normal Play search; selecting Create your own enters creator discovery, where capture must be
-classified before exploratory work begins.
+enters normal Play search; selecting Create your own enters creator discovery, where the controller determines what to record before exploratory work begins.
 
 The skill cannot invent a scheduler. Without `--remember`, `$play whats new` (or `$play digest`)
 emits a

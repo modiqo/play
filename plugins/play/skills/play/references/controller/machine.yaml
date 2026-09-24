@@ -42,10 +42,7 @@ states:
     requires: [onboarding.rote_status, onboarding.rote_command]
     entry: {action: inspect_onboarding_identity}
     "on":
-      onboarding_identity_ready:
-        - {guard: onboarding_is_greeting, target: onboarding_experience, mutate: record_onboarding_identity}
-        - {guard: onboarding_is_play_uri, target: use_inspect, mutate: enter_onboarding_uri_use}
-        - {target: blocked, mutate: record_onboarding_intent_mismatch}
+      onboarding_identity_ready: [{target: onboarding_company_check, mutate: record_onboarding_identity}]
       onboarding_identity_setup_required: [{target: onboarding_login_offer, mutate: require_onboarding_login}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -56,6 +53,7 @@ states:
     prompt: choose_login_provider
     "on":
       onboarding_google_login_selected: [{target: onboarding_login, mutate: select_google_login}]
+      onboarding_email_login_selected: [{target: onboarding_login, mutate: select_email_login}]
       onboarding_github_login_selected: [{target: onboarding_login, mutate: select_github_login}]
       onboarding_login_deferred: [{target: completed, mutate: record_onboarding_login_deferred}]
 
@@ -104,10 +102,62 @@ states:
     prompt: choose_first_use_path
     "on":
       onboarding_starter_selected: [{target: use_inspect, mutate: enter_onboarding_starter_use}]
-      onboarding_team_selected: [{target: onboarding_team_handle, mutate: enter_onboarding_team}]
+      onboarding_team_selected: [{target: onboarding_team_name, mutate: enter_onboarding_team}]
       onboarding_goal_selected: [{target: onboarding_need, mutate: enter_onboarding_goal}]
       onboarding_awareness_selected: [{target: awareness_collect, mutate: enter_onboarding_awareness}]
       onboarding_dismissed: [{target: completed, mutate: record_onboarding_dismissal}]
+
+  onboarding_company_identity:
+    owner: play
+    checkpoint: both
+    requires: [onboarding.rote_command]
+    entry: {action: inspect_onboarding_identity}
+    "on":
+      onboarding_identity_ready: [{target: onboarding_company_check, mutate: record_onboarding_identity}]
+      onboarding_identity_setup_required: [{target: use_registry_login_offer, mutate: require_registry_login}]
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_company_check:
+    owner: play
+    checkpoint: both
+    requires: [onboarding.identity_status, onboarding.email]
+    entry: {action: inspect_company_setup}
+    "on":
+      company_setup_required: [{target: onboarding_company_offer, mutate: record_company_setup}]
+      company_setup_handled:
+        - {guard: company_resume_registry, target: use_inspect, mutate: record_company_setup}
+        - {guard: onboarding_is_greeting, target: onboarding_experience, mutate: record_company_setup}
+        - {guard: onboarding_is_play_uri, target: use_inspect, mutate: enter_onboarding_uri_use}
+        - {target: blocked, mutate: record_onboarding_intent_mismatch}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_company_offer:
+    owner: play
+    checkpoint: after
+    prompt: choose_company_setup
+    "on":
+      onboarding_team_selected: [{target: onboarding_team_name, mutate: enter_onboarding_team}]
+      company_setup_skipped: [{target: onboarding_company_record, mutate: record_company_choice}]
+
+  onboarding_company_record:
+    owner: play
+    checkpoint: both
+    requires: [onboarding.identity_status, onboarding.email, onboarding.company_setup_status]
+    entry: {action: remember_company_setup}
+    "on":
+      company_setup_recorded:
+        - {guard: company_resume_registry, target: use_inspect, mutate: record_company_setup}
+        - {guard: onboarding_is_greeting, target: onboarding_experience, mutate: record_company_setup}
+        - {guard: onboarding_is_play_uri, target: use_inspect, mutate: enter_onboarding_uri_use}
+        - {target: blocked, mutate: record_onboarding_intent_mismatch}
+      action_blocked: [{target: blocked, mutate: record_blocker}]
+
+  onboarding_team_name:
+    owner: play
+    checkpoint: after
+    prompt: describe_company_name
+    "on":
+      company_name_described: [{target: onboarding_team_handle, mutate: record_company_name}]
 
   onboarding_team_handle:
     owner: play
@@ -119,7 +169,7 @@ states:
   onboarding_team_create:
     owner: rote-specialist
     checkpoint: both
-    requires: [team.slug]
+    requires: [team.slug, team.name]
     entry: {action: create_team_space}
     "on":
       team_space_ready: [{target: onboarding_team_present, mutate: record_team_space}]
@@ -141,8 +191,11 @@ states:
     requires: [team.slug, team.status]
     prompt: choose_team_invite
     "on":
+      team_admin_invite_selected: [{target: team_invite_email, mutate: record_team_admin_invite_request}]
       team_invite_selected: [{target: team_invite_email, mutate: record_team_invite_request}]
-      team_onboarding_finished: [{target: completed, mutate: finish_team_onboarding}]
+      team_onboarding_finished:
+        - {guard: company_setup_active, target: onboarding_company_record, mutate: finish_team_onboarding}
+        - {target: completed, mutate: finish_team_onboarding}
 
   team_invite_email:
     owner: play
@@ -285,6 +338,7 @@ states:
     "on":
       creator_search_ready:
         - {guard: search_is_complete, target: creator_classify, mutate: record_creator_search}
+        - {guard: search_has_verified_matches, target: creator_classify, mutate: record_creator_search}
         - {target: blocked, mutate: record_incomplete_search}
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -353,6 +407,7 @@ states:
       search_ready:
         - {guard: search_only_requested, target: search_present, mutate: record_search_results}
         - {guard: search_is_complete, target: classify, mutate: record_search_results}
+        - {guard: search_has_verified_matches, target: classify, mutate: record_search_results}
         - {target: blocked, mutate: record_incomplete_search}
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -468,6 +523,7 @@ states:
     prompt: choose_registry_login_provider
     "on":
       registry_google_login_selected: [{target: use_registry_login, mutate: select_registry_google_login}]
+      registry_email_login_selected: [{target: use_registry_login, mutate: select_registry_email_login}]
       registry_github_login_selected: [{target: use_registry_login, mutate: select_registry_github_login}]
       registry_login_deferred: [{target: completed, mutate: record_registry_login_deferred}]
 
@@ -477,7 +533,7 @@ states:
     requires: [match.reference, onboarding.rote_command, onboarding.login_provider, onboarding.login_status]
     entry: {action: login_rote_identity}
     "on":
-      rote_login_completed: [{target: use_prepare, mutate: record_registry_login}]
+      rote_login_completed: [{target: onboarding_company_identity, mutate: record_registry_login}]
       rote_login_paused: [{target: use_registry_login_offer, mutate: record_registry_login_pause}]
       action_blocked: [{target: blocked, mutate: record_blocker}]
 
@@ -557,7 +613,7 @@ states:
     requires: [onboarding.activation_status, receipt_ref]
     prompt: choose_onboarding_next
     "on":
-      onboarding_team_selected: [{target: onboarding_team_handle, mutate: enter_onboarding_team}]
+      onboarding_team_selected: [{target: onboarding_team_name, mutate: enter_onboarding_team}]
       onboarding_goal_selected: [{target: onboarding_need, mutate: enter_onboarding_goal}]
       onboarding_awareness_selected:
         - {guard: awareness_snapshot_ready, target: awareness_offer, mutate: record_awareness_presentation}
