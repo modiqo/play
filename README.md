@@ -933,25 +933,56 @@ curl -fsSL https://getrote.dev/playoffs/install.sh | sh
 Published changes must carry a new plugin version; a push that keeps the same version is not a
 reliable cache invalidation mechanism. The equivalent manual marketplace commands are below.
 
-### Publish the stable installer selector
+### Deploy the installer selector
 
-Make this the final step of every Play release, after `main` and its matching version tag reach GitHub:
+The [Deploy Play workflow](.github/workflows/deploy.yml) publishes the installer selector:
 
-```bash
-just release-publish
-```
+| Environment | Trigger | Installer | Selected Play revision |
+| --- | --- | --- | --- |
+| Staging | Every push to `main`, including every merged PR | `https://staging.getrote-dev.pages.dev/playoffs/install.sh` | The triggering commit SHA; no version tag required |
+| Production | A repository admin selects **Actions → Deploy Play → Run workflow → main** | `https://getrote.dev/playoffs/install.sh` | The `vX.Y.Z` tag matching `VERSION` |
 
-The command reads the shared installer assets, changes only the Play selector in a temporary directory, and deploys to `getrote-dev`. It does not commit or push to another repository.
-It waits until the public installer serves the tag, then prints a JSON receipt.
+Production requires both the original actor and the person requesting a rerun to have repository
+`admin` permission. Write or maintain access is insufficient. GitHub can display the manual action
+to other writers, but their deployment fails at the authorization check. The check runs in the
+deployment job on every attempt, including reruns of failed jobs. Dispatches from other branches
+are skipped. The old local `just release-publish` recipe is replaced by the manual action.
 
-Publication stops unless local Play `main` matches `origin/main`, the tag belongs to remote `main`, and both versions match.
-Run the read-only release gate at any time:
+Before enabling the workflow, configure the following in GitHub and Cloudflare:
+
+1. Create GitHub environments named `staging` and `production`. Restrict each environment's
+   deployment branches to `main`, with no allowed tags. Protect `main` so changes to the workflow
+   and its authorization script require review.
+2. Add `CLOUDFLARE_API_TOKEN` (with Cloudflare Pages edit access) and `CLOUDFLARE_ACCOUNT_ID` as
+   secrets in both environments. The built-in `GITHUB_TOKEN` handles the repository permission
+   check; no personal GitHub token is needed.
+3. In the existing `getrote-dev` Pages project, keep `main` as the production branch and allow
+   the `staging` preview branch. Disable any automatic production deploys from Cloudflare Git
+   integration or other deployment hooks so production is published through the manual action.
+
+Staging uses the existing Pages project's
+[preview branch alias](https://developers.cloudflare.com/pages/configuration/preview-deployments/#preview-aliases).
+Each environment has a separate concurrency group with
+[up to 100 queued runs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency#example-queueing-multiple-pending-runs),
+so closely spaced merges do not replace a pending staging deployment. Runs check out their
+triggering SHA, even if `main` advances while they wait. Production stops if that checkout no
+longer matches `origin/main`, the release tag is missing or outside `main`, or the local, tagged,
+and public GitHub versions disagree. Push the matching release tag before manually deploying.
+
+Both environments read the shared installer assets, change only the Play selector in a temporary
+directory, and deploy to `getrote-dev` (`staging` for preview, `main` for production). They wait for
+the selected environment's installer to serve the expected revision and record a JSON receipt in
+the workflow summary. No commit or push is made to the shared assets repository.
+
+Run the read-only production release gate at any time:
 
 ```bash
 just release-check
 ```
 
 The gate prints a `ready` JSON receipt only when the public installer selects the current Play tag.
+To check staging from a clean checkout of a merged commit, run
+`scripts/release/publish-play check --environment staging`.
 
 For Codex:
 

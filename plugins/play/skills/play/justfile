@@ -86,10 +86,6 @@ test: check
 release-check:
     scripts/release/publish-play check
 
-# Publish the current Play tag to Cloudflare without changing another repository.
-release-publish:
-    scripts/release/publish-play publish
-
 # Measure warm typed-controller transition latency without model or external I/O.
 benchmark-controller iterations="1000":
     uv run scripts/bin/play-machine benchmark --iterations {{iterations}} --json

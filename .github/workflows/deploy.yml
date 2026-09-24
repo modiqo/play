@@ -1,0 +1,66 @@
+name: Deploy Play
+run-name: Deploy Play to ${{ github.event_name == 'push' && 'staging' || 'production' }} by @${{ github.actor }}
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize each environment and retain pending runs, including closely spaced merges.
+concurrency:
+  group: play-deploy-${{ github.event_name == 'push' && 'staging' || 'production' }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: ${{ github.event_name == 'push' && 'staging' || 'production' }}
+      url: ${{ github.event_name == 'push' && 'https://staging.getrote-dev.pages.dev/playoffs/install.sh' || 'https://getrote.dev/playoffs/install.sh' }}
+    env:
+      DEPLOYMENT_ENVIRONMENT: ${{ github.event_name == 'push' && 'staging' || 'production' }}
+    steps:
+      - name: Check out the triggering commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Keep authorization in this job so re-running failed jobs checks it again.
+      - name: Require repository admin for production
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/require-production-admin.sh
+
+      - name: Set up Node for Wrangler
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Test deployment behavior
+        run: python3 -m unittest tests.harness.test_release_publish tests.harness.test_deployment_authorization
+
+      - name: Verify plugin package
+        run: scripts/bin/package-plugin --check
+
+      - name: Deploy and verify installer selector
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          scripts/release/publish-play publish --environment "$DEPLOYMENT_ENVIRONMENT" > deployment.json
+          cat deployment.json
+          {
+            echo '```json'
+            cat deployment.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
