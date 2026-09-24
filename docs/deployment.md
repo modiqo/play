@@ -4,7 +4,7 @@ The [Deploy Play workflow](../.github/workflows/deploy.yml) publishes the instal
 
 | Environment | Trigger | Installer | Selected Play revision |
 | --- | --- | --- | --- |
-| Staging | Every push to `main`, including every merged PR | `https://staging.getrote-dev.pages.dev/playoffs/install.sh` | The triggering commit SHA; no version tag required |
+| Staging | Every push to `main`, including every merged PR | `https://staging.getrote.dev/playoffs/install.sh` | The triggering commit SHA; no version tag required |
 | Production | A repository admin selects **Actions → Deploy Play → Run workflow → main** | `https://getrote.dev/playoffs/install.sh` | The `vX.Y.Z` tag matching `VERSION` |
 
 Production requires both the original actor and the person requesting a rerun to have repository
@@ -25,8 +25,9 @@ Before enabling the workflow, configure the following in GitHub and Cloudflare:
    the `staging` preview branch. Disable any automatic production deploys from Cloudflare Git
    integration or other deployment hooks so production is published through the manual action.
 
-Staging uses the existing Pages project's
-[preview branch alias](https://developers.cloudflare.com/pages/configuration/preview-deployments/#preview-aliases).
+Staging uses `staging.getrote.dev`, configured as a proxied
+[custom domain](https://developers.cloudflare.com/pages/how-to/custom-branch-aliases/)
+for the existing Pages project's `staging` preview branch.
 Each environment has a separate concurrency group with
 [up to 100 queued runs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency#example-queueing-multiple-pending-runs),
 so closely spaced merges do not replace a pending staging deployment. Runs check out their

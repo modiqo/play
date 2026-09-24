@@ -23,7 +23,7 @@ ASSETS_REPOSITORY = "https://github.com/modiqo/rote-releases.git"
 PUBLIC_SELECTOR = "https://getrote.dev/playoffs/install.sh"
 PAGES_PROJECT = "getrote-dev"
 DEPLOYMENTS = {
-    "staging": ("staging", "https://staging.getrote-dev.pages.dev/playoffs/install.sh"),
+    "staging": ("staging", "https://staging.getrote.dev/playoffs/install.sh"),
     "production": ("main", PUBLIC_SELECTOR),
 }
 SELECTOR_RELATIVE = Path("playoffs/install.sh")
