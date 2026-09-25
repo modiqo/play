@@ -166,6 +166,22 @@ class SearchTest(unittest.TestCase):
         )
         self.assertIn("Possible matches", text)
 
+    def test_unrelated_judgment_never_outranks_partial(self):
+        # Production shape: an uncertain row the model called unrelated has a
+        # higher label probability than one it called partial.
+        mine = candidate("uncertain", owner="me", name="my-issues")
+        mine["relevance"] = dict(status="uncertain", choice="unrelated", probability=0.77)
+        theirs = candidate("uncertain", name="stale-prs")
+        theirs["relevance"] = dict(status="uncertain", choice="partial", probability=0.70)
+        body = response(
+            [group("personal", "me", uncertain=[mine]), group(uncertain=[theirs])]
+        )
+        result, _ = self.run_search(body)
+        self.assertEqual(
+            ["alice/stale-prs@1.2.3", "me/my-issues@1.2.3"], result["result_refs"]
+        )
+        self.assertEqual([0.70, 0.0], [r["coverage"] for r in result["results"]])
+
     def test_incompleteness_survives_each_worker_failure_signal(self):
         for change in [
             "complete",
