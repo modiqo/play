@@ -1,4 +1,4 @@
-"""Publish the current Play tag through the stable Cloudflare Pages selector."""
+"""Publish a Play commit to staging or a release tag to production."""
 
 from __future__ import annotations
 
@@ -22,9 +22,14 @@ ROOT = Path(__file__).resolve().parents[2]
 ASSETS_REPOSITORY = "https://github.com/modiqo/rote-releases.git"
 PUBLIC_SELECTOR = "https://getrote.dev/playoffs/install.sh"
 PAGES_PROJECT = "getrote-dev"
+DEPLOYMENTS = {
+    "staging": ("staging", "https://stg.getrote.dev/playoffs/install.sh"),
+    "production": ("main", PUBLIC_SELECTOR),
+}
 SELECTOR_RELATIVE = Path("playoffs/install.sh")
 VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
-SELECTOR_PATTERN = re.compile(r"(?m)^release=(v[0-9]+\.[0-9]+\.[0-9]+)$")
+REFERENCE_PATTERN = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+|[a-f0-9]{40}")
+SELECTOR_PATTERN = re.compile(rf"(?m)^release=({REFERENCE_PATTERN.pattern})$")
 
 
 class ReleaseError(RuntimeError):
@@ -59,11 +64,13 @@ def release_tag(version_text: str) -> str:
 def selector_release(selector: str) -> str:
     matches = SELECTOR_PATTERN.findall(selector)
     if len(matches) != 1:
-        raise ReleaseError("selector must contain exactly one semantic release assignment")
+        raise ReleaseError("selector must contain exactly one release tag or commit assignment")
     return matches[0]
 
 
 def replace_selector(selector: str, expected: str) -> str:
+    if not REFERENCE_PATTERN.fullmatch(expected):
+        raise ReleaseError("selector reference must be a release tag or full commit SHA")
     current = selector_release(selector)
     if current == expected:
         return selector
@@ -91,15 +98,21 @@ def require_clean_tracked(repository: Path) -> None:
         raise ReleaseError(f"tracked files are dirty in {repository}:\n{changed}")
 
 
-def validate_play_release(play_root: Path) -> tuple[str, str]:
+def validate_play_commit(play_root: Path) -> tuple[str, str]:
     version = (play_root / "VERSION").read_text(encoding="utf-8").strip()
-    tag = release_tag(version)
+    release_tag(version)
     require_clean_tracked(play_root)
-    if git(play_root, "branch", "--show-current") != "main":
-        raise ReleaseError("Play release publication must run from main")
     git(play_root, "fetch", "origin", "main", "--tags")
-    if git(play_root, "rev-parse", "HEAD") != git(play_root, "rev-parse", "origin/main"):
-        raise ReleaseError("local Play main must match origin/main")
+    commit = git(play_root, "rev-parse", "HEAD")
+    run(("git", "merge-base", "--is-ancestor", commit, "origin/main"), cwd=play_root)
+    return version, commit
+
+
+def validate_play_release(play_root: Path) -> tuple[str, str]:
+    version, commit = validate_play_commit(play_root)
+    tag = release_tag(version)
+    if commit != git(play_root, "rev-parse", "origin/main"):
+        raise ReleaseError("Play production checkout must match origin/main")
     run(("git", "merge-base", "--is-ancestor", tag, "origin/main"), cwd=play_root)
     tagged_version = git(play_root, "show", f"{tag}:VERSION").strip()
     if tagged_version != version:
@@ -112,6 +125,20 @@ def validate_play_release(play_root: Path) -> tuple[str, str]:
             f"GitHub {tag} contains VERSION {remote_version}, expected {version}"
         )
     return version, tag
+
+
+def deployment_target(environment: str) -> tuple[str, str]:
+    try:
+        return DEPLOYMENTS[environment]
+    except KeyError as error:
+        raise ReleaseError(f"unknown deployment environment: {environment}") from error
+
+
+def validate_deployment(play_root: Path, environment: str) -> tuple[str, str]:
+    deployment_target(environment)
+    if environment == "staging":
+        return validate_play_commit(play_root)
+    return validate_play_release(play_root)
 
 
 def stage_assets(destination: Path, archive: bytes) -> None:
@@ -153,13 +180,15 @@ def download_assets(destination: Path) -> str:
     return revision
 
 
-def wait_for_public_selector(expected: str, *, timeout_seconds: int = 60) -> str:
+def wait_for_public_selector(
+    expected: str, *, public_selector: str = PUBLIC_SELECTOR, timeout_seconds: int = 60,
+) -> str:
     deadline = time.monotonic() + timeout_seconds
     last = "unavailable"
     while time.monotonic() < deadline:
         try:
             cache_buster = time.time_ns()
-            body = fetch_text(f"{PUBLIC_SELECTOR}?release-check={cache_buster}")
+            body = fetch_text(f"{public_selector}?release-check={cache_buster}")
             last = selector_release(body)
             if last == expected:
                 return body
@@ -167,24 +196,28 @@ def wait_for_public_selector(expected: str, *, timeout_seconds: int = 60) -> str
             last = str(error)
         time.sleep(2)
     raise ReleaseError(
-        f"public selector did not reach {expected} within {timeout_seconds}s; found {last}"
+        f"{public_selector} did not reach {expected} within {timeout_seconds}s; found {last}"
     )
 
 
-def check(play_root: Path) -> dict[str, object]:
-    version, tag = validate_play_release(play_root)
-    body = wait_for_public_selector(tag, timeout_seconds=10)
+def check(play_root: Path, *, environment: str = "production") -> dict[str, object]:
+    _, public_selector = deployment_target(environment)
+    version, reference = validate_deployment(play_root, environment)
+    body = wait_for_public_selector(reference, public_selector=public_selector, timeout_seconds=10)
     return {
         "status": "ready",
         "version": version,
-        "tag": tag,
-        "public_selector": PUBLIC_SELECTOR,
+        "environment": environment,
+        "reference": reference,
+        "tag": reference if environment == "production" else None,
+        "public_selector": public_selector,
         "selector_sha256": hashlib.sha256(body.encode()).hexdigest(),
     }
 
 
-def publish(play_root: Path) -> dict[str, object]:
-    version, tag = validate_play_release(play_root)
+def publish(play_root: Path, *, environment: str = "production") -> dict[str, object]:
+    branch, public_selector = deployment_target(environment)
+    version, reference = validate_deployment(play_root, environment)
     if shutil.which("npx") is None:
         raise ReleaseError("npx is required to deploy the Cloudflare Pages project")
     play_commit = git(play_root, "rev-parse", "HEAD")
@@ -194,34 +227,36 @@ def publish(play_root: Path) -> dict[str, object]:
         selector = staged / SELECTOR_RELATIVE
         if not selector.is_file():
             raise ReleaseError("installer assets are missing the Play selector")
-        selector.write_text(replace_selector(selector.read_text(), tag), encoding="utf-8")
+        selector.write_text(replace_selector(selector.read_text(), reference), encoding="utf-8")
         run(("/bin/sh", "-n", str(selector)), cwd=staged)
         deployment = run(
             ("npx", "--yes", "wrangler@4.137.0", "pages", "deploy", str(staged),
-             "--project-name", PAGES_PROJECT, "--branch", "main",
-             "--commit-hash", play_commit, "--commit-message", f"release: select Play {tag}",
+             "--project-name", PAGES_PROJECT, "--branch", branch,
+             "--commit-hash", play_commit, "--commit-message", f"release: select Play {reference}",
              "--commit-dirty=false"),
             cwd=play_root,
         )
-    wait_for_public_selector(tag)
+    wait_for_public_selector(reference, public_selector=public_selector)
     deployment_url_match = re.search(r"https://[a-z0-9]+\.getrote-dev\.pages\.dev", deployment)
     return {
-        "status": "published", "version": version, "tag": tag,
+        "status": "published", "version": version, "environment": environment,
+        "reference": reference, "tag": reference if environment == "production" else None,
         "play_commit": play_commit, "assets_revision": assets_revision,
         "deployment_url": deployment_url_match.group(0) if deployment_url_match else None,
-        "public_selector": PUBLIC_SELECTOR,
+        "public_selector": public_selector,
     }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("check", "publish"))
+    parser.add_argument("--environment", choices=tuple(DEPLOYMENTS), default="production")
     args = parser.parse_args(argv)
     try:
         payload = (
-            check(ROOT)
+            check(ROOT, environment=args.environment)
             if args.action == "check"
-            else publish(ROOT)
+            else publish(ROOT, environment=args.environment)
         )
     except (OSError, ReleaseError) as error:
         parser.exit(1, f"play-release: {error}\n")
