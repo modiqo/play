@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
+import venv
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -294,12 +296,41 @@ class EnsureRuntimeTest(unittest.TestCase):
         self.assertIn("still lacks", str(caught.exception))
 
     def test_launchers_share_the_bootstrap_contract(self) -> None:
-        for name in ("play-machine", "play-journey", "play-routing", "play-audit", "play-audit-corpus"):
+        launchers = (
+            "play-machine",
+            "play-journey",
+            "play-routing",
+            "play-audit",
+            "play-audit-corpus",
+            "play-search",
+            "play-question",
+            "play-tag-hints",
+            "validate-machine",
+        )
+        for name in launchers:
             with self.subTest(launcher=name):
                 text = (ROOT / "scripts" / "bin" / name).read_text(encoding="utf-8")
                 self.assertIn("from play.python_environment import ensure_runtime", text)
                 self.assertNotIn("execve", text)
                 self.assertNotIn("_UV_BOOTSTRAPPED", text)
+
+    @unittest.skipUnless(shutil.which("uv"), "uv is needed to re-enter the managed environment")
+    def test_launcher_runs_from_a_python_without_pinned_packages(self) -> None:
+        # SKILL.md runs launchers directly, so their shebang may find a bare python3.
+        clean = self.root / "clean-python"
+        venv.EnvBuilder(with_pip=False).create(clean)
+        uv = shutil.which("uv")
+        assert uv is not None
+        result = subprocess.run(
+            [str(clean / "bin" / "python3"), str(ROOT / "scripts" / "bin" / "play-search"), "--help"],
+            text=True,
+            capture_output=True,
+            check=False,
+            env={"PATH": f"{Path(uv).parent}:/usr/bin:/bin", "HOME": os.environ.get("HOME", "")},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("usage:", result.stdout)
 
     def test_module_stays_stdlib_only(self) -> None:
         result = subprocess.run(
