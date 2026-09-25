@@ -248,6 +248,50 @@ class ExplorationJournalTest(unittest.TestCase):
         self.assertEqual(1, summary["counts"]["matched"])
         self.assertEqual(1, summary["counts"]["selected"])
 
+    def test_classified_candidate_that_exits_is_recorded_as_dropped(self) -> None:
+        for run_id, event, classification in (
+            ("run-partial", "partial_match", "partial"),
+            ("run-none", "no_match", "none"),
+        ):
+            observe_recall_transition(
+                source="classify",
+                event=event,
+                target="exited",
+                context={
+                    "run_id": run_id,
+                    "request": {"original": "secret prompt text"},
+                    "match": {
+                        "reference": (
+                            "modiqo/weather-updates-for-cities"
+                            if event == "partial_match"
+                            else None
+                        ),
+                        "classification": classification,
+                    },
+                },
+                path=self.recall_store,
+            )
+
+        store = load_json(self.recall_store)
+        self.assertEqual(
+            [("run-partial", "dropped", "modiqo/weather-updates-for-cities", "partial")],
+            [
+                (item["run_id"], item["kind"], item["reference"], item["classification"])
+                for item in store["events"]
+            ],
+        )
+        self.assertNotIn("secret prompt text", self.recall_store.read_text())
+        schema = json.loads(
+            (ROOT / "references/controller/command-log.schema.json").read_text()
+        )
+        Draft202012Validator(schema).validate(store)
+        summary = recall_summary(path=self.recall_store)
+        self.assertEqual(1, summary["counts"]["dropped"])
+        self.assertIn(
+            "✗ `modiqo/weather-updates-for-cities` — dropped (partial match)",
+            render_recall_summary(summary),
+        )
+
     def test_approved_authentication_block_is_recorded(self) -> None:
         observe_recall_transition(
             source="use_authentication_execute",

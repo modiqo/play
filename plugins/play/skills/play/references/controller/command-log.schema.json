@@ -36,14 +36,16 @@
             "approved",
             "run_started",
             "completed",
-            "blocked"
+            "blocked",
+            "dropped"
           ]
         },
         "run_id": {"type": "string", "minLength": 1},
         "reference": {"type": "string", "minLength": 3},
         "occurred_at": {"type": "string", "format": "date-time"},
         "local_day": {"type": "string", "format": "date"},
-        "workspace": {"type": "string", "minLength": 3}
+        "workspace": {"type": "string", "minLength": 3},
+        "classification": {"enum": ["partial", "uncertain"]}
       }
     }
   }

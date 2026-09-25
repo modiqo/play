@@ -3,7 +3,7 @@
 Play keeps an owner-private, append-only-in-meaning command log for recalled saved Plays. The log
 is a projection of successful typed controller transitions—not a transcript assembled by the
 model. It answers: which saved Play matched, which one the user selected and approved, whether its
-run started, and whether it completed or blocked.
+run started, whether it completed or blocked, and which candidate search found but dropped.
 
 The canonical storage contract is
 [`command-log.schema.json`](command-log.schema.json) (`play.recall-journal/v1`). The default path is
@@ -27,6 +27,7 @@ the same transition twice is idempotent.
 |---|---|---|
 | `qualify --exact_play_request--> use_inspect` | `selected` | The user named a saved Play directly. |
 | `classify --full_match--> use_inspect` | `matched` | Search produced one adequate saved Play. |
+| `classify --partial_match|uncertain_match|full_match--> exited` | `dropped` | Search found a candidate Play but judged it inadequate, so the run exited without an offer. The event keeps the candidate reference and its `partial` or `uncertain` classification. `no_match` carries no reference and records nothing. |
 | `search_offer --search_play_selected--> use_inspect` | `matched`, `selected` | Search surfaced a Play and the user chose it for inspection. |
 | `use_offer --play_run_approved--> use_prepare` | `approved` | The user approved the disclosed remote pull/run. |
 | `use_prepare --play_run_handoff_ready--> use_run` | `run_started` | The exact reference and parameters were bound for execution. |
@@ -41,8 +42,9 @@ exploration do not enter this log.
 ## Privacy and retention
 
 Each event contains only its schema, deterministic event ID, event kind, run ID, canonical Play
-reference, timestamp, and local day. It never contains prompt text, parameter values, command
-stdout/stderr, response payloads, credentials, token values, continuation IDs, or workspace paths.
+reference, timestamp, local day, and, for `dropped`, the match classification. It never contains
+prompt text, parameter values, command stdout/stderr, response payloads, credentials, token values,
+continuation IDs, or workspace paths.
 
 The default retention window is 30 local days with a hard maximum of 1,024 events. Both are
 converged from owner-private journal settings at install. Logging is observational: a malformed or
