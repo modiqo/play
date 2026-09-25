@@ -350,6 +350,13 @@ def _blocked_action_event(
     )
 
 
+def _has_worker_relevance(candidate: Mapping[str, Any]) -> bool:
+    return candidate.get("match_basis") == "jev" or (
+        candidate.get("match_basis") == "exact_identity"
+        and candidate.get("relevance_status") == "direct"
+    )
+
+
 def _commandless_result(
     action_id: str, context: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -511,7 +518,7 @@ def _commandless_result(
             raise ControllerRuntimeError("adequacy candidate is malformed")
         classification = (
             {"direct": "full", "partial": "partial"}.get(str(candidate.get("relevance_status")), "uncertain")
-            if candidate.get("match_basis") == "jev" else "uncertain"
+            if _has_worker_relevance(candidate) else "uncertain"
         )
         reference = candidate.get("reference")
         if classification not in {"full", "partial", "uncertain"} or not isinstance(reference, str):
@@ -618,7 +625,7 @@ def _classify_creator_options(context: Mapping[str, Any]) -> dict[str, Any]:
     def classification_of(result: Mapping[str, Any] | None) -> str:
         if result is None:
             return "none"
-        if result.get("match_basis") != "jev" or result.get("relevance_status") not in {"direct", "partial"}:
+        if not _has_worker_relevance(result) or result.get("relevance_status") not in {"direct", "partial"}:
             return "uncertain"
         return "full" if result["relevance_status"] == "direct" else "partial"
 
@@ -655,7 +662,7 @@ def _classify_creator_options(context: Mapping[str, Any]) -> dict[str, Any]:
     blended_full = (
         blended is not None
         and classification_of(blended) == "full"
-        and blended.get("match_basis") == "jev"
+        and _has_worker_relevance(blended)
     )
     covered = [
         entry["sub_outcome"]

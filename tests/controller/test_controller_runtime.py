@@ -1034,6 +1034,30 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertIn("alpha/weekly-report", yielded.presentations[0])
         self.assertIn("beta/weekly-report", yielded.presentations[0])
 
+    @patch("play.runtime_actions.subprocess.run")
+    def test_kimi_stripped_named_run_offers_exact_worker_result_before_inspection(self, run):
+        from tests.awareness.test_search import response, candidate, group
+        from play.search import search_published
+        from play.onboarding import classify_invocation
+
+        hit = candidate(owner='modiqo', name='hello')
+        hit['relevance'] = dict(status='direct', probability=1, basis='exact_identity', model=None)
+        with patch('play.search.request_search', return_value=response([group(matches=[hit])])):
+            search_result = search_published('run hello')
+        run.side_effect = [
+            SimpleNamespace(returncode=0, stderr='', stdout=json.dumps(classify_invocation('run hello'))),
+            SimpleNamespace(returncode=0, stderr='', stdout=json.dumps(search_result)),
+        ]
+        session = self.runtime.initial_session(run_id='kimi-named', task_key='kimi-named', request_original='run hello')
+        yielded = advance_until_yield(self.runtime, session, root=ROOT)
+        self.assertEqual('search_offer', yielded.projection['state']['id'])
+        self.assertEqual('human', yielded.projection['state']['boundary'])
+        self.assertEqual('choose_search_result', yielded.projection['instruction']['id'])
+        self.assertEqual('exact_identity', yielded.session.context['search']['results'][0]['match_basis'])
+        self.assertEqual('modiqo/hello@1.2.3', yielded.projection['instruction']['choices'][0]['id'])
+        self.assertEqual(2, run.call_count)
+        self.assertNotIn('qualify_request', str(yielded.projection))
+
     def test_incomplete_search_never_blocks_and_never_proves_absence(self):
         from tests.awareness.test_search import response, candidate, group
         from play.search import search_published

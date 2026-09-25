@@ -778,8 +778,8 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 Pin both the script and downloaded archive to the same release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.104/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.104 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.105/install.sh \
+  | env PLAY_INSTALL_REF=v0.4.105 sh
 ```
 
 To inspect the small bootstrap before running it:
@@ -1083,8 +1083,9 @@ play search "live status for AI services"
 
 The shell command calls the shared Cloudflare search Worker through
 Play’s HTTPS client. Rote refreshes the login; Play sends its access token only to the matching production or staging Worker.
-The Worker retrieves published candidates and uses Jev to judge their fit to the whole request,
-including exclusions. Unpublished local Plays never enter discovery. Add `--json` for structured
+The Worker resolves exact published names and version pins through the registry without Jev.
+For task descriptions and constrained requests, Jev judges candidates against the whole request, including exclusions.
+Unpublished local Plays never enter discovery. Add `--json` for structured
 results, `--public` for community only, or `--org <slug>` for one accessible organization.
 This uses the released Rote login interface and requires no custom Rote search command.
 

@@ -51,6 +51,11 @@ _NAMED_PLAY_RUN = re.compile(
     r"^(?:\$play|/play|/skill:play|play)\s+run\s+(.+?)[.!]?$",
     re.IGNORECASE | re.DOTALL,
 )
+_BARE_NAMED_PLAY_RUN = re.compile(
+    r"^run\s+((?:[A-Za-z0-9][A-Za-z0-9_-]*/)?"
+    r"[A-Za-z0-9][A-Za-z0-9_.-]*(?:@[A-Za-z0-9][A-Za-z0-9.+_-]*)?)$",
+    re.IGNORECASE,
+)
 _ACTIVATION_ONLY = {
     'user activated the skill "play". follow the loaded skill instructions.',
     "user activated the skill 'play'. follow the loaded skill instructions.",
@@ -212,7 +217,9 @@ def classify_invocation(original: str) -> dict[str, Any]:
         )
     match = _PLAY_PREFIX.fullmatch(stripped)
     candidate = (match.group(1) or "").strip() if match is not None else stripped
-    named_run = _NAMED_PLAY_RUN.fullmatch(stripped)
+    # Kimi removes /skill:play before handing the task to the activated skill.
+    # This classifies an active Play request; it does not activate ambient hooks.
+    named_run = _NAMED_PLAY_RUN.fullmatch(stripped) or _BARE_NAMED_PLAY_RUN.fullmatch(stripped)
     named_selector = (named_run.group(1) or "").strip() if named_run else None
     uri_request = _play_uri_request(candidate)
     parameters: dict[str, str] = {}
@@ -222,7 +229,7 @@ def classify_invocation(original: str) -> dict[str, Any]:
     elif _STARTER_RUN.fullmatch(stripped):
         kind = "play_uri"
         play_uri = STARTER_PLAY_URI
-    elif named_selector is not None and "/" not in named_selector:
+    elif named_selector is not None:
         kind = "search"
         play_uri = None
         candidate = named_selector

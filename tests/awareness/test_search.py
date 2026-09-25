@@ -88,6 +88,30 @@ class SearchTest(unittest.TestCase):
         result, _ = self.run_search({"schema": 1, "data": {"result": response()}})
         self.assertEqual(1, len(result["results"]))
 
+    def test_named_queries_survive_native_prefixes_and_uri_redaction(self):
+        for prefix in ("", "$play ", "/play ", "/skill:play "):
+            for selector in ("hello", "hello@0.2.3", "modiqo/hello@0.2.3", "https://play.modiqo.ai/modiqo/hello@0.2.3", "https://play.stg.modiqo.ai/modiqo/hello"):
+                query = "run " + selector
+                with self.subTest(prefix=prefix, selector=selector):
+                    self.assertEqual(query, search.relevance_query(prefix + query))
+        query = search.relevance_query('/skill:play audit DNS without changing records at https://private.example')
+        self.assertEqual('audit DNS without changing records at [argument]', query)
+        for query in ('https://play.modiqo.ai/modiqo/hello?token=secret', 'https://play.modiqo.ai.evil.example/modiqo/hello', 'audit https://play.modiqo.ai/modiqo/hello'):
+            self.assertNotIn('https://', search.relevance_query(query))
+
+    def test_exact_identity_is_distinct_from_jev_and_still_requires_inspection(self):
+        item = candidate(name="hello", owner="modiqo")
+        item['play_id'] = None
+        item['relevance'] = dict(status='direct', probability=1, basis='exact_identity', model=None)
+        result, _ = self.run_search(response([group(matches=[item])]))
+        hit = result['results'][0]
+        self.assertEqual('exact_identity', hit['match_basis'])
+        self.assertEqual('full', hit['match_classification'])
+        self.assertEqual('inspect_required', hit['execution_resolution'])
+        item['relevance']['status'] = 'partial'
+        with self.assertRaises(search.SearchError):
+            self.run_search(response([group(matches=[item])]))
+
     def test_public_and_org_scopes(self):
         _, call = self.run_search(public=True)
         self.assertTrue(call.call_args.kwargs["public"])
