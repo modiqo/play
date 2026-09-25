@@ -6,7 +6,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts" / "lib"))
+
+from play.python_environment import ensure_runtime
+
+ensure_runtime("play-search", ROOT, Path(__file__).resolve(), sys.argv[1:])
 
 from play.search import main
 
