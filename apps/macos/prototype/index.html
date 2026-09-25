@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="robots" content="noindex">
+    <title>Play for Mac · Modiqo</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="studio-bar">
+      <div><span class="studio-dot"></span> PLAY FOR MAC <span class="studio-divider">/</span> <span class="studio-muted">Interactive prototype · sample data</span></div>
+      <div class="studio-actions">
+        <button data-action="preview-home">Home</button>
+        <button data-action="restart">Try onboarding <span>↗</span></button>
+        <button data-action="theme" aria-label="Toggle light and dark appearance" title="Toggle appearance">◐</button>
+      </div>
+    </div>
+    <div id="app"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <dialog id="detail"></dialog>
+    <script defer src="app.js"></script>
+  </body>
+</html>
