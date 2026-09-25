@@ -265,10 +265,24 @@ _SECRET = re.compile(
     re.I,
 )
 _REFERENCE = re.compile(r"^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+@[A-Za-z0-9_.+-]+$")
+_ACTIVATION_PREFIX = re.compile(r"^(?:\$play|/play|/skill:play)\s+", re.I)
+_CANONICAL_NAMED_QUERY = re.compile(
+    r"^(?:(?:play\s+)?run\s+)?https://play(?:\.stg)?\.modiqo\.ai/"
+    r"[a-z0-9][a-z0-9_-]{1,63}/[A-Za-z0-9][A-Za-z0-9._-]{0,127}"
+    r"(?:@[A-Za-z0-9][A-Za-z0-9.+_-]{0,63})?$"
+)
+_PINNED_NAMED_QUERY = re.compile(
+    r"^(?:(?:play\s+)?run\s+)?(?:[a-z0-9][a-z0-9_-]{1,63}/)?"
+    r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}@[0-9]+\.[0-9]+\.[0-9]+"
+    r"(?:[-+][A-Za-z0-9.-]+)?$"
+)
 
 
 def relevance_query(text: str) -> str:
-    query = " ".join(
+    text = _ACTIVATION_PREFIX.sub("", text.strip(), count=1)
+    # A whole canonical Play selector is public identity, not a task argument.
+    # Other URLs, embedded values, and credentials retain the normal redaction.
+    query = text if (_CANONICAL_NAMED_QUERY.fullmatch(text) or _PINNED_NAMED_QUERY.fullmatch(text)) else " ".join(
         _SENSITIVE_ARGUMENT.sub("[argument]", _SECRET.sub("[credential]", text)).split()
     )
     if not 3 <= len(query) <= 400:
@@ -390,6 +404,8 @@ def _validate_worker(body: dict, public: bool, org: str | None) -> None:
                     or relevance.get("status") not in statuses
                 ):
                     raise SearchError("Invalid relevance judgment.")
+                if relevance.get("basis") == "exact_identity" and relevance.get("status") != "direct":
+                    raise SearchError("Invalid exact identity match.")
     if not org and "community" not in kinds:
         raise SearchError("Shared search omitted the community scope.")
     if org and len(groups) != 1:
@@ -425,7 +441,7 @@ def _result(item: dict, group: dict) -> dict:
         "score": probability,
         "coverage": probability,
         "match_classification": classification,
-        "match_basis": "jev",
+        "match_basis": "exact_identity" if item["relevance"].get("basis") == "exact_identity" else "jev",
         "relevance_status": status,
         "uncovered_terms": []
         if status == "direct"

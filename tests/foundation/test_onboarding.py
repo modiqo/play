@@ -165,8 +165,8 @@ class InvocationClassificationTest(unittest.TestCase):
                 self.assertEqual("play_uri", result["invocation_kind"])
                 self.assertEqual(STARTER_PLAY_URI, result["play_uri"])
 
-    def test_bare_run_hello_stays_ordinary(self) -> None:
-        for value in ("run hello", "Run the Hello Play", "please run hello"):
+    def test_unstructured_run_requests_stay_ordinary(self) -> None:
+        for value in ("Run the Hello Play", "please run hello", "run hello without network calls"):
             with self.subTest(value=value):
                 result = classify_invocation(value)
                 self.assertEqual("ordinary", result["invocation_kind"])
@@ -174,6 +174,9 @@ class InvocationClassificationTest(unittest.TestCase):
 
     def test_unqualified_named_run_enters_qualified_search(self) -> None:
         for value, intent in (
+            ("run hello", "hello"),
+            ("run monthly-report", "monthly-report"),
+            ("run modiqo/hello@0.2.3", "modiqo/hello@0.2.3"),
             ("play run hello", "hello"),
             ("$play run weekly-report", "weekly-report"),
             ("/play run the weekly report", "the weekly report"),
@@ -187,7 +190,8 @@ class InvocationClassificationTest(unittest.TestCase):
 
     def test_qualified_named_run_remains_available_for_exact_resolution(self) -> None:
         result = classify_invocation("play run alpha/weekly-report")
-        self.assertEqual("ordinary", result["invocation_kind"])
+        self.assertEqual("search", result["invocation_kind"])
+        self.assertEqual("alpha/weekly-report", result["intent"])
 
     def test_activation_without_a_task_enters_onboarding(self) -> None:
         for value in (

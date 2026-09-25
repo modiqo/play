@@ -524,7 +524,8 @@
             "adapter_partial",
             "partial",
             "uncertain",
-            "jev"
+            "jev",
+            "exact_identity"
           ]
         },
         "uncovered_terms": {

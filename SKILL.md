@@ -23,6 +23,9 @@ The harness-native prefix activates Play. Use `$play` in Codex and `/skill:play`
 
 Without that explicit prefix, Play stays silent and out of the agent's way.
 
+Kimi may remove `/skill:play` after activating this skill. Pass the remaining request unchanged;
+the active runtime recognizes `run <name>` and offers published matches before inspection.
+
 A hook line beginning `Play suggestion:` is not Play activation. The hook has already obtained a direct judgment for a published Play from the shared search Worker. Present only the exact quiet or passive
 one-line suggestion quoted by the hook. Do not pause, enter the state machine, search again, pull,
 inspect, run, or invoke Rote. Continue the original request through the normal harness route. The
