@@ -523,6 +523,14 @@ def _recall_kinds(source: str, event: str, target: str) -> tuple[str, ...]:
         return ("selected",)
     if source == "classify" and event == "full_match" and target == "use_inspect":
         return ("matched",)
+    # A candidate Play was found but judged inadequate, so the run exits without an offer.
+    # no_match carries no reference, so it has nothing to record.
+    if source == "classify" and target == "exited" and event in {
+        "full_match",
+        "partial_match",
+        "uncertain_match",
+    }:
+        return ("dropped",)
     if source == "search_offer" and event == "search_play_selected" and target == "use_inspect":
         return ("matched", "selected")
     if source == "use_offer" and event == "play_run_approved" and target == "use_prepare":
@@ -586,6 +594,8 @@ def observe_recall_transition(
                 execution = context.get("execution")
                 execution = execution if isinstance(execution, Mapping) else {}
                 workspace = execution.get("workspace")
+                match = context.get("match")
+                classification = match.get("classification") if isinstance(match, Mapping) else None
                 events.append(
                     {
                         "schema": RECALL_EVENT_SCHEMA,
@@ -598,6 +608,11 @@ def observe_recall_transition(
                         **(
                             {"workspace": workspace}
                             if isinstance(workspace, str) and workspace
+                            else {}
+                        ),
+                        **(
+                            {"classification": classification}
+                            if kind == "dropped" and isinstance(classification, str)
                             else {}
                         ),
                     }
@@ -657,6 +672,8 @@ def recall_summary(*, day: str | None = None, path: Path | None = None) -> dict[
         kind = item.get("kind")
         if isinstance(kind, str) and kind not in run["events"]:
             run["events"].append(kind)
+        if isinstance(item.get("classification"), str):
+            run["classification"] = item["classification"]
         if str(item.get("occurred_at") or "") > str(run.get("last_at") or ""):
             run["last_at"] = item.get("occurred_at")
     ordered = sorted(runs.values(), key=lambda item: str(item.get("last_at") or ""))
@@ -669,6 +686,7 @@ def recall_summary(*, day: str | None = None, path: Path | None = None) -> dict[
             "run_started",
             "completed",
             "blocked",
+            "dropped",
         )
     }
     return {
@@ -749,7 +767,8 @@ def render_recall_summary(summary: Mapping[str, Any]) -> str:
         f"**{counts.get('matched', 0)} matched · {counts.get('selected', 0)} selected · "
         f"{counts.get('approved', 0)} approved · "
         f"{counts.get('run_started', 0)} run · {counts.get('completed', 0)} completed · "
-        f"{counts.get('blocked', 0)} blocked · {summary.get('unique_plays', 0)} unique Plays**"
+        f"{counts.get('blocked', 0)} blocked · {counts.get('dropped', 0)} dropped · "
+        f"{summary.get('unique_plays', 0)} unique Plays**"
     )
     lines.extend(["", "**Journeys**"])
     labels = {
@@ -759,14 +778,22 @@ def render_recall_summary(summary: Mapping[str, Any]) -> str:
         "run_started": "ran",
         "completed": "completed",
         "blocked": "blocked",
+        "dropped": "dropped",
     }
     for run in runs:
         if not isinstance(run, Mapping):
             continue
         kinds = run.get("events")
         kinds = kinds if isinstance(kinds, list) else []
-        marker = "✓" if "completed" in kinds else "!" if "blocked" in kinds else "→"
+        marker = (
+            "✓" if "completed" in kinds
+            else "!" if "blocked" in kinds
+            else "✗" if "dropped" in kinds
+            else "→"
+        )
         journey = " → ".join(labels[kind] for kind in labels if kind in kinds)
+        if "dropped" in kinds and run.get("classification"):
+            journey += f" ({run['classification']} match)"
         lines.append(f"- {marker} `{run.get('reference')}` — {journey}")
     lines.extend(
         [
