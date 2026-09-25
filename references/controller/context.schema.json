@@ -596,6 +596,12 @@
         "relevance_status": {
           "type": "string"
         },
+        "relevance_choice": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "group_id": {
           "type": "string"
         },
