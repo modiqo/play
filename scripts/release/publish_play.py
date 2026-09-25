@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import io
+import os
 import re
 import shutil
 import subprocess
@@ -77,7 +78,7 @@ def replace_selector(selector: str, expected: str) -> str:
     return SELECTOR_PATTERN.sub(f"release={expected}", selector, count=1)
 
 
-def fetch_text(url: str) -> str:
+def fetch_text(url: str, *, headers: dict[str, str] | None = None) -> str:
     request = urllib.request.Request(
         url,
         headers={
@@ -85,8 +86,12 @@ def fetch_text(url: str) -> str:
             "User-Agent": "modiqo-play-release/1",
         },
     )
+    for name, value in (headers or {}).items():
+        request.add_unredirected_header(name, value)
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
+            if headers and response.geturl() != url:
+                raise ReleaseError(f"verification request to {url} was redirected; check staging credentials")
             return response.read().decode("utf-8")
     except (OSError, UnicodeError, urllib.error.URLError) as error:
         raise ReleaseError(f"could not read {url}: {error}") from error
@@ -132,6 +137,21 @@ def deployment_target(environment: str) -> tuple[str, str]:
         return DEPLOYMENTS[environment]
     except KeyError as error:
         raise ReleaseError(f"unknown deployment environment: {environment}") from error
+
+
+def selector_headers(environment: str) -> dict[str, str]:
+    if environment != "staging":
+        return {}
+    client_id = os.environ.get("CF_ACCESS_CLIENT_ID", "")
+    client_secret = os.environ.get("CF_ACCESS_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        raise ReleaseError(
+            "staging verification requires CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET"
+        )
+    return {
+        "CF-Access-Client-Id": client_id,
+        "CF-Access-Client-Secret": client_secret,
+    }
 
 
 def validate_deployment(play_root: Path, environment: str) -> tuple[str, str]:
@@ -182,13 +202,14 @@ def download_assets(destination: Path) -> str:
 
 def wait_for_public_selector(
     expected: str, *, public_selector: str = PUBLIC_SELECTOR, timeout_seconds: int = 60,
+    headers: dict[str, str] | None = None,
 ) -> str:
     deadline = time.monotonic() + timeout_seconds
     last = "unavailable"
     while time.monotonic() < deadline:
         try:
             cache_buster = time.time_ns()
-            body = fetch_text(f"{public_selector}?release-check={cache_buster}")
+            body = fetch_text(f"{public_selector}?release-check={cache_buster}", headers=headers)
             last = selector_release(body)
             if last == expected:
                 return body
@@ -202,8 +223,11 @@ def wait_for_public_selector(
 
 def check(play_root: Path, *, environment: str = "production") -> dict[str, object]:
     _, public_selector = deployment_target(environment)
+    headers = selector_headers(environment)
     version, reference = validate_deployment(play_root, environment)
-    body = wait_for_public_selector(reference, public_selector=public_selector, timeout_seconds=10)
+    body = wait_for_public_selector(
+        reference, public_selector=public_selector, timeout_seconds=10, headers=headers,
+    )
     return {
         "status": "ready",
         "version": version,
@@ -217,6 +241,7 @@ def check(play_root: Path, *, environment: str = "production") -> dict[str, obje
 
 def publish(play_root: Path, *, environment: str = "production") -> dict[str, object]:
     branch, public_selector = deployment_target(environment)
+    headers = selector_headers(environment)
     version, reference = validate_deployment(play_root, environment)
     if shutil.which("npx") is None:
         raise ReleaseError("npx is required to deploy the Cloudflare Pages project")
@@ -236,7 +261,7 @@ def publish(play_root: Path, *, environment: str = "production") -> dict[str, ob
              "--commit-dirty=false"),
             cwd=play_root,
         )
-    wait_for_public_selector(reference, public_selector=public_selector)
+    wait_for_public_selector(reference, public_selector=public_selector, headers=headers)
     deployment_url_match = re.search(r"https://[a-z0-9]+\.getrote-dev\.pages\.dev", deployment)
     return {
         "status": "published", "version": version, "environment": environment,
