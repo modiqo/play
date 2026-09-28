@@ -7,6 +7,23 @@ The [Deploy Play workflow](../.github/workflows/deploy.yml) publishes the instal
 | Staging | Every push to `main`, including every merged PR | `https://stg.getrote.dev/playoffs/install.sh` | The triggering commit SHA; no version tag required |
 | Production | A repository admin selects **Actions → Deploy Play → Run workflow → main** | `https://getrote.dev/playoffs/install.sh` | The `vX.Y.Z` tag matching `VERSION` |
 
+## Release checklist (required)
+
+A release is not done until production serves it. Tagging and merging to `main` only update
+staging; `https://getrote.dev/playoffs/install.sh` keeps selecting the previous tag until an admin
+deploys. Every release must complete all of these steps:
+
+1. Merge the version bump PR (`VERSION` and package metadata) into `main`.
+2. Tag the merged commit: `just release-tag`.
+3. Deploy production: **Actions → Deploy Play → Run workflow → main**, or
+   `gh workflow run deploy.yml --ref main`.
+4. Confirm the gate reports `ready`: `just release-check`, or check that
+   `curl -fsSL https://getrote.dev/playoffs/install.sh | grep release=` prints the new tag.
+
+Skipping step 3 means users installing from `getrote.dev` do not get the release. For example,
+production stayed on v0.4.98 after v0.4.99 through v0.4.104 were tagged, so the email sign-in
+option was missing from the public installer.
+
 Published changes must carry a new plugin version; a push that keeps the same version is not a
 reliable cache invalidation mechanism. Prepare the version bump and package metadata changes on
 a branch and merge them through a PR. After the PR is merged, create the release tag with:
