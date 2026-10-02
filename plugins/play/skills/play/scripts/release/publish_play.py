@@ -113,10 +113,17 @@ def validate_play_commit(play_root: Path) -> tuple[str, str]:
     return version, commit
 
 
-def validate_play_release(play_root: Path) -> tuple[str, str]:
+def validate_play_release(play_root: Path, *, require_tag_checkout: bool = False) -> tuple[str, str]:
     version, commit = validate_play_commit(play_root)
     tag = release_tag(version)
-    if commit != git(play_root, "rev-parse", "origin/main"):
+    if require_tag_checkout:
+        # Production deploys run from the dispatched tag, so the checkout must be that tag.
+        dispatched = os.environ.get("GITHUB_REF")
+        if dispatched is not None and dispatched != f"refs/tags/{tag}":
+            raise ReleaseError(f"Play production deploy was dispatched from {dispatched}, expected refs/tags/{tag}")
+        if commit != git(play_root, "rev-parse", "--verify", f"{tag}^{{commit}}"):
+            raise ReleaseError(f"Play production checkout must match {tag}")
+    elif commit != git(play_root, "rev-parse", "origin/main"):
         raise ReleaseError("Play production checkout must match origin/main")
     run(("git", "merge-base", "--is-ancestor", tag, "origin/main"), cwd=play_root)
     tagged_version = git(play_root, "show", f"{tag}:VERSION").strip()
@@ -154,11 +161,13 @@ def selector_headers(environment: str) -> dict[str, str]:
     }
 
 
-def validate_deployment(play_root: Path, environment: str) -> tuple[str, str]:
+def validate_deployment(
+    play_root: Path, environment: str, *, publishing: bool = False,
+) -> tuple[str, str]:
     deployment_target(environment)
     if environment == "staging":
         return validate_play_commit(play_root)
-    return validate_play_release(play_root)
+    return validate_play_release(play_root, require_tag_checkout=publishing)
 
 
 def stage_assets(destination: Path, archive: bytes) -> None:
@@ -242,7 +251,7 @@ def check(play_root: Path, *, environment: str = "production") -> dict[str, obje
 def publish(play_root: Path, *, environment: str = "production") -> dict[str, object]:
     branch, public_selector = deployment_target(environment)
     headers = selector_headers(environment)
-    version, reference = validate_deployment(play_root, environment)
+    version, reference = validate_deployment(play_root, environment, publishing=True)
     if shutil.which("npx") is None:
         raise ReleaseError("npx is required to deploy the Cloudflare Pages project")
     play_commit = git(play_root, "rev-parse", "HEAD")

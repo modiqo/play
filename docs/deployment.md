@@ -5,7 +5,7 @@ The [Deploy Play workflow](../.github/workflows/deploy.yml) publishes the instal
 | Environment | Trigger | Installer | Selected Play revision |
 | --- | --- | --- | --- |
 | Staging | Every push to `main`, including every merged PR | `https://stg.getrote.dev/playoffs/install.sh` | The triggering commit SHA; no version tag required |
-| Production | A repository admin selects **Actions → Deploy Play → Run workflow → main** | `https://getrote.dev/playoffs/install.sh` | The `vX.Y.Z` tag matching `VERSION` |
+| Production | A repository admin selects **Actions → Deploy Play → Run workflow → Tags → vX.Y.Z** | `https://getrote.dev/playoffs/install.sh` | The dispatched `vX.Y.Z` tag, which must match its `VERSION` |
 
 Published changes must carry a new plugin version; a push that keeps the same version is not a
 reliable cache invalidation mechanism. Prepare the version bump and package metadata changes on
@@ -25,6 +25,12 @@ An existing local or remote tag pointing elsewhere is rejected; a remote tag alr
 the selected commit returns `already_tagged`. A matching local tag can be pushed again after a
 failed push. The helper never moves an existing tag or bumps versions itself. Tag publication
 does not trigger production deployment; an admin still runs **Deploy Play** manually.
+
+Production runs only from a release tag. A dispatch from a branch, including `main`, is skipped.
+The deploy checks out the tag's commit and fails unless the tag name matches that commit's
+`VERSION` and the commit belongs to `origin/main`. Dispatching an older tag redeploys that
+release, which is how to roll back. GitHub runs the workflow file stored in the tag itself, so
+only tags created after this rule was added can be deployed to production.
 
 Both environments read the shared installer assets, change only the Play selector in a temporary
 directory, and deploy to `getrote-dev` (`staging` for preview, `main` for production). They wait for

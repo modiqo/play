@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${GITHUB_EVENT_NAME:-}" != workflow_dispatch || "${GITHUB_REF:-}" != refs/heads/main ]]; then
-  echo '::error::Production deployment requires a manual workflow dispatch from main.'
+if [[ "${GITHUB_EVENT_NAME:-}" != workflow_dispatch || ! "${GITHUB_REF:-}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo '::error::Production deployment requires a manual workflow dispatch from a vX.Y.Z release tag.'
   exit 1
 fi
 
