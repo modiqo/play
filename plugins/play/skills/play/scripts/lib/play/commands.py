@@ -55,6 +55,40 @@ def parse_rote_json(output: str) -> Any:
             raise direct_error
 
 
+def rote_failure_detail(
+    stdout: str | None, stderr: str | None, default: str = "unknown command error"
+) -> str:
+    """Describe a failed command, unwrapping Rote's ``--json`` error envelope.
+
+    Rote prints ``--json`` failures as one envelope on stdout. Return its
+    message, prefixed with ``kind:`` when Rote names a specific error kind;
+    callers match kinds such as ``play-not-found`` against this text.
+    Other output falls back to stderr, then stdout.
+    """
+
+    out = (stdout or "").strip()
+    err = (stderr or "").strip()
+    envelope: Any = None
+    if out.startswith("{"):
+        try:
+            envelope = json.loads(out)
+        except json.JSONDecodeError:
+            envelope = None
+    if (
+        isinstance(envelope, dict)
+        and envelope.get("schema") == 1
+        and envelope.get("ok") is False
+        and isinstance(envelope.get("error"), dict)
+    ):
+        message = envelope["error"].get("message")
+        kind = envelope["error"].get("kind")
+        if isinstance(message, str) and message.strip():
+            if isinstance(kind, str) and kind and kind != "error":
+                return f"{kind}: {message.strip()}"
+            return message.strip()
+    return err or out or default
+
+
 def run_text(
     command: Sequence[str],
     *,
@@ -89,8 +123,7 @@ def run_text(
     except subprocess.TimeoutExpired as error:
         raise error_type(f"{label} timed out after {timeout_seconds:g}s") from error
     if result.returncode:
-        detail = result.stderr.strip() or result.stdout.strip() or "unknown command error"
-        raise error_type(f"{label} failed: {detail}")
+        raise error_type(f"{label} failed: {rote_failure_detail(result.stdout, result.stderr)}")
     return result.stdout
 
 

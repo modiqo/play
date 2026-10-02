@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from ..commands import rote_failure_detail
+
 _PULL_TIMEOUT_SECONDS = 90.0
 _PRIVATE_ENTRIES = {"flows", "workspaces"}
 
@@ -73,7 +75,7 @@ def pull(owner: str, name: str, *, runner: Runner | None = None) -> tuple[Pulled
         return None, f"rote registry play pull {owner}/{name}: {error}"
     root = home / "flows" / owner / name.partition("@")[0]
     if code != 0 or not (root / "main.ts").is_file():
-        detail = (stderr or stdout).strip()
+        detail = rote_failure_detail(stdout, stderr, "")
         first = next((line.strip() for line in detail.splitlines() if line.strip()), f"exit {code}")
         shutil.rmtree(home, ignore_errors=True)
         return None, f"could not pull {owner}/{name}: {first}"

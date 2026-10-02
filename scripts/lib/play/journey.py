@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from .commands import rote_failure_detail
 from .journey_capabilities import (
     adapter_invocation,
     adapter_manifest_summary,
@@ -1653,7 +1654,7 @@ def _run_rote_json(workspace: Path, arguments: Sequence[str]) -> Any:
         timeout=ROTE_TIMEOUT_SECONDS,
     )
     if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout).strip()
+        detail = rote_failure_detail(completed.stdout, completed.stderr, "")
         raise JourneyError(detail[:300] or f"rote {' '.join(arguments)} failed")
     return _parse_json_output(completed.stdout)
 
