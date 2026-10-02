@@ -80,10 +80,17 @@ class Rehearsal:
         }
 
 
+def _lint_reference(package: Package) -> str:
+    """The play reference rote lints: ``<flows>/<owner>/<name>`` is the
+    development copy, ``<flows>/<owner>/<name>@<version>`` a numbered copy."""
+    name, at, version = package.root.name.partition("@")
+    return f"{package.root.parent.name}/{name}@{version if at else 'development'}"
+
+
 def _lint(package: Package) -> dict[str, Any]:
     try:
         completed = subprocess.run(
-            ["rote", "play", "lint", str(package.main_path), "--json"],
+            ["rote", "play", "lint", _lint_reference(package), "--json"],
             capture_output=True, text=True, check=False, timeout=180,
         )
     except (OSError, subprocess.SubprocessError) as error:
@@ -94,6 +101,13 @@ def _lint(package: Package) -> dict[str, Any]:
         payload = json.loads(text[start:]) if start >= 0 else {}
     except json.JSONDecodeError:
         payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    if payload.get("ok") is False or "static_checks_passed" not in payload:
+        error = payload.get("error")
+        message = error.get("message") if isinstance(error, dict) else None
+        reason = message or completed.stderr.strip() or f"rote play lint exited {completed.returncode} without a lint report"
+        return {"ran": False, "exit": completed.returncode, "reason": str(reason)}
     violations = payload.get("violations") or []
     return {
         "ran": True,
