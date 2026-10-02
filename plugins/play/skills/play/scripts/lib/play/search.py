@@ -291,6 +291,10 @@ def _unwrap_worker(payload: object) -> dict:
     return payload
 
 
+# Worker labels that judge a Play a match. Accepted rows carry one as their status.
+_MATCH_LABELS = ("direct", "partial")
+
+
 def _validate_worker(body: dict, public: bool, org: str | None) -> None:
     registry = body.get("registry")
     if (
@@ -346,7 +350,7 @@ def _validate_worker(body: dict, public: bool, org: str | None) -> None:
         ):
             raise SearchError("Invalid retrieval status.")
         for key, statuses in [
-            ("matches", ("direct", "partial")),
+            ("matches", _MATCH_LABELS),
             ("uncertain", ("uncertain", "unverified")),
         ]:
             items = group.get(key)
@@ -388,6 +392,7 @@ def _validate_worker(body: dict, public: bool, org: str | None) -> None:
                 if (
                     not isinstance(relevance, dict)
                     or relevance.get("status") not in statuses
+                    or not isinstance(relevance.get("choice"), (str, type(None)))
                 ):
                     raise SearchError("Invalid relevance judgment.")
     if not org and "community" not in kinds:
@@ -396,7 +401,8 @@ def _validate_worker(body: dict, public: bool, org: str | None) -> None:
         raise SearchError("Shared search omitted the requested organization.")
 
 
-# Sort order of the Worker's chosen label. Insufficient and missing rank 2.
+# Sort order of the Worker's chosen label. Insufficient, missing and unknown
+# labels rank 2, so a new Worker label never fails the search.
 _CHOICE_RANK = {"direct": 0, "partial": 1, "unrelated": 3}
 
 
@@ -415,13 +421,13 @@ def _result(item: dict, group: dict) -> dict:
     # The Worker's probability belongs to the label it chose. Accepted rows chose
     # their status; uncertain rows may lean direct, partial, unrelated or
     # insufficient, and unverified rows carry no judgment.
-    choice = status if status in ("direct", "partial") else item["relevance"].get("choice")
+    choice = status if status in _MATCH_LABELS else item["relevance"].get("choice")
     probability = item["relevance"].get("probability", 0)
     # Only a direct or partial judgment is evidence of coverage. The probability
     # of an unrelated or insufficient judgment is not.
     coverage = (
         float(probability)
-        if choice in ("direct", "partial")
+        if choice in _MATCH_LABELS
         and isinstance(probability, (int, float))
         and 0 <= probability <= 1
         else 0.0

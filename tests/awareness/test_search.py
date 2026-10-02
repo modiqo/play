@@ -231,10 +231,13 @@ class SearchTest(unittest.TestCase):
                 target = target[key]
             target[path[-1]] = value
             bodies.append(body)
+        malformed_choice = candidate("uncertain")
+        malformed_choice["relevance"] = dict(status="uncertain", choice=["partial"])
         bodies += [
             response([]),
             {"schema": "old-search"},
             response([group(matches=[candidate(), candidate()])]),
+            response([group(uncertain=[malformed_choice])]),
         ]
         for body in bodies:
             with self.subTest(body=body), self.assertRaises(search.SearchError):
