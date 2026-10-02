@@ -96,6 +96,16 @@ class BootstrapTest(unittest.TestCase):
         self.environment_patch.stop()
         self.temporary.cleanup()
 
+    def put_codex_on_path(self) -> None:
+        """Make Codex detectable without depending on the machine's installed harnesses."""
+        bin_dir = self.home / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        codex = bin_dir / "codex"
+        codex.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        codex.chmod(0o755)
+        # setUp's environment patch restores PATH in tearDown.
+        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
+
     def test_native_windows_is_rejected_but_wsl_is_supported(self) -> None:
         with self.assertRaisesRegex(BootstrapError, "native Windows is not supported"):
             _require_supported_os(platform="win32", os_name="nt")
@@ -779,6 +789,7 @@ class BootstrapTest(unittest.TestCase):
     def test_apply_without_remote_approval_stops_and_writes_both_reports(
         self, _resolve_rote: MagicMock
     ) -> None:
+        self.put_codex_on_path()
         report = apply(
             ROOT,
             requested=["codex"],
@@ -2599,6 +2610,7 @@ class BootstrapTest(unittest.TestCase):
         verify_prompt_intercept: MagicMock,
         _converge_marketplace: MagicMock,
     ) -> None:
+        self.put_codex_on_path()
         runner = MagicMock()
         runner.side_effect = [
             MagicMock(returncode=0, stdout="version: 1.0.0\n", stderr=""),
@@ -2708,6 +2720,7 @@ class BootstrapTest(unittest.TestCase):
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
     @patch("scripts.lib.play.bootstrap.apply")
     @patch("scripts.lib.play.bootstrap.build_plan")
+    @patch.dict(os.environ, {"DISPLAY": ":0"})  # Expect the headed sign-in offered on desktops.
     def test_guided_install_uses_separate_consent_for_optional_tulving(
         self,
         build: MagicMock,
@@ -2791,6 +2804,7 @@ class BootstrapTest(unittest.TestCase):
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
     @patch("scripts.lib.play.bootstrap.apply")
     @patch("scripts.lib.play.bootstrap.build_plan")
+    @patch.dict(os.environ, {"DISPLAY": ":0"})  # Expect the headed sign-in offered on desktops.
     def test_guided_install_ignores_remembered_provider_and_can_exit_at_sign_in(
         self,
         build: MagicMock,

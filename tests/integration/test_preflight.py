@@ -50,7 +50,14 @@ class PreflightTest(unittest.TestCase):
             MagicMock(returncode=0, stdout="rote play\nUSAGE\n", stderr=""),
         ]
 
-        payload = inspect("claude")
+        # Install the rote skill in a temporary home rather than relying on the machine's own.
+        with tempfile.TemporaryDirectory() as temporary:
+            claude_home = Path(temporary) / ".claude"
+            rote = claude_home / "skills" / "rote"
+            rote.mkdir(parents=True)
+            (rote / "SKILL.md").write_text("---\nname: rote\n---\n")
+            with patch.dict(os.environ, {"HOME": temporary, "CLAUDE_CONFIG_DIR": str(claude_home)}):
+                payload = inspect("claude")
 
         self.assertTrue(payload["ready"])
         self.assertEqual([], payload["setup_commands"])
