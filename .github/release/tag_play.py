@@ -23,44 +23,57 @@ def remote_tag_commit(repository: Path, remote: str, tag_ref: str) -> str | None
     return refs.get(f"{tag_ref}^{{}}", refs.get(tag_ref))
 
 
+def is_ancestor(repository: Path, ancestor: str, descendant: str) -> bool:
+    try:
+        git(repository, "merge-base", "--is-ancestor", ancestor, descendant)
+    except ReleaseError:
+        return False
+    return True
+
+
 def tag_release(
     repository: Path, *, revision: str = "origin/main", dry_run: bool = False,
 ) -> dict[str, object]:
     git(repository, "fetch", "--no-tags", "origin", f"refs/heads/main:{MAIN_REF}")
     target = MAIN_REF if revision == "origin/main" else revision
     commit = git(repository, "rev-parse", "--verify", "--end-of-options", f"{target}^{{commit}}")
-    try:
-        git(repository, "merge-base", "--is-ancestor", commit, MAIN_REF)
-    except ReleaseError as error:
-        raise ReleaseError(f"release commit {commit} must already belong to origin/main") from error
+    if not is_ancestor(repository, commit, MAIN_REF):
+        raise ReleaseError(f"release commit {commit} must already belong to origin/main")
 
     version = git(repository, "show", f"{commit}:VERSION").strip()
     tag = release_tag(version)
     tag_ref = f"refs/tags/{tag}"
-    local_object = git(repository, "tag", "--list", "--format=%(objectname)", tag)
-    if local_object:
-        local_commit = git(repository, "rev-parse", "--verify", f"{local_object}^{{commit}}")
-        if local_commit != commit:
-            raise ReleaseError(f"local {tag} points to {local_commit}, expected {commit}; refusing to move it")
-
-    # Inspect the push destination, which may differ from origin's fetch URL.
-    push_urls = git(repository, "remote", "get-url", "--push", "--all", "origin").splitlines()
-    if len(push_urls) != 1:
-        raise ReleaseError("origin must have exactly one push URL for release tagging")
-    destination = push_urls[0]
-    remote_commit = remote_tag_commit(repository, destination, tag_ref)
-    if remote_commit is not None and remote_commit != commit:
-        raise ReleaseError(f"remote {tag} points to {remote_commit}, expected {commit}; refusing to move it")
-
     receipt: dict[str, object] = {
-        "status": "already_tagged" if remote_commit is not None else "ready",
         "version": version,
         "tag": tag,
         "commit": commit,
         "remote": "origin",
         "dry_run": dry_run,
     }
-    if dry_run or remote_commit is not None:
+
+    local_object = git(repository, "tag", "--list", "--format=%(objectname)", tag)
+    local_commit = (
+        git(repository, "rev-parse", "--verify", f"{local_object}^{{commit}}") if local_object else None
+    )
+    # Inspect the push destination, which may differ from origin's fetch URL.
+    push_urls = git(repository, "remote", "get-url", "--push", "--all", "origin").splitlines()
+    if len(push_urls) != 1:
+        raise ReleaseError("origin must have exactly one push URL for release tagging")
+    destination = push_urls[0]
+    remote_commit = remote_tag_commit(repository, destination, tag_ref)
+
+    if remote_commit == commit:
+        return {**receipt, "status": "already_tagged"}
+    tagged_commit = remote_commit or local_commit
+    if tagged_commit is not None and tagged_commit != commit:
+        # A commit that kept VERSION unchanged is not a new release; the tag stays on its release.
+        if is_ancestor(repository, tagged_commit, commit):
+            return {**receipt, "status": "version_unchanged", "tagged_commit": tagged_commit}
+        where = "remote" if remote_commit else "local"
+        raise ReleaseError(f"{where} {tag} points to {tagged_commit}, expected {commit}; refusing to move it")
+
+    receipt["status"] = "ready"
+    if dry_run:
         return receipt
 
     if not local_object:

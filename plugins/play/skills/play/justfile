@@ -82,18 +82,6 @@ ui-check:
 test: check
     uv run python3 -m unittest discover -s tests -p 'test_*.py'
 
-# Verify that the stable public installer selects the current Play release.
-release-check:
-    .github/release/publish-play check
-
-# Derive and push the version tag for a merged commit; never push main.
-release-tag $commit="origin/main":
-    python3 .github/release/tag_play.py --commit "$commit"
-
-# Preview release tagging without creating or pushing a tag.
-release-tag-check $commit="origin/main":
-    python3 .github/release/tag_play.py --commit "$commit" --dry-run
-
 # Measure warm typed-controller transition latency without model or external I/O.
 benchmark-controller iterations="1000":
     uv run scripts/bin/play-machine benchmark --iterations {{iterations}} --json
