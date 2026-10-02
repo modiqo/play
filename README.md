@@ -775,11 +775,11 @@ explicitly disabled Codex Play skill remains a user choice: the report asks you 
 
 ### Pin or inspect the installer
 
-Pin both the script and downloaded archive to the same release:
+Pin both the script and downloaded archive to the same release tag (replace `vX.Y.Z`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/v0.4.105/install.sh \
-  | env PLAY_INSTALL_REF=v0.4.105 sh
+curl -fsSL https://raw.githubusercontent.com/modiqo/play/vX.Y.Z/install.sh \
+  | env PLAY_INSTALL_REF=vX.Y.Z sh
 ```
 
 To inspect the small bootstrap before running it:

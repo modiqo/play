@@ -69,6 +69,9 @@ from scripts.lib.play.bootstrap import (
 )
 
 
+PLAY_VERSION = (Path(__file__).resolve().parents[2] / "VERSION").read_text(encoding="utf-8").strip()
+
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -310,7 +313,7 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertEqual(["codex", "claude"], plan["selected_harnesses"])
         self.assertEqual("not_installed", plan["play"]["update_status"])
-        self.assertEqual("0.4.105", plan["play"]["target_version"])
+        self.assertEqual(PLAY_VERSION, plan["play"]["target_version"])
         convergence = next(action for action in plan["actions"] if action["id"] == "converge_rote_skills")
         self.assertIsNone(convergence["command"])
         self.assertEqual([], convergence["targets"])
@@ -2583,7 +2586,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.105 is installed and enabled.",
+                f"Play {PLAY_VERSION} is installed and enabled.",
                 target="codex",
             )
         ],
@@ -2660,7 +2663,7 @@ class BootstrapTest(unittest.TestCase):
                 "record-play-install",
                 "playoffs",
                 "fresh",
-                "0.4.105",
+                PLAY_VERSION,
                 "codex",
             ],
             commands,
@@ -2693,7 +2696,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.105", _converge_marketplace.call_args.kwargs["expected_version"]
+            PLAY_VERSION, _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 

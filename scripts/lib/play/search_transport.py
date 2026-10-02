@@ -14,6 +14,9 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from .commands import CommandError
 
 
+PLAY_ROOT = Path(__file__).resolve().parents[3]
+
+
 REGISTRIES = {
     "https://roteprod.registry.modiqo.ai": "production",
     "https://vovpajqyrnhpzbzpzrny.supabase.co": "production",
@@ -29,6 +32,13 @@ ENDPOINTS = {
 class NoRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
+
+
+def play_version() -> str:
+    try:
+        return (PLAY_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        return "unknown"
 
 
 def registry_config() -> dict:
@@ -60,7 +70,7 @@ def request_search(query: str, *, public: bool, org: str | None, limit: int, tim
     environment = REGISTRIES.get(str(config.get("url", "")))
     if environment is None:
         raise CommandError("Shared search requires a production or staging registry.")
-    headers = {"Content-Type": "application/json", "X-Modiqo-Registry-Environment": environment, "User-Agent": "modiqo-play/0.4.105"}
+    headers = {"Content-Type": "application/json", "X-Modiqo-Registry-Environment": environment, "User-Agent": f"modiqo-play/{play_version()}"}
     if not public:
         try:
             identity = run_rote(["rote", "whoami", "--check"], text=True, capture_output=True, check=False, timeout=timeout_seconds)

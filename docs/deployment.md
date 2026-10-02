@@ -8,8 +8,10 @@ The [Deploy Play workflow](../.github/workflows/deploy.yml) publishes the instal
 | Production | A repository admin selects **Actions → Deploy Play → Run workflow → Tags → vX.Y.Z** | `https://getrote.dev/playoffs/install.sh` | The dispatched `vX.Y.Z` tag, which must match its `VERSION` |
 
 Published changes must carry a new plugin version; a push that keeps the same version is not a
-reliable cache invalidation mechanism. Prepare the version bump and package metadata changes on
-a branch and merge them through a PR.
+reliable cache invalidation mechanism. `VERSION` is the only version to edit: on a branch, set it
+and run `just package`, which writes it into the plugin manifests, `plugins/play/package.json`,
+`pyproject.toml`, and `uv.lock` and rebuilds the plugin payload. `just check` fails while any of
+them disagrees with `VERSION`. Merge the bump through a PR.
 
 The [Tag Play release workflow](../.github/workflows/tag-release.yml) runs on every push to `main`
 and tags releases itself. It reads `VERSION` from the pushed commit and derives `vX.Y.Z`:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import re
 import shutil
 import stat
 import tempfile
@@ -34,6 +35,20 @@ EXCLUDED = {
     Path("scripts/bin/package-plugin"),
     Path("scripts/lib/play/package.py"),
 }
+VERSION_FILE = ROOT / "VERSION"
+_JSON_VERSION = re.compile(r'(?m)^(  "version": ")([^"]*)(",?)$')
+# Each file carries VERSION in exactly one place; packaging rewrites it from VERSION.
+VERSIONED_FILES = {
+    Path("plugins/play/.claude-plugin/plugin.json"): _JSON_VERSION,
+    Path("plugins/play/.codex-plugin/plugin.json"): _JSON_VERSION,
+    Path("plugins/play/.cursor-plugin/plugin.json"): _JSON_VERSION,
+    Path("plugins/play/.kimi-plugin/plugin.json"): _JSON_VERSION,
+    Path("plugins/play/package.json"): _JSON_VERSION,
+    Path("pyproject.toml"): re.compile(r'(?m)^(version = ")([^"]*)(")$'),
+    Path("uv.lock"): re.compile(
+        r'(?m)^(\[\[package\]\]\nname = "modiqo-play-controller"\nversion = ")([^"]*)(")$'
+    ),
+}
 
 
 class PackageError(RuntimeError):
@@ -59,6 +74,39 @@ def source_files() -> Iterable[tuple[Path, Path]]:
                 and source.suffix != ".pyc"
             ):
                 yield source, relative
+
+
+def play_version() -> str:
+    version = VERSION_FILE.read_text(encoding="utf-8").strip()
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        raise PackageError(f"VERSION must be semantic x.y.z; found {version!r}")
+    return version
+
+
+def versioned_text(relative: Path, version: str) -> tuple[str, str]:
+    """Return the file's current version and its text rewritten to `version`."""
+    text = (ROOT / relative).read_text(encoding="utf-8")
+    pattern = VERSIONED_FILES[relative]
+    matches = pattern.findall(text)
+    if len(matches) != 1:
+        raise PackageError(f"{relative} must contain exactly one version assignment")
+    return matches[0][1], pattern.sub(lambda match: f"{match[1]}{version}{match[3]}", text, count=1)
+
+
+def version_differences(version: str) -> list[str]:
+    messages = []
+    for relative in VERSIONED_FILES:
+        current, _ = versioned_text(relative, version)
+        if current != version:
+            messages.append(f"version {relative} is {current}, expected {version} from VERSION")
+    return messages
+
+
+def sync_versions(version: str) -> None:
+    for relative in VERSIONED_FILES:
+        current, text = versioned_text(relative, version)
+        if current != version:
+            (ROOT / relative).write_text(text, encoding="utf-8")
 
 
 def materialize(destination: Path) -> None:
@@ -90,11 +138,14 @@ def differences(expected: Path, actual: Path) -> list[str]:
 
 
 def build(check: bool = False) -> None:
+    version = play_version()
+    if not check:
+        sync_versions(version)
     with tempfile.TemporaryDirectory(prefix="play-plugin-") as temporary:
         expected = Path(temporary) / "play"
         materialize(expected)
         if check:
-            found = differences(expected, TARGET)
+            found = version_differences(version) + differences(expected, TARGET)
             if found:
                 raise PackageError("plugin payload differs:\n  " + "\n  ".join(found))
             print(f"Play plugin payload is current ({len(list(source_files()))} files)")
