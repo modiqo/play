@@ -1,0 +1,44 @@
+name: Tag Play release
+run-name: Tag Play release for ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Tag merges in push order so an earlier version bump is never tagged after a later one.
+concurrency:
+  group: play-release-tag
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  tag:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the merged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      # Pushes only the vX.Y.Z tag for a new VERSION; a merge that keeps VERSION is a no-op.
+      - name: Tag a new VERSION
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          python3 .github/release/tag_play.py --commit "$GITHUB_SHA" > release-tag.json
+          cat release-tag.json
+          {
+            echo '```json'
+            cat release-tag.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

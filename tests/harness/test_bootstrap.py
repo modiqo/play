@@ -69,6 +69,9 @@ from scripts.lib.play.bootstrap import (
 )
 
 
+PLAY_VERSION = (Path(__file__).resolve().parents[2] / "VERSION").read_text(encoding="utf-8").strip()
+
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -92,6 +95,16 @@ class BootstrapTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.environment_patch.stop()
         self.temporary.cleanup()
+
+    def put_codex_on_path(self) -> None:
+        """Make Codex detectable without depending on the machine's installed harnesses."""
+        bin_dir = self.home / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        codex = bin_dir / "codex"
+        codex.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        codex.chmod(0o755)
+        # setUp's environment patch restores PATH in tearDown.
+        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
 
     def test_native_windows_is_rejected_but_wsl_is_supported(self) -> None:
         with self.assertRaisesRegex(BootstrapError, "native Windows is not supported"):
@@ -310,7 +323,7 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertEqual(["codex", "claude"], plan["selected_harnesses"])
         self.assertEqual("not_installed", plan["play"]["update_status"])
-        self.assertEqual("0.4.105", plan["play"]["target_version"])
+        self.assertEqual(PLAY_VERSION, plan["play"]["target_version"])
         convergence = next(action for action in plan["actions"] if action["id"] == "converge_rote_skills")
         self.assertIsNone(convergence["command"])
         self.assertEqual([], convergence["targets"])
@@ -776,6 +789,7 @@ class BootstrapTest(unittest.TestCase):
     def test_apply_without_remote_approval_stops_and_writes_both_reports(
         self, _resolve_rote: MagicMock
     ) -> None:
+        self.put_codex_on_path()
         report = apply(
             ROOT,
             requested=["codex"],
@@ -2583,7 +2597,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                "Play 0.4.105 is installed and enabled.",
+                f"Play {PLAY_VERSION} is installed and enabled.",
                 target="codex",
             )
         ],
@@ -2596,6 +2610,7 @@ class BootstrapTest(unittest.TestCase):
         verify_prompt_intercept: MagicMock,
         _converge_marketplace: MagicMock,
     ) -> None:
+        self.put_codex_on_path()
         runner = MagicMock()
         runner.side_effect = [
             MagicMock(returncode=0, stdout="version: 1.0.0\n", stderr=""),
@@ -2660,7 +2675,7 @@ class BootstrapTest(unittest.TestCase):
                 "record-play-install",
                 "playoffs",
                 "fresh",
-                "0.4.105",
+                PLAY_VERSION,
                 "codex",
             ],
             commands,
@@ -2693,7 +2708,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            "0.4.105", _converge_marketplace.call_args.kwargs["expected_version"]
+            PLAY_VERSION, _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 
@@ -2705,6 +2720,7 @@ class BootstrapTest(unittest.TestCase):
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
     @patch("scripts.lib.play.bootstrap.apply")
     @patch("scripts.lib.play.bootstrap.build_plan")
+    @patch.dict(os.environ, {"DISPLAY": ":0"})  # Expect the headed sign-in offered on desktops.
     def test_guided_install_uses_separate_consent_for_optional_tulving(
         self,
         build: MagicMock,
@@ -2788,6 +2804,7 @@ class BootstrapTest(unittest.TestCase):
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
     @patch("scripts.lib.play.bootstrap.apply")
     @patch("scripts.lib.play.bootstrap.build_plan")
+    @patch.dict(os.environ, {"DISPLAY": ":0"})  # Expect the headed sign-in offered on desktops.
     def test_guided_install_ignores_remembered_provider_and_can_exit_at_sign_in(
         self,
         build: MagicMock,

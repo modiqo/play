@@ -31,6 +31,11 @@ SELECTOR_RELATIVE = Path("playoffs/install.sh")
 VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 REFERENCE_PATTERN = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+|[a-f0-9]{40}")
 SELECTOR_PATTERN = re.compile(rf"(?m)^release=({REFERENCE_PATTERN.pattern})$")
+# The shared assets keep a `latest` placeholder that each deploy replaces with its reference.
+SELECTOR_PLACEHOLDER = "latest"
+SOURCE_SELECTOR_PATTERN = re.compile(
+    rf"(?m)^release=({SELECTOR_PLACEHOLDER}|{REFERENCE_PATTERN.pattern})$"
+)
 
 
 class ReleaseError(RuntimeError):
@@ -62,20 +67,24 @@ def release_tag(version_text: str) -> str:
     return f"v{version}"
 
 
-def selector_release(selector: str) -> str:
-    matches = SELECTOR_PATTERN.findall(selector)
+def selector_release(selector: str, *, pattern: re.Pattern[str] = SELECTOR_PATTERN) -> str:
+    matches = pattern.findall(selector)
     if len(matches) != 1:
-        raise ReleaseError("selector must contain exactly one release tag or commit assignment")
+        expected = (
+            "release tag, commit, or latest" if pattern is SOURCE_SELECTOR_PATTERN
+            else "release tag or commit"
+        )
+        raise ReleaseError(f"selector must contain exactly one {expected} assignment")
     return matches[0]
 
 
 def replace_selector(selector: str, expected: str) -> str:
     if not REFERENCE_PATTERN.fullmatch(expected):
         raise ReleaseError("selector reference must be a release tag or full commit SHA")
-    current = selector_release(selector)
+    current = selector_release(selector, pattern=SOURCE_SELECTOR_PATTERN)
     if current == expected:
         return selector
-    return SELECTOR_PATTERN.sub(f"release={expected}", selector, count=1)
+    return SOURCE_SELECTOR_PATTERN.sub(f"release={expected}", selector, count=1)
 
 
 def fetch_text(url: str, *, headers: dict[str, str] | None = None) -> str:
