@@ -126,21 +126,33 @@ class InspectionTest(unittest.TestCase):
             disclosure["parameters"][0],
         )
 
-    def test_generic_adapter_operation_does_not_claim_read_only(self) -> None:
-        disclosure = normalize_inspection("alpha/report", inspected_payload())
-        self.assertEqual("operation_semantics_unknown", disclosure["effects"]["classification"])
-        self.assertIn("do not prove", disclosure["effects"]["summary"])
-        self.assertIn("Nothing has been installed", render_markdown(disclosure))
-
-    def test_unreported_write_permissions_do_not_claim_none_declared(self) -> None:
-        payload = json.loads(
+    def test_write_declarations_never_change_the_effect_claim(self) -> None:
+        # rote 0.87 sends `write_permissions` (often empty); 0.88 omits it. Rote never
+        # checks the declaration against the steps, so Play must not repeat it.
+        unreported = json.loads(
             (ROOT / "tests" / "fixtures" / "inspection" / "sweep-git-repos-0.6.2.json").read_text()
         )
-        self.assertNotIn("write_permissions", payload["requirements"])
-        disclosure = normalize_inspection("jaylabs/sweep-git-repos@0.6.2", payload)
-        self.assertEqual("operation_semantics_unknown", disclosure["effects"]["classification"])
-        self.assertNotIn("No write permissions are declared", disclosure["effects"]["summary"])
-        self.assertNotIn("No write permissions are declared", render_markdown(disclosure))
+        self.assertNotIn("write_permissions", unreported["requirements"])
+        empty = inspected_payload()
+        declared = inspected_payload()
+        declared["requirements"]["write_permissions"] = [
+            {"tool": "issues/create", "adapter": "github", "mode": "audit"}
+        ]
+        cases = {
+            "unreported": ("jaylabs/sweep-git-repos@0.6.2", unreported),
+            "empty": ("alpha/report", empty),
+            "declared": ("alpha/report", declared),
+        }
+        summaries = set()
+        for label, (reference, payload) in cases.items():
+            with self.subTest(label):
+                disclosure = normalize_inspection(reference, payload)
+                effects = disclosure["effects"]
+                self.assertEqual("operation_semantics_unknown", effects["classification"])
+                self.assertNotIn("write permissions", effects["summary"].lower())
+                self.assertIn(effects["summary"], render_markdown(disclosure))
+                summaries.add(effects["summary"])
+        self.assertEqual(1, len(summaries), summaries)
 
     def test_execution_blockers_disable_run_approval(self) -> None:
         disclosure = normalize_inspection("alpha/report", inspected_payload(eligible=False))
