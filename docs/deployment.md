@@ -35,7 +35,8 @@ only tags created after this rule was added can be deployed to production.
 Both environments read the shared installer assets, change only the Play selector in a temporary
 directory, and deploy to `getrote-dev` (`staging` for preview, `main` for production). They wait for
 the selected environment's installer to serve the expected revision and record a JSON receipt in
-the workflow summary. No commit or push is made to the shared assets repository.
+the workflow summary. The selector's single `release=` line may hold the `latest` placeholder or a
+pinned tag or commit; each deploy replaces it with the deployed tag or commit SHA. No commit or push is made to the shared assets repository.
 
 Run the read-only production release gate at any time:
 
