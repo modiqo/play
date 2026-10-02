@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..commands import rote_failure_detail
 from .model import Collected, Location
 from .package import Package
 from .rules import UNKNOWN_ADAPTER, rule
@@ -131,7 +132,9 @@ def _run_rote_info(adapter_id: str) -> dict[str, Any] | None:
         env={**os.environ, "ROTE_NO_HINTS": "1"},
     )
     if completed.returncode != 0:
-        raise RuntimeError((completed.stderr or completed.stdout).strip()[:200] or f"exit {completed.returncode}")
+        raise RuntimeError(
+            rote_failure_detail(completed.stdout, completed.stderr, f"exit {completed.returncode}")[:200]
+        )
     text = completed.stdout.strip()
     if not text:
         return None
