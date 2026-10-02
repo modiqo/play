@@ -159,16 +159,14 @@ def normalize_inspection(requested_reference: str, inspected: dict[str, Any]) ->
         "repair_required": "replace_or_restore",
         "ready": "none",
     }.get(decision, "unknown")
-    write_permissions = _items(requirements.get("write_permissions"))
+    # Rote never checks a manifest's write declaration against its steps, so the
+    # disclosure states only what Play can see: whether operations are declared.
     operations = _operations(inspected.get("steps"))
-    if write_permissions:
-        effect_certainty = "writes_declared"
-        effect_summary = "The manifest declares write permissions; review them before approval."
-    elif operations:
+    if operations:
         effect_certainty = "operation_semantics_unknown"
         effect_summary = (
-            "No write permissions are declared, but generic adapter operations do not prove "
-            "that external activity is read-only."
+            "Play cannot tell from the manifest whether these operations write; review them "
+            "before approval and do not assume external activity is read-only."
         )
     else:
         effect_certainty = "operations_undeclared"
@@ -207,7 +205,6 @@ def normalize_inspection(requested_reference: str, inspected: dict[str, Any]) ->
         "effects": {
             "classification": effect_certainty,
             "summary": effect_summary,
-            "declared_write_permissions": write_permissions,
         },
         "preflight": {
             "read_only": convergence.get("read_only") is True,
