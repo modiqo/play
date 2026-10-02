@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import base64
 import json
+import os
+import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -20,6 +24,7 @@ from play.birth import (
     resolve_birth,
     verify_birth,
 )
+from play.birth import _trace_evidence
 from play.commands import CommandError
 
 
@@ -111,8 +116,6 @@ class BirthTest(unittest.TestCase):
             return self.flow_info()
         if arguments[:2] == ("workspace", "stats"):
             return self.stats()
-        if arguments[:2] == ("trace", "--deps"):
-            raise CommandError("rote trace --deps --json failed: unexpected argument '--json'")
         if arguments[:3] == ("workspace", "inspect", "log"):
             return self.command_log()
         if arguments[:3] == ("workspace", "inspect", "deps"):
@@ -150,33 +153,16 @@ class BirthTest(unittest.TestCase):
         self.assertEqual("workspace-inspect-json-fallback", record["sources"]["trace"])
         self.assertEqual(0o600, stat.S_IMODE(record_path.stat().st_mode))
         self.assertEqual(0o700, stat.S_IMODE(record_path.parent.stat().st_mode))
-        self.assertEqual(6, run_rote_json.call_count)
+        self.assertEqual(5, run_rote_json.call_count)
 
     @patch("play.birth.run_rote_json")
-    def test_future_trace_json_is_preferred(self, run_rote_json) -> None:
+    def test_workspace_inspect_error_stops_capture(self, run_rote_json) -> None:
         def side_effect(*arguments: str, **kwargs):
             if arguments[:2] == ("play", "info"):
                 return self.flow_info()
             if arguments[:2] == ("workspace", "stats"):
                 return self.stats()
-            if arguments[:2] == ("trace", "--deps"):
-                return {"commands": self.command_log(), "dependencies": self.dependencies()}
-            raise AssertionError(arguments)
-
-        run_rote_json.side_effect = side_effect
-        result = capture_birth("weekly-report-build", "weekly-customer-report", home=self.home)
-        _, record, _ = resolve_birth(result["sha256"], home=self.home)
-        self.assertEqual("rote-trace-deps-json", record["sources"]["trace"])
-        self.assertEqual(3, run_rote_json.call_count)
-
-    @patch("play.birth.run_rote_json")
-    def test_non_capability_trace_error_does_not_silently_fallback(self, run_rote_json) -> None:
-        def side_effect(*arguments: str, **kwargs):
-            if arguments[:2] == ("play", "info"):
-                return self.flow_info()
-            if arguments[:2] == ("workspace", "stats"):
-                return self.stats()
-            raise CommandError("rote trace --deps --json failed: workspace is corrupt")
+            raise CommandError("rote workspace inspect log --json failed: workspace is corrupt")
 
         run_rote_json.side_effect = side_effect
         with self.assertRaisesRegex(BirthError, "workspace is corrupt"):
@@ -229,6 +215,60 @@ class BirthTest(unittest.TestCase):
                 "modiqo/weekly-customer-report@1.0.0",
                 home=self.home,
             )
+
+
+@unittest.skipUnless(shutil.which("rote"), "rote is not installed")
+class BirthRealRoteTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        root = Path(self.temporary.name)
+        rote_home = root / ".rote"
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key
+            not in {"CLAUDECODE", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME", "ROTE_OUTPUT_MODE"}
+        }
+        environment.update(
+            HOME=str(root),
+            ROTE_HOME=str(rote_home),
+            ROTE_NO_AUTO_UPDATE="1",
+            ROTE_TELEMETRY_DISABLED="1",
+            ROTE_NO_HINTS="1",
+        )
+        patcher = patch.dict(os.environ, environment, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.temporary.cleanup)
+        # The dispatch gate only needs an unexpired access token; nothing here reaches the registry.
+        registry = rote_home / "registry"
+        registry.mkdir(parents=True)
+        header = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b"=").decode()
+        claims = base64.urlsafe_b64encode(b'{"exp":4102444800,"sub":"test"}').rstrip(b"=").decode()
+        (registry / "config.json").write_text(
+            json.dumps(
+                {
+                    "url": "http://127.0.0.1:9",
+                    "publishable_key": "test",
+                    "access_token": f"{header}.{claims}.c2ln",
+                    "refresh_token": "test",
+                }
+            )
+        )
+        subprocess.run(["rote", "init", "demo"], cwd=root, check=True, capture_output=True)
+        self.workspace = rote_home / "workspaces" / "demo"
+        for command in (["rote", "set", "who=octo"], ["rote", "proc", "run", "echo", "octo"]):
+            subprocess.run(command, cwd=self.workspace, check=True, capture_output=True)
+
+    def test_trace_evidence_reads_the_workspace_journey(self) -> None:
+        commands, dependencies, source = _trace_evidence(self.workspace)
+
+        self.assertEqual(
+            ["SetVariable", "ProcessExec"], [command["command_type"] for command in commands]
+        )
+        self.assertIsInstance(dependencies, list)
+        self.assertEqual("workspace-inspect-json-fallback", source)
+
 
 
 if __name__ == "__main__":

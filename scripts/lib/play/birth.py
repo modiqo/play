@@ -138,42 +138,19 @@ def _safe_package(flow: dict[str, Any]) -> tuple[dict[str, Any], str]:
     return safe, stable_sha(safe)
 
 
-def _unsupported_trace_json(error: CommandError) -> bool:
-    message = str(error).casefold()
-    return "--json" in message and any(
-        phrase in message
-        for phrase in ("unexpected argument", "unknown option", "unknown flag", "unrecognized option")
-    )
-
-
 def _trace_evidence(workspace: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
     try:
-        payload = run_rote_json("trace", "--deps", "--json", working_directory=workspace)
-    except CommandError as error:
-        if not _unsupported_trace_json(error):
-            raise BirthError(f"cannot capture dependency trace: {error}") from error
-        try:
-            commands = run_rote_json(
-                "workspace", "inspect", "log", "--json", working_directory=workspace
-            )
-            dependencies = run_rote_json(
-                "workspace", "inspect", "deps", "--json", working_directory=workspace
-            )
-        except CommandError as fallback_error:
-            raise BirthError(f"cannot capture workspace evidence: {fallback_error}") from fallback_error
-        return (
-            _require_list(commands, "workspace command log"),
-            _require_list(dependencies, "workspace dependency trace"),
-            "workspace-inspect-json-fallback",
+        commands = run_rote_json("workspace", "inspect", "log", "--json", working_directory=workspace)
+        dependencies = run_rote_json(
+            "workspace", "inspect", "deps", "--json", working_directory=workspace
         )
-
-    trace = _require_dict(payload, "dependency trace")
-    commands = trace.get("commands", trace.get("log"))
-    dependencies = trace.get("dependencies", trace.get("deps"))
+    except CommandError as error:
+        raise BirthError(f"cannot capture workspace evidence: {error}") from error
+    # The source label is persisted in birth records; keep it stable.
     return (
-        _require_list(commands, "dependency trace commands"),
-        _require_list(dependencies, "dependency trace dependencies"),
-        "rote-trace-deps-json",
+        _require_list(commands, "workspace command log"),
+        _require_list(dependencies, "workspace dependency trace"),
+        "workspace-inspect-json-fallback",
     )
 
 

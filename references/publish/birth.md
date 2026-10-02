@@ -64,10 +64,9 @@ execution results.
 
 ## Evidence and privacy
 
-Prefer `rote trace --deps --json` when Rote exposes it. Until then, the helper recognizes that
-specific capability gap and falls back to `rote workspace inspect log --json` plus
-`rote workspace inspect deps --json`. Other trace failures block capture instead of silently
-downgrading evidence.
+The helper reads workspace evidence with `rote workspace inspect log --json` and
+`rote workspace inspect deps --json`. If either command fails, capture stops instead of
+silently downgrading evidence.
 
 The birth object stores only:
 
