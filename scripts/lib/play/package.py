@@ -28,7 +28,6 @@ DIRECTORIES = (
     "scripts/bin",
     "scripts/harness",
     "scripts/lib/play",
-    "scripts/release",
     "ui/thinking-orbs",
 )
 EXCLUDED = {

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from .publish_play import ReleaseError, git, release_tag
+from publish_play import ReleaseError, git, release_tag
 
 
 ROOT = Path(__file__).resolve().parents[2]

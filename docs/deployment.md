@@ -46,4 +46,4 @@ just release-check
 
 The gate prints a `ready` JSON receipt only when the public installer selects the current Play tag.
 To check staging from a clean checkout of a merged commit, run
-`scripts/release/publish-play check --environment staging`.
+`.github/release/publish-play check --environment staging`.
