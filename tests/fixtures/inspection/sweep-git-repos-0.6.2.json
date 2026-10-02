@@ -1,0 +1,476 @@
+{
+  "reference": "https://play.modiqo.ai/jaylabs/sweep-git-repos@0.6.2",
+  "identity": {
+    "owner": "jaylabs",
+    "owner_kind": "org",
+    "name": "sweep-git-repos",
+    "version": "0.6.2",
+    "description": "You have a folder of repos and no idea which hold work that exists only on your laptop. On the machine this was built on, one sweep found 83 repositories and 35 branches living only there. It walks every repo under one folder, reads unpushed commits, uncommitted changes, stashes and upstream-less branches, names any repository whose history carries a secret-shaped file, asks GitHub whether that work is on origin, compares with the last sweep and writes a digest. An unreadable repo is listed as unknown, not dropped. Without a GitHub token that leg is skipped with the fix named, and the sweep completes. Your repositories are only ever read from; it writes a baseline, drift record and digest outside them.",
+    "author": "jayanth <jayanth.sms.in@gmail.com>",
+    "visibility": "public"
+  },
+  "archive": {
+    "content_hash": "90ac55f51465c475f5639ffc5601ff31ce7145f9bf471432cc77e86ac6febce3",
+    "storage_path": "organization_d3ed5c98-2310-4a09-8c7e-2cb9a5f38650/sweep-git-repos/0.6.2/90ac55f51465c475f5639ffc5601ff31ce7145f9bf471432cc77e86ac6febce3.flow",
+    "size_bytes": 79310,
+    "download_count": 4,
+    "install_count": 0
+  },
+  "package": {
+    "source": "registry_manifest",
+    "authority": "verified",
+    "digest": "installed-package-sha256-v1:f4a7b230c1db8d1304629ada7928637490bf45f75898af658b636da117a8cfae",
+    "files": [
+      "deps.toml",
+      "main.ts",
+      "manifest.json",
+      "resources/README.md",
+      "resources/cases/discover_repos/blocked/observation.json",
+      "resources/cases/discover_repos/expect.yaml",
+      "resources/cases/discover_repos/partial/observation.json",
+      "resources/cases/discover_repos/truncated/observation.json",
+      "resources/cases/env_probe/blocked/observation.json",
+      "resources/cases/env_probe/expect.yaml",
+      "resources/cases/env_probe/partial/observation.json",
+      "resources/cases/env_probe/truncated/observation.json",
+      "resources/cases/github_branches/blocked/observation.json",
+      "resources/cases/github_branches/expect.yaml",
+      "resources/cases/github_branches/partial/observation.json",
+      "resources/cases/github_branches/truncated/observation.json",
+      "resources/cases/github_probe/blocked/observation.json",
+      "resources/cases/github_probe/expect.yaml",
+      "resources/cases/github_probe/partial/observation.json",
+      "resources/cases/github_probe/truncated/observation.json",
+      "resources/cases/github_status/blocked/observation.json",
+      "resources/cases/github_status/expect.yaml",
+      "resources/cases/github_status/partial/observation.json",
+      "resources/cases/github_status/truncated/observation.json",
+      "resources/cases/github_targets/blocked/observation.json",
+      "resources/cases/github_targets/expect.yaml",
+      "resources/cases/github_targets/partial/observation.json",
+      "resources/cases/github_targets/truncated/observation.json",
+      "resources/cases/load_previous/blocked/observation.json",
+      "resources/cases/load_previous/expect.yaml",
+      "resources/cases/load_previous/partial/observation.json",
+      "resources/cases/load_previous/truncated/observation.json",
+      "resources/cases/sweep_repo/blocked/observation.json",
+      "resources/cases/sweep_repo/expect.yaml",
+      "resources/cases/sweep_repo/partial/observation.json",
+      "resources/cases/sweep_repo/truncated/observation.json",
+      "resources/cases/validate_base/blocked/observation.json",
+      "resources/cases/validate_base/expect.yaml",
+      "resources/cases/validate_base/partial/observation.json",
+      "resources/cases/validate_base/truncated/observation.json",
+      "resources/digest.py",
+      "resources/discover_repos.py",
+      "resources/drift.py",
+      "resources/env_probe.py",
+      "resources/github_branches.py",
+      "resources/github_probe.py",
+      "resources/github_status.py",
+      "resources/github_targets.py",
+      "resources/load_previous.py",
+      "resources/presentation-fixtures/digest/fixture.yaml",
+      "resources/presentation-fixtures/digest/stderr.txt",
+      "resources/presentation-fixtures/digest/stdout.json",
+      "resources/presentation-fixtures/discover_repos/fixture.yaml",
+      "resources/presentation-fixtures/discover_repos/stderr.txt",
+      "resources/presentation-fixtures/discover_repos/stdout.json",
+      "resources/presentation-fixtures/drift/fixture.yaml",
+      "resources/presentation-fixtures/drift/stderr.txt",
+      "resources/presentation-fixtures/drift/stdout.json",
+      "resources/presentation-fixtures/env_probe/fixture.yaml",
+      "resources/presentation-fixtures/env_probe/stderr.txt",
+      "resources/presentation-fixtures/env_probe/stdout.json",
+      "resources/presentation-fixtures/github_branches/fixture.yaml",
+      "resources/presentation-fixtures/github_branches/stderr.txt",
+      "resources/presentation-fixtures/github_branches/stdout.json",
+      "resources/presentation-fixtures/github_probe/fixture.yaml",
+      "resources/presentation-fixtures/github_probe/stderr.txt",
+      "resources/presentation-fixtures/github_probe/stdout.json",
+      "resources/presentation-fixtures/github_status/fixture.yaml",
+      "resources/presentation-fixtures/github_status/stderr.txt",
+      "resources/presentation-fixtures/github_status/stdout.json",
+      "resources/presentation-fixtures/github_targets/fixture.yaml",
+      "resources/presentation-fixtures/github_targets/stderr.txt",
+      "resources/presentation-fixtures/github_targets/stdout.json",
+      "resources/presentation-fixtures/load_previous/fixture.yaml",
+      "resources/presentation-fixtures/load_previous/stderr.txt",
+      "resources/presentation-fixtures/load_previous/stdout.json",
+      "resources/presentation-fixtures/sweep_repo/fixture.yaml",
+      "resources/presentation-fixtures/sweep_repo/stderr.txt",
+      "resources/presentation-fixtures/sweep_repo/stdout.json",
+      "resources/presentation-fixtures/validate_base/fixture.yaml",
+      "resources/presentation-fixtures/validate_base/stderr.txt",
+      "resources/presentation-fixtures/validate_base/stdout.json",
+      "resources/sweep_repo.py",
+      "resources/tests/__init__.py",
+      "resources/tests/test_digest.py",
+      "resources/tests/test_discover_budget.py",
+      "resources/tests/test_drift.py",
+      "resources/tests/test_github_leg.py",
+      "resources/tests/test_identity.py",
+      "resources/tests/test_package.py",
+      "resources/tests/test_presentation_cases.py",
+      "resources/validate_base.py"
+    ],
+    "tools": [
+      {
+        "id": "python3",
+        "command": "python3",
+        "required": true,
+        "version_requirement": ">=3.9",
+        "install_hints": [
+          "brew install python@3",
+          "apt install python3",
+          "system"
+        ]
+      },
+      {
+        "id": "git",
+        "command": "git",
+        "required": true,
+        "install_hints": [
+          "brew install git",
+          "apt install git",
+          "system"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "variant": "legacy_dag",
+    "step_declaration": "present",
+    "play_run_eligible": true,
+    "privileged_access": "process",
+    "blockers": []
+  },
+  "parameters": [
+    {
+      "name": "base_dir",
+      "type": "string",
+      "required": false,
+      "default": "~/Documents",
+      "description": "Folder to sweep. A tilde path like ~/code is expanded to your home folder. Give an absolute path otherwise. A relative one resolves against the run workspace rather than your shell, so it will usually not be found.",
+      "example": "~/Documents",
+      "input": {
+        "label": "Base dir",
+        "allow_custom": true
+      }
+    },
+    {
+      "name": "max_depth",
+      "type": "string",
+      "required": false,
+      "default": "3",
+      "description": "How many folder levels below base_dir to search. Must be a whole number; clamped to 1..6. Anything else falls back to 3 and the run says so. Keep it small on big trees.",
+      "example": "3",
+      "input": {
+        "label": "Max depth",
+        "allow_custom": true
+      }
+    },
+    {
+      "name": "state_dir",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Where to keep the baseline this play compares against. Leave empty to use the play's own run workspace. Nothing is ever written inside a repository either way.",
+      "example": "~/.rote/sweep-git-repos-state",
+      "input": {
+        "label": "State dir",
+        "allow_custom": true
+      }
+    },
+    {
+      "name": "emails",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Extra addresses that count as yours, comma separated. Your repo-level and global git user.email already count; this is for the other addresses you commit under.",
+      "example": "you@work.com, you@users.noreply.github.com",
+      "input": {
+        "label": "Emails",
+        "allow_custom": true
+      }
+    },
+    {
+      "name": "only",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Sweep only the repositories whose path under base_dir contains this text, case-insensitive. The baseline still records everything found, so a filtered run cannot make the next full run think the rest disappeared.",
+      "example": "api",
+      "input": {
+        "label": "Only",
+        "allow_custom": true
+      }
+    },
+    {
+      "name": "max_repos",
+      "type": "string",
+      "required": false,
+      "default": "0",
+      "description": "Stop after this many repositories, in path order. 0 means no cap. Must be a whole number; anything else is ignored as no cap and the run says so.",
+      "example": "20",
+      "input": {
+        "label": "Max repos",
+        "allow_custom": true
+      }
+    },
+    {
+      "name": "format",
+      "type": "string",
+      "required": false,
+      "default": "text",
+      "description": "How the briefing reads. The value text is the aligned terminal view, markdown a table you can paste into a document, json the same object the result view carries.",
+      "example": "markdown",
+      "valid_values": [
+        "text",
+        "markdown",
+        "json"
+      ],
+      "input": {
+        "label": "Format",
+        "allow_custom": false,
+        "choices": [
+          {
+            "label": "text",
+            "value": "text"
+          },
+          {
+            "label": "markdown",
+            "value": "markdown"
+          },
+          {
+            "label": "json",
+            "value": "json"
+          }
+        ]
+      }
+    },
+    {
+      "name": "github",
+      "type": "string",
+      "required": false,
+      "default": "auto",
+      "description": "Which route checks unpushed and upstream-less branches. The value auto tries the gh CLI, then the rote github adapter, then skips and says why. The values gh and adapter each insist on one. The value never keeps the sweep local. No token is needed to run; without one the leg is skipped and the receipt prints the rote token set command that enables it. GET only.",
+      "example": "adapter",
+      "valid_values": [
+        "auto",
+        "gh",
+        "adapter",
+        "never"
+      ],
+      "input": {
+        "label": "Github",
+        "allow_custom": false,
+        "choices": [
+          {
+            "label": "auto",
+            "value": "auto"
+          },
+          {
+            "label": "gh",
+            "value": "gh"
+          },
+          {
+            "label": "adapter",
+            "value": "adapter"
+          },
+          {
+            "label": "never",
+            "value": "never"
+          }
+        ]
+      }
+    },
+    {
+      "name": "webhook_url",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Where to post the run digest. Leave empty and no socket is opened at all. An https URL is posted to; plain http is refused unless it is loopback, which is how the packaged test proves delivery without leaving the machine. A webhook that is down is reported, never allowed to lose the sweep.",
+      "example": "https://hooks.slack.com/services/T000/B000/xxxx",
+      "input": {
+        "label": "Webhook url",
+        "allow_custom": true
+      }
+    }
+  ],
+  "steps": [
+    {
+      "name": "drift",
+      "target": "process/local",
+      "kind": "process.exec",
+      "operation": "process.exec",
+      "depends_on": [
+        "sweep_repo",
+        "load_previous",
+        "discover_repos"
+      ]
+    },
+    {
+      "name": "digest",
+      "target": "process/local",
+      "kind": "process.exec",
+      "operation": "process.exec",
+      "depends_on": [
+        "drift",
+        "discover_repos",
+        "github_probe"
+      ]
+    },
+    {
+      "name": "env_probe",
+      "target": "process/local",
+      "kind": "process.exec",
+      "operation": "process.exec"
+    },
+    {
+      "name": "sweep_repo",
+      "target": "process/local",
+      "kind": "process.exec",
+      "operation": "process.exec",
+      "depends_on": [
+        "discover_repos"
+      ]
+    },
+    {
+      "name": "github_probe",
+      "target": "process/local",
+      "kind": "process.exec",
+      "operation": "process.exec"
+    },
+    {
+      "name": "github_status",
+      "target": "process/local",
+      "kind": "process.exec",
+      "operation": "process.exec",
+      "depends_on": [
+        "discover_repos",
+        "github_probe"
+      ]
+    },
+    {
+      "name": "load_previous",
+      "target": "process/local",
+      "kind": "process.exec",
+      "operation": "process.exec",
+      "depends_on": [
+        "validate_base"
+      ]
+    },
+    {
+      "name": "validate_base",
+      "target": "process/local",
+      "kind": "process.exec",
+      "operation": "process.exec"
+    },
+    {
+      "name": "discover_repos",
+      "target": "process/local",
+      "kind": "process.exec",
+      "operation": "process.exec",
+      "depends_on": [
+        "validate_base",
+        "env_probe",
+        "load_previous"
+      ]
+    },
+    {
+      "name": "github_targets",
+      "target": "process/local",
+      "kind": "process.exec",
+      "operation": "process.exec",
+      "depends_on": [
+        "discover_repos",
+        "github_probe"
+      ]
+    },
+    {
+      "name": "github_branches",
+      "target": "process/local",
+      "kind": "process.exec",
+      "operation": "process.exec",
+      "depends_on": [
+        "github_targets",
+        "github_probe"
+      ]
+    }
+  ],
+  "requirements": {
+    "endpoints": [],
+    "runtimes": [
+      {
+        "version_requirement": ">=3.9",
+        "name": "python3",
+        "required": true,
+        "managed_by": "system",
+        "reason": ">=3.9 \u2014 install: brew install python@3"
+      },
+      {
+        "name": "git",
+        "required": true,
+        "managed_by": "system",
+        "reason": "install: brew install git"
+      }
+    ],
+    "npm_packages": [],
+    "browser_binaries": [],
+    "browser_auth": {
+      "status": "unknown",
+      "source": "manifest",
+      "dependencies": []
+    },
+    "adapter_credentials": {
+      "status": "unknown",
+      "source": "manifest",
+      "detail": "adapter credential requirements are not in the resolved contract"
+    },
+    "sensitivity": {
+      "status": "unknown",
+      "source": "manifest",
+      "detail": "sensitivity is not in the resolved contract"
+    }
+  },
+  "authentication": {
+    "read_only": true,
+    "adapters": []
+  },
+  "host": {
+    "runtimes": [
+      {
+        "name": "python3",
+        "status": "version_accepted",
+        "version_evidence": {
+          "observed": "3.12.13",
+          "requirement": ">=3.9"
+        },
+        "path": "/nix/store/qnvhp6s80z8jwxgn9zj9kksgh9ldrwjb-python3-3.12.13-env/bin/python3"
+      },
+      {
+        "name": "git",
+        "status": "present",
+        "version_evidence": {},
+        "path": "/nix/store/5y6cp247hspkqa7pp6cbc4540ygx0249-git-2.53.0/bin/git"
+      }
+    ],
+    "browsers": [],
+    "endpoints": [],
+    "adapters": [],
+    "daemon": "not_required"
+  },
+  "convergence": {
+    "read_only": true,
+    "play": {
+      "local_state": "absent",
+      "decision": "install_required",
+      "reason": "the resolved play is not installed locally",
+      "user_action": "Run `rote play run https://play.modiqo.ai/jaylabs/sweep-git-repos@0.6.2` to install and execute the verified play."
+    },
+    "requirement_source": "registry_manifest",
+    "adapters": [],
+    "unsupported": []
+  }
+}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -130,6 +131,16 @@ class InspectionTest(unittest.TestCase):
         self.assertEqual("operation_semantics_unknown", disclosure["effects"]["classification"])
         self.assertIn("do not prove", disclosure["effects"]["summary"])
         self.assertIn("Nothing has been installed", render_markdown(disclosure))
+
+    def test_unreported_write_permissions_do_not_claim_none_declared(self) -> None:
+        payload = json.loads(
+            (ROOT / "tests" / "fixtures" / "inspection" / "sweep-git-repos-0.6.2.json").read_text()
+        )
+        self.assertNotIn("write_permissions", payload["requirements"])
+        disclosure = normalize_inspection("jaylabs/sweep-git-repos@0.6.2", payload)
+        self.assertEqual("operation_semantics_unknown", disclosure["effects"]["classification"])
+        self.assertNotIn("No write permissions are declared", disclosure["effects"]["summary"])
+        self.assertNotIn("No write permissions are declared", render_markdown(disclosure))
 
     def test_execution_blockers_disable_run_approval(self) -> None:
         disclosure = normalize_inspection("alpha/report", inspected_payload(eligible=False))

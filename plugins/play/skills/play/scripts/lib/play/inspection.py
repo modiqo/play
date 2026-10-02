@@ -159,6 +159,7 @@ def normalize_inspection(requested_reference: str, inspected: dict[str, Any]) ->
         "repair_required": "replace_or_restore",
         "ready": "none",
     }.get(decision, "unknown")
+    writes_reported = "write_permissions" in requirements
     write_permissions = _items(requirements.get("write_permissions"))
     operations = _operations(inspected.get("steps"))
     if write_permissions:
@@ -166,10 +167,16 @@ def normalize_inspection(requested_reference: str, inspected: dict[str, Any]) ->
         effect_summary = "The manifest declares write permissions; review them before approval."
     elif operations:
         effect_certainty = "operation_semantics_unknown"
-        effect_summary = (
-            "No write permissions are declared, but generic adapter operations do not prove "
-            "that external activity is read-only."
-        )
+        if writes_reported:
+            effect_summary = (
+                "No write permissions are declared, but generic adapter operations do not prove "
+                "that external activity is read-only."
+            )
+        else:
+            effect_summary = (
+                "Rote did not report declared write permissions; review the operations before "
+                "approval and do not assume external activity is read-only."
+            )
     else:
         effect_certainty = "operations_undeclared"
         effect_summary = "The manifest declares no steps, so read/write operations cannot be verified."
