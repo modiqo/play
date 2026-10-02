@@ -1,0 +1,22 @@
+[
+  {
+    "title": "Compare competitor pricing",
+    "tools": "Notion + parallel-cli",
+    "prompt": "Connect to Notion, find my pricing page, and extract its pricing table. Use parallel-cli to find my competitors’ pricing pages and extract their pricing grids. Ask me which competitors to include, then compare prices, billing periods, plan limits, and features in a table with source links."
+  },
+  {
+    "title": "Check whether a launch is ready",
+    "tools": "Notion + GitHub",
+    "prompt": "Find our launch checklist in Notion and the matching milestone in GitHub. Compare the checklist with open issues and pull requests. Give me a launch-readiness report with blockers, owners, and links to the work that remains."
+  },
+  {
+    "title": "Prepare for a customer call",
+    "tools": "Notion + parallel-cli",
+    "prompt": "Find our notes about the customer in Notion. Use parallel-cli to research their product, recent announcements, and pricing. Create a meeting brief with our previous commitments, useful questions, and source links. Ask me which customer to research."
+  },
+  {
+    "title": "Draft a release from the actual changes",
+    "tools": "GitHub",
+    "prompt": "Review the merged pull requests since the last release in my GitHub repository. Group the changes into features, fixes, and breaking changes. Draft release notes with pull-request links and flag missing tests or migration instructions. Ask me which repository to use."
+  }
+]
