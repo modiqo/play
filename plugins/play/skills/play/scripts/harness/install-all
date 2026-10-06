@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from scripts.lib.play.preflight import REQUIRED_PLAY_EXECUTABLES
+from scripts.lib.play.rote_ownership import rote_managed_refusal
 from scripts.lib.play.bootstrap import backup_play_state
 from scripts.lib.play.harnesses import (
     HARNESS_BY_ID,
@@ -584,6 +585,10 @@ def execute(
     include_all: bool = False,
     prepared_backup: Path | None = None,
 ) -> None:
+    if command == "install":
+        refusal = rote_managed_refusal("install-all install", ROOT)
+        if refusal is not None:
+            raise InstallError(refusal)
     harnesses = selected_harnesses(requested_harnesses, include_all=include_all)
     if not harnesses:
         raise InstallError(

@@ -31,6 +31,7 @@ from .python_environment import (
     pip_install_command,
     resolve_package_index,
 )
+from .rote_ownership import MANAGED_INSTALL_TEXT, rote_managed_play
 
 
 SCHEMA = "play.preflight/v1"
@@ -72,6 +73,7 @@ REQUIRED_PLAY_EXECUTABLES = (
     "play-run-output",
     "play-scheduler-probe",
     "play-search",
+    "play-setup",
     "play-standby",
 )
 SETUP_COMMANDS = {
@@ -132,6 +134,11 @@ PLAY_RESTORE_COMMANDS = {
     ],
     "generic": ["Reinstall the current Play skill and restart the harness."],
 }
+
+ROTE_MANAGED_RESTORE_COMMANDS = [
+    f"Run `{MANAGED_INSTALL_TEXT}` to restore the Play launchers, skill links, and harness wiring.",
+    "Restart the harness.",
+]
 
 
 @dataclass(frozen=True)
@@ -384,11 +391,18 @@ def inspect(harness: str) -> dict[str, Any]:
         or (item["rote_skills_installed"] and item["play_skill_installed"])
         for item in harnesses
     )
+    managed = rote_managed_play(ROOT) is not None
     setup_commands: list[str] = []
     if not checks[0].ok or not checks[1].ok:
-        setup_commands.extend(PLAY_RESTORE_COMMANDS[harness])
+        setup_commands.extend(
+            ROTE_MANAGED_RESTORE_COMMANDS if managed else PLAY_RESTORE_COMMANDS[harness]
+        )
     if not checks[2].ok:
-        setup_commands.append("Install uv, then rerun the Play installer to verify the pinned environment.")
+        setup_commands.append(
+            f"Install uv, then run `{MANAGED_INSTALL_TEXT}` to rebuild the pinned Play environment."
+            if managed
+            else "Install uv, then rerun the Play installer to verify the pinned environment."
+        )
     if executable is None or (active_status is not None and not active_status["rote_skills_installed"]):
         setup_commands.extend(SETUP_COMMANDS[harness])
     elif any(
@@ -424,7 +438,11 @@ def inspect(harness: str) -> dict[str, Any]:
                 }
                 for item in harnesses
             ],
-            "command_template": "scripts/harness/install-all install --harness <id> [--harness <id> ...]",
+            "command_template": (
+                MANAGED_INSTALL_TEXT
+                if managed
+                else "scripts/harness/install-all install --harness <id> [--harness <id> ...]"
+            ),
         },
         "setup_required": not ready,
         "setup_commands": list(dict.fromkeys(setup_commands)) if not ready else [],

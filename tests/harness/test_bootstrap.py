@@ -69,9 +69,6 @@ from scripts.lib.play.bootstrap import (
 )
 
 
-PLAY_VERSION = (Path(__file__).resolve().parents[2] / "VERSION").read_text(encoding="utf-8").strip()
-
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -88,6 +85,7 @@ class BootstrapTest(unittest.TestCase):
             "AGENTS_HOME": str(self.home / ".agents"),
             "GROK_BOT_APP": str(self.home / "Applications" / "Grok Bot.app"),
             "PLAY_BOOTSTRAP_STATE": str(self.home / "state"),
+            "ROTE_HOME": str(self.home / ".rote"),
         }
         self.environment_patch = patch.dict(os.environ, self.environment, clear=False)
         self.environment_patch.start()
@@ -95,16 +93,6 @@ class BootstrapTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.environment_patch.stop()
         self.temporary.cleanup()
-
-    def put_codex_on_path(self) -> None:
-        """Make Codex detectable without depending on the machine's installed harnesses."""
-        bin_dir = self.home / "bin"
-        bin_dir.mkdir(exist_ok=True)
-        codex = bin_dir / "codex"
-        codex.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-        codex.chmod(0o755)
-        # setUp's environment patch restores PATH in tearDown.
-        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
 
     def test_native_windows_is_rejected_but_wsl_is_supported(self) -> None:
         with self.assertRaisesRegex(BootstrapError, "native Windows is not supported"):
@@ -323,7 +311,7 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertEqual(["codex", "claude"], plan["selected_harnesses"])
         self.assertEqual("not_installed", plan["play"]["update_status"])
-        self.assertEqual(PLAY_VERSION, plan["play"]["target_version"])
+        self.assertEqual("0.4.105", plan["play"]["target_version"])
         convergence = next(action for action in plan["actions"] if action["id"] == "converge_rote_skills")
         self.assertIsNone(convergence["command"])
         self.assertEqual([], convergence["targets"])
@@ -656,7 +644,10 @@ class BootstrapTest(unittest.TestCase):
         path = self.home / ".cursor" / "hooks.json"
         value = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(1, value["version"])
-        self.assertIn("play-intercept", value["hooks"]["beforeSubmitPrompt"][0]["command"])
+        self.assertIn(
+            "/scripts/bin/play-intercept prompt --harness cursor",
+            value["hooks"]["beforeSubmitPrompt"][0]["command"],
+        )
         self.assertNotIn("stop", value["hooks"])
         self.assertNotIn("sessionStart", value["hooks"])
 
@@ -789,7 +780,6 @@ class BootstrapTest(unittest.TestCase):
     def test_apply_without_remote_approval_stops_and_writes_both_reports(
         self, _resolve_rote: MagicMock
     ) -> None:
-        self.put_codex_on_path()
         report = apply(
             ROOT,
             requested=["codex"],
@@ -2199,12 +2189,6 @@ class BootstrapTest(unittest.TestCase):
             [step["id"] for step in report["steps"]],
         )
         self.assertIn("Rote 0.69.1 is too old", report["steps"][-1]["detail"])
-        self.assertFalse(
-            any(
-                call.args[0][1:3] == ["telemetry", "record-play-install"]
-                for call in runner.call_args_list
-            )
-        )
         backup.assert_not_called()
 
     @patch("scripts.lib.play.bootstrap._warm_public_play_cache")
@@ -2597,7 +2581,7 @@ class BootstrapTest(unittest.TestCase):
             Step(
                 "verify_play_plugin",
                 "completed",
-                f"Play {PLAY_VERSION} is installed and enabled.",
+                "Play 0.4.105 is installed and enabled.",
                 target="codex",
             )
         ],
@@ -2610,7 +2594,6 @@ class BootstrapTest(unittest.TestCase):
         verify_prompt_intercept: MagicMock,
         _converge_marketplace: MagicMock,
     ) -> None:
-        self.put_codex_on_path()
         runner = MagicMock()
         runner.side_effect = [
             MagicMock(returncode=0, stdout="version: 1.0.0\n", stderr=""),
@@ -2638,18 +2621,16 @@ class BootstrapTest(unittest.TestCase):
             ),
             MagicMock(returncode=0, stdout="Play ready\n", stderr=""),
             MagicMock(returncode=0, stdout='{"ready":true}\n', stderr=""),
-            MagicMock(returncode=0, stdout="", stderr=""),
             MagicMock(returncode=0, stdout="version: 1.1.0\n", stderr=""),
             MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
         ]
 
-        with patch.dict(os.environ, {"PLAY_INSTALL_CHANNEL": "playoffs"}):
-            report = apply(
-                ROOT,
-                requested=["codex"],
-                runner=runner,
-                run_id="complete-run",
-            )
+        report = apply(
+            ROOT,
+            requested=["codex"],
+            runner=runner,
+            run_id="complete-run",
+        )
 
         self.assertEqual("completed", report["status"])
         commands = [call.args[0] for call in runner.call_args_list]
@@ -2665,18 +2646,6 @@ class BootstrapTest(unittest.TestCase):
                 "--package",
                 "*",
                 "--force",
-            ],
-            commands,
-        )
-        self.assertIn(
-            [
-                "/bin/rote",
-                "telemetry",
-                "record-play-install",
-                "playoffs",
-                "fresh",
-                PLAY_VERSION,
-                "codex",
             ],
             commands,
         )
@@ -2708,7 +2677,7 @@ class BootstrapTest(unittest.TestCase):
         )
         _converge_marketplace.assert_called_once()
         self.assertEqual(
-            PLAY_VERSION, _converge_marketplace.call_args.kwargs["expected_version"]
+            "0.4.105", _converge_marketplace.call_args.kwargs["expected_version"]
         )
         verify_prompt_intercept.assert_called_once()
 
@@ -2720,7 +2689,6 @@ class BootstrapTest(unittest.TestCase):
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
     @patch("scripts.lib.play.bootstrap.apply")
     @patch("scripts.lib.play.bootstrap.build_plan")
-    @patch.dict(os.environ, {"DISPLAY": ":0"})  # Expect the headed sign-in offered on desktops.
     def test_guided_install_uses_separate_consent_for_optional_tulving(
         self,
         build: MagicMock,
@@ -2804,7 +2772,6 @@ class BootstrapTest(unittest.TestCase):
     @patch("scripts.lib.play.bootstrap._confirm", return_value=True)
     @patch("scripts.lib.play.bootstrap.apply")
     @patch("scripts.lib.play.bootstrap.build_plan")
-    @patch.dict(os.environ, {"DISPLAY": ":0"})  # Expect the headed sign-in offered on desktops.
     def test_guided_install_ignores_remembered_provider_and_can_exit_at_sign_in(
         self,
         build: MagicMock,
@@ -2898,6 +2865,61 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("Update Tulving to 0.1.3", confirm.call_args_list[1].args[0])
         self.assertFalse(confirm.call_args_list[1].kwargs["default"])
         self.assertTrue(apply_plan.call_args.kwargs["enable_tulving"])
+
+
+class RoteManagedBootstrapTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.home = Path(self.temporary.name)
+        rote_home = self.home / "rote-home"
+        self.record = rote_home / "play" / "install.json"
+        self.record.parent.mkdir(parents=True)
+        self.record.write_text("{}", encoding="utf-8")
+        self.environment_patch = patch.dict(
+            os.environ,
+            {
+                "HOME": str(self.home),
+                "ROTE_HOME": str(rote_home),
+                "PLAY_BOOTSTRAP_STATE": str(self.home / "state"),
+            },
+            clear=False,
+        )
+        self.environment_patch.start()
+
+    def tearDown(self) -> None:
+        self.environment_patch.stop()
+        self.temporary.cleanup()
+
+    def test_apply_refuses_before_running_anything(self) -> None:
+        runner = MagicMock()
+
+        with self.assertRaisesRegex(BootstrapError, "`rote install play`"):
+            apply(ROOT, requested=["codex"], runner=runner, run_id="managed-run")
+
+        runner.assert_not_called()
+        self.assertFalse((self.home / "state").exists())
+
+    @patch("scripts.lib.play.bootstrap._choose_detected_harnesses")
+    @patch("scripts.lib.play.bootstrap.build_plan")
+    def test_install_and_apply_commands_refuse_before_planning(
+        self, build_plan_mock: MagicMock, choose: MagicMock
+    ) -> None:
+        for argv in (["install"], ["install", "--yes"], ["apply", "--plan-id", "x"]):
+            stderr = StringIO()
+            with redirect_stdout(StringIO()), redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as raised:
+                    main(argv)
+            self.assertEqual(1, raised.exception.code, argv)
+            self.assertIn(str(self.record), stderr.getvalue())
+            self.assertIn("rote install play", stderr.getvalue())
+        build_plan_mock.assert_not_called()
+        choose.assert_not_called()
+
+    def test_recovery_restore_refuses_to_rewire_a_rote_managed_install(self) -> None:
+        with self.assertRaisesRegex(BootstrapError, "rote install play"):
+            restore_play_state({"schema": "play.install-restore-plan/v1"})
+
+        self.assertFalse((self.home / "state").exists())
 
 
 if __name__ == "__main__":

@@ -60,6 +60,7 @@ class ActivationProfileTest(unittest.TestCase):
         environment["PLAY_ROUTING_LAUNCHER"] = str(self.routing_launcher)
         environment["PLAY_JOURNEY_LAUNCHER"] = str(self.journey_launcher)
         environment["PLAY_CLI_LAUNCHER"] = str(self.cli_launcher)
+        environment["ROTE_HOME"] = str(Path(self.temporary.name) / "rote-home")
         if hasattr(self, "source"):
             environment["PLAY_PROFILE_SOURCE"] = str(self.source)
         result = subprocess.run(
@@ -71,6 +72,43 @@ class ActivationProfileTest(unittest.TestCase):
         )
         self.assertEqual(expected, result.returncode, result.stderr)
         return result
+
+    def test_install_and_play_activate_refuse_a_rote_managed_play(self) -> None:
+        record = Path(self.temporary.name) / "rote-home" / "play" / "install.json"
+        record.parent.mkdir(parents=True)
+        record.write_text("{}", encoding="utf-8")
+
+        refused = self.run_profile("install", expected=1)
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "ROTE_HOME": str(record.parents[1]),
+                "PLAY_HARNESS_ROOTS": os.pathsep.join(map(str, self.roots)),
+                "PLAY_PROFILE_STATE": str(self.state),
+                "PLAY_MACHINE_LAUNCHER": str(self.launcher),
+                "PLAY_ROUTING_LAUNCHER": str(self.routing_launcher),
+                "PLAY_JOURNEY_LAUNCHER": str(self.journey_launcher),
+                "PLAY_CLI_LAUNCHER": str(self.cli_launcher),
+            }
+        )
+        activated = subprocess.run(
+            [str(ROOT / "scripts" / "bin" / "play-activate")],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+        )
+
+        self.assertEqual(1, activated.returncode)
+        for result in (refused, activated):
+            self.assertIn(str(record), result.stderr)
+            self.assertIn("`rote install play`", result.stderr)
+        for root in self.roots:
+            self.assertFalse((root / "play").exists())
+        self.assertFalse(self.state.exists())
+        self.assertFalse(self.launcher.exists())
+        for path, content in self.originals.items():
+            self.assertEqual(content, path.read_bytes())
 
     def test_install_verify_idempotency_and_uninstall(self) -> None:
         self.run_profile("install")

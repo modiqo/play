@@ -199,8 +199,9 @@ PLAY_INPUT
 ```
 
 The installer normally places `play-machine` on `PATH`. If it is unavailable but this loaded skill
-contains executable `scripts/bin/play-machine`, first run bundled `scripts/bin/play-activate` to
-restore the launcher and activation state, then enter the runtime through the bundled
+contains executable `scripts/bin/play-machine`, first restore the launcher and activation state:
+when rote manages Play (`${ROTE_HOME:-~/.rote}/play/install.json` exists), run `rote install play`;
+otherwise run bundled `scripts/bin/play-activate`. Then enter the runtime through the bundled
 `scripts/bin/play-machine` for this turn. Do not wait for shell command hashing or a harness restart.
 If activation restoration fails, run bundled
 `scripts/bin/play-preflight --harness <codex|claude|kimi|cursor|hermes|opencode|deepseek|generic> --json`, present its exact
@@ -386,7 +387,10 @@ Facts are provable from the package; judgments are advisory and say so.
 
 ## Cross-harness bootstrap
 
-For an explicit request to install or restore Play across harnesses, use the bundled
+For an explicit request to install or restore Play across harnesses, first check whether rote
+manages Play (`${ROTE_HOME:-~/.rote}/play/install.json` exists). If it does, run `rote install play`
+and stop: Play's own bootstrap, `install-all`, `play-activate`, and recovery restore refuse to rewire
+a rote-managed installation. Otherwise use the bundled
 `scripts/bin/play-bootstrap` only after the typed runtime returns the task to normal execution.
 Run `plan --json` first, present its multi-select top-K targets and effects, and obtain approval for
 that exact `plan_id`. Then run `apply --plan-id <id>`; add `--approve-remote-installer` only after
@@ -405,9 +409,11 @@ Rote's own update channel and refreshes its installed skills after a Rote update
 Tulving's own update channel and requires separate default-no approval before installation, update,
 or clock initialization. Play replacement remains its own restorable transaction. Never claim that
 Play rollback downgrades Rote or Tulving; report every component's before and after version.
-When the user asks to update Play itself, use `play update`. It downloads the latest official source
-over HTTPS. It then enters the first installer's planned, backed-up, verified convergence flow. Do
-not ask an already-installed user to paste the curl bootstrap again.
+When the user asks to update Play itself, use `play update`. When rote manages Play it runs
+`rote install play`, which installs the latest Play release without downgrading and rewires every
+harness; it accepts no installer options. Otherwise it downloads the latest official source over
+HTTPS and enters the first installer's planned, backed-up, verified convergence flow. Do not ask an
+already-installed user to paste the curl bootstrap again.
 
 Use `rote whoami --check` at every Play-owned identity boundary. It refreshes usable authentication and
 returns exit `77` only when login is required. After a verified Google, GitHub, or email login, remember

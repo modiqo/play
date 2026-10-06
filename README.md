@@ -43,6 +43,18 @@ verified convergence flow. Before replacement, Play snapshots the current Play-o
 verifies every selected harness and restores the snapshot if verification fails. You do not need to
 paste the curl command again.
 
+When rote installed Play (`rote install play` writes `${ROTE_HOME:-~/.rote}/play/install.json`),
+rote owns the installation. `play update` then prints `Play is managed by rote. Running: rote
+install play` and hands off to rote, which installs the latest Play release without downgrading it
+and rewires every harness. It accepts no installer options. Play's own installers (`install.sh`,
+`play-bootstrap install|apply`, `install-all install`, `play-activate`) and `play restore` refuse to
+run against a rote-managed install and name `rote install play` instead.
+
+After placing Play, rote runs `scripts/bin/play-setup --json`. It idempotently seeds Play's private
+routing policy, journal settings, and Journey model assets, and prints one
+`play.setup/v1` object: `{"schema":"play.setup/v1","steps":[{"name":…,"status":"created"|"current"|"error","detail":…}]}`.
+It exits 0 when no step errors and never touches launchers, links, plugins, hooks, sign-in, or timers.
+
 That is the whole setup. The installer opens a small terminal wizard: press Enter for a concise
 guided walkthrough, or choose **Review details** to inspect every planned change. Play finds your
 agent apps, checks Rote and its skills, and explains what it will install, update, or refresh. One
@@ -1254,6 +1266,7 @@ The prompt hook suggests published Plays only:
 
 ```bash
 play-intercept prompt            # UserPromptSubmit: Worker-confirmed direct matches only
+play-intercept prompt --harness cursor   # Cursor beforeSubmitPrompt: always {"continue": true}
 play-journal show --day today    # Explicit local recall; no state machine or preflight
 ```
 
@@ -1261,6 +1274,10 @@ The hook requires an action-shaped request and calls the same Worker through Rot
 three-second deadline. Only a direct judgment produces one quiet suggestion with an exact published
 reference. Partial, uncertain, unavailable, and timed-out results stay silent. Discussion questions
 never trigger the search. The hook does not execute the suggested Play or enter the controller.
+
+Cursor's `beforeSubmitPrompt` response can only allow or block a prompt; it has no field for
+injected context. With `--harness cursor` the hook therefore skips discovery and always prints
+`{"continue": true}`, so Cursor never receives Play suggestions through this hook.
 
 The request keeps exclusions such as “without changing records.” Concrete URLs, paths, email
 addresses, and credential assignments are redacted before search. Quoted task constraints remain.

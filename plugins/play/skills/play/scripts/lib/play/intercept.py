@@ -137,6 +137,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "command", choices=["prompt", "milestone-nudge", "settle-nudge"]
     )
+    parser.add_argument(
+        "--harness",
+        choices=["cursor"],
+        help="emit this harness's hook response shape instead of Claude/Codex's",
+    )
     arguments = parser.parse_args(argv)
     try:
         payload = json.loads(sys.stdin.read() or "{}")
@@ -144,6 +149,12 @@ def main(argv: list[str] | None = None) -> int:
         payload = {}
     if not isinstance(payload, dict):
         payload = {}
+
+    if arguments.command == "prompt" and arguments.harness == "cursor":
+        # Cursor's beforeSubmitPrompt response can only allow or block the
+        # prompt; it has no field that injects context, so skip discovery.
+        print(json.dumps({"continue": True}))
+        return 0
 
     if arguments.command == "prompt":
         prompt = payload.get("prompt")

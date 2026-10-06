@@ -130,6 +130,33 @@ check_install_environment() {
   stage_finish
 }
 
+# rote installs Play under <ROTE_HOME>/play/{versions,current,install.json}.
+# Once its record exists, only rote may install or rewire Play.
+refuse_rote_managed_install() {
+  rote_play_home=""
+  case "$0" in
+    */install.sh)
+      script_root=$(CDPATH='' cd -P -- "$(dirname -- "$0")" 2>/dev/null && pwd -P) || script_root=""
+      case "$script_root" in
+        */play/versions/*/*) ;;
+        */play/versions/*) rote_play_home="${script_root%/play/versions/*}" ;;
+      esac
+      ;;
+  esac
+  if [ -n "${ROTE_HOME:-}" ]; then
+    rote_record="$ROTE_HOME/play/install.json"
+  elif [ -n "$rote_play_home" ]; then
+    rote_record="$rote_play_home/play/install.json"
+  else
+    rote_record="$HOME/.rote/play/install.json"
+  fi
+  if [ -e "$rote_record" ] || [ -n "$rote_play_home" ]; then
+    fail "rote manages this Play installation ($rote_record). Run \`rote install play\` to install, update, or repair Play."
+  fi
+}
+
+refuse_rote_managed_install
+
 check_install_environment
 
 print_banner

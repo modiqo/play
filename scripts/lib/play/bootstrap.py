@@ -41,6 +41,7 @@ from .recurrence import (
     enable_tulving as enable_tulving_support,
     probe_tulving,
 )
+from .rote_ownership import rote_managed_refusal
 
 
 SCHEMA = "play.bootstrap/v1"
@@ -120,6 +121,14 @@ TERMINAL_CARD_WIDTH = 84
 
 class BootstrapError(RuntimeError):
     """The bootstrap could not safely continue."""
+
+
+def _refuse_when_rote_managed(action: str, source: Path | None = None) -> None:
+    refusal = rote_managed_refusal(
+        action, source if source is not None else Path(__file__).resolve().parents[3]
+    )
+    if refusal is not None:
+        raise BootstrapError(refusal)
 
 
 @dataclass(frozen=True)
@@ -3025,11 +3034,17 @@ def _verify_prompt_intercept(source: Path, *, verify_catalog: bool = False) -> N
 
 def _managed_hook_entries(harness: str, source: Path) -> dict[str, list[dict[str, Any]]]:
     intercept = shlex.quote(str(source / "scripts" / "bin" / "play-intercept"))
-    prompt = f"{intercept} prompt 2>/dev/null || true"
     if harness in {"codex", "claude"}:
-        return {"UserPromptSubmit": [_nested_hook(prompt)]}
+        return {"UserPromptSubmit": [_nested_hook(f"{intercept} prompt 2>/dev/null || true")]}
     if harness == "cursor":
-        return {"beforeSubmitPrompt": [{"command": prompt, "timeout": 5}]}
+        return {
+            "beforeSubmitPrompt": [
+                {
+                    "command": f"{intercept} prompt --harness cursor 2>/dev/null || true",
+                    "timeout": 5,
+                }
+            ]
+        }
     raise BootstrapError(f"hooks are unsupported for {harness}")
 
 
@@ -3855,6 +3870,7 @@ def _write_restore_report(report: dict[str, Any]) -> tuple[Path, Path]:
 def restore_play_state(plan: dict[str, Any]) -> dict[str, Any]:
     """Transactionally restore an immutable install snapshot and verify it."""
 
+    _refuse_when_rote_managed("Play recovery restore")
     if plan.get("schema") != RESTORE_PLAN_SCHEMA:
         raise BootstrapError("invalid Play restore plan")
     manifest_path = Path(str(plan["manifest_path"]))
@@ -5058,6 +5074,7 @@ def apply(
     prepared_plan: dict[str, Any] | None = None,
     progress: Progress | None = None,
 ) -> dict[str, Any]:
+    _refuse_when_rote_managed("Play bootstrap apply", source)
     source = source.resolve()
     run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     started = datetime.now(timezone.utc).isoformat()
@@ -5565,41 +5582,7 @@ def apply(
                 )
             )
             status = "action_required"
-    if status == "completed" and rote is not None:
-        _record_verified_play_install(rote, plan, runner=runner)
     return finish_report(status)
-
-
-def _record_verified_play_install(
-    rote: str,
-    plan: Mapping[str, Any],
-    *,
-    runner: Runner,
-) -> None:
-    source = os.environ.get("PLAY_INSTALL_CHANNEL", "direct").strip().lower()
-    if source not in {"direct", "playoffs"}:
-        source = "other"
-    planned_play = plan.get("play", {})
-    install_state = (
-        str(planned_play.get("install_state") or "verify")
-        if isinstance(planned_play, Mapping)
-        else "verify"
-    )
-    play_version = str(plan.get("play_version") or "unknown")
-    harnesses = ",".join(sorted(set(map(str, plan["selected_harnesses"]))))
-    command = [
-        rote,
-        "telemetry",
-        "record-play-install",
-        source,
-        install_state,
-        play_version,
-        harnesses,
-    ]
-    try:
-        runner(command)
-    except OSError:
-        pass
 
 
 def _finish_report(
@@ -5829,6 +5812,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif args.command == "apply":
             source = Path(__file__).resolve().parents[3]
+            _refuse_when_rote_managed("Play bootstrap apply", source)
             payload = apply(
                 source,
                 top_k=args.top_k,
@@ -5843,6 +5827,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         else:
             source = Path(__file__).resolve().parents[3]
+            _refuse_when_rote_managed("Play bootstrap install", source)
             requested_harnesses = args.harness
             if requested_harnesses is None and not args.yes:
                 requested_harnesses = _choose_detected_harnesses(top_k=args.top_k)

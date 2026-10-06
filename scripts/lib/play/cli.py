@@ -10,6 +10,12 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from .identity import recover_rote_session
+from .rote_ownership import (
+    MANAGED_INSTALL_COMMAND,
+    MANAGED_INSTALL_TEXT,
+    RoteManagedPlay,
+    rote_managed_play,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -112,7 +118,7 @@ def _execute(
 
 
 def _render_update_help() -> str:
-    return """Update Play through the same verified installer used for first setup.
+    return f"""Update Play through the installer that owns it.
 
 Usage:
   play update [installer arguments]
@@ -122,10 +128,44 @@ Examples:
   play update --harness codex --harness cursor
   play update --yes
 
-The updater downloads the latest official Play source over HTTPS, snapshots
-Play-owned state, shows the convergence plan, and verifies or restores it.
-Rote and Tulving keep their independent update checks and approvals.
+When rote manages Play (its install record exists under
+${{ROTE_HOME:-~/.rote}}/play/install.json), `play update` runs
+`{MANAGED_INSTALL_TEXT}` and accepts no installer arguments. rote installs the
+latest Play release, never downgrades it, and rewires every harness.
+
+Otherwise the updater downloads the latest official Play source over HTTPS,
+snapshots Play-owned state, shows the convergence plan, and verifies or
+restores it. Rote and Tulving keep their independent update checks and approvals.
 """
+
+
+def _update_through_rote(
+    managed: RoteManagedPlay,
+    arguments: Sequence[str],
+    executor: Callable[[str, list[str]], object],
+) -> int:
+    if arguments:
+        print(
+            "play: Play is managed by rote, which does not accept the legacy updater "
+            f"options {' '.join(arguments)!r}. Run `play update` without options; "
+            f"it runs `{MANAGED_INSTALL_TEXT}`, which keeps your harness wiring.",
+            file=sys.stderr,
+        )
+        return 2
+    rote = shutil.which(MANAGED_INSTALL_COMMAND[0])
+    if rote is None:
+        print(
+            f"play: Play is managed by rote ({managed.record}), but `rote` is not on "
+            f"PATH. Install or repair rote, then run: {MANAGED_INSTALL_TEXT}",
+            file=sys.stderr,
+        )
+        return 1
+    if managed.rote_home_derived:
+        os.environ["ROTE_HOME"] = str(managed.rote_home)
+    print(f"Play is managed by rote. Running: {MANAGED_INSTALL_TEXT}", file=sys.stderr)
+    sys.stderr.flush()
+    executor(rote, [rote, *MANAGED_INSTALL_COMMAND[1:]])
+    return 0
 
 
 def _recover_search_identity() -> bool:
@@ -216,6 +256,9 @@ def main(
         if tail[:1] in (["-h"], ["--help"]):
             print(_render_update_help(), end="")
             return 0
+        managed = rote_managed_play(ROOT)
+        if managed is not None:
+            return _update_through_rote(managed, tail, executor)
         installer = ROOT / "install.sh"
         if not installer.is_file():
             print(f"play: bundled installer is missing: {installer}", file=sys.stderr)

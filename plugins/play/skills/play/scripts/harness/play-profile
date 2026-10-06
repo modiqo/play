@@ -14,6 +14,10 @@ import stat
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+from play.rote_ownership import rote_managed_refusal
+
 
 SCHEMA = "play.activation-profile/v1"
 # v2: Codex metadata stays implicit-off, but Claude Code's
@@ -789,6 +793,9 @@ def reconcile(state: dict[str, object]) -> None:
 
 
 def install() -> None:
+    refusal = rote_managed_refusal("Play activation (play-profile install)", SOURCE)
+    if refusal is not None:
+        raise ProfileError(refusal)
     existing = load_state()
     if existing:
         reconcile(existing)

@@ -138,6 +138,7 @@ class InstallAllTest(unittest.TestCase):
                 ),
                 "PLAY_PROFILE_STATE": str(self.state),
                 "PLAY_BOOTSTRAP_STATE": str(self.home / "bootstrap-state"),
+                "ROTE_HOME": str(self.home / ".rote"),
             }
         )
 
@@ -192,6 +193,75 @@ class InstallAllTest(unittest.TestCase):
         created = set(reports_root.glob("*.json")) - before
         self.assertEqual(1, len(created))
         return result, json.loads(created.pop().read_text(encoding="utf-8"))
+
+    def write_rote_play_record(self) -> Path:
+        record = self.home / ".rote" / "play" / "install.json"
+        record.parent.mkdir(parents=True)
+        record.write_text("{}", encoding="utf-8")
+        return record
+
+    def assert_untouched_harnesses(self) -> None:
+        for root in self.roots.values():
+            self.assertFalse((root / "play").exists())
+        self.assertFalse(self.state.exists())
+        self.assertFalse((self.home / "bootstrap-state").exists())
+
+    def test_install_refuses_a_rote_managed_play(self) -> None:
+        record = self.write_rote_play_record()
+
+        result = self.run_installer("install", expected=1)
+
+        self.assertIn(str(record), result.stderr)
+        self.assertIn("`rote install play`", result.stderr)
+        self.assertNotIn("Detected harnesses", result.stdout)
+        self.assert_untouched_harnesses()
+
+    def test_shell_installer_refuses_a_rote_managed_play_before_prerequisites(self) -> None:
+        record = self.write_rote_play_record()
+        environment = {
+            **self.environment,
+            "PLAY_INSTALL_SOURCE": str(ROOT),
+            "PLAY_INSTALL_YES": "1",
+            "PATH": "/usr/bin:/bin",
+        }
+
+        result = subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh")],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn(str(record), result.stderr)
+        self.assertIn("`rote install play`", result.stderr)
+        self.assertEqual("", result.stdout)
+        self.assert_untouched_harnesses()
+
+    def test_shell_installer_inside_a_rote_release_refuses_without_rote_home(self) -> None:
+        release = self.home / "sandbox-rote" / "play" / "versions" / "0.4.110-0123456789ab"
+        release.mkdir(parents=True)
+        shutil.copy2(ROOT / "install.sh", release / "install.sh")
+        environment = {**self.environment, "PLAY_INSTALL_SOURCE": str(ROOT)}
+        environment.pop("ROTE_HOME")
+
+        result = subprocess.run(
+            ["/bin/sh", str(release / "install.sh")],
+            cwd=self.home,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn(
+            str((self.home / "sandbox-rote").resolve() / "play" / "install.json"),
+            result.stderr,
+        )
+        self.assert_untouched_harnesses()
 
     def test_source_install_detects_and_verifies_every_harness(self) -> None:
         result = self.run_installer("install")
