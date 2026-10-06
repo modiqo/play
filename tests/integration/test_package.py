@@ -13,15 +13,12 @@ class PluginPackageTest(unittest.TestCase):
         self.assertTrue((TARGET / "VERSION").is_file())
         self.assertTrue((TARGET / "install.sh").is_file())
         self.assertTrue((TARGET / "justfile").is_file())
-        self.assertTrue((TARGET / "scripts/harness/install-all").is_file())
-        self.assertTrue((TARGET / "scripts/harness/play-profile").is_file())
         self.assertTrue((TARGET / "scripts/harness/start-harness").is_file())
         self.assertTrue((TARGET / "scripts/lib/play/harnesses.py").is_file())
         self.assertTrue((TARGET / "scripts/lib/play/identity.py").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-activate").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-activate").stat().st_mode & 0o111)
         self.assertTrue((TARGET / "scripts/bin/play").is_file())
         self.assertTrue((TARGET / "scripts/bin/play").stat().st_mode & 0o111)
+        self.assertTrue((TARGET / "scripts/bin/play-setup").stat().st_mode & 0o111)
         self.assertTrue((TARGET / "scripts/bin/play-cheat-sheet").is_file())
         self.assertTrue((TARGET / "scripts/bin/play-cheat-sheet").stat().st_mode & 0o111)
         self.assertTrue((TARGET / "scripts/bin/play-guide").is_file())
@@ -87,7 +84,7 @@ class PluginPackageTest(unittest.TestCase):
         for manifest in manifests:
             self.assertEqual(expected, json.loads(manifest.read_text())["version"])
 
-    def test_claude_plugin_uses_bootstrap_for_rote_convergence(self) -> None:
+    def test_claude_plugin_declares_no_dependencies(self) -> None:
         manifest = json.loads(
             (ROOT / "plugins/play/.claude-plugin/plugin.json").read_text()
         )

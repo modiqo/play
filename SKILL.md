@@ -198,14 +198,12 @@ play-machine run-until-yield --stdin --json <<'PLAY_INPUT'
 PLAY_INPUT
 ```
 
-The installer normally places `play-machine` on `PATH`. If it is unavailable but this loaded skill
-contains executable `scripts/bin/play-machine`, first restore the launcher and activation state:
-when rote manages Play (`${ROTE_HOME:-~/.rote}/play/install.json` exists), run `rote install play`;
-otherwise run bundled `scripts/bin/play-activate`. Then enter the runtime through the bundled
-`scripts/bin/play-machine` for this turn. Do not wait for shell command hashing or a harness restart.
-If activation restoration fails, run bundled
+rote normally places `play-machine` on `PATH`. If it is unavailable but this loaded skill contains
+executable `scripts/bin/play-machine`, first run `rote install play` to restore the launchers and
+harness wiring. Then enter the runtime through the bundled `scripts/bin/play-machine` for this turn.
+Do not wait for shell command hashing or a harness restart. If `rote install play` fails, run bundled
 `scripts/bin/play-preflight --harness <codex|claude|kimi|cursor|hermes|opencode|deepseek|generic> --json`, present its exact
-failed checks and multi-select install targets, report that the Play installation is incomplete,
+failed checks, report that the Play installation is incomplete,
 and stop before normal Play control flow. Do not try `rtk` or `rtk proxy`: `play-machine` is a Python
 entrypoint installed through a small executable launcher, not an RTK subcommand or compiled Python
 artifact. An explicit `$play`, `/play`, or `/skill:play` with no separate task is a complete
@@ -385,35 +383,14 @@ For a user asking about a Play they did not write, `play audit <ref> --author`
 is the work order and `play audit <ref> --report` the note for its author.
 Facts are provable from the package; judgments are advisory and say so.
 
-## Cross-harness bootstrap
+## Install, update, and repair
 
-For an explicit request to install or restore Play across harnesses, first check whether rote
-manages Play (`${ROTE_HOME:-~/.rote}/play/install.json` exists). If it does, run `rote install play`
-and stop: Play's own bootstrap, `install-all`, `play-activate`, and recovery restore refuse to rewire
-a rote-managed installation. Otherwise use the bundled
-`scripts/bin/play-bootstrap` only after the typed runtime returns the task to normal execution.
-Run `plan --json` first, present its multi-select top-K targets and effects, and obtain approval for
-that exact `plan_id`. Then run `apply --plan-id <id>`; add `--approve-remote-installer` only after
-the user separately approves the official Rote installer. Apply first creates an owner-private,
-restorable backup manifest under the Play bootstrap state directory, then fully replaces Play-owned
-plugin, skill, hook, launcher, portable-copy, and activation-profile state while preserving
-unrelated harness settings. Installation requires an authenticated Rote identity. A logged-out
-non-interactive install exits before changing Play-owned state unless it names Google, GitHub, or email as
-the login provider. Re-run interactively when a browser sign-in or harness permission change is
-needed. A successful install prints a tutorial for automatic discovery, non-blocking suggestions,
-silent no-match behavior, explicit Explore commands, and approval before pull or execution.
-Never collect credentials in bootstrap context, backups, or reports.
-
-Treat Play, Rote, and Tulving as independent release cycles under one setup receipt. The plan checks
-Rote's own update channel and refreshes its installed skills after a Rote update. It checks
-Tulving's own update channel and requires separate default-no approval before installation, update,
-or clock initialization. Play replacement remains its own restorable transaction. Never claim that
-Play rollback downgrades Rote or Tulving; report every component's before and after version.
-When the user asks to update Play itself, use `play update`. When rote manages Play it runs
-`rote install play`, which installs the latest Play release without downgrading and rewires every
-harness; it accepts no installer options. Otherwise it downloads the latest official source over
-HTTPS and enters the first installer's planned, backed-up, verified convergence flow. Do not ask an
-already-installed user to paste the curl bootstrap again.
+rote owns Play's installation. For an explicit request to install, restore, or repair Play, run
+`rote install play` only after the typed runtime returns the task to normal execution; it is
+idempotent and restores launchers, skill links, and hooks in every detected harness. When the user
+asks to update Play itself, use `play update`, which runs `rote install play`. Do not ask an
+already-installed user to paste a curl installer again. Play, rote, and Tulving have independent
+release cycles; report each component's version rather than implying one update moves the others.
 
 Use `rote whoami --check` at every Play-owned identity boundary. It refreshes usable authentication and
 returns exit `77` only when login is required. After a verified Google, GitHub, or email login, remember

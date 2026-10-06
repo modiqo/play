@@ -1,8 +1,8 @@
 """Idempotent local setup of Play-owned owner state.
 
-Installers call this after placing Play: it seeds the private routing policy,
-journal settings, and Journey model assets. It never touches launchers, skill
-links, plugins, hooks, authentication, or timers; those belong to the installer.
+`rote install play` calls this after placing Play: it seeds the private routing
+policy, journal settings, and Journey model assets. It never touches launchers,
+skill links, plugins, hooks, authentication, or timers; those belong to rote.
 """
 
 from __future__ import annotations

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -25,11 +24,9 @@ from scripts.lib.play.python_environment import (
     missing_runtime_modules,
     pip_config_index,
     pip_install_command,
-    record_package_index,
     resolve_package_index,
     uv_environment,
     uv_run_command,
-    uv_sync_command,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,17 +53,13 @@ class PackageIndexResolutionTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_defaults_to_pypi_when_nothing_is_configured(self) -> None:
-        index = resolve_package_index(self.root, self.environ)
+        index = resolve_package_index(self.environ)
 
         self.assertEqual(PackageIndex(DEFAULT_INDEX_URL, "default"), index)
         self.assertFalse(index.overrides_default)
         self.assertIn("uv default", index.describe())
 
-    def test_play_override_wins_over_uv_pip_and_recorded_sources(self) -> None:
-        (self.root / ".play-install.json").write_text(
-            json.dumps({"schema": "x", "python_index": {"url": "https://recorded/simple"}}),
-            encoding="utf-8",
-        )
+    def test_play_override_wins_over_uv_and_pip_sources(self) -> None:
         environ = {
             **self.environ,
             INDEX_OVERRIDE_VARIABLE: MIRROR,
@@ -74,22 +67,18 @@ class PackageIndexResolutionTest(unittest.TestCase):
             "PIP_INDEX_URL": "https://pip/simple",
         }
 
-        self.assertEqual(PackageIndex(MIRROR, INDEX_OVERRIDE_VARIABLE), resolve_package_index(self.root, environ))
+        self.assertEqual(PackageIndex(MIRROR, INDEX_OVERRIDE_VARIABLE), resolve_package_index(environ))
         del environ[INDEX_OVERRIDE_VARIABLE]
-        self.assertEqual(PackageIndex("https://uv/simple", "UV_DEFAULT_INDEX"), resolve_package_index(self.root, environ))
+        self.assertEqual(PackageIndex("https://uv/simple", "UV_DEFAULT_INDEX"), resolve_package_index(environ))
         del environ["UV_DEFAULT_INDEX"]
-        recorded = resolve_package_index(self.root, environ)
-        self.assertEqual("https://recorded/simple", recorded.url)
-        self.assertIn(".play-install.json", recorded.source)
-        (self.root / ".play-install.json").unlink()
-        self.assertEqual(PackageIndex("https://pip/simple", "PIP_INDEX_URL"), resolve_package_index(self.root, environ))
+        self.assertEqual(PackageIndex("https://pip/simple", "PIP_INDEX_URL"), resolve_package_index(environ))
 
     def test_pip_configuration_file_index_is_honored(self) -> None:
         config = self.home / ".config" / "pip" / "pip.conf"
         config.parent.mkdir(parents=True)
         config.write_text(f"[global]\nindex-url = {MIRROR}\ntimeout = 60\n", encoding="utf-8")
 
-        index = resolve_package_index(self.root, self.environ)
+        index = resolve_package_index(self.environ)
 
         self.assertEqual(MIRROR, index.url)
         self.assertEqual(str(config), index.source)
@@ -99,10 +88,10 @@ class PackageIndexResolutionTest(unittest.TestCase):
     def test_invalid_override_is_rejected_instead_of_handed_to_uv(self) -> None:
         for value in ("factory.example.com/simple", "https://bad host/simple"):
             with self.subTest(value=value), self.assertRaises(PackageIndexError):
-                resolve_package_index(self.root, {**self.environ, INDEX_OVERRIDE_VARIABLE: value})
+                resolve_package_index({**self.environ, INDEX_OVERRIDE_VARIABLE: value})
 
     def test_blank_override_means_unset(self) -> None:
-        index = resolve_package_index(self.root, {**self.environ, INDEX_OVERRIDE_VARIABLE: "   "})
+        index = resolve_package_index({**self.environ, INDEX_OVERRIDE_VARIABLE: "   "})
 
         self.assertEqual("default", index.source)
 
@@ -127,24 +116,15 @@ class LockAndCommandTest(unittest.TestCase):
     def test_repository_lock_pins_pypi_only(self) -> None:
         self.assertEqual((DEFAULT_INDEX_URL,), lock_indexes(ROOT))
 
-    def test_sync_keeps_locked_only_when_the_lock_and_index_agree(self) -> None:
+    def test_lock_matches_only_its_own_index(self) -> None:
         _lock(self.root, DEFAULT_INDEX_URL, DEFAULT_INDEX_URL)
         default = PackageIndex(DEFAULT_INDEX_URL, "default")
         mirror = PackageIndex(MIRROR, "PIP_INDEX_URL")
 
         self.assertTrue(lock_matches_index(self.root, default))
         self.assertFalse(lock_matches_index(self.root, mirror))
-        self.assertEqual(
-            ["uv", "sync", "--locked", "--no-dev", "--inexact", "--project", str(self.root)],
-            uv_sync_command("uv", self.root, default),
-        )
-        self.assertEqual(
-            ["uv", "sync", "--no-dev", "--inexact", "--project", str(self.root)],
-            uv_sync_command("uv", self.root, mirror),
-        )
         _lock(self.root, MIRROR + "/")
         self.assertTrue(lock_matches_index(self.root, mirror))
-        self.assertIn("--locked", uv_sync_command("uv", self.root, mirror))
 
     def test_missing_lock_never_blocks_the_locked_sync(self) -> None:
         self.assertEqual((), lock_indexes(self.root))
@@ -177,22 +157,6 @@ class LockAndCommandTest(unittest.TestCase):
         self.assertIn("private package index", default)
         self.assertTrue(looks_like_index_failure("error: Failed to fetch: `https://pypi.org/simple/pyyaml/`"))
         self.assertFalse(looks_like_index_failure("Traceback (most recent call last): KeyError"))
-
-    def test_recording_the_index_updates_only_an_existing_marker(self) -> None:
-        mirror = PackageIndex(MIRROR, "PIP_INDEX_URL")
-        self.assertFalse(record_package_index(self.root, mirror))
-        marker = self.root / ".play-install.json"
-        marker.write_text(json.dumps({"schema": "play.portable-install/v1", "version": "0.4.97"}), encoding="utf-8")
-
-        self.assertTrue(record_package_index(self.root, mirror))
-        self.assertFalse(record_package_index(self.root, mirror))
-        payload = json.loads(marker.read_text(encoding="utf-8"))
-        self.assertEqual({"url": MIRROR, "source": "PIP_INDEX_URL"}, payload["python_index"])
-        self.assertEqual("0.4.97", payload["version"])
-        self.assertEqual(MIRROR, resolve_package_index(self.root, {"HOME": str(self.root)}).url)
-
-        self.assertTrue(record_package_index(self.root, PackageIndex(DEFAULT_INDEX_URL, "default")))
-        self.assertNotIn("python_index", json.loads(marker.read_text(encoding="utf-8")))
 
 
 class EnsureRuntimeTest(unittest.TestCase):

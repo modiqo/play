@@ -184,6 +184,5 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # Older installers registered these commands on Stop. Keep the CLI names
-    # valid but inert so updating a source-linked Play is safe before the next
-    # installer convergence removes the stale hook entries.
+    # valid but inert until `rote install play` rewrites the stale hook entries.
     return 0

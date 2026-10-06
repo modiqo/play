@@ -26,11 +26,22 @@ Claude Code.
 
 ### 2. Install on a new machine
 
-On macOS or Linux, run:
+rote installs and owns Play. On macOS or Linux, run:
 
 ```bash
-curl -fsSL https://getrote.dev/playoffs/install.sh | sh
+curl -fsSL https://getrote.dev/install | bash
 ```
+
+This installs rote, which installs Play by default. If rote is already installed, run:
+
+```bash
+rote install play
+```
+
+rote places Play under `${ROTE_HOME:-~/.rote}/play/`, runs `uv sync`, writes the `play`,
+`play-machine`, `play-routing`, and `play-journey` launchers in `~/.local/bin`, links the skill into
+every detected agent app, wires the prompt hooks, registers the Tulving MCP server, and takes over
+installs made by Play's old installer.
 
 After the first install, update with:
 
@@ -38,36 +49,13 @@ After the first install, update with:
 play update
 ```
 
-`play update` retrieves the latest official source over HTTPS. It uses the stable installer's
-verified convergence flow. Before replacement, Play snapshots the current Play-owned state. It
-verifies every selected harness and restores the snapshot if verification fails. You do not need to
-paste the curl command again.
-
-When rote installed Play (`rote install play` writes `${ROTE_HOME:-~/.rote}/play/install.json`),
-rote owns the installation. `play update` then prints `Play is managed by rote. Running: rote
-install play` and hands off to rote, which installs the latest Play release without downgrading it
-and rewires every harness. It accepts no installer options. Play's own installers (`install.sh`,
-`play-bootstrap install|apply`, `install-all install`, `play-activate`) and `play restore` refuse to
-run against a rote-managed install and name `rote install play` instead.
+`play update` runs `rote install play` and passes its arguments through. `rote update` also
+refreshes Play. You do not need to paste the curl command again.
 
 After placing Play, rote runs `scripts/bin/play-setup --json`. It idempotently seeds Play's private
 routing policy, journal settings, and Journey model assets, and prints one
 `play.setup/v1` object: `{"schema":"play.setup/v1","steps":[{"name":…,"status":"created"|"current"|"error","detail":…}]}`.
 It exits 0 when no step errors and never touches launchers, links, plugins, hooks, sign-in, or timers.
-
-That is the whole setup. The installer opens a small terminal wizard: press Enter for a concise
-guided walkthrough, or choose **Review details** to inspect every planned change. Play finds your
-agent apps, checks Rote and its skills, and explains what it will install, update, or refresh. One
-approval covers the displayed setup, including the official Rote installer when Rote is missing.
-On a fresh home directory, it creates personal skill directories only for agent apps it actually
-detects and selects; users never need to pre-create `~/.codex/skills`, `~/.claude/skills`, or another
-harness directory.
-Before changing Play-owned harness state, the wizard verifies the current Rote identity and, when
-needed, asks whether to continue with Google, GitHub, or email. The browser sign-in flow signs in or creates
-the account; the installer then builds and fingerprints the public Play catalog used by **What’s
-New** before activating any harness.
-For Codex and Claude Code, it keeps an already-current Play plugin and refreshes the marketplace
-plus reinstalls only when the installed plugin is missing or stale.
 
 Email sign-in uses a verification code, matching the website. Play opens a local browser form;
 enter the email and code there. The form uses the existing `rote login --otp` interface
@@ -80,24 +68,12 @@ company name and handle, then optionally invite a colleague as a developer or or
 Both steps are optional. Play remembers the choice on this device and resumes the original request.
 Creating an organization does not publish or change the visibility of existing Plays.
 
-The installer opens a checkbox menu with the top three detected apps checked. Use the arrow keys to
-move, Space to toggle an app, or Enter to confirm. Press `a` to select all detected apps.
-
-During execution, `›` marks the current operation, `✓` marks completion, and `✗` marks failure.
-The current line changes only when an operation starts or finishes, which avoids terminal redraw
-flicker. Independent app work runs in groups of three.
-
-A warm install with current Rote skills and Play plugins has a tested budget below five seconds.
-First-time downloads and available updates depend on network and provider CLI latency.
-
-When it finishes, Play verifies the setup and tells you where it saved the report. Restart your
-agent app, then continue to step 3. The installer requires Python 3.10+ and
-[`uv`](https://docs.astral.sh/uv/); advanced options are in the
+When it finishes, restart your agent app, then continue to step 3. Play requires Python 3.10+ and
+[`uv`](https://docs.astral.sh/uv/); more options are in the
 [installation reference](#installation-reference).
 
 Native Windows is not supported yet. On Windows, run Play inside WSL2; Linux and macOS are
-supported directly. The installer exits before making changes when it detects a native Windows
-shell.
+supported directly.
 
 ### 3. Say hello
 
@@ -191,12 +167,10 @@ prototyping” or “always offer Plays for deploy chores.”
 ## Safety and privacy at a glance
 
 - Nothing runs merely because search found a match.
-- Setup has one explicit approval; later, every exact Play run keeps its own approval boundary.
+- Every exact Play run keeps its own approval boundary.
 - Credentials stay in Rote’s local stores; Play reports credential names, never secret values.
 - Play fails closed when a version, receipt, declared effect, or publication check does not match.
 - Owner-private state lives under `~/.rote-play/`; Rote’s execution state remains under `~/.rote/`.
-- The cross-harness bootstrap preserves unrelated hooks and creates backups before changing
-  supported hook files.
 
 ## Common commands
 
@@ -218,8 +192,8 @@ play-routing --project . list               # Inspect this repository's direct r
 
 That is enough for everyday use. Jump to the section that matches what you need next:
 
-- [Installation reference](#installation-reference)—marketplaces, source checkouts, updates, and
-  multi-harness bootstrap.
+- [Installation reference](#installation-reference)—install, update, repair, marketplaces, and
+  source checkouts.
 - [Everyday Play commands](#everyday-play-commands)—searching, running, saving, the inbox, and birth
   certificates.
 - [Journey viewer guide](docs/journey-viewer.md)—follow live or recorded agent traces, read the
@@ -529,90 +503,53 @@ guarantees.
 
 ## Installation reference
 
-### Install Play everywhere
+### Install, update, and repair
 
-Play supports macOS, Linux, and WSL2. The installer rejects native Windows shells before it
-downloads or changes anything.
-
-Use the same command on a new machine or to bring an existing installation up to date:
+Play supports macOS, Linux, and WSL2. rote installs and owns Play under
+`${ROTE_HOME:-~/.rote}/play/` (`versions/`, `current`, and `install.json`). On a new machine:
 
 ```bash
-curl -fsSL https://getrote.dev/playoffs/install.sh | sh
+curl -fsSL https://getrote.dev/install | bash
 ```
 
-The wizard offers two views of the same safe plan:
+With rote already installed:
 
-- **Guided setup** is the default: a short summary of Rote, the selected apps, and the three setup
-  phases.
-- **Review details** shows detected apps, Rote status, skill changes, hooks, and every planned action.
+```bash
+rote install play            # newer of rote's pinned version and the latest release
+rote install play --pinned   # exactly rote's pinned version
+```
 
-Nothing changes until you approve the selected view. The plan includes:
+Both accept `--yes` and `--json`. `rote install play` downloads the release, runs `uv sync`, writes
+the `play`, `play-machine`, `play-routing`, and `play-journey` launchers in `~/.local/bin`, links the
+skill into every detected harness, wires the prompt hooks, runs `scripts/bin/play-setup --json`,
+registers the Tulving MCP server, writes the Grok Bot pointer, and takes over installs made by Play's
+old installer.
 
-- the detected Codex, Claude Code, Kimi, Cursor, Hermes, OpenCode, and DeepSeek Harness installations;
-- whether Rote is missing, current, or has an update available;
-- whether Rote skills need to be installed or refreshed in each selected app;
-- the Play installations and hooks it will configure.
+To update, run `play update`; it runs `rote install play` and passes its arguments through.
+`rote update` also refreshes Play. To repair a damaged install, rerun `rote install play`: it is
+idempotent and restores launchers, skill links, and hooks.
 
-The plan names one of four convergence modes before approval:
+The repository's `install.sh` is a thin shim. It installs rote when missing, runs `rote update` when
+the installed rote cannot install Play yet, and then runs `rote install play` with its arguments.
 
-| Mode | Existing state | Installer behavior |
-|---|---|---|
-| `FRESH` | No Play-owned install state | Installs the selected version |
-| `VERIFY` | Same version and complete managed state | Keeps byte-current files in place and verifies them |
-| `UPDATE` | A different version is installed | Snapshots the old version, updates, and rolls back on failed verification |
-| `REPAIR` | Managed files or metadata are missing | Snapshots the damaged state, restores missing parts, and verifies the repair |
+`play-setup` also creates owner-private journal settings with sparse exploration pulses and daily
+recall logging enabled. The defaults are five new workspace steps, at most one pulse every two
+minutes, and 30 days of recall history. Existing explicit journal choices survive reinstall.
 
-Planning checks both independent release channels. It runs `rote self-update --check` and
-`tulving update --check`, then shows each receipt before approval. A Rote update follows the main
-approval. A Tulving update remains optional and requires separate approval.
-
-After approval, Play verifies each selected app. It saves JSON and Markdown reports under
-`~/.local/state/play-bootstrap/runs/`.
-
-The final card gives each app's launch command, Play prefix, remaining action, and starter prompts.
-The JSON report keeps complete command output. The terminal keeps its summaries short unless you
-pass `--json`.
-
-In a terminal, one stable `›` line shows active work. It changes only at operation boundaries.
-`✓` means completed, and `✗` means failed. The final card includes one contextual pro tip.
-Redirected output gets one start and one finish record per phase without rotating copy or repeated
-elapsed-time heartbeats.
-
-Before overwriting Play-owned state, every approved install writes an owner-private recovery point
-under `~/.local/state/play-bootstrap/backups/<run-id>/`. When prior Play state was present, the final
-status card prints the exact dossier-driven restore command. A completed, verified install retains
-the newest 10 recovery points and prunes older valid snapshots; failed installs never prune the last
-known recovery set. Shared harness configuration is restored by Play ownership, so unrelated hooks
-and plugin entries added after the snapshot remain intact.
-
-Install also creates owner-private journal settings with sparse exploration pulses and daily recall
-logging enabled. The defaults are five new workspace steps, at most one pulse every two minutes,
-and 30 days of recall history. Existing explicit journal choices survive reinstall.
-
-Identity is an early setup gate. Before creating a backup or changing managed files, Play runs
-`rote whoami --check`. If that check finds no identity, a browser-capable terminal offers Google,
-GitHub, and email codes. Each method can create a new account.
+Play runs `rote whoami --check` at every identity boundary. If that check finds no identity, a
+browser-capable terminal offers Google, GitHub, and email codes. Each method can create a new
+account.
 
 Rote first refreshes and persists any usable authentication. Exit `77` means login is required, not
 that a network request should be retried.
 
 After a verified login, Play stores only the provider name (`google`, `github`, or `email`) in owner-private
 state. A later expired login automatically reopens that provider and verifies the result before
-search or setup continues. Play asks when the provider is unknown. Transport failures never trigger
+search continues. Play asks when the provider is unknown. Transport failures never trigger
 an OAuth flow.
 
-On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, setup recommends **Sign in from another machine**.
-It installs Rote when needed, prints the provision-and-claim steps, and pauses without changing
-Play-owned harness state. Set `PLAY_BROWSER_MODE=headed` or `headless` to override detection.
-
-A non-interactive browser-capable install needs an authenticated profile or
-`PLAY_LOGIN_PROVIDER=google|github|email`. A non-interactive headless install pauses for remote-machine
-authentication instead of starting an unreachable OAuth callback.
-
 If registry access fails, check sandbox access, harness permissions, proxies, and firewalls before
-running Play. Later, use the harness identity lane if credentials expire. Managed activation also
-restores a launcher if its recorded Play source no longer exists. It will not take over a different
-source that is still present.
+running Play. Later, use the harness identity lane if credentials expire.
 
 ### Authenticate Play on a headless machine
 
@@ -631,9 +568,8 @@ rote claim '<dxp_...>'
 rote whoami
 ```
 
-Rerun the Play installer without `PLAY_LOGIN_PROVIDER`. The claim token expires after 30 minutes by
-default and contains a refresh token. Treat it as a password; never paste it into chat, logs, or a
-Docker image layer.
+The claim token expires after 30 minutes by default and contains a refresh token. Treat it as a
+password; never paste it into chat, logs, or a Docker image layer.
 
 Play prefixes differ by app:
 
@@ -647,9 +583,7 @@ Play prefixes differ by app:
 | OpenCode | `opencode` | `/play` (installed as a managed command bridge) |
 | DeepSeek Harness (developer preview) | `dsh web` | `/play` |
 
-A successful guided install prints a short tutorial. It explains automatic search, quiet
-suggestions, silent no-match behavior, explicit Explore, and approval before pull or execution.
-Browse available Plays from either supported interactive CLI:
+After installation, browse available Plays from either supported interactive CLI:
 
 ```bash
 codex "\$play what's new"
@@ -658,19 +592,7 @@ claude "/play what's new"
 
 These launch a new harness conversation with the discovery request already entered.
 
-### Choose which apps receive Play
-
-The interactive checklist recommends the top three detected apps but allows any detected
-combination. To choose explicitly:
-
-```bash
-curl -fsSL https://getrote.dev/playoffs/install.sh \
-  | sh -s -- --harness codex --harness claude
-```
-
-Repeat `--harness` with any combination of `codex`, `claude`, `kimi`, `cursor`, `hermes`,
-`opencode`, or `deepseek`. Play processes independent app work in groups of three. DeepSeek Harness
-is still a developer preview upstream.
+DeepSeek Harness is still a developer preview upstream.
 
 ### How harness integrations are shaped
 
@@ -684,143 +606,42 @@ skill availability, so `~/.agents/skills` alone does not make an absent app appe
 | Hermes Agent | `hermes`, `~/.hermes/skills` | `/play` | Managed skill link |
 | OpenCode | `opencode`, `~/.config/opencode/skills`, `~/.agents/skills` | `/play` | Managed skill link plus global command bridge |
 
-Adding another harness means defining its command, app-owned home, skill roots, and Rote target.
-The same spec defines its Play prefix, delivery, hook style, and prompt surface. Installer code
-consumes those capabilities instead of adding parallel constants.
-
-### Run unattended
-
-The simple command above is the only command people need. CI has no controlling terminal, so
-automation must record the displayed Play plan approval. If Rote may be missing, it must also
-approve the official installer.
-
-A first-time unattended installation on a browser-capable machine must select the OAuth provider
-explicitly. A headless machine should claim an identity first. Otherwise, setup pauses with the
-remote-machine instructions above.
-
-```bash
-curl -fsSL https://getrote.dev/playoffs/install.sh \
-  | env PLAY_INSTALL_YES=1 PLAY_APPROVE_REMOTE_INSTALLER=1 \
-      PLAY_LOGIN_PROVIDER=github sh
-```
-
-Omit `PLAY_APPROVE_REMOTE_INSTALLER=1` when Rote is known to be installed, and omit
-`PLAY_LOGIN_PROVIDER` when that profile is already authenticated. Set `PLAY_INSTALL_TOP_K=<n>` from
-1 through 3 to change the default number of selected apps.
+Play's harness spec (`scripts/lib/play/harnesses.py`) defines each app's command, app-owned home,
+skill roots, Play prefix, and prompt surface for runtime handoffs and preflight; rote owns the
+install wiring.
 
 ### Private package index
 
 Play's `uv.lock` pins its Python packages to pypi.org. On a network that enforces a private
-package index, the installer and every launcher resolve that index before the first download,
-in this order: `PLAY_PYTHON_INDEX_URL`, uv's `UV_DEFAULT_INDEX` or `UV_INDEX_URL`, the index
-recorded by a previous install, `PIP_INDEX_URL`, then the `index-url` in pip's configuration
-files. A resolved index replaces the pypi.org pin: the sync drops `--locked`, re-resolves the
-pinned version ranges against that index, and records it in the portable copy so harness hook
-processes with a stripped environment reuse it.
-
-```bash
-curl -fsSL https://getrote.dev/playoffs/install.sh \
-  | env PLAY_PYTHON_INDEX_URL=https://packages.example.com/simple sh
-```
+package index, every launcher resolves that index before the first download, in this order:
+`PLAY_PYTHON_INDEX_URL`, uv's `UV_DEFAULT_INDEX` or `UV_INDEX_URL`, `PIP_INDEX_URL`, then the
+`index-url` in pip's configuration files. A resolved index replaces the pypi.org pin, and uv
+re-resolves the pinned version ranges against that index.
 
 When a download still fails, the launcher names the index it used and prints the exact
 `python3 -m pip install ...` line that installs the pinned packages without uv. Run
 `play-preflight --json` to see the resolved index and whether `uv.lock` agrees with it before
 the first launch.
 
-### Full Play + Rote bootstrap
-
-From a checkout, run the same guided bootstrap directly:
-
-```bash
-scripts/bin/play-bootstrap install --top-k 3
-```
-
-To separate review from execution, first create a read-only plan:
-
-```bash
-scripts/bin/play-bootstrap plan --top-k 3
-scripts/bin/play-bootstrap plan --top-k 3 --json
-```
-
-Then apply its exact ID:
-
-```bash
-scripts/bin/play-bootstrap apply --top-k 3 --plan-id sha256:<plan-id>
-```
-
-List and inspect retained recovery points without changing the machine:
-
-```bash
-scripts/bin/play-bootstrap backup list
-scripts/bin/play-bootstrap backup list --json
-scripts/bin/play-bootstrap backup show <run-id>
-scripts/bin/play-bootstrap backup show <run-id> --json
-```
-
-Build an immutable restore plan from the install dossier printed by setup, then apply it
-interactively or non-interactively:
-
-```bash
-scripts/bin/play-bootstrap restore --dossier ~/.local/state/play-bootstrap/runs/<run-id>.json --plan
-scripts/bin/play-bootstrap restore --dossier ~/.local/state/play-bootstrap/runs/<run-id>.json
-scripts/bin/play-bootstrap restore --dossier ~/.local/state/play-bootstrap/runs/<run-id>.json --yes
-scripts/bin/play-bootstrap restore --backup <run-id> --plan
-scripts/bin/play-bootstrap restore --backup <run-id> --yes
-```
-
-Restore first snapshots the current Play-owned state, applies the selected recovery point, verifies
-the restored files and Play-owned shared-config entries, and writes a restore dossier. If applying
-the snapshot fails, it rolls back from that safety snapshot before returning an error. Restart each
-restored running harness afterward.
-
-Add `--approve-remote-installer` only after approving the official Rote download. The bootstrap is
-safe to retry: it updates Rote only when an update is available and installs or refreshes the
-selected Rote skill providers. Every approved install is a verified Play convergence boundary:
-Codex and Claude plugins are reused when their version and payload bytes match, and refreshed or
-reinstalled only when missing or stale. Portable Play state is converged, and the canonical hooks
-are replaced in every selected managed-hook harness. Plugin convergence, hook convergence, and
-per-app preflight verification are parallelized. It preserves unrelated hooks and backs up every
-hook file it changes. An
-explicitly disabled Codex Play skill remains a user choice: the report asks you to enable it in
-`/skills` before restarting. Reports never contain credentials.
-
-### Pin or inspect the installer
-
-Pin both the script and downloaded archive to the same release tag (replace `vX.Y.Z`):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/modiqo/play/vX.Y.Z/install.sh \
-  | env PLAY_INSTALL_REF=vX.Y.Z sh
-```
-
-To inspect the small bootstrap before running it:
-
-```bash
-curl -fsSLo /tmp/install-play.sh \
-  https://raw.githubusercontent.com/modiqo/play/main/install.sh
-less /tmp/install-play.sh
-sh /tmp/install-play.sh
-```
-
 ### Install from a checkout
 
 ```bash
-just package
-just plan
 just install
-just verify-profile
 ```
 
-`just install` links the checkout, so edits become live after a harness restart. `just install-copy`
-exercises the durable-copy path used by the curl installer.
+This runs `rote install play --from .`. rote skips the download, points `current` at the absolute
+checkout path so edits are live without reinstalling, and runs `uv sync` in the checkout's `.venv`.
+The install is recorded with update policy `local`, so `rote update` and its background check never
+touch it. A later `rote install play` without `--from` leaves local mode and installs the normal
+release, even if it is older than the checkout's `VERSION`. `--from` and `--pinned` conflict.
+Restart a running harness to reload an edited skill.
 
 ## Install from a marketplace
 
-Play is packaged as one self-contained plugin under `plugins/play`. The package includes the skill,
-controller references, Python runtime, harness activation tools, and `justfile` commands that
-configure and verify explicit Play use. `scripts/bin/package-plugin --check` prevents those
-installed files from drifting from this repository's source of truth.
+Play is packaged as one self-contained plugin under `plugins/play`. The plugin only places the skill
+files; launchers, hooks, and the rest of the runtime wiring come from `rote install play`.
+`scripts/bin/package-plugin --check` prevents the packaged files from drifting from this
+repository's source of truth.
 
 The Rote skill provider is a prerequisite so Play can hand missing local installation to the
 guided `rote-setup` specialist:
@@ -837,13 +658,13 @@ claude plugin install rote-onboard@rote-skills
 
 After Play is installed, the `play-machine` launcher is on `PATH`; harnesses invoke it directly
 without locating the skill directory or its Python environment. `play-machine` is a Python
-entrypoint, not a compiled artifact: the installer writes a small executable launcher that uses the
-pinned environment (bootstrapping through `uv` when needed). The preflight distinguishes a missing
+entrypoint, not a compiled artifact: rote writes a small executable launcher that uses the
+pinned environment. The preflight distinguishes a missing
 launcher, an incomplete bundled runtime, an unavailable Python environment bootstrap (`uv` or an
 already active pinned environment, including the package index uv will download from and whether
 `uv.lock` agrees with it), a missing Rote CLI, missing Rote skills in the active harness,
-authentication, and `rote play` capability; it also reports cross-harness coverage and
-multi-select restoration targets. An empty `$play` or `/play` probes
+authentication, and `rote play` capability; it also reports cross-harness coverage. Its repair
+hints always say `rote install play`. An empty `$play` or `/play` probes
 the local binary and identity. If either
 is missing, Play handles the exact gap. A missing binary invokes `rote-setup`, which asks before
 downloaded installer code or optional onboarding. An installed but signed-out Rote shows only the
@@ -858,13 +679,11 @@ run the preflight. Ordinary conversation and repository work do not load Play or
 and capability probe.
 Public Play URIs can still show their read-only public card before the CLI exists.
 
-If a harness did not complete activation, `$play` runs the bundled `scripts/bin/play-activate`.
-Play continues through the bundled runtime in the same turn. This works
-before Rote skills are present. Running `just install` converges Rote skills discovered in Codex or
-Claude plugin caches. In Codex, an explicitly disabled Play skill remains a user preference: open
-`/skills`, enable Play, and restart the session.
+If `play-machine` is missing, `$play` runs `rote install play` to restore the launchers and wiring,
+then continues through the bundled runtime in the same turn. In Codex, an explicitly disabled Play
+skill remains a user preference: open `/skills`, enable Play, and restart the session.
 
-Install Play from its public marketplace after Rote setup:
+Install the Play plugin from its public marketplace, then run `rote install play` for the runtime:
 
 ```bash
 codex plugin marketplace add modiqo/play
@@ -886,63 +705,25 @@ claude plugin install play@play-skills
 ```
 
 The public marketplace source is `modiqo/play`, so `.` can be replaced with that GitHub
-`owner/repository` from outside this checkout. The guided installer converges the separately trusted
-Rote skill distribution before inspecting Play. It reuses a healthy installation only when its
-version and byte-level plugin payload both match; otherwise it refreshes the marketplace and
-reinstalls. The owner-editable model configuration is preserved, the large model catalog is copied
-only when its content changes, and a complete inbox cache younger than six hours is reused.
-Every harness still uses the same runtime preflight because plugin metadata alone cannot prove CLI
-installation or login state.
+`owner/repository` from outside this checkout. Every harness still uses the same runtime preflight
+because plugin metadata alone cannot prove CLI installation or login state.
 
 ### Skill-directory harnesses
 
-Kimi, Hermes, OpenCode, and DeepSeek Harness have no Play plugin marketplace. The installer uses
-their native personal skill roots (and shared `~/.config/agents/skills` or `~/.agents/skills` where supported), then installs
-the invocation surface each app expects. For OpenCode, that includes a managed global `/play`
-command because its standard skill surface is tool-driven rather than a direct slash command.
-Install Play for them from this checkout with:
-
-```bash
-just plan
-just install
-```
-
-`install` discovers every supported local harness and every skills root containing Rote skills —
-including `~/.agents/skills` — links this Play skill into each, and applies the activation metadata in
-[`agents/openai.yaml`](agents/openai.yaml) (`allow_implicit_invocation: false`). Play and Rote stay
-explicit-only until the user invokes Play. On Claude Code the profile never writes
-`disable-model-invocation` into a Rote skill: that flag blocks every model-initiated call, including
-the specialist hand-off an explicitly invoked Play makes through the Skill tool. Play's standby rule
-keeps Rote quiet outside a Play interaction instead. Play's
-structured prompts map to Kimi's `askquestion` control
-(`scripts/bin/play-question <prompt> --harness kimi`), and `just harness kimi` /
+Kimi, Hermes, OpenCode, and DeepSeek Harness have no Play plugin marketplace. `rote install play`
+links the skill into their native personal skill roots (and shared `~/.config/agents/skills` or
+`~/.agents/skills` where supported), then installs the invocation surface each app expects. For
+OpenCode, that includes a managed global `/play` command because its standard skill surface is
+tool-driven rather than a direct slash command. Play's structured prompts map to Kimi's
+`askquestion` control (`scripts/bin/play-question <prompt> --harness kimi`), and `just harness kimi` /
 `just smoke kimi` start and smoke-test the harness like Codex and Claude Code.
 
-Restart the harness after plugin installation. On first use, Play runs the bundled preflight.
-Preview and apply the explicit-only activation profile from the installed skill directory:
-
-```bash
-just plan
-just install
-just verify-profile
-```
-
-In marketplace mode this profile does not create a second Play link. It snapshots and updates the
-activation metadata of discovered Rote skills so ordinary prompts cannot load them.
-Uninstall restores those exact snapshots and fails closed if a managed file was subsequently
-changed.
+Restart the harness after installation. On first use, Play runs the bundled preflight.
 
 ## Update an installed Play plugin
 
-After a new Play release is pushed, rerun the stable installer. It refreshes the marketplace,
-reinstalls only when the installed version or payload is stale, verifies the replacement, and
-automatically restores the pre-update snapshot on failure:
-
-```bash
-curl -fsSL https://getrote.dev/playoffs/install.sh | sh
-```
-
-The equivalent manual marketplace commands are below.
+Run `play update` (or `rote install play`) to update the runtime, launchers, skill links, and hooks.
+To refresh a marketplace plugin manually:
 
 For Codex:
 
@@ -961,69 +742,9 @@ claude plugin install play@play-skills --scope user
 ```
 
 Restart the harness and start a new conversation after updating so it loads the refreshed skill.
-Run the following from the new Play skill directory to converge its activation metadata:
-
-```bash
-just install
-just verify-profile
-```
-
-Skill-directory harnesses have no Play plugin cache to upgrade; rerun the installer to refresh
-their personal skill links and integrations. If you use a cloned source
-checkout instead of the GitHub marketplace — or need to refresh those AGENTS.md roots — update from
-the repository root with:
-
-```bash
-git pull --ff-only
-just package
-just update
-```
-
-Then restart the harness and begin a new conversation. `just package` refreshes the marketplace
-payload. `just update` safely reapplies and verifies the source-linked explicit-only profile.
-
-## Enable from a source checkout
-
-Preview every harness root and canonical rote skill that will change:
-
-```bash
-just plan
-```
-
-Activate the explicit-only profile and verify it:
-
-```bash
-just install
-just verify-profile
-```
-
-After editing the source skill, confirm that every source-linked installation is still valid:
-
-```bash
-just update
-```
-
-The links make source edits live immediately; a running harness must still be restarted to reload
-the revised skill.
-
-`install` detects Codex, Claude Code, Kimi, Cursor, Hermes, OpenCode, and DeepSeek Harness. It
-discovers their skill roots containing `rote` or `rote-*`. It links this Play skill into each root.
-It also keeps every Rote skill explicit-only for Codex and strips any `disable-model-invocation`
-line so Play can still hand off to Rote on Claude Code. It snapshots the original Rote activation
-files so the change is reversible. Restart running harnesses after enabling the profile.
-
-It is also the convergence command after `rote harness setup`, a plugin refresh, or a newly added
-harness. If Rote replaced managed skill files, `just install` preserves those refreshed files as the
-new uninstall baseline and reapplies only Play's activation metadata. It adds new roots/skills and
-retires removed ones without restoring stale backups. A changed or conflicting Play link still
-fails closed.
-
-Inspect the active profile at any time:
-
-```bash
-just status
-just status-roots
-```
+Skill-directory harnesses have no Play plugin cache to upgrade; `play update` refreshes their skill
+links. For a source checkout installed with `just install`, `git pull --ff-only` is enough: the
+checkout is live. Run `just package` to refresh the marketplace payload.
 
 ## Start and test a fresh harness
 
@@ -1303,8 +1024,8 @@ The discovery hook does not read this policy. Ordinary requests already bypass P
 because both skills are explicit-only. Policies cannot contain command templates, arguments,
 endpoints, or credentials.
 
-Global install creates an empty owner-private policy at `~/.rote-play/routing.yaml`; it deliberately
-does not modify whichever repository happened to launch the installer. Manage that user policy or
+Setup creates an empty owner-private policy at `~/.rote-play/routing.yaml`; it never modifies a
+project repository. Manage that user policy or
 an explicit project policy with the bundled Python CLI:
 
 ```bash
@@ -1338,28 +1059,15 @@ Git worktree augments the user policy.
 All harnesses use the same published search results and current registry authorization. Discovery
 does not read Play preferences, journals, exploration state, or local Play files. A locally saved
 Play becomes searchable only after publication.
-Cache lifecycle: setup synchronously builds a complete, canonically ordered catalog after identity
-verification and records both its stable SHA-256 fingerprint and its authorized-organization
-fingerprint in the bootstrap receipt. **What’s New** therefore has a zero-network first read when
-the user invokes it. Explicit inbox and digest commands refresh a stale cache and retain the last
+Cache lifecycle: the inbox cache is a complete, canonically ordered catalog with a stable SHA-256
+fingerprint and an authorized-organization fingerprint. Explicit inbox and digest commands refresh a
+stale cache and retain the last
 verified snapshot if the registry is unavailable. The discovery hook uses the Worker and never falls back to this cache.
 The cache stores exact references, release metadata, labels, tags, and each entry's tier.
 
-Recurring work is optional. Guided setup treats Play, Rote, and
-[Tulving](https://github.com/modiqo/tulving) as independent release cycles under one receipt.
-Play checks Tulving's native update channel and asks separately before changing it.
-
-With permission, setup runs `tulving update` when an installed version has an update.
-When Tulving is absent, setup uses Homebrew or Tulving's official installer.
-Setup runs `tulving init` only when the clock is not ready.
-
-Declining preserves an existing Tulving installation. Recurring Plays remain off when Tulving is
-absent or its clock is not ready. Unattended setup changes Tulving only when
-`PLAY_INSTALL_TULVING=1` or `--enable-tulving` is explicit.
-
-The setup receipt lists Play, Rote, and Tulving versions before and after the run. Play's recovery
-point covers Play-owned state. It does not downgrade Rote or Tulving after their own successful
-updates.
+Recurring work is optional. Play, Rote, and [Tulving](https://github.com/modiqo/tulving) have
+independent release cycles; updating Play never downgrades Rote or Tulving. Recurring Plays remain
+off when Tulving is absent or its clock is not ready.
 
 Play ends a completed run after it presents the complete result and verified receipt. This order
 applies to first pulls, replacements, and already-local Plays. A passive line explains how to ask
@@ -1548,19 +1256,6 @@ Cursor, or Kimi activity chrome. Hosts without a custom React surface continue t
 milestone-only text updates. The adapter depends on `thinking-orbs` 0.2.0 from Jakub Antalik under
 the MIT license; no upstream source is copied into this repository.
 
-## Disable
-
-Remove Play from every managed harness root and restore the exact original rote activation files:
-
-```bash
-just uninstall
-just status
-```
-
-Restart running harnesses after disabling the profile. Uninstall fails closed if a managed Play
-link was replaced or a rote activation file changed after installation; it will not overwrite the
-newer content silently.
-
 ## Development checks
 
 ```bash
@@ -1573,9 +1268,7 @@ just benchmark-controller
 just benchmark-runtime
 ```
 
-The tests exercise the declarative Play machine and the complete activation lifecycle in temporary
-harness roots, including installation, verification, idempotency, rollback, conflict handling,
-parallel three-harness convergence, progress rendering, and the sub-five-second warm-install budget.
+The tests exercise the declarative Play machine.
 Journey tests additionally cover strict schema validation, privacy-bounded normalization,
 failure/recovery semantics, bounded compaction, incremental JSON ingestion, constant-time idle
 fingerprinting, worker isolation, and zero foreground subprocesses.
@@ -1588,9 +1281,3 @@ machine-validation logic lives in `scripts/lib/play/`. Journal tests also valida
 command log against its published Draft 2020-12 schema. References and tests are
 grouped by controller, awareness, Explore, publication, integration, and harness use case.
 
-For isolated testing, override the discovered roots or reversible state location:
-
-```bash
-PLAY_HARNESS_ROOTS=/path/one:/path/two just install
-PLAY_PROFILE_STATE=/tmp/play-profile.json just install
-```

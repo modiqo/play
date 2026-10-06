@@ -12,11 +12,11 @@ This is a transport pointer. The canonical Play recipe, runtime, Rote identity, 
 For every `/play` or `play ...` request:
 
 1. Use the user's registered computer, not the hosted Grok Bot machine.
-2. On that computer, read the canonical Play recipe completely before continuing: `${ROTE_HOME:-$HOME/.rote}/play/current/SKILL.md` when it exists (rote-managed install); otherwise the legacy `$HOME/.local/share/modiqo/play/skill/SKILL.md`.
+2. On that computer, read the canonical Play recipe `${ROTE_HOME:-$HOME/.rote}/play/current/SKILL.md` completely before continuing.
 3. Follow that canonical recipe for the request.
 4. Run `$HOME/.local/bin/play-machine` and bundled Play scripts on the registered computer. When a helper requires a harness identifier, pass `--harness cursor` until Play defines a native Grok harness identifier.
 
-If the registered computer is unavailable, or the canonical recipe or launcher is missing there, stop and explain the missing prerequisite. Never run a substitute Play runtime in the hosted agent box.
+If the registered computer is unavailable, or the canonical recipe or launcher is missing there, stop and explain the missing prerequisite: run `rote install play` on that computer. Never run a substitute Play runtime in the hosted agent box.
 
 ## Isolation
 

@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts.lib.play.cli import FIELD_GUIDE, main
-from scripts.lib.play.rote_ownership import rote_managed_play
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,7 +31,7 @@ class PlayCliTest(unittest.TestCase):
             "RECALL & REFERENCE",
             "RECURRING PLAYS · OPTIONAL TULVING",
             "ROUTING",
-            "RECOVERY & DIAGNOSTICS",
+            "UPDATE & DIAGNOSTICS",
         ):
             self.assertIn(heading, result.stdout)
         self.assertIn("$play explore <outcome>", result.stdout)
@@ -209,59 +208,24 @@ class PlayCliTest(unittest.TestCase):
         self.assertEqual(1, result)
         self.assertEqual([], calls)
 
-    def test_update_executes_the_bundled_verified_installer(self) -> None:
-        calls: list[tuple[str, list[str]]] = []
-
-        with tempfile.TemporaryDirectory() as home, patch.dict(
-            os.environ, {"HOME": home, "ROTE_HOME": str(Path(home) / "rote")}
-        ):
-            result = main(
-                ["update", "--harness", "codex"],
-                executor=lambda executable, arguments: calls.append(
-                    (executable, arguments)
-                ),
-            )
-
-        self.assertEqual(0, result)
-        self.assertEqual(
-            [
-                (
-                    "/bin/sh",
-                    ["/bin/sh", str(ROOT / "install.sh"), "--harness", "codex"],
-                )
-            ],
-            calls,
-        )
-
-    def _rote_home_with_play_record(self, base: Path) -> Path:
-        rote_home = base / "rote-home"
-        (rote_home / "play").mkdir(parents=True)
-        (rote_home / "play" / "install.json").write_text("{}", encoding="utf-8")
-        return rote_home
-
     def _fake_rote(self, base: Path) -> Path:
         bin_dir = base / "bin"
         bin_dir.mkdir()
         rote = bin_dir / "rote"
-        rote.write_text(
-            "#!/bin/sh\nprintf 'rote %s ROTE_HOME=%s\\n' \"$*\" \"${ROTE_HOME:-}\"\n",
-            encoding="utf-8",
-        )
+        rote.write_text("#!/bin/sh\nprintf 'rote %s\\n' \"$*\"\n", encoding="utf-8")
         rote.chmod(0o755)
         return bin_dir
 
-    def test_update_hands_a_rote_managed_install_to_rote(self) -> None:
+    def test_update_runs_rote_install_play_with_its_options(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
-            rote_home = self._rote_home_with_play_record(base)
             bin_dir = self._fake_rote(base)
             result = subprocess.run(
-                [str(SCRIPT), "update"],
+                [str(SCRIPT), "update", "--pinned"],
                 cwd=ROOT,
                 env={
                     **os.environ,
                     "HOME": str(base),
-                    "ROTE_HOME": str(rote_home),
                     "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
                 },
                 text=True,
@@ -270,86 +234,25 @@ class PlayCliTest(unittest.TestCase):
             )
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("Play is managed by rote. Running: rote install play", result.stderr)
-        self.assertEqual(f"rote install play ROTE_HOME={rote_home}\n", result.stdout)
+        self.assertIn("Running: rote install play --pinned", result.stderr)
+        self.assertEqual("rote install play --pinned\n", result.stdout)
 
-    def test_update_honors_nonempty_rote_home_over_the_default_home(self) -> None:
+    def test_update_without_rote_on_path_names_the_rote_installer(self) -> None:
         calls: list[tuple[str, list[str]]] = []
-        with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary)
-            default_record = base / ".rote" / "play" / "install.json"
-            default_record.parent.mkdir(parents=True)
-            default_record.write_text("{}", encoding="utf-8")
-            with patch.dict(
-                os.environ, {"HOME": str(base), "ROTE_HOME": str(base / "elsewhere")}
-            ):
-                result = main(
-                    ["update"],
-                    executor=lambda executable, arguments: calls.append(
-                        (executable, arguments)
-                    ),
-                )
-
-        self.assertEqual(0, result)
-        self.assertEqual("/bin/sh", calls[0][0])
-
-    def test_update_without_rote_on_path_names_the_record_and_command(self) -> None:
-        calls: list[tuple[str, list[str]]] = []
-        with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary)
-            rote_home = self._rote_home_with_play_record(base)
-            with patch.dict(
-                os.environ,
-                {"HOME": str(base), "ROTE_HOME": str(rote_home), "PATH": str(base)},
-            ), patch("sys.stderr") as stderr:
-                result = main(
-                    ["update"],
-                    executor=lambda executable, arguments: calls.append(
-                        (executable, arguments)
-                    ),
-                )
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ, {"HOME": temporary, "PATH": temporary}
+        ), patch("sys.stderr") as stderr:
+            result = main(
+                ["update"],
+                executor=lambda executable, arguments: calls.append(
+                    (executable, arguments)
+                ),
+            )
             message = "".join(call.args[0] for call in stderr.write.call_args_list)
 
         self.assertEqual(1, result)
         self.assertEqual([], calls)
-        self.assertIn(str(rote_home / "play" / "install.json"), message)
-        self.assertIn("rote install play", message)
-
-    def test_update_rejects_legacy_installer_options_when_rote_manages_play(self) -> None:
-        calls: list[tuple[str, list[str]]] = []
-        with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary)
-            rote_home = self._rote_home_with_play_record(base)
-            bin_dir = self._fake_rote(base)
-            with patch.dict(
-                os.environ,
-                {
-                    "HOME": str(base),
-                    "ROTE_HOME": str(rote_home),
-                    "PATH": str(bin_dir),
-                },
-            ):
-                result = main(
-                    ["update", "--harness", "codex"],
-                    executor=lambda executable, arguments: calls.append(
-                        (executable, arguments)
-                    ),
-                )
-
-        self.assertEqual(2, result)
-        self.assertEqual([], calls)
-
-    def test_rote_versions_tree_names_its_own_rote_home(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            rote_home = Path(temporary).resolve() / "sandbox-rote"
-            release = rote_home / "play" / "versions" / "0.4.110-0123456789ab"
-            release.mkdir(parents=True)
-            managed = rote_managed_play(release, {"ROTE_HOME": ""})
-
-        self.assertIsNotNone(managed)
-        assert managed is not None
-        self.assertEqual(rote_home, managed.rote_home)
-        self.assertTrue(managed.rote_home_derived)
+        self.assertIn("curl -fsSL https://getrote.dev/install | bash", message)
 
     def test_update_help_does_not_download_or_install(self) -> None:
         result = subprocess.run(
@@ -361,8 +264,8 @@ class PlayCliTest(unittest.TestCase):
         )
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("play update [installer arguments]", result.stdout)
-        self.assertIn("snapshots", result.stdout)
+        self.assertIn("play update [rote install play options]", result.stdout)
+        self.assertIn("runs `rote install play`", result.stdout)
 
     def test_unknown_command_is_actionable(self) -> None:
         result = subprocess.run(
