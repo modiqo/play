@@ -59,7 +59,7 @@ jobs:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
-          scripts/release/publish-play publish --environment "$DEPLOYMENT_ENVIRONMENT" > deployment.json
+          .github/release/publish-play publish --environment "$DEPLOYMENT_ENVIRONMENT" > deployment.json
           cat deployment.json
           {
             echo '```json'

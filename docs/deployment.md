@@ -8,23 +8,24 @@ The [Deploy Play workflow](../.github/workflows/deploy.yml) publishes the instal
 | Production | A repository admin selects **Actions → Deploy Play → Run workflow → Tags → vX.Y.Z** | `https://getrote.dev/playoffs/install.sh` | The dispatched `vX.Y.Z` tag, which must match its `VERSION` |
 
 Published changes must carry a new plugin version; a push that keeps the same version is not a
-reliable cache invalidation mechanism. Prepare the version bump and package metadata changes on
-a branch and merge them through a PR. After the PR is merged, create the release tag with:
+reliable cache invalidation mechanism. `VERSION` is the only version to edit: on a branch, set it
+and run `just package`, which writes it into the plugin manifests, `plugins/play/package.json`,
+`pyproject.toml`, and `uv.lock` and rebuilds the plugin payload. `just check` fails while any of
+them disagrees with `VERSION`. Merge the bump through a PR.
 
-```bash
-just release-tag-check                # Preview the tag and commit without creating or pushing it.
-just release-tag                      # Create and push the tag for freshly fetched origin/main.
-# Or pin the merged commit explicitly:
-just release-tag <merged-commit-sha>
-```
+The [Tag Play release workflow](../.github/workflows/tag-release.yml) runs on every push to `main`
+and tags releases itself. It reads `VERSION` from the pushed commit and derives `vX.Y.Z`:
 
-The helper reads `VERSION` from the selected commit, derives `vX.Y.Z`, and requires that commit
-to belong to `origin/main`. It works from any checkout branch and ignores uncommitted version
-edits. It creates an annotated tag and pushes only that tag, without changing or pushing `main`.
-An existing local or remote tag pointing elsewhere is rejected; a remote tag already pointing to
-the selected commit returns `already_tagged`. A matching local tag can be pushed again after a
-failed push. The helper never moves an existing tag or bumps versions itself. Tag publication
-does not trigger production deployment; an admin still runs **Deploy Play** manually.
+| Existing `vX.Y.Z` tag | Result |
+| --- | --- |
+| None | Creates an annotated tag on the pushed commit and pushes only that tag (`tagged`) |
+| On the pushed commit | Nothing to do (`already_tagged`) |
+| On an earlier `main` commit | `VERSION` did not change, so this push is not a release (`version_unchanged`) |
+| On any other commit | Fails; the workflow never moves an existing tag |
+
+Each run records its JSON receipt in the workflow summary. The workflow never bumps versions or
+pushes `main`. Tag publication does not trigger production deployment; an admin still runs
+**Deploy Play** manually from the new tag.
 
 Production runs only from a release tag. A dispatch from a branch, including `main`, is skipped.
 The deploy checks out the tag's commit and fails unless the tag name matches that commit's
@@ -35,14 +36,10 @@ only tags created after this rule was added can be deployed to production.
 Both environments read the shared installer assets, change only the Play selector in a temporary
 directory, and deploy to `getrote-dev` (`staging` for preview, `main` for production). They wait for
 the selected environment's installer to serve the expected revision and record a JSON receipt in
-the workflow summary. No commit or push is made to the shared assets repository.
+the workflow summary. The selector's single `release=` line may hold the `latest` placeholder or a
+pinned tag or commit; each deploy replaces it with the deployed tag or commit SHA. No commit or
+push is made to the shared assets repository.
 
-Run the read-only production release gate at any time:
-
-```bash
-just release-check
-```
-
-The gate prints a `ready` JSON receipt only when the public installer selects the current Play tag.
-To check staging from a clean checkout of a merged commit, run
-`scripts/release/publish-play check --environment staging`.
+To confirm what an installer serves, run the read-only gate from a clean checkout of `main`:
+`.github/release/publish-play check` for production, or add `--environment staging`. It prints a
+`ready` JSON receipt only when the installer selects the checked-out release.
