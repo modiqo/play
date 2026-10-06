@@ -52,11 +52,11 @@ check: package-check
     scripts/bin/play-question choose_onboarding_next --harness kimi --check
     typos --exclude '**/journey_viewer/viewer.js' --exclude '**/model_prices_and_context_window.json' README.md SKILL.md agents references scripts tests justfile
 
-# Generate the self-contained marketplace skill from this repository's source of truth.
+# Generate the marketplace pointer skill and sync manifest versions from VERSION.
 package:
     scripts/bin/package-plugin
 
-# Fail when the marketplace payload omits or drifts from runtime/configuration source files.
+# Fail when the marketplace pointer or manifest versions drift from their sources.
 package-check:
     scripts/bin/package-plugin --check
 

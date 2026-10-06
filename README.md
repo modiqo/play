@@ -638,10 +638,12 @@ Restart a running harness to reload an edited skill.
 
 ## Install from a marketplace
 
-Play is packaged as one self-contained plugin under `plugins/play`. The plugin only places the skill
-files; launchers, hooks, and the rest of the runtime wiring come from `rote install play`.
-`scripts/bin/package-plugin --check` prevents the packaged files from drifting from this
-repository's source of truth.
+Play installs and updates only through rote. The marketplace plugin under `plugins/play` exists for
+discovery: its skill is a pointer that reads the rote-installed Play skill at
+`${ROTE_HOME:-~/.rote}/play/current/SKILL.md` and, when Play is missing, gives the install command
+(`curl -fsSL https://getrote.dev/install | bash` without rote, otherwise `rote install play`).
+`rote install play` links the real skill into each agent and removes `play@play-skills` from Claude
+Code and Codex. `scripts/bin/package-plugin --check` verifies the pointer and manifest versions.
 
 The Rote skill provider is a prerequisite so Play can hand missing local installation to the
 guided `rote-setup` specialist:
@@ -683,7 +685,8 @@ If `play-machine` is missing, `$play` runs `rote install play` to restore the la
 then continues through the bundled runtime in the same turn. In Codex, an explicitly disabled Play
 skill remains a user preference: open `/skills`, enable Play, and restart the session.
 
-Install the Play plugin from its public marketplace, then run `rote install play` for the runtime:
+The pointer plugin is listed in Play's public marketplace; installing it and invoking Play leads to
+`rote install play`:
 
 ```bash
 codex plugin marketplace add modiqo/play
@@ -720,31 +723,16 @@ tool-driven rather than a direct slash command. Play's structured prompts map to
 
 Restart the harness after installation. On first use, Play runs the bundled preflight.
 
-## Update an installed Play plugin
+## Update an installed Play
 
 Run `play update` (or `rote install play`) to update the runtime, launchers, skill links, and hooks.
-To refresh a marketplace plugin manually:
-
-For Codex:
-
-```bash
-codex plugin marketplace upgrade play-skills
-codex plugin remove play@play-skills
-codex plugin add play@play-skills
-```
-
-For Claude Code:
-
-```bash
-claude plugin marketplace update play-skills
-claude plugin uninstall play@play-skills --scope user
-claude plugin install play@play-skills --scope user
-```
+The marketplace plugin holds only the pointer, so there is no plugin payload to upgrade; rote
+removes `play@play-skills` from Claude Code and Codex when it installs Play.
 
 Restart the harness and start a new conversation after updating so it loads the refreshed skill.
-Skill-directory harnesses have no Play plugin cache to upgrade; `play update` refreshes their skill
-links. For a source checkout installed with `just install`, `git pull --ff-only` is enough: the
-checkout is live. Run `just package` to refresh the marketplace payload.
+For a source checkout installed with `just install`, `git pull --ff-only` is enough: the checkout is
+live. Run `just package` after changing `VERSION`, `SKILL.md` frontmatter, or `agents/openai.yaml`
+to regenerate the pointer and manifest versions.
 
 ## Start and test a fresh harness
 
