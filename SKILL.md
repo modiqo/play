@@ -291,10 +291,14 @@ run.
   rejects any other event and names the declared ones; when that happens, show the projected
   prompt again unchanged.
 - `guidance`: run `rote guidance <instruction.guidance>` in the shell, follow it with
-  `instruction.input`, then return the declared receipt event. Where a receipt carries an
-  executor, it is `{kind: guidance, id: <instruction.guidance>, digest: <digest from
-  rote guidance <id> --json>}`. Interactive guidance (setup, authentication) asks its own user
-  questions — ask those directly and continue; return to the runtime only with a declared event.
+  `instruction.input` within `command_policy`, then return the declared receipt event. Where a
+  receipt carries an executor, it is `{kind: guidance, id: <instruction.guidance>, digest: <the
+  data.result.digest field of rote guidance <id> --json>}`. Play owns the step boundary: Rote
+  documents end with `## Next` gates and gate branches that may lead on or answer the user; inside
+  a Play step these are informational. When the step's work is done, return a declared event to
+  Play; never follow a Rote gate past `command_policy`, and never answer the user from inside the
+  step. Interactive guidance (setup, authentication) asks its own user questions — ask those
+  directly and continue; return to the runtime only with a declared event.
 - `terminal`: present the terminal outcome and stop. A `blocked` outcome arrives as a
   presentation that names the step that stopped, the cause, and the next step. Relay that
   Markdown verbatim. Never replace it with a generic phrase such as “couldn't continue due to
