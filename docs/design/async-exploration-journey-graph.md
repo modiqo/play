@@ -790,7 +790,7 @@ The detailed conversational inspection commands are not part of the first implem
 
 ### Phase 4 — crystallization input
 
-- Pass the verified semantic snapshot to `rote-flow-crystallization` alongside authoritative raw
+- Pass the verified semantic snapshot to `play/crystallization` alongside authoritative raw
   evidence.
 - Use phase membership as an authoring proposal, never as a dependency override.
 - Verify that setup probes and abandoned routes are excluded from main candidate steps.

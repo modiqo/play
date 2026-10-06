@@ -30,7 +30,7 @@ Maya never sees play. Interventions so far: **0**. This is a feature.
 
 > **Maya:** just me
 
-- `capture_delegate` → rote-flow-crystallization → `maya/ship-and-tell` v0.1.
+- `capture_delegate` → play/crystallization → `maya/ship-and-tell` v0.1.
 - **Ledger write (positive scope):** `build-ship-chore → intervene`
   (evidence: user saved here).
 

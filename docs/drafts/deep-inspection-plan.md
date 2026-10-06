@@ -68,17 +68,17 @@ The author surface is a work order, not a lint dump.
 
 | Class | Owner skill |
 |---|---|
-| Frontmatter, parameters, DAG shape, deps.toml, resources, fixtures | rote-flow-authoring |
-| Failure contract, exit status, partial traversal, resume | rote-troubleshooting |
-| Shell and command patterns, portability, bashisms | rote-shell |
-| Presentation body, truncation handling, body reach | rote-typescript-transformations |
-| Publication, visibility, adapter pinning | rote-registry |
+| Frontmatter, parameters, DAG shape, deps.toml, resources, fixtures | play/authoring |
+| Failure contract, exit status, partial traversal, resume | troubleshooting/essential |
+| Shell and command patterns, portability, bashisms | shell/essential |
+| Presentation body, truncation handling, body reach | typescript/transformations |
+| Publication, visibility, adapter pinning | registry/essential |
 
 **Every finding carries a fix packet.** Location as file and line or a frontmatter path such as `steps.find.argv[0]`, the recipe in prose, a mechanical patch when one exists, the rote command when one applies, and the fixture that proves the fix.
 
-**The author chooses what to send.** After an audit, Play presents the open findings and the author picks which to hand off, all, some, or none. The chosen packets go to rote-troubleshooting through the existing delegated-action handoff, which diagnoses, delegates the edit to the owner skill, and reports back what changed with a run reference. Nothing is sent without the author's choice, and the audit never edits a Play itself.
+**The author chooses what to send.** After an audit, Play presents the open findings and the author picks which to hand off, all, some, or none. The chosen packets go to troubleshooting/essential through the existing delegated-action handoff, which diagnoses, delegates the edit to the owner skill, and reports back what changed with a run reference. Nothing is sent without the author's choice, and the audit never edits a Play itself.
 
-**Improvement is recorded.** When rote-troubleshooting reports back, the audit reruns on the edited package and writes a new envelope. The history entry records which findings closed, which remain, anything new, the handoff run reference, and the package digest before and after. The author sees a delta, never a fresh full report. The registry inbox report, when the author opts in, carries the same delta so a consumer who reported an issue sees it close.
+**Improvement is recorded.** When troubleshooting/essential reports back, the audit reruns on the edited package and writes a new envelope. The history entry records which findings closed, which remain, anything new, the handoff run reference, and the package digest before and after. The author sees a delta, never a fresh full report. The registry inbox report, when the author opts in, carries the same delta so a consumer who reported an issue sees it close.
 
 **Release rehearsal.** Before `rote play release`, Play renders the Play as three consumers would see it, from host profiles rather than the author's machine: stock macOS with only the command line tools, Ubuntu LTS, and the author's own host. For each profile the author sees the exact report card, per-step readiness, and the first sentence a consumer would read if something blocks. Rehearsal informs; release remains the author's call.
 
@@ -137,13 +137,13 @@ Unknowns, never findings: INLINE_BODY_UNREAD, ADAPTER_NOT_READABLE, EXTRACTOR_FA
 2. **prepare_candidate**, at crystallization. The audit runs on the candidate and its author view is offered so the authoring skill starts from a clean shape.
 3. **author_release**, before `rote play release`. Release rehearsal renders the profiles and the author view. The author chooses what to hand off. Release proceeds regardless.
 4. **smoke_publication**, after publish. The card as published is attached to the receipt and the birth certificate, and the envelope is written to history with the publication reference.
-5. **Feedback loop.** Author: choose findings, hand off to rote-troubleshooting, receive the report-back, re-audit, record the delta. Consumer who is not the author: `--report` to the registry inbox with the digest, opt-in.
+5. **Feedback loop.** Author: choose findings, hand off to troubleshooting/essential, receive the report-back, re-audit, record the delta. Consumer who is not the author: `--report` to the registry inbox with the digest, opt-in.
 
 ## Milestones
 
 1. Runner, contract, facts, card, store (week 1). Fan-out runner with fail-safe wrapper, envelope, rule classes, fact rules with fixtures, card renderer, persistence and history, `play-audit` with `history` and `show`. Card inside `play-inspect` behind a flag.
 2. Corpus and precision (week 2). Registry sweep, hand-labelled hits, precision per rule, CI bar. Judgment rules land only after clearing it. Portability rules get their first real positives from the corpus or stay unshipped.
-3. Author hygiene and adapters (week 3). Owner mapping, fix packets, author choice, rote-troubleshooting handoff and report-back, delta recording, adapter correlation, host profiles, release rehearsal.
+3. Author hygiene and adapters (week 3). Owner mapping, fix packets, author choice, troubleshooting/essential handoff and report-back, delta recording, adapter correlation, host profiles, release rehearsal.
 4. Loop and upstream (week 4). Inbox report with deltas, receipt attachment, card on by default in inspect. First fact rules upstreamed to rote lint as ast-grep rule files.
 
 ## Risks

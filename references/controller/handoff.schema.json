@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://play.modiqo.ai/schemas/play.handoff.v1.json",
-  "title": "Play specialist handoff packet or receipt",
+  "title": "Play guidance handoff packet or receipt",
   "oneOf": [
     {"$ref": "#/$defs/packet"},
     {"$ref": "#/$defs/receipt"},
@@ -9,8 +9,12 @@
     {"$ref": "#/$defs/authenticationReceipt"}
   ],
   "$defs": {
-    "specialistOwner": {
-      "enum": ["rote-using-adapters", "rote-shell", "rote-browse", "rote-workspace"]
+    "guidanceOwner": {
+      "enum": ["adapters/delegated", "shell/essential", "browser/essential", "workspace/essential"]
+    },
+    "guidanceDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
     },
     "stringArray": {
       "type": "array",
@@ -25,7 +29,7 @@
         "run_id": {"type": "string", "minLength": 1},
         "state": {"const": "explore_execute"},
         "action": {"const": "execute_route"},
-        "owner": {"$ref": "#/$defs/specialistOwner"},
+        "owner": {"$ref": "#/$defs/guidanceOwner"},
         "requested_outcome": {"type": "string", "minLength": 1},
         "modalities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["call", "shell", "drive"]}},
         "constraints": {"type": "object"},
@@ -42,10 +46,10 @@
                 "discovery_order": {"const": ["installed", "catalog", "provided_spec", "provider_docs"]},
                 "type_selection": {"const": "auto"},
                 "substrate_detection": {"const": ["openapi", "graphql", "mcp"]},
-                "create_owner": {"const": "rote-adapter-create"},
-                "configure_owner": {"const": "rote-adapter-config"},
-                "orchestration_owner": {"$ref": "#/$defs/specialistOwner"},
-                "adapter_execute_owner": {"const": "rote-using-adapters"},
+                "create_owner": {"const": "adapters/create"},
+                "configure_owner": {"const": "adapters/config"},
+                "orchestration_owner": {"$ref": "#/$defs/guidanceOwner"},
+                "adapter_execute_owner": {"const": "adapters/delegated"},
                 "auth_cycle": {
                   "type": "object",
                   "required": ["required", "human_gate", "secret_entry", "completion"],
@@ -136,14 +140,15 @@
         "run_id": {"type": "string", "minLength": 1},
         "state": {"const": "explore_execute"},
         "action": {"const": "execute_route"},
-        "owner": {"$ref": "#/$defs/specialistOwner"},
+        "owner": {"$ref": "#/$defs/guidanceOwner"},
         "executor": {
           "type": "object",
-          "required": ["kind", "name"],
+          "required": ["kind", "id", "digest"],
           "additionalProperties": false,
           "properties": {
-            "kind": {"const": "skill"},
-            "name": {"$ref": "#/$defs/specialistOwner"}
+            "kind": {"const": "guidance"},
+            "id": {"$ref": "#/$defs/guidanceOwner"},
+            "digest": {"$ref": "#/$defs/guidanceDigest"}
           }
         },
         "event": {"enum": ["outcome_ready", "route_exhausted", "confirmation_required", "authentication_required"]},
@@ -222,7 +227,7 @@
         "run_id": {"type": "string", "minLength": 1},
         "state": {"const": "authentication_execute"},
         "action": {"const": "execute_authentication"},
-        "owner": {"const": "rote-adapter-config"},
+        "owner": {"const": "adapters/config"},
         "requested_outcome": {"type": "string", "minLength": 1},
         "authentication": {"$ref": "#/$defs/authenticationRequired"},
         "original_packet": {"$ref": "#/$defs/packet"},
@@ -250,14 +255,15 @@
         "run_id": {"type": "string", "minLength": 1},
         "state": {"const": "authentication_execute"},
         "action": {"const": "execute_authentication"},
-        "owner": {"const": "rote-adapter-config"},
+        "owner": {"const": "adapters/config"},
         "executor": {
           "type": "object",
-          "required": ["kind", "name"],
+          "required": ["kind", "id", "digest"],
           "additionalProperties": false,
           "properties": {
-            "kind": {"const": "skill"},
-            "name": {"const": "rote-adapter-config"}
+            "kind": {"const": "guidance"},
+            "id": {"const": "adapters/config"},
+            "digest": {"$ref": "#/$defs/guidanceDigest"}
           }
         },
         "event": {"enum": ["authentication_ready", "authentication_failed"]},
@@ -284,11 +290,11 @@
             "substrate": {"enum": ["openapi", "graphql", "mcp"]},
             "type_evidence_ref": {"type": "string", "minLength": 1},
             "adapter_status": {"enum": ["reused", "created"]},
-            "creation_owner": {"type": ["string", "null"], "enum": ["rote-adapter-create", null]},
+            "creation_owner": {"type": ["string", "null"], "enum": ["adapters/create", null]},
             "auth_status": {"enum": ["verified", "completed"]},
-            "auth_owner": {"enum": ["rote-using-adapters", "rote-adapter-create", "rote-adapter-config"]},
-            "orchestration_owner": {"$ref": "#/$defs/specialistOwner"},
-            "adapter_execute_owner": {"const": "rote-using-adapters"},
+            "auth_owner": {"enum": ["adapters/delegated", "adapters/create", "adapters/config"]},
+            "orchestration_owner": {"$ref": "#/$defs/guidanceOwner"},
+            "adapter_execute_owner": {"const": "adapters/delegated"},
             "direct_tool_execution": {"const": false},
             "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
           }
@@ -299,7 +305,7 @@
           "additionalProperties": false,
           "properties": {
             "kind": {"const": "rote_native"},
-            "orchestration_owner": {"$ref": "#/$defs/specialistOwner"},
+            "orchestration_owner": {"$ref": "#/$defs/guidanceOwner"},
             "direct_tool_execution": {"const": false},
             "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
           }

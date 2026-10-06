@@ -74,40 +74,49 @@ REQUIRED_PLAY_EXECUTABLES = (
     "play-search",
     "play-standby",
 )
+ROTE_INSTALL = "If `rote` is not installed, install it from https://getrote.dev."
+ROTE_SETUP = "Then run `rote guidance setup/essential` in the harness shell and follow it."
 SETUP_COMMANDS = {
     "codex": [
+        ROTE_INSTALL,
         "codex plugin marketplace add modiqo/rote-skills",
-        "codex plugin add rote-onboard@rote-skills",
-        "Restart Codex, then invoke $rote-setup.",
+        "codex plugin add rote@rote-skills",
+        "Restart Codex. " + ROTE_SETUP,
     ],
     "claude": [
+        ROTE_INSTALL,
         "claude plugin marketplace add modiqo/rote-skills",
-        "claude plugin install rote-onboard@rote-skills",
-        "Restart Claude Code, then invoke /rote-setup.",
+        "claude plugin install rote@rote-skills",
+        "Restart Claude Code. " + ROTE_SETUP,
     ],
     "kimi": [
-        "Install the rote-onboard skill in ~/.agents/skills or ~/.kimi/skills.",
-        "Restart Kimi, then invoke /skill:rote-setup.",
+        ROTE_INSTALL,
+        "rote install skill --target kimi-code-cli --personal --force",
+        "Restart Kimi. " + ROTE_SETUP,
     ],
     "cursor": [
-        "Install the rote-onboard skill in ~/.cursor/skills.",
-        "Restart Cursor, then invoke /rote-setup.",
+        ROTE_INSTALL,
+        "rote install skill --target cursor --personal --force",
+        "Restart Cursor. " + ROTE_SETUP,
     ],
     "hermes": [
-        "Install the rote-onboard skill in ~/.hermes/skills.",
-        "Restart Hermes, then invoke /rote-setup.",
+        ROTE_INSTALL,
+        "rote install skill --target hermes-agent --personal --force",
+        "Restart Hermes. " + ROTE_SETUP,
     ],
     "opencode": [
-        "Install the rote-onboard skill in ~/.config/opencode/skills.",
-        "Restart OpenCode and ask it to use the rote-setup skill.",
+        ROTE_INSTALL,
+        "rote install skill --target opencode --personal --force",
+        "Restart OpenCode. " + ROTE_SETUP,
     ],
     "deepseek": [
-        "Install the rote-onboard skill in ~/.agents/skills or ~/.dsh/skills.",
-        "Restart DeepSeek Harness, then invoke /rote-setup.",
+        ROTE_INSTALL,
+        "rote install skill --target agents-md --personal --force",
+        "Restart DeepSeek Harness. " + ROTE_SETUP,
     ],
     "generic": [
-        "Install Rote from https://github.com/modiqo/rote-skills.",
-        "Run the rote-setup skill in this harness.",
+        ROTE_INSTALL,
+        ROTE_SETUP,
     ],
 }
 
@@ -185,16 +194,7 @@ def harness_skill_roots() -> dict[str, tuple[Path, ...]]:
 
 
 def _has_skill(root: Path, name: str) -> bool:
-    if name == "play":
-        return (root / "play" / "SKILL.md").is_file()
-    try:
-        return any(
-            (child.name == "rote" or child.name.startswith("rote-"))
-            and (child / "SKILL.md").is_file()
-            for child in root.iterdir()
-        )
-    except OSError:
-        return False
+    return (root / name / "SKILL.md").is_file()
 
 
 def inspect_harnesses(active: str) -> list[dict[str, object]]:
@@ -311,9 +311,9 @@ def inspect(harness: str) -> dict[str, Any]:
                 "rote_skill_provider",
                 has_rote_skill,
                 (
-                    f"Rote skills are installed for {harness}."
+                    f"The rote skill is installed for {harness}."
                     if has_rote_skill
-                    else f"No rote or rote-* skill is installed for {harness}."
+                    else f"No rote skill is installed for {harness}."
                 ),
             )
         )
@@ -396,7 +396,7 @@ def inspect(harness: str) -> dict[str, Any]:
         for check in checks
     ):
         setup_commands.append(
-            "Invoke $rote-setup (or /rote-setup in Claude Code) to restore sign-in or Rote Play support."
+            "Run `rote guidance setup/essential` and follow it to restore sign-in or Rote Play support."
         )
     return {
         "schema": SCHEMA,

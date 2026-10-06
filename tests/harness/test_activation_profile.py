@@ -27,7 +27,7 @@ class ActivationProfileTest(unittest.TestCase):
         self.originals: dict[Path, bytes] = {}
 
         for index, root in enumerate(self.roots):
-            skill = root / ("rote" if index == 0 else "rote-shell")
+            skill = root / ("rote" if index == 0 else "rote-extra")
             skill.mkdir(parents=True)
             markdown = (
                 f"---\nname: {skill.name}\ndescription: test\n---\n\n# Test\n".encode()
@@ -89,7 +89,7 @@ class ActivationProfileTest(unittest.TestCase):
         self.assertTrue(os.access(self.cli_launcher, os.X_OK))
         self.assertIn(str(ROOT / "scripts/bin/play"), self.cli_launcher.read_text())
 
-        for skill in (self.roots[0] / "rote", self.roots[1] / "rote-shell"):
+        for skill in (self.roots[0] / "rote", self.roots[1] / "rote-extra"):
             self.assertNotIn(
                 "disable-model-invocation", (skill / "SKILL.md").read_text()
             )
@@ -112,7 +112,7 @@ class ActivationProfileTest(unittest.TestCase):
             self.assertFalse((root / "play").exists())
         for path, content in self.originals.items():
             self.assertEqual(content, path.read_bytes())
-        self.assertFalse((self.roots[1] / "rote-shell" / "agents").exists())
+        self.assertFalse((self.roots[1] / "rote-extra" / "agents").exists())
 
     def test_existing_play_install_fails_without_mutating_rote(self) -> None:
         conflict = self.roots[0] / "play"
@@ -265,10 +265,10 @@ class ActivationProfileTest(unittest.TestCase):
             self.assertEqual(content, path.read_bytes())
 
     def test_install_unlocks_rote_skill_locked_for_claude_code(self) -> None:
-        skill = self.roots[1] / "rote-shell"
+        skill = self.roots[1] / "rote-extra"
         markdown = skill / "SKILL.md"
         locked = (
-            b"---\nname: rote-shell\ndescription: test\n"
+            b"---\nname: rote-extra\ndescription: test\n"
             b"disable-model-invocation: true\n---\n\n# Test\n"
         )
         markdown.write_bytes(locked)

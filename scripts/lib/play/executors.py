@@ -34,7 +34,7 @@ def action_executor(action_id: str, action: Mapping[str, Any]) -> str | None:
             return "runtime"
         return None
     if kind == "delegated":
-        return "specialist" if command is None else None
+        return "guidance" if command is None else None
     if kind == "evaluator":
         return "model" if command is None else None
     return None

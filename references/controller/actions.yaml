@@ -2,13 +2,13 @@ schema: play.actions/v1
 
 owners: [play, rote-specialist, flow-runtime]
 effects: [none, read, local-write, external-write, mixed]
-specialist_owners: [rote-using-adapters, rote-shell, rote-browse, rote-workspace]
-adapter_specialist_owners: [rote-adapter-create, rote-adapter-config]
+specialist_owners: [adapters/delegated, shell/essential, browser/essential, workspace/essential]
+adapter_specialist_owners: [adapters/create, adapters/config]
 route_owners:
-  call: rote-using-adapters
-  shell: rote-shell
-  drive: rote-browse
-  combined: rote-workspace
+  call: adapters/delegated
+  shell: shell/essential
+  drive: browser/essential
+  combined: workspace/essential
 
 guards:
   - company_resume_registry
@@ -345,11 +345,11 @@ actions:
   create_team_space:
     kind: delegated
     owner: rote-specialist
-    specialist: rote-org
+    guidance: registry/org
     effect: external-write
     input_required: [team.slug, team.name]
     command_policy:
-      - Invoke rote-org once to create the exact company name and slug, or verify that the authenticated user already administers that organization. Never adopt a matching slug owned by someone else.
+      - Run `rote guidance registry/org` and follow it once to create the exact company name and slug, or verify that the authenticated user already administers that organization. Never adopt a matching slug owned by someone else.
       - Organization setup does not publish a Play or change any existing Play visibility; private publication still requires its own approval.
       - Return live member state; never invent membership, ownership, quota, or organization readiness.
     events:
@@ -359,11 +359,11 @@ actions:
   invite_team_member:
     kind: delegated
     owner: rote-specialist
-    specialist: rote-org
+    guidance: registry/org
     effect: external-write
     input_required: [team.slug, team.invite_email, team.invite_role]
     command_policy:
-      - Invoke rote-org once to invite the exact email to the exact team with the displayed role.
+      - Run `rote guidance registry/org` and follow it once to invite the exact email to the exact team with the displayed role.
       - Return live pending-invite and member state; never claim an invite from prose or cached state.
     events:
       team_invite_ready: [team.slug, team.status, team.members, team.invites, team.evidence_refs]
@@ -384,18 +384,18 @@ actions:
   handoff_rote_setup:
     kind: delegated
     owner: rote-specialist
-    specialist: rote-setup
+    guidance: setup/essential
     effect: mixed
     input_required: [onboarding.intent, onboarding.rote_status, onboarding.setup_status]
     command_policy:
-      - Invoke the rote-setup skill through the harness skill mechanism; rote-setup owns all live probes, install choices, remote-code approval, login, and optional onboarding.
-      - rote-setup is interactive and owns its own human gates (orphaned-state backup, remote-code approval, sign-in). Ask those questions directly to the user inside the specialist flow and continue setup with their answer; never convert a specialist question into rote_setup_paused.
-      - Emit rote_setup_paused only when the user explicitly declines to continue setup or the specialist reports it cannot proceed after its own gates were answered.
+      - Run `rote guidance setup/essential` and follow it; that guidance owns all live probes, install choices, remote-code approval, login, and optional onboarding.
+      - Setup is interactive and owns its own human gates (orphaned-state backup, remote-code approval, sign-in). Ask those questions directly to the user while following the guidance and continue setup with their answer; never convert a setup question into rote_setup_paused.
+      - Emit rote_setup_paused only when the user explicitly declines to continue setup or the guidance reports it cannot proceed after its own gates were answered.
       - When onboarding.intent is play_uri, setup does double duty; anchor every step to the pasted Play by name, explain in plain language what Rote is and how Plays work (local engine, credentials stay local, inspect then approve then run), and say that after sign-in this exact Play will be inspected and approved before anything executes.
-      - The Play URI trajectory needs exactly two things from setup, the installed binary and a signed-in identity. Take rote-setup's CLI-only branch without asking, skip the powerpack, adapter-building, optional-onboarding, and closing-demonstration menus entirely, and return rote_setup_completed the moment identity verifies. rote play run owns any adapter convergence later; setup must not front-load it.
+      - The Play URI trajectory needs exactly two things from setup, the installed binary and a signed-in identity. Take the setup guidance's CLI-only branch without asking, skip the powerpack, adapter-building, optional-onboarding, and closing-demonstration menus entirely, and return rote_setup_completed the moment identity verifies. rote play run owns any adapter convergence later; setup must not front-load it.
       - Do not run an installer, login command, or credential flow directly from Play.
       - Require live setup results and re-enter onboarding_probe after completion so Play verifies the binary and identity itself.
-      - Treat a missing callable rote-setup skill as setup_specialist_unavailable; never replace it with an improvised curl installer.
+      - When no rote binary is installed, `rote guidance setup/essential` cannot run. Return setup_specialist_unavailable and point the user at https://getrote.dev to install Rote; never replace it with an improvised curl installer.
     events:
       rote_setup_completed: [onboarding.setup_status, onboarding.rote_command, onboarding.email, evidence_refs]
       rote_setup_paused: [onboarding.setup_status, reason, recoverable, evidence_refs]
@@ -547,7 +547,7 @@ actions:
   list_play_management:
     kind: delegated
     owner: rote-specialist
-    specialist: rote-registry
+    guidance: registry/essential
     effect: read
     input_required: [management.views]
     events:
@@ -603,26 +603,26 @@ actions:
   execute_captured_exploration:
     kind: delegated
     owner: rote-specialist
-    specialist: rote
+    guidance: gate/route
     effect: mixed
     input_required: [request.original, request.intent, request.requested_outcome, search.complete, search.sources, search.result_refs, capture.reference, capture.workspace, capture.status, execution.workspace, execution.workspace_path, consent.explore, evidence.failed_postconditions, creator.baselines]
     command_policy:
       - Consume Play's completed local and authorized-registry no-match result as the search-first gate; do not repeat Play or Rote play search and do not ask for the outcome again.
-      - "`creator.baselines` lists the sub-outcomes an existing published Play already covers, with that Play's reference. Run each baseline through `rote-flow-run` and treat its result as the delivered half; explore and build only `request.requested_outcome`, which has already been scoped to the uncovered sub-outcomes. Never hand-build an adapter for an outcome a baseline covers."
+      - "`creator.baselines` lists the sub-outcomes an existing published Play already covers, with that Play's reference. Run each baseline as `rote guidance play/run` directs and treat its result as the delivered half; explore and build only `request.requested_outcome`, which has already been scoped to the uncovered sub-outcomes. Never hand-build an adapter for an outcome a baseline covers."
       - Treat `execution.workspace_path` as the only execution location. Enter that absolute path in the same shell invocation before every Rote command, for example `cd -- <absolute-path> && rote ...`; never run `rote cd` separately, assume a prior shell changed directory, substitute another workspace, or run from the repository.
       - Keep prerequisites, routing, retries, resumed work, and every outcome-bearing operation inside that one workspace. If the harness requires filesystem permission for the workspace, retain the same access when resuming `play-machine`; never repeat successful work merely to repair verification.
-      - Enter the already-created capture workspace and invoke rote-task-routing with the original user intent, empty-search evidence, workspace path, and the requirement to create a reusable workflow.
-      - Begin routing with `rote explore <request.requested_outcome>`. If it suggests a newly available full Play, return to rote-flow-run; otherwise preserve the same workspace and continue substrate discovery.
-      - For provider or API intent, inventory installed adapters first. If none covers the required operation, run `rote adapter catalog search` with both provider and operation terms through rote-task-routing.
+      - Enter the already-created capture workspace, run `rote guidance gate/route`, and follow it with the original user intent, empty-search evidence, workspace path, and the requirement to create a reusable workflow. Play already ran the play search; the input carries its result.
+      - Begin routing with `rote explore <request.requested_outcome>`. If it suggests a newly available full Play, follow `rote guidance play/run`; otherwise preserve the same workspace and continue substrate discovery.
+      - For provider or API intent, inventory installed adapters first. If none covers the required operation, run `rote adapter catalog search` with both provider and operation terms as the route gate directs.
       - When routes are discovered, present a bounded **Find tools** choice showing protocol, authentication, capability fit, and install impact. Always include **Choose another tool**. Do not adapt, install, authenticate, or execute until the user selects a route.
       - Verify the selected adapter, CLI, browser, or other route still exists and covers the requested operation, then announce **Begin exploration** before the first outcome-bearing operation. Never confuse selection with execution.
-      - When catalog candidates exist, offer **Adapt API** through rote-adapter-create or **Use existing CLI** through rote-shell. Never silently install a catalog result or choose a protocol for the user.
-      - If the user names an existing CLI, invoke rote-shell. Validate the exact executable inside the capture workspace with a minimal `deps.toml` plus `rote deps check`, then capture capability discovery and use through `rote proc`; never infer existence from prose or use raw `which` as proof.
-      - rote-adapter-create owns catalog selection, spec validation, dry-run, auth and toolset decisions, real creation, adapter info, and the first green probe/call. After an adapter is ready, rote-workspace owns calls, cached responses, transformations, and outcome verification.
+      - When catalog candidates exist, offer **Adapt API** through `rote guidance adapters/create` or **Use existing CLI** through `rote guidance shell/essential`. Never silently install a catalog result or choose a protocol for the user.
+      - If the user names an existing CLI, follow `rote guidance shell/essential`. Validate the exact executable inside the capture workspace with a minimal `deps.toml` plus `rote deps check`, then capture capability discovery and use through `rote proc`; never infer existence from prose or use raw `which` as proof.
+      - "`rote guidance adapters/create` owns catalog selection, spec validation, dry-run, auth and toolset decisions, real creation, adapter info, and the first green probe/call. After an adapter is ready, `rote guidance workspace/essential` owns calls, cached responses, transformations, and outcome verification."
       - Adapter creation, authentication, token verification, capability probes, and smoke tests are prerequisites, not the requested outcome. After they succeed, continue the original request in the same capture; never reinterpret “connected” as completion and never ask for an outcome already present in request.requested_outcome.
       - For setup-led exploration, return exploration_prerequisite_ready after the connection is verified so Play can ask for the first useful outcome. For goal-bound exploration, return the same prerequisite event and let Play resume the already-declared goal automatically.
-      - Keep adapter, CLI, and mixed evidence in this one capture workspace. Do not call provider APIs, native CLIs, MCP tools, curl, browser tools, or custom scripts outside the selected Rote skill.
-      - If an external authentication or setup boundary forces a return before useful work resumes, return exploration_prerequisite_ready with its evidence. Play will re-enter this same specialist action for the original outcome; do not manufacture output metadata or enter save judgment.
+      - Keep adapter, CLI, and mixed evidence in this one capture workspace. Do not call provider APIs, native CLIs, MCP tools, curl, browser tools, or custom scripts outside the selected Rote route.
+      - If an external authentication or setup boundary forces a return before useful work resumes, return exploration_prerequisite_ready with its evidence. Play will re-enter this same guidance action for the original outcome; do not manufacture output metadata or enter save judgment.
       - Return exploration_outcome_ready only after at least one outcome-bearing operation beyond setup, with the complete user-visible result and a verified `rote trace --deps` trajectory bound to this capture. This action may not scaffold, export, save, author, lint, release, push, or publish a Play. Play alone decides save worthiness, then delegates crystallization, authoring, and publication through their separate lifecycle states.
       - "`capture.status`, `capture.trajectory_ref`, and `evidence.verification` are Play-owned authority fields. Return the projected placeholders unchanged; never derive them from prose, a capture handle, workspace output, or a guessed digest. At the event boundary Play resolves the continuation's capture handle, validates its persisted Rote workspace, and replaces all three fields with one validator-issued receipt before accepting the outcome."
       - Report the result envelope as output.mode `detailed` and output.detail `full` whenever output.primary carries the complete user-visible result, even when that result is itself a summary. Return the complete result inline with output.truncated false and output.full_output_ref null; a truncated envelope verifies only when full_output_ref names an owner-private Play run-output artifact.
@@ -630,7 +630,7 @@ actions:
       - If Play reports that trajectory verification failed, keep this continuation and the completed outcome unchanged. Repair only the named workspace, authentication, database, or filesystem-permission condition, then resubmit the same exploration_outcome_ready event. Do not repeat successful work, switch tools, emit exploration_route_exhausted, or run manual trace commands as a substitute for Play's validator.
       - On a recoverable route failure, preserve the failed evidence and return exploration_route_exhausted. Play will ask whether to discover another tool, continue through a direct side-step, or stop; never silently fall back to a different substrate.
       - A `direct:` request is a one-turn excursion. Do not consume or close this Play continuation, import direct work into the captured trajectory, or claim its evidence. When the user returns with “continue exploration,” resume this same workspace and revalidate any external state that changed.
-      - Interactive questions belong to the invoked Rote specialist flow. Continue through them in place and return to Play only with one declared event.
+      - Interactive questions belong to the Rote guidance being followed. Continue through them in place and return to Play only with one declared event.
     events:
       exploration_prerequisite_ready: [reason, evidence_refs]
       exploration_outcome_ready: [capture.status, capture.trajectory_ref, evidence.verification, output.mode, output.detail, output.source, output.format, output.primary, output.manifest, output.truncated, output.full_output_ref]
@@ -658,7 +658,7 @@ actions:
   inspect_local_release_for_publication:
     kind: delegated
     owner: rote-specialist
-    specialist: rote-flow-authoring
+    guidance: play/authoring
     effect: read
     input_required: [candidate.reference, publication.visibility, consent.save]
     command_policy:
@@ -776,7 +776,7 @@ actions:
   execute_authentication:
     kind: delegated
     owner: rote-specialist
-    specialist: rote-adapter-config
+    guidance: adapters/config
     effect: mixed
     input_required: [inspection.operations, authentication.source, authentication.status, authentication.owner, authentication.recoverable, authentication.adapter_id, authentication.env_var, authentication.classified_rung, authentication.distinguishing_error, authentication.evidence_refs, authentication.original_packet, authentication.original_packet_sha256]
     command_policy:
@@ -784,17 +784,18 @@ actions:
       - Before repeating setup instructions, compare the adapter manifest's exact token_env with `rote token list --json`. If the same named credential is already present and healthy, return authentication_ready immediately without reopening the vendor page.
       - Resolve the named adapter's catalog metadata with `rote adapter catalog info <adapter_id> --json`; accept only a first-party HTTPS token_url, otherwise return authentication_failed without suggesting an unverified page.
       - Present the verified vendor token_url and tell the user to create the credential there, then run `rote token set <env_var> --stdin` in their own terminal. Never ask for, echo, capture, paste, proxy, or store the credential inside the harness or chat.
-      - Pause inside the specialist flow until the user confirms the out-of-band command completed; then verify the named token is present without exposing its value.
-      - For classified oauth, oauth_dcr, or google_discovery authentication on a legacy Play without adapter.auth.ensure, require Rote 0.69.2 or newer and run `rote adapter reauth <adapter_id>` in place through rote-adapter-config. The browser authorization remains owned by Rote.
+      - Pause inside the guidance flow until the user confirms the out-of-band command completed; then verify the named token is present without exposing its value.
+      - For classified oauth, oauth_dcr, or google_discovery authentication on a legacy Play without adapter.auth.ensure, run `rote adapter reauth <adapter_id>` in place as `rote guidance adapters/config` directs. The browser authorization remains owned by Rote.
       - Never use `rote adapter pack`, `rote adapter delete`, or `rote adapter new-from-mcp` to recover a missing MCP credential. In-place reauthorization must preserve the manifest, fingerprint, selected tool inventory, provenance, and dependent Play index.
       - After non-static reauthorization, verify fresh adapter health and unchanged identity before returning authentication_ready. If setup metadata is missing or the protocol is ambiguous or unknown, return authentication_failed with Rote's exact remediation instead of guessing.
-      - For non-static authentication, this remains a compatibility path only for an older Play whose inspected operations do not declare adapter.auth.ensure. If a browser-capable auth.ensure Play reaches this specialist, return authentication_failed without changing authentication state.
-      - Diagnose and authenticate only the named adapter through rote-adapter-config. Never call the provider operation or run the original Play from this state.
+      - For non-static authentication, this remains a compatibility path only for an older Play whose inspected operations do not declare adapter.auth.ensure. If a browser-capable auth.ensure Play reaches this action, return authentication_failed without changing authentication state.
+      - Run `rote guidance adapters/config` and follow it to diagnose and authenticate only the named adapter. Never call the provider operation or run the original Play from this state.
       - On success return only authentication_action and evidence_refs inside authentication_ready; Play preserves the adapter identity and exact approved run contract.
+      - With either event return guidance_digest, the `digest` that `rote guidance adapters/config --json` reported for the document you followed; Play binds it to this handoff.
       - Never ask the user to paste OAuth credentials into chat.
     events:
-      authentication_ready: [authentication.authentication_action, authentication.evidence_refs]
-      authentication_failed: [reason, evidence_refs]
+      authentication_ready: [authentication.authentication_action, authentication.evidence_refs, guidance_digest]
+      authentication_failed: [reason, evidence_refs, guidance_digest]
 
   verify_play_output:
     kind: deterministic
@@ -848,7 +849,7 @@ actions:
   prepare_candidate:
     kind: delegated
     owner: rote-specialist
-    specialist: rote-flow-crystallization
+    guidance: play/crystallization
     effect: local-write
     input_required: [capture.reference, capture.workspace, capture.trajectory_ref, evidence.verification]
     command_policy:
@@ -863,16 +864,16 @@ actions:
   author_release:
     kind: delegated
     owner: rote-specialist
-    specialist: rote-flow-authoring
+    guidance: play/authoring
     effect: local-write
     input_required: [candidate.reference, consent.save, request.original]
     command_policy:
-      - "Invoke rote-flow-authoring for this state only: author, test, lint, and release the candidate, then stop before every registry push or publication command."
+      - "Run `rote guidance play/authoring` and follow it for this state only: author, test, lint, and release the candidate, then stop before every registry push or publication command."
       - Before `rote play release`, run `scripts/bin/play-tag-hints --request <request.original> --play <path-to-main.ts> --json` and add every suggested tag under metadata.discoverability.tags, so the card covers the outcome words of the request that created it; a Play whose card cannot be found by its own originating request is not discoverable.
       - Release only a play that meets the shape standards; author-named steps, a real DAG with both edge kinds declared, degrade-never-die failure handling, honest deps.toml with per-step timeout_ms, and a classified presentation with a per-step stage ledger; never an information dump.
       - Test the negative space before release; one degraded-source run must complete with a labeled unknown, and one injected hard fault must fail closed with working --resume. Verify the final DAG from the run output's layer lines (or the registry-resolved play-dag Play); multi-source work rendering as one step means the shape standards were skipped."
       - After the verified run, pack its observations with `scripts/bin/play-audit fixtures <path>` so positive fixtures and per-step negative cases ship with the Play, then run `scripts/bin/play-audit rehearse <path>` and show the author the stock-macOS card and any negative case the presentation misreports. Offer `scripts/bin/play-audit handoff <path> --rule ...` for the findings the author chooses; release proceeds regardless of the audit.
-      - Never delegate an end-to-end release-and-publish request. The specialist must return control to Play so birth_capture can record the immutable owner-local birth before publication begins.
+      - Never delegate an end-to-end release-and-publish request. Return control to Play so birth_capture can record the immutable owner-local birth before publication begins.
       - Emit flow_released only with candidate.publication_status=unpublished. If a registry publication already occurred, emit publication_boundary_violated; never reinterpret the published artifact as a valid pre-publication birth.
     events:
       flow_released: [candidate.released_flow, candidate.publication_status, play.version, verification_refs]
@@ -890,23 +891,23 @@ actions:
   ensure_private_org:
     kind: delegated
     owner: rote-specialist
-    specialist: rote-org
+    guidance: registry/org
     effect: external-write
     input_required: [consent.save]
     command_policy:
-      - Return a play.rote-org-receipt/v1 for ensure_private_org containing the exact private organization, authenticated owner, complete current membership projection, and non-empty Rote evidence references; the runtime validates all receipt fields, derives policy satisfaction, and ignores caller guard claims.
+      - Run `rote guidance registry/org` and follow it, then return a play.org-receipt/v1 for ensure_private_org containing the exact private organization, authenticated owner, complete current membership projection, and non-empty Rote evidence references; the runtime validates all receipt fields, derives policy satisfaction, and ignores caller guard claims.
     events:
       private_org_ready: [publication.private_org, owner, members, evidence_refs, organization_receipt]
 
   publish_private:
     kind: delegated
     owner: rote-specialist
-    specialist: rote-registry
+    guidance: registry/essential
     effect: external-write
     input_required: [candidate.released_flow, candidate.publication_status, birth.sha256, birth.capture_ref, publication.private_org, consent.save]
     command_policy:
-      - Invoke rote-registry in a new, publication-only handoff after birth_capture has succeeded; pass the exact released Flow and the captured birth receipt.
-      - Do not author, modify, test, or release the Flow in this state, and never reuse the broader rote-flow-authoring request that produced the release.
+      - Run `rote guidance registry/essential` and follow it in a new, publication-only handoff after birth_capture has succeeded; pass the exact released Flow and the captured birth receipt.
+      - Do not author, modify, test, or release the Flow in this state, and never reuse the broader play/authoring request that produced the release.
       - Return the captured birth SHA unchanged as publication.birth_sha256 with the publication receipt so the controller can reject a publication detached from its pre-publication birth.
       - Preserve the registry-returned private Play page URI exactly; do not reconstruct it from the canonical reference.
     events:
@@ -930,12 +931,12 @@ actions:
   publish_public:
     kind: delegated
     owner: rote-specialist
-    specialist: rote-registry
+    guidance: registry/essential
     effect: external-write
     input_required: [candidate.released_flow, candidate.publication_status, birth.sha256, birth.capture_ref, publication.owner, consent.save]
     command_policy:
-      - Invoke rote-registry in a new, publication-only handoff after birth_capture has succeeded; pass the exact released Flow and the captured birth receipt.
-      - Do not author, modify, test, or release the Flow in this state, and never reuse the broader rote-flow-authoring request that produced the release.
+      - Run `rote guidance registry/essential` and follow it in a new, publication-only handoff after birth_capture has succeeded; pass the exact released Flow and the captured birth receipt.
+      - Do not author, modify, test, or release the Flow in this state, and never reuse the broader play/authoring request that produced the release.
       - Return the captured birth SHA unchanged as publication.birth_sha256 with the publication receipt so the controller can reject a publication detached from its pre-publication birth.
       - Preserve the registry-returned public Play page URI and install/bootstrap URI exactly; do not reconstruct either URL from the canonical reference.
     events:
@@ -953,7 +954,7 @@ actions:
   index_playcard:
     kind: delegated
     owner: rote-specialist
-    specialist: rote-registry
+    guidance: registry/essential
     effect: local-write
     input_required: [publication.canonical_reference, play.version]
     command_policy:

@@ -848,7 +848,7 @@ def _authentication_required(
         "event": "play_authentication_required",
         "authentication": {
             "source": "rote_authentication_required",
-            "owner": "rote-adapter-config",
+            "owner": "adapters/config",
             "recoverable": True,
             **dict(authentication),
             "evidence_refs": [f"sha256:{digest}"],

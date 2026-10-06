@@ -18,15 +18,16 @@ from play.handoff import (
     verify_receipt,
 )
 
+GUIDANCE_DIGEST = "sha256:" + "a" * 64
+
 
 class HandoffTest(unittest.TestCase):
-    def input(self, *, owner: str = "rote-using-adapters", available: list[str] | None = None):
+    def input(self, *, owner: str = "adapters/delegated"):
         return {
             "run_id": "play-run-17",
             "requested_outcome": "Find Heavybit founder perks.",
             "owner": owner,
             "modalities": ["call"],
-            "available_owners": available or [],
             "constraints": {"read_only": True},
             "inputs": {"query": "Heavybit founder perks discounts"},
             "adapter_discovery": {
@@ -69,7 +70,7 @@ class HandoffTest(unittest.TestCase):
             "state": packet["state"],
             "action": packet["action"],
             "owner": packet["owner"],
-            "executor": {"kind": "skill", "name": packet["owner"]},
+            "executor": {"kind": "guidance", "id": packet["owner"], "digest": GUIDANCE_DIGEST},
             "event": "outcome_ready",
             "payload": {
                 "result_ref": "result:1",
@@ -83,11 +84,11 @@ class HandoffTest(unittest.TestCase):
                     "substrate": "mcp",
                     "type_evidence_ref": "discovery:mcp-server-card",
                     "adapter_status": "created",
-                    "creation_owner": "rote-adapter-create",
+                    "creation_owner": "adapters/create",
                     "auth_status": "completed",
-                    "auth_owner": "rote-adapter-config",
+                    "auth_owner": "adapters/config",
                     "orchestration_owner": packet["owner"],
-                    "adapter_execute_owner": "rote-using-adapters",
+                    "adapter_execute_owner": "adapters/delegated",
                     "direct_tool_execution": False,
                     "evidence_refs": ["adapter:crucible", "auth:crucible"],
                 },
@@ -104,7 +105,7 @@ class HandoffTest(unittest.TestCase):
             "state": packet["state"],
             "action": packet["action"],
             "owner": packet["owner"],
-            "executor": {"kind": "skill", "name": packet["owner"]},
+            "executor": {"kind": "guidance", "id": packet["owner"], "digest": GUIDANCE_DIGEST},
             "event": "confirmation_required",
             "payload": {
                 "effect_confirmation": {
@@ -129,7 +130,7 @@ class HandoffTest(unittest.TestCase):
             "state": packet["state"],
             "action": packet["action"],
             "owner": packet["owner"],
-            "executor": {"kind": "skill", "name": packet["owner"]},
+            "executor": {"kind": "guidance", "id": packet["owner"], "digest": GUIDANCE_DIGEST},
             "event": "authentication_required",
             "payload": {
                 "authentication": {
@@ -149,7 +150,6 @@ class HandoffTest(unittest.TestCase):
     def authentication_input(self, prepared: dict, authentication: dict) -> dict:
         return {
             "run_id": prepared["packet"]["run_id"],
-            "available_owners": ["rote-adapter-config"],
             "authentication": {**authentication, "status": "approved"},
             "original_packet": prepared["packet"],
             "original_packet_sha256": prepared["packet_sha256"],
@@ -167,7 +167,7 @@ class HandoffTest(unittest.TestCase):
             "state": packet["state"],
             "action": packet["action"],
             "owner": packet["owner"],
-            "executor": {"kind": "skill", "name": "rote-adapter-config"},
+            "executor": {"kind": "guidance", "id": "adapters/config", "digest": GUIDANCE_DIGEST},
             "event": "authentication_ready",
             "payload": {
                 "authentication": {
@@ -184,44 +184,45 @@ class HandoffTest(unittest.TestCase):
         }
 
     def test_owner_is_closed_over_modalities(self) -> None:
-        self.assertEqual("rote-using-adapters", owner_for_modalities(["call"]))
-        self.assertEqual("rote-shell", owner_for_modalities(["shell"]))
-        self.assertEqual("rote-browse", owner_for_modalities(["drive"]))
-        self.assertEqual("rote-workspace", owner_for_modalities(["call", "shell"]))
+        self.assertEqual("adapters/delegated", owner_for_modalities(["call"]))
+        self.assertEqual("shell/essential", owner_for_modalities(["shell"]))
+        self.assertEqual("browser/essential", owner_for_modalities(["drive"]))
+        self.assertEqual("workspace/essential", owner_for_modalities(["call", "shell"]))
 
-    def test_call_blocks_when_adapter_specialist_is_not_exposed(self) -> None:
-        result = prepare_handoff(self.input(available=["rote-shell"]))
+    def test_call_blocks_when_selected_owner_is_not_the_route_owner(self) -> None:
+        result = prepare_handoff(self.input(owner="shell/essential"))
         self.assertFalse(result["ok"])
         self.assertEqual("specialist_unavailable", result["event"])
-        self.assertEqual("rote-using-adapters", result["required_owner"])
+        self.assertEqual("adapters/delegated", result["required_owner"])
+        self.assertNotIn("available_owners", result)
 
     def test_direct_mcp_owner_is_rejected(self) -> None:
         result = prepare_handoff(
-            self.input(owner="crucible.search_library", available=["crucible.search_library"])
+            self.input(owner="crucible.search_library")
         )
         self.assertFalse(result["ok"])
         self.assertEqual("specialist_unavailable", result["event"])
-        self.assertEqual("rote-using-adapters", result["required_owner"])
+        self.assertEqual("adapters/delegated", result["required_owner"])
 
     def test_matching_specialist_receipt_is_accepted(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         policy = prepared["packet"]["capability_policy"]
         self.assertEqual("auto", policy["type_selection"])
         self.assertEqual(["openapi", "graphql", "mcp"], policy["substrate_detection"])
-        self.assertEqual("rote-adapter-create", policy["create_owner"])
-        self.assertEqual("rote-adapter-config", policy["configure_owner"])
+        self.assertEqual("adapters/create", policy["create_owner"])
+        self.assertEqual("adapters/config", policy["configure_owner"])
         result = verify_receipt({"packet": prepared["packet"], "receipt": self.receipt(prepared)})
         self.assertTrue(result["ok"])
         self.assertEqual("specialist_outcome_ready", result["event"])
 
     def test_call_packet_requires_typed_adapter_discovery(self) -> None:
-        payload = self.input(available=["rote-using-adapters"])
+        payload = self.input()
         del payload["adapter_discovery"]
         with self.assertRaisesRegex(ValueError, "typed adapter_discovery"):
             prepare_handoff(payload)
 
     def test_zero_catalog_results_require_adapter_creation_before_execution(self) -> None:
-        payload = self.input(available=["rote-using-adapters"])
+        payload = self.input()
         payload["adapter_discovery"] = {
             "status": "catalog_empty",
             "query": "unlisted provider",
@@ -234,7 +235,7 @@ class HandoffTest(unittest.TestCase):
             prepare_handoff(payload)
 
     def test_converged_catalog_entry_is_bound_into_the_call_packet(self) -> None:
-        payload = self.input(available=["rote-using-adapters"])
+        payload = self.input()
         choice = payload["adapter_discovery"]["choices"][0]
         choice.update(
             {
@@ -266,7 +267,7 @@ class HandoffTest(unittest.TestCase):
         self.assertEqual("stripe", prepared["packet"]["adapter_discovery"]["selected_id"])
 
     def test_unselected_catalog_choices_cannot_enter_execution_handoff(self) -> None:
-        payload = self.input(available=["rote-using-adapters"])
+        payload = self.input()
         payload["adapter_discovery"].update(
             {
                 "status": "catalog_choices",
@@ -278,7 +279,7 @@ class HandoffTest(unittest.TestCase):
             prepare_handoff(payload)
 
     def test_catalog_cannot_be_skipped_after_an_installed_miss(self) -> None:
-        payload = self.input(available=["rote-using-adapters"])
+        payload = self.input()
         payload["adapter_discovery"] = {
             "status": "installed_ready",
             "query": "stripe",
@@ -305,7 +306,7 @@ class HandoffTest(unittest.TestCase):
             prepare_handoff(payload)
 
     def test_probe_hints_are_not_an_approval_gate(self) -> None:
-        payload = self.input(available=["rote-using-adapters"])
+        payload = self.input()
         payload["inputs"]["probe_hints"] = {
             "readOnlyHint": False,
             "destructiveHint": True,
@@ -316,7 +317,7 @@ class HandoffTest(unittest.TestCase):
         self.assertIn("confirmation_required", prepared["packet"]["expected_events"])
 
     def test_rote_confirmation_required_receipt_is_accepted(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         result = verify_receipt(
             {"packet": prepared["packet"], "receipt": self.confirmation_receipt(prepared)}
         )
@@ -325,7 +326,7 @@ class HandoffTest(unittest.TestCase):
         self.assertEqual("confirm-17", result["effect_confirmation"]["confirm_token"])
 
     def test_confirmation_cannot_be_inferred_from_probe_metadata(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         receipt = self.confirmation_receipt(prepared)
         receipt["payload"]["effect_confirmation"]["source"] = "probe_hints"
         result = verify_receipt({"packet": prepared["packet"], "receipt": receipt})
@@ -333,7 +334,7 @@ class HandoffTest(unittest.TestCase):
         self.assertIn("rote_confirmation_required", " ".join(result["reasons"]))
 
     def test_recoverable_auth_failure_enters_typed_repair_contract(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         receipt = self.authentication_required_receipt(prepared)
         result = verify_receipt({"packet": prepared["packet"], "receipt": receipt})
 
@@ -361,7 +362,7 @@ class HandoffTest(unittest.TestCase):
                 "authentication": {
                     "source": "rote_authentication_required",
                     "status": "approved",
-                    "owner": "rote-adapter-config",
+                    "owner": "adapters/config",
                     "recoverable": True,
                     "adapter_id": "gmail",
                     "env_var": "GSUITE_TOKEN",
@@ -374,7 +375,7 @@ class HandoffTest(unittest.TestCase):
         )
 
         self.assertTrue(repair["ok"])
-        self.assertEqual("rote-adapter-config", repair["packet"]["owner"])
+        self.assertEqual("adapters/config", repair["packet"]["owner"])
         self.assertEqual(
             "play.run-handoff/v1", repair["packet"]["original_packet"]["schema"]
         )
@@ -385,7 +386,7 @@ class HandoffTest(unittest.TestCase):
         self.assertEqual("required", repair["packet"]["authentication"]["status"])
 
     def test_authentication_handoff_rejects_missing_human_approval(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         receipt = self.authentication_required_receipt(prepared)
         verified = verify_receipt({"packet": prepared["packet"], "receipt": receipt})
         authentication_input = self.authentication_input(prepared, verified["authentication"])
@@ -395,7 +396,7 @@ class HandoffTest(unittest.TestCase):
             prepare_authentication_handoff(authentication_input)
 
     def test_authentication_request_rejects_undeclared_credential_material(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         receipt = self.authentication_required_receipt(prepared)
         receipt["payload"]["authentication"]["token"] = "must-not-enter-play"
 
@@ -405,7 +406,7 @@ class HandoffTest(unittest.TestCase):
         self.assertIn("undeclared fields", " ".join(result["reasons"]))
 
     def test_authentication_request_is_rejected_for_non_call_routes(self) -> None:
-        payload = self.input(owner="rote-shell", available=["rote-shell"])
+        payload = self.input(owner="shell/essential")
         payload["modalities"] = ["shell"]
         prepared = prepare_handoff(payload)
         receipt = self.authentication_required_receipt(prepared)
@@ -416,24 +417,18 @@ class HandoffTest(unittest.TestCase):
         self.assertIn("only for a CALL route", " ".join(result["reasons"]))
 
     def test_authentication_handoff_is_closed_to_adapter_config(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         receipt = self.authentication_required_receipt(prepared)
         verified = verify_receipt({"packet": prepared["packet"], "receipt": receipt})
         authentication_input = self.authentication_input(prepared, verified["authentication"])
 
-        authentication_input["available_owners"] = ["rote-using-adapters"]
-        unavailable = prepare_authentication_handoff(authentication_input)
-        self.assertFalse(unavailable["ok"])
-        self.assertEqual("authentication_specialist_unavailable", unavailable["event"])
-
-        authentication_input["available_owners"] = ["rote-adapter-config"]
         repair = prepare_authentication_handoff(authentication_input)
         self.assertTrue(repair["ok"])
-        self.assertEqual("rote-adapter-config", repair["packet"]["owner"])
+        self.assertEqual("adapters/config", repair["packet"]["owner"])
         self.assertEqual(prepared["packet_sha256"], repair["packet"]["original_packet_sha256"])
 
     def test_authentication_receipt_must_match_requested_shape(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         required = verify_receipt(
             {
                 "packet": prepared["packet"],
@@ -455,7 +450,7 @@ class HandoffTest(unittest.TestCase):
         self.assertIn("env_var does not match", " ".join(result["reasons"]))
 
     def test_authentication_receipt_accepts_runtime_context_projection(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         required = verify_receipt(
             {
                 "packet": prepared["packet"],
@@ -481,7 +476,7 @@ class HandoffTest(unittest.TestCase):
         self.assertEqual("specialist_authentication_ready", result["event"])
 
     def test_authentication_receipt_rejects_conflicting_projection_copies(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         required = verify_receipt(
             {
                 "packet": prepared["packet"],
@@ -507,7 +502,7 @@ class HandoffTest(unittest.TestCase):
         self.assertIn("packets differ", " ".join(result["reasons"]))
 
     def test_authentication_receipt_rejects_undeclared_credential_material(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         required = verify_receipt(
             {
                 "packet": prepared["packet"],
@@ -528,7 +523,7 @@ class HandoffTest(unittest.TestCase):
         self.assertIn("undeclared fields", " ".join(result["reasons"]))
 
     def test_validated_repair_resumes_original_call_with_fresh_packet(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         required = verify_receipt(
             {
                 "packet": prepared["packet"],
@@ -543,7 +538,7 @@ class HandoffTest(unittest.TestCase):
         )
         self.assertTrue(authenticated["ok"])
 
-        resume_input = self.input(available=["rote-using-adapters"])
+        resume_input = self.input()
         resume_input["inputs"] = {"query": "must be replaced from original"}
         resume_input["idempotency_key"] = "must-be-replaced"
         resume_input["authentication_resume"] = {
@@ -566,7 +561,7 @@ class HandoffTest(unittest.TestCase):
         self.assertEqual(authenticated["receipt_ref"], resumed["packet"]["resume"]["authentication_receipt_ref"])
 
     def test_resume_rejects_an_unvalidated_authentication_receipt_reference(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         required = verify_receipt(
             {
                 "packet": prepared["packet"],
@@ -580,7 +575,7 @@ class HandoffTest(unittest.TestCase):
         authenticated = verify_authentication_receipt(
             {"packet": repair["packet"], "receipt": authentication_receipt}
         )
-        resume_input = self.input(available=["rote-using-adapters"])
+        resume_input = self.input()
         resume_input["authentication_resume"] = {
             "original_packet": prepared["packet"],
             "original_packet_sha256": prepared["packet_sha256"],
@@ -594,7 +589,7 @@ class HandoffTest(unittest.TestCase):
             prepare_handoff(resume_input)
 
     def test_raw_mcp_result_cannot_satisfy_receipt(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         result = verify_receipt(
             {
                 "packet": prepared["packet"],
@@ -605,15 +600,15 @@ class HandoffTest(unittest.TestCase):
         self.assertEqual("specialist_receipt_invalid", result["event"])
 
     def test_receipt_from_wrong_owner_is_rejected(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         receipt = copy.deepcopy(self.receipt(prepared))
-        receipt["executor"]["name"] = "crucible.search_library"
+        receipt["executor"]["id"] = "crucible.search_library"
         result = verify_receipt({"packet": prepared["packet"], "receipt": receipt})
         self.assertFalse(result["ok"])
-        self.assertIn("executor name", " ".join(result["reasons"]))
+        self.assertIn("executor id must be", " ".join(result["reasons"]))
 
     def test_call_receipt_without_adapter_provenance_is_rejected(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         receipt = self.receipt(prepared)
         del receipt["payload"]["route_provenance"]
         result = verify_receipt({"packet": prepared["packet"], "receipt": receipt})
@@ -621,7 +616,7 @@ class HandoffTest(unittest.TestCase):
         self.assertIn("route_provenance", " ".join(result["reasons"]))
 
     def test_call_receipt_with_direct_mcp_execution_is_rejected(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         receipt = self.receipt(prepared)
         receipt["payload"]["route_provenance"]["direct_tool_execution"] = True
         result = verify_receipt({"packet": prepared["packet"], "receipt": receipt})
@@ -629,7 +624,7 @@ class HandoffTest(unittest.TestCase):
         self.assertIn("direct_tool_execution", " ".join(result["reasons"]))
 
     def test_call_receipt_requires_detected_adapter_type(self) -> None:
-        prepared = prepare_handoff(self.input(available=["rote-using-adapters"]))
+        prepared = prepare_handoff(self.input())
         receipt = self.receipt(prepared)
         receipt["payload"]["route_provenance"]["substrate"] = "rest"
         result = verify_receipt({"packet": prepared["packet"], "receipt": receipt})

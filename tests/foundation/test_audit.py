@@ -49,7 +49,7 @@ class RuleRegistryTest(unittest.TestCase):
     def test_every_rule_has_a_class_owner_and_fix(self) -> None:
         for rule in rules.RULES.values():
             self.assertIn(rule.cls, {"fact", "judgment"}, rule.id)
-            self.assertTrue(rule.owner.startswith("rote-"), rule.id)
+            self.assertTrue("/" in rule.owner, rule.id)
             self.assertTrue(rule.fix, rule.id)
             self.assertTrue(rule.message, rule.id)
 
@@ -134,7 +134,7 @@ class FixtureFindingsTest(NoProbe):
         self.assertEqual({"UNRELIABLE_EXIT_STATUS", "TOOL_DECLARED_UNUSED", "NEGATIVE_CASES_MISSING"}, ids(envelope, "judgments"))
         unused = next(item for item in envelope["judgments"] if item["id"] == "TOOL_DECLARED_UNUSED")
         self.assertEqual("rsync", unused["evidence"]["command"])
-        self.assertEqual("rote-troubleshooting", next(f for f in envelope["facts"] if f["id"] == "FANOUT_OVER_PREVIEW")["owner"])
+        self.assertEqual("troubleshooting/essential", next(f for f in envelope["facts"] if f["id"] == "FANOUT_OVER_PREVIEW")["owner"])
 
     def test_stranded_body(self) -> None:
         envelope = audit("stranded")
@@ -437,7 +437,7 @@ class CliTest(NoProbe):
         code, out = self._run(str(FIXTURES / "stranded"), "--author", "--no-adapters", "--no-store")
         self.assertEqual(0, code)
         self.assertIn("BODY_STRANDED", out)
-        self.assertIn("owner rote-flow-authoring", out)
+        self.assertIn("owner play/authoring", out)
         self.assertIn("Next", out)
         code, out = self._run(str(FIXTURES / "stranded"), "--json", "--no-adapters", "--no-store")
         self.assertEqual("play-audit/1", json.loads(out)["schema"])
@@ -673,7 +673,7 @@ class HandoffTest(NoProbe):
             assert path is not None
             self.assertTrue(path.is_file())
             self.assertEqual(1, packet["count"])
-            self.assertEqual(["rote-flow-authoring"], list(packet["owners"]))
+            self.assertEqual(["play/authoring"], list(packet["owners"]))
             self.assertIn("play audit handoff audit/partial-scan --close", packet["instructions"])
             # Apply the fix, then close.
             text = (root / "main.ts").read_text().replace(" *     - .git\n", " *     - .git\n *     timeout_ms: 5000\n", 1)

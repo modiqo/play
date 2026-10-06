@@ -43,9 +43,9 @@ An approved empty-search exploration is not a terminal standby. `record_standby`
 capture and workspace, then `capture_is_active` routes through the visible `exploration_begin`
 phase to `exploration_execute`. That delegated state invokes the `rote` entrypoint with the
 unchanged outcome and completed no-match evidence.
-Rote owns all nested routing: `rote-task-routing` runs explore/inventory/catalog gates,
-`rote-adapter-create` adapts an accepted API, `rote-shell` validates and records an accepted CLI,
-and `rote-workspace` executes adapter work. Play accepts only a complete result plus a verified,
+Rote owns all nested routing: `gate/route` runs explore/inventory/catalog gates,
+`adapters/create` adapts an accepted API, `shell/essential` validates and records an accepted CLI,
+and `workspace/essential` executes adapter work. Play accepts only a complete result plus a verified,
 capture-bound workspace trajectory before entering verification and save judgment.
 The exploration specialist never authors the trajectory receipt. On
 `exploration_outcome_ready`, the runtime resolves the continuation's owner-private capture, runs the

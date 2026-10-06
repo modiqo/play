@@ -1507,10 +1507,10 @@
             "null"
           ],
           "enum": [
-            "rote-using-adapters",
-            "rote-shell",
-            "rote-browse",
-            "rote-workspace",
+            "adapters/delegated",
+            "shell/essential",
+            "browser/essential",
+            "workspace/essential",
             null
           ]
         },
@@ -1942,7 +1942,7 @@
             "null"
           ],
           "enum": [
-            "rote-adapter-config",
+            "adapters/config",
             null
           ]
         },
@@ -2024,10 +2024,10 @@
             "null"
           ],
           "enum": [
-            "rote-using-adapters",
-            "rote-shell",
-            "rote-browse",
-            "rote-workspace",
+            "adapters/delegated",
+            "shell/essential",
+            "browser/essential",
+            "workspace/essential",
             null
           ]
         },
