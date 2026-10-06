@@ -230,7 +230,7 @@ runtime runs its own `rote ls` and `rote trace --deps` checks; manually repeatin
 not bind evidence to Play.
 
 The command executes every eligible deterministic action and stops only at a model, human,
-specialist, or terminal boundary, returning a short `continuation_id`. Keep that value opaque in
+guidance, or terminal boundary, returning a short `continuation_id`. Keep that value opaque in
 harness state — never inspect, print, or persist it yourself. The runtime stores context
 owner-privately under `~/.rote-play/continuations` and expires it after 24 hours. Resume with the
 same one-shot heredoc form:
@@ -290,10 +290,15 @@ run.
   their behalf. Resume only with the event bound to the choice the user selected. The runtime
   rejects any other event and names the declared ones; when that happens, show the projected
   prompt again unchanged.
-- `specialist`: invoke only `instruction.specialist` with `instruction.input` through the
-  harness's skill mechanism; resume with the one accepted typed receipt event. Interactive
-  specialists own their own user questions — ask those directly and continue inside the
-  specialist flow; return to the runtime only with a declared receipt event.
+- `guidance`: run `rote guidance <instruction.guidance>` in the shell, follow it with
+  `instruction.input` within `command_policy`, then return the declared receipt event. Where a
+  receipt carries an executor, it is `{kind: guidance, id: <instruction.guidance>, digest: <the
+  data.result.digest field of rote guidance <id> --json>}`. Play owns the step boundary: Rote
+  documents end with `## Next` gates and gate branches that may lead on or answer the user; inside
+  a Play step these are informational. When the step's work is done, return a declared event to
+  Play; never follow a Rote gate past `command_policy`, and never answer the user from inside the
+  step. Interactive guidance (setup, authentication) asks its own user questions — ask those
+  directly and continue; return to the runtime only with a declared event.
 - `terminal`: present the terminal outcome and stop. A `blocked` outcome arrives as a
   presentation that names the step that stopped, the cause, and the next step. Relay that
   Markdown verbatim. Never replace it with a generic phrase such as “couldn't continue due to
@@ -330,7 +335,7 @@ Authentication declared by a saved Play stays inside its approved `rote play run
 shows `adapter.auth.ensure`, complete secure browser-capable provider sign-in inside that step and
 continue the same run; never run `rote oauth` separately or synthesize an authentication receipt for
 it. A missing static credential is the exception because the step can detect but cannot mint a
-vendor secret: follow the projected `rote-adapter-config` boundary, resolve only the adapter
+vendor secret: follow the projected `adapters/config` boundary, resolve only the adapter
 catalog's first-party HTTPS token page, and tell the user to create the token there and run
 `rote token set <ENV> --stdin` in their own terminal. Never request or receive the token in chat.
 Only after the user confirms the out-of-band command and the named token is verified may Play retry
@@ -345,13 +350,13 @@ check. After verified sign-in, offer company setup once per identity on this dev
 option uses the same Supabase email-code flow as the website. Enter email and codes only in the
 local browser window; never collect them in chat.
 
-Company setup is optional. Ask for the company name and handle, then use `rote-org` to create or
+Company setup is optional. Ask for the company name and handle, then follow `rote guidance registry/org` to create or
 verify the organization. Once ready, offer a developer invitation for shared Play creation and
 publication, an explicit admin invitation for organization and member management, or Continue.
 Never create an organization, invite anyone, or publish a Play from sign-in alone. Preserve the
 original reference and parameters, then inspect the pending Play again before execution.
 
-Do not invoke the general `rote-setup` wizard. Do not discuss adapters, ask the user to retry the
+Do not run the general `rote guidance setup/essential` wizard. Do not discuss adapters, ask the user to retry the
 Play, or start a new request. A failed login shows the same provider choice without running the
 Play.
 
@@ -441,12 +446,12 @@ per sub-outcome, is a no-match. Never treat a result carrying `match_classificat
 with a non-empty `uncovered_terms` as "nothing exists", and never treat an empty AND-of-terms
 result for a query with surplus terms as proof of absence. Only a clean no-match lets the next
 deterministic transition create the capture and Rote workspace before any work begins and yield
-directly to the `rote` specialist without a second exploration prompt. Choosing to explore from a
+directly to the `gate/route` guidance step without a second exploration prompt. Choosing to explore from a
 partial offer scopes the capture to the uncovered sub-outcomes; covered sub-outcomes are handed to
-the specialist as `creator.baselines` to run through `rote-flow-run`, never rebuilt by hand. That specialist must invoke
-`rote-task-routing`; API adaptation belongs to `rote-adapter-create`, existing CLI discovery and
-validation belong to `rote-shell` using `rote deps` and `rote proc`, and adapter execution belongs
-to `rote-workspace`. Present the discovered routes, always allow another tool, wait for the user's
+that step as `creator.baselines` to run through `rote guidance play/run`, never rebuilt by hand. That step must run
+`rote guidance gate/route`; API adaptation follows `adapters/create`, existing CLI discovery and
+validation follow `shell/essential` using `rote deps` and `rote proc`, and adapter execution follows
+`workspace/essential`. Present the discovered routes, always allow another tool, wait for the user's
 selection, verify that selection, and announce the first outcome-bearing step before execution.
 Continue the original outcome through that returned workspace. Never invent a second search picker
 or ask for the outcome again. Before novel outcome work starts, the runtime classifies it as

@@ -32,7 +32,7 @@ The projection is the entire contract for the current moment. Act on `projection
   payload fields.
 - `human` — present the projected prompt verbatim through structured elicitation; resume with the
   selected event.
-- `specialist` — invoke exactly `instruction.specialist` with `instruction.input`; resume with the
+- `guidance` — run `rote guidance <instruction.guidance>` and follow it with `instruction.input`; resume with the
   one accepted receipt event.
 - `terminal` — present the terminal presentation and stop.
 

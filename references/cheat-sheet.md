@@ -217,7 +217,7 @@ The harness should not ask you to paste an OAuth credential, build an authentica
 hand, or restart the request after successful browser authorization.
 
 For an older Play without `adapter.auth.ensure`, Play delegates the same named adapter to
-`rote-adapter-config`, which runs `rote adapter reauth <adapter-id>` in place. Rote `0.69.2` and newer
+`adapters/config`, which runs `rote adapter reauth <adapter-id>` in place. Rote `0.69.2` and newer
 preserve the adapter manifest, fingerprint, tool inventory, provenance, and dependent Play index;
 Play never deletes or rebuilds the adapter to restore its credential.
 

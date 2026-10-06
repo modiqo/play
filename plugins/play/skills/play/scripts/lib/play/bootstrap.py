@@ -85,8 +85,11 @@ ROTE_SKILL_PROVIDERS = {
 PLAY_MARKETPLACE = "play-skills"
 PLAY_PLUGIN = "play@play-skills"
 PLAY_REPOSITORY = "modiqo/play"
-ROTE_MCP_LIFECYCLE_MINIMUM = (0, 69, 2)
-ROTE_MCP_LIFECYCLE_MINIMUM_TEXT = ".".join(map(str, ROTE_MCP_LIFECYCLE_MINIMUM))
+# 0.89.0 serves every Rote instruction through `rote guidance <id>`; Play's
+# delegated actions and receipts name those ids, and it removed the companion
+# skills and `rote install skill --package`.
+ROTE_MINIMUM = (0, 89, 0)
+ROTE_MINIMUM_TEXT = ".".join(map(str, ROTE_MINIMUM))
 DEFAULT_SELECTED_HARNESSES = 3
 MAX_PARALLEL_HARNESSES = 3
 SETUP_PRO_TIPS = (
@@ -656,16 +659,7 @@ def _roots() -> dict[str, tuple[Path, ...]]:
 
 
 def _has_skill(root: Path, kind: str) -> bool:
-    if kind == "play":
-        return (root / "play" / "SKILL.md").is_file()
-    try:
-        return any(
-            (child.name == "rote" or child.name.startswith("rote-"))
-            and (child / "SKILL.md").is_file()
-            for child in root.iterdir()
-        )
-    except OSError:
-        return False
+    return (root / kind / "SKILL.md").is_file()
 
 
 def resolve_rote() -> str | None:
@@ -812,22 +806,22 @@ def _rote_compatibility_step(rote: str, runner: Runner) -> Step:
             "verify_rote_compatibility",
             "failed",
             "Play could not verify the installed Rote version. "
-            f"Rote {ROTE_MCP_LIFECYCLE_MINIMUM_TEXT} or newer is required for safe in-place MCP reauthorization.",
+            f"Rote {ROTE_MINIMUM_TEXT} or newer is required to serve `rote guidance` handoffs.",
             command=command,
         )
-    if parsed < ROTE_MCP_LIFECYCLE_MINIMUM:
+    if parsed < ROTE_MINIMUM:
         return Step(
             "verify_rote_compatibility",
             "failed",
             f"Rote {version} is too old. Play requires Rote "
-            f"{ROTE_MCP_LIFECYCLE_MINIMUM_TEXT} or newer so MCP credentials can be reauthorized "
-            "without deleting or rebuilding the adapter. Run `rote self-update --yes`, then retry.",
+            f"{ROTE_MINIMUM_TEXT} or newer because it hands work to Rote through "
+            "`rote guidance <id>`. Run `rote self-update --yes`, then retry.",
             command=command,
         )
     return Step(
         "verify_rote_compatibility",
         "unchanged",
-        f"Rote {version} supports stable MCP identity and in-place credential reauthorization.",
+        f"Rote {version} serves the `rote guidance` handoffs Play uses.",
         command=command,
     )
 
@@ -1153,8 +1147,7 @@ def _rote_skills_snapshot(providers: Sequence[str] | None = None) -> list[dict[s
             names = sorted(
                 child.name
                 for child in root.iterdir()
-                if (child.name == "rote" or child.name.startswith("rote-"))
-                and (child / "SKILL.md").is_file()
+                if child.name == "rote" and (child / "SKILL.md").is_file()
             )
         except OSError:
             names = []
@@ -1177,7 +1170,7 @@ def _rote_skill_command(rote: str, selected: Sequence[str]) -> list[str]:
     command = [rote, "install", "skill"]
     for target in dict.fromkeys(TARGET_IDS[name] for name in selected):
         command.extend(["--target", target])
-    command.extend(["--personal", "--package", "*", "--force"])
+    command.extend(["--personal", "--force"])
     return command
 
 

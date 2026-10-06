@@ -1,10 +1,10 @@
-"""Hand chosen findings to the skill that fixes them, and record what closed.
+"""Hand chosen findings to the Rote guidance that fixes them, and record what closed.
 
 A handoff packet is a file, not an action: it lists the findings the author
-chose, grouped by owner skill, each with its location, fix recipe, and
-fixture. Play's controller passes the packet to rote-troubleshooting through
-the existing delegated-action route. ``close`` re-audits afterwards and
-writes the delta into the Play's history.
+chose, grouped by owner guidance id, each with its location, fix recipe, and
+fixture. The agent fixes them by following `rote guidance <owner>` for each
+group. ``close`` re-audits afterwards and writes the delta into the Play's
+history.
 """
 
 from __future__ import annotations
@@ -62,9 +62,10 @@ def build_packet(envelope: dict[str, Any], findings: list[dict[str, Any]], *, ch
         "count": len(findings),
         "instructions": (
             "Apply each fix at its location without changing the Play's declared contract. "
-            "Route by owner: rote-flow-authoring for structure and deps.toml, rote-troubleshooting for "
-            "failure contracts, rote-shell for command portability, rote-typescript-transformations for "
-            "the presentation body, rote-registry for publication. When done, run "
+            "Route by owner, running `rote guidance <owner>` and following it: play/authoring for "
+            "structure and deps.toml, troubleshooting/essential for failure contracts, shell/essential "
+            "for command portability, typescript/transformations for the presentation body, "
+            "registry/essential for publication. When done, run "
             f"`play audit handoff {subject.get('reference')} --close` to record what closed."
         ),
     }

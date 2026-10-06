@@ -324,15 +324,7 @@ def play_path_for(harness: Harness, source: Path) -> Path | None:
 
 
 def root_has_rote_provider(root: Path) -> bool:
-    try:
-        children = list(root.iterdir())
-    except OSError:
-        return False
-    return any(
-        (child.name == "rote" or child.name.startswith("rote-"))
-        and (child / "SKILL.md").is_file()
-        for child in children
-    )
+    return (root / "rote" / "SKILL.md").is_file()
 
 
 def verify_harness_prerequisites(harnesses: list[Harness]) -> None:
@@ -345,7 +337,7 @@ def verify_harness_prerequisites(harnesses: list[Harness]) -> None:
         raise InstallError(
             "the Rote skill provider is missing from detected harness(es): "
             + ", ".join(missing)
-            + ". Install rote-onboard there with the harness's rote-setup instructions, "
+            + ". Install the rote skill there with `rote install skill --target <harness> --personal`, "
             "then retry this same target selection."
         )
 
@@ -570,7 +562,7 @@ def render_targets(payload: dict[str, object]) -> None:
         if not isinstance(target, dict):
             raise InstallError("install target payload is malformed")
         marker = "✓" if target["selected"] else " "
-        rote = "Rote ready" if target["rote_skills_installed"] else "needs rote-setup"
+        rote = "Rote ready" if target["rote_skills_installed"] else "needs the rote skill"
         installed = "Play installed" if target["play_skill_installed"] else "Play not installed"
         print(f"  [{marker}] {target['label']} ({target['id']}): {rote}; {installed}")
     print("Select explicitly with repeated --harness flags, or use --all-harnesses.")

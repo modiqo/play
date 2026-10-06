@@ -1,12 +1,12 @@
 # Rote Handoffs
 
-Play owns the user-facing lifecycle. Existing `rote-*` skills own domain execution. Hand off to the
-narrowest applicable specialist after Play has selected a state and route.
+Play owns the user-facing lifecycle. Rote's guidance documents own domain execution. Hand off by
+guidance id to the narrowest applicable document after Play has selected a state and route: run
+`rote guidance <id>` in the shell and follow it.
 
-Every installed Rote specialist must remain model/harness-invocable. A skill that can be invoked
-only by an explicit user command cannot satisfy an internal handoff, even when its `SKILL.md` is
-installed and readable. Keep Play as the preferred controller through routing instructions, not by
-hiding the execution owners it must call.
+The owner guidance is served by the `rote` binary, so it is reachable whenever Rote is installed.
+Installed files and lower-level tools are not substitutes for following the owning guidance. Keep
+Play as the preferred controller through routing instructions.
 
 ## Packet
 
@@ -32,14 +32,16 @@ idempotency_key: <stable key for retryable effects>
 Require one declared event with its complete payload. Reject prose-only completion, unknown events,
 missing evidence, or a response for another run/state/action.
 
-Prepare the packet with `scripts/bin/play-handoff prepare --stdin --json`, supplying the rote-* skills
-that the current harness actually exposes as callable. If it emits `specialist_unavailable`, enter
-`blocked`; do not fall through to an MCP, app, shell, or browser tool.
+Prepare the packet with `scripts/bin/play-handoff prepare --stdin --json`. The owner guidance id is
+always reachable when the rote binary is installed; if prepare emits `specialist_unavailable` (for
+a mismatched owner), enter `blocked`; do not fall through to an MCP, app, shell, or browser tool.
 
-The specialist must return a `play.handoff-receipt/v1` containing the packet SHA, matching run,
-state, action, and owner, `executor.kind: skill`, the declared event and complete payload, and
-evidence references. Validate it with `scripts/bin/play-handoff verify --stdin --json` before Play
-accepts the event. A raw tool result or a receipt synthesized by Play is invalid.
+The guided step must return a `play.handoff-receipt/v1` containing the packet SHA, matching run,
+state, action, and owner, `executor: {kind: "guidance", id: <owner guidance id>, digest:
+"sha256:<hex>"}` (the `digest` from `rote guidance <id> --json` for the document followed), the
+declared event and complete payload, and evidence references. Validate it with
+`scripts/bin/play-handoff verify --stdin --json` before Play accepts the event. A raw tool result
+or a receipt synthesized by Play is invalid.
 
 The portable packet and receipt shapes are declared in
 [`../controller/handoff.schema.json`](../controller/handoff.schema.json).
@@ -49,13 +51,13 @@ The portable packet and receipt shapes are declared in
 A CALL packet includes `capability_policy.kind=rote_adapter`. Treat that policy as a stop condition,
 not a suggestion:
 
-1. In `adapter_discover`, hand discovery to `rote-adapter-create` to search installed Rote adapters and inspect
+1. In `adapter_discover`, hand discovery to `adapters/create` to search installed Rote adapters and inspect
    every plausible match. Reuse a unique adequate one; present multiple plausible adapters.
 2. If no installed adapter is adequate, always run
    `rote adapter catalog search <adapter_discovery.query> --json`. Present every result through
    `adapter_offer`; REST/OpenAPI, GraphQL, and MCP entries for the same provider are separate choices.
 3. After a selection, successful zero-result catalog search, or explicit rejection, enter
-   `adapter_converge` and hand the complete discovery record back to `rote-adapter-create`. That
+   `adapter_converge` and hand the complete discovery record back to `adapters/create`. That
    specialist owns spec inspection, dry-run, creation, initial authentication, and readiness; Play
    must not reproduce those steps. It may inspect a supplied spec/endpoint, server card, or provider documentation.
    Detect `openapi`, `graphql`, or `mcp` from that ordered evidence. MCP uses
@@ -64,14 +66,14 @@ not a suggestion:
    existing adapter, return the typed authentication request described below. Do not ask Play to classify
    authentication or handle credentials.
 5. Only an `installed_ready` convergence receipt may prepare the execution packet. Execute the
-   requested capability through `rote-using-adapters`.
+   requested capability through `adapters/delegated`.
 
 The CALL packet binds the typed `adapter_discovery` record. Missing installed-inventory evidence,
 catalog fallthrough without catalog evidence, an unselected match, or reordered discovery is an
 invalid handoff rather than permission to improvise.
 
 Probe hints are non-authoritative discovery metadata. They must never become a Play blocker or an
-approval event. If the adapter call is guarded, `rote-using-adapters` returns the exact Rote
+approval event. If the adapter call is guarded, `adapters/delegated` returns the exact Rote
 `confirmation_required` tool, impact, token, workspace, and evidence as the typed
 `confirmation_required` receipt event. After Play binds user approval to those fields, prepare a
 new packet and resume the same specialist, workspace, and guarded call with that token. A declined
@@ -81,7 +83,7 @@ If any non-recoverable stage cannot complete, return `route_exhausted` with evid
 substitute a direct API or MCP call. `outcome_ready` additionally requires `route_provenance`
 recording the adapter id,
 detected substrate and evidence, creation/reuse status, auth status/owner, orchestration owner,
-`adapter_execute_owner=rote-using-adapters`, and `direct_tool_execution=false`.
+`adapter_execute_owner=adapters/delegated`, and `direct_tool_execution=false`.
 
 ## Recoverable authentication
 
@@ -89,7 +91,7 @@ Saved Play authentication is selected from the inspected operations. When a Play
 `adapter.auth.ensure`, the approved `rote play run` owns browser-capable provider sign-in: Play
 re-enters that same command with terminal-backed stdin at an exact pre-call browser boundary and
 does not delegate it. A failed Play-owned browser authentication step blocks with its exact output.
-A typed missing static credential is the exception: the harness may enter `rote-adapter-config`,
+A typed missing static credential is the exception: the harness may enter `adapters/config`,
 resolve only the adapter catalog's first-party HTTPS `token_url`, and present the vendor page plus
 `rote token set <ENV> --stdin` for the user to run in their own terminal. The harness never receives
 the credential. After the user confirms and the named token is verified, the exact approved Play is
@@ -110,11 +112,11 @@ The packet must not contain a token, secret, credential value, or other undeclar
 
 After Play receives explicit approval, prepare `play.authentication-handoff/v1` with
 `scripts/bin/play-handoff prepare-authentication --stdin --json`. This is a separate closed handoff to
-`rote-adapter-config`; it neither adds that skill to the CALL execution owner set nor authorizes the
+`adapters/config`; it neither adds that skill to the CALL execution owner set nor authorizes the
 provider operation. Bind the authentication packet to the exact original CALL packet and SHA.
 
 Rote `0.69.2` and newer own missing OAuth DCR credential bootstrap in place. For a classified OAuth,
-OAuth DCR, or Google discovery boundary, `rote-adapter-config` runs
+OAuth DCR, or Google discovery boundary, `adapters/config` runs
 `rote adapter reauth <adapter-id>` against the installed adapter. Never pack, delete, recreate, or
 run `new-from-mcp` for this condition: successful reauthorization preserves the manifest,
 fingerprint, selected tool inventory, provenance, and dependent-Play indexing.
@@ -137,14 +139,14 @@ provenance. The original CALL must execute and pass normal receipt and outcome v
 
 ## Play-request setup handoff
 
-Any `$play` or `/play` request may hand off to `rote-setup` after typed live preflight reports the
+Any `$play` or `/play` request may hand off to `setup/essential` after typed live preflight reports the
 binary missing, or reports a structurally healthy installation whose only failed check is an
 unauthenticated identity. This is normal onboarding, not an Explore execution owner, a CALL
 authentication packet, or an installation-error presentation. Preserve the original request
 and opaque continuation while setup runs.
 
 Pass the onboarding intent, live Rote status, resolved command when present, and expected closed
-events. `rote-setup` owns its sequential binary/state probes, install choice, remote-code approval,
+events. `setup/essential` owns its sequential binary/state probes, install choice, remote-code approval,
 login, and optional remaining onboarding. Play must not inline an installer or login command. Accept
 only `rote_setup_completed`, `rote_setup_paused`, or `setup_specialist_unavailable` with the declared
 payload. A completed result reruns the complete live preflight rather than trusting a prose success
@@ -153,30 +155,30 @@ recovery direction; an unavailable specialist remains a real blocker.
 
 ## Ownership map
 
-- Adapter discovery and calls: `rote-using-adapters`, with `rote-adapter-create` when capability is
-  absent and the separate approved `rote-adapter-config` handoff for recoverable authentication.
-- Local commands, files, logs, and process state: `rote-shell`.
-- Active-session browser work: `rote-browse`.
-- Multi-step adapter work and durable evidence: `rote-workspace`.
-- Flow construction and release: `rote-flow-authoring`.
-- Candidate preservation and save gates: `rote-flow-crystallization`.
+- Adapter discovery and calls: `adapters/delegated`, with `adapters/create` when capability is
+  absent and the separate approved `adapters/config` handoff for recoverable authentication.
+- Local commands, files, logs, and process state: `shell/essential`.
+- Active-session browser work: `browser/essential`.
+- Multi-step adapter work and durable evidence: `workspace/essential`.
+- Flow construction and release: `play/authoring`.
+- Candidate preservation and save gates: `play/crystallization`.
 - First-class registry Play inspection and execution: invoke `rote play inspect` or `rote play run`
-  directly; never hand these operations to `rote-flow-run`.
-- Registry publication and sharing: `rote-registry`.
-- Registry inspection, organization summaries, and grouped Play inventories: `rote-registry`.
-- Play onboarding when Rote is missing or unauthenticated: `rote-setup`.
-- Private organization creation and invitations: `rote-org`.
-- Repeated failures: `rote-troubleshooting`.
+  directly; never hand these operations to `play/run`.
+- Registry publication and sharing: `registry/essential`.
+- Registry inspection, organization summaries, and grouped Play inventories: `registry/essential`.
+- Play onboarding when Rote is missing or unauthenticated: `setup/essential`.
+- Private organization creation and invitations: `registry/org`.
+- Repeated failures: `troubleshooting/essential`.
 
 ## Save-lifecycle boundary
 
 Do not reuse the Explore execution packet or send one broad task across release and publication.
-For `author_release`, invoke only `rote-flow-authoring`, scope the request to author/test/lint/local
+For `author_release`, follow only `rote guidance play/authoring`, scope the request to author/test/lint/local
 release, and require an explicitly unpublished released candidate. A receipt that contains a
 registry reference or says publication already occurred maps to
 `publication_boundary_violated`, not `flow_released`.
 
-After Play captures `birth.sha256` and `birth.capture_ref`, invoke `rote-registry` separately for
+After Play captures `birth.sha256` and `birth.capture_ref`, run `rote guidance registry/essential` separately for
 `private_publish` or `public_publish`. Its inputs include the exact released Flow, visibility/owner
 consent, and captured birth receipt; its `play_published` payload must echo that birth SHA. Reject a
 mismatch and do not proceed to binding. Neither specialist may select the next state or provide the

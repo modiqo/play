@@ -221,8 +221,6 @@ class BootstrapTest(unittest.TestCase):
                 "--target",
                 "agents-md",
                 "--personal",
-                "--package",
-                "*",
                 "--force",
             ],
             _rote_skill_command(
@@ -263,12 +261,12 @@ class BootstrapTest(unittest.TestCase):
             _official_rote_install_command(),
         )
 
-    def test_rote_compatibility_requires_in_place_mcp_lifecycle_support(self) -> None:
+    def test_rote_compatibility_requires_guidance_support(self) -> None:
         old = _rote_compatibility_step(
             "/bin/rote",
             MagicMock(
                 return_value=MagicMock(
-                    returncode=0, stdout="version: 0.69.1\n", stderr=""
+                    returncode=0, stdout="version: 0.88.9\n", stderr=""
                 )
             ),
         )
@@ -276,7 +274,7 @@ class BootstrapTest(unittest.TestCase):
             "/bin/rote",
             MagicMock(
                 return_value=MagicMock(
-                    returncode=0, stdout="version: 0.69.2\n", stderr=""
+                    returncode=0, stdout="version: 0.89.0\n", stderr=""
                 )
             ),
         )
@@ -284,7 +282,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual("failed", old.status)
         self.assertIn("rote self-update --yes", old.detail)
         self.assertEqual("unchanged", current.status)
-        self.assertIn("in-place credential reauthorization", current.detail)
+        self.assertIn("`rote guidance` handoffs", current.detail)
 
     @patch("scripts.lib.play.bootstrap.probe_tulving")
     @patch("scripts.lib.play.bootstrap.resolve_rote", return_value="/bin/rote")
@@ -2168,7 +2166,7 @@ class BootstrapTest(unittest.TestCase):
             "targets": [],
             "rote": {
                 "path": "/bin/rote",
-                "version": "0.69.1",
+                "version": "0.88.9",
                 "identity": "authenticated",
                 "update": {
                     "status": "current",
@@ -2180,8 +2178,8 @@ class BootstrapTest(unittest.TestCase):
         }
         runner = MagicMock()
         runner.side_effect = [
-            MagicMock(returncode=0, stdout="version: 0.69.1\n", stderr=""),
-            MagicMock(returncode=0, stdout="version: 0.69.1\n", stderr=""),
+            MagicMock(returncode=0, stdout="version: 0.88.9\n", stderr=""),
+            MagicMock(returncode=0, stdout="version: 0.88.9\n", stderr=""),
             MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
         ]
 
@@ -2198,7 +2196,7 @@ class BootstrapTest(unittest.TestCase):
             ["check_rote_update", "verify_rote_compatibility"],
             [step["id"] for step in report["steps"]],
         )
-        self.assertIn("Rote 0.69.1 is too old", report["steps"][-1]["detail"])
+        self.assertIn("Rote 0.88.9 is too old", report["steps"][-1]["detail"])
         self.assertFalse(
             any(
                 call.args[0][1:3] == ["telemetry", "record-play-install"]
@@ -2662,8 +2660,6 @@ class BootstrapTest(unittest.TestCase):
                 "--target",
                 "codex",
                 "--personal",
-                "--package",
-                "*",
                 "--force",
             ],
             commands,

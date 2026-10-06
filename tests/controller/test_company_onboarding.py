@@ -111,7 +111,7 @@ class CompanyOnboardingTest(unittest.TestCase):
                 "slug": "acme-platform", "invite_email": "colleague@example.com", "invite_role": role,
             })
             self.assertEqual("team_invite_execute", described.cursor.state)
-            self.assertEqual("rote-org", self.runtime.project_session(described).as_dict()["instruction"]["specialist"])
+            self.assertEqual("registry/org", self.runtime.project_session(described).as_dict()["instruction"]["guidance"])
         finished = self.choice(offered, "team_onboarding_finished", {"slug": "acme-platform"})
         self.assertEqual("onboarding_company_record", finished.cursor.state)
 

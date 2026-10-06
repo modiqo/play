@@ -1120,7 +1120,7 @@ def render_card(card: Mapping[str, Any]) -> str:
         "",
         "## Inspect or install Rote",
         "",
-        "In an agent harness, installation is owned by the guided `rote-setup` skill — accept",
+        "In an agent harness, installation is owned by Rote's guided setup (`rote guidance setup/essential`) — accept",
         "the next prompt and it walks through install and sign-in, then returns to this exact",
         "Play. The links below are for setting up outside a harness:",
         "",

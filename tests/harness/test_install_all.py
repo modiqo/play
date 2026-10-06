@@ -72,7 +72,7 @@ class InstallAllTest(unittest.TestCase):
             "kimi": self.home / ".agents" / "skills",
         }
         for name, root in self.roots.items():
-            skill = root / ("rote" if name != "claude" else "rote-shell")
+            skill = root / "rote"
             skill.mkdir(parents=True)
             (skill / "SKILL.md").write_text(
                 f"---\nname: {skill.name}\ndescription: test\n---\n",
@@ -527,7 +527,7 @@ class InstallAllTest(unittest.TestCase):
         self.assertTrue(backup.is_file())
 
     def test_missing_rote_provider_fails_before_writing(self) -> None:
-        missing = self.roots["claude"] / "rote-shell"
+        missing = self.roots["claude"] / "rote"
         (missing / "SKILL.md").unlink()
 
         result = self.run_installer("install", expected=1)

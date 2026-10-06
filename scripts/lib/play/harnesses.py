@@ -25,7 +25,6 @@ class HarnessSpec:
     skill_sources: tuple[str, ...]
     start_command: tuple[str, ...]
     play_entry: str
-    setup_entry: str
     delivery: str
     hook_style: str
     prompt_surface: str
@@ -59,7 +58,6 @@ HARNESS_SPECS = (
         skill_sources=("native",),
         start_command=("codex",),
         play_entry="$play",
-        setup_entry="$rote-setup",
         delivery="marketplace",
         hook_style="nested-json",
         prompt_surface="request_user_input",
@@ -75,7 +73,6 @@ HARNESS_SPECS = (
         skill_sources=("native",),
         start_command=("claude",),
         play_entry="/play",
-        setup_entry="/rote-setup",
         delivery="marketplace",
         hook_style="nested-json",
         prompt_surface="askquestion",
@@ -91,7 +88,6 @@ HARNESS_SPECS = (
         skill_sources=("native", "agents-config", "agents"),
         start_command=("kimi",),
         play_entry="/skill:play",
-        setup_entry="/skill:rote-setup",
         delivery="skill-directory",
         hook_style="none",
         prompt_surface="askquestion",
@@ -107,7 +103,6 @@ HARNESS_SPECS = (
         skill_sources=("native", "agents"),
         start_command=("cursor",),
         play_entry="/play",
-        setup_entry="/rote-setup",
         delivery="cursor-plugin",
         hook_style="flat-json",
         prompt_surface="structured_elicitation",
@@ -123,7 +118,6 @@ HARNESS_SPECS = (
         skill_sources=("native",),
         start_command=("hermes",),
         play_entry="/play",
-        setup_entry="/rote-setup",
         delivery="skill-directory",
         hook_style="none",
         prompt_surface="structured_elicitation",
@@ -139,7 +133,6 @@ HARNESS_SPECS = (
         skill_sources=("native", "agents"),
         start_command=("opencode",),
         play_entry="/play",
-        setup_entry="use the rote-setup skill",
         delivery="command-bridge",
         hook_style="none",
         prompt_surface="structured_elicitation",
@@ -155,7 +148,6 @@ HARNESS_SPECS = (
         skill_sources=("native", "agents"),
         start_command=("dsh", "web"),
         play_entry="/play",
-        setup_entry="/rote-setup",
         delivery="skill-directory",
         hook_style="none",
         prompt_surface="structured_elicitation",

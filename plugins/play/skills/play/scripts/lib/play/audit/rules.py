@@ -13,11 +13,11 @@ from typing import Any
 
 from .model import Finding, FindingClass, Location, Scope
 
-OWNER_AUTHORING = "rote-flow-authoring"
-OWNER_TROUBLESHOOTING = "rote-troubleshooting"
-OWNER_SHELL = "rote-shell"
-OWNER_TYPESCRIPT = "rote-typescript-transformations"
-OWNER_REGISTRY = "rote-registry"
+OWNER_AUTHORING = "play/authoring"
+OWNER_TROUBLESHOOTING = "troubleshooting/essential"
+OWNER_SHELL = "shell/essential"
+OWNER_TYPESCRIPT = "typescript/transformations"
+OWNER_REGISTRY = "registry/essential"
 
 ISSUE = "https://github.com/modiqo/rote/issues/"
 
