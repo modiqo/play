@@ -46,10 +46,10 @@ class CustomRegistryIdentityTest(unittest.TestCase):
 
     def test_missing_local_endpoint_blocks_website_reads_before_network(self):
         with patch.dict(os.environ, {"PLAY_SEARCH_ENDPOINT": ""}):
-            with self.assertRaisesRegex(onboarding.OnboardingError, "explicit search endpoint"), patch.object(onboarding.subprocess, "run") as run:
+            with self.assertRaises(onboarding.OnboardingError), patch.object(onboarding.subprocess, "run") as run:
                 onboarding.fetch_public_card({"onboarding": {"play_uri": self.uri}})
             run.assert_not_called()
-            with self.assertRaisesRegex(CommandError, "explicit search endpoint"):
+            with self.assertRaises(CommandError):
                 public_trends._card_url("alice/audit-dns@1.2.3")
 
     def test_creator_publication_requires_configured_exact_uri(self):

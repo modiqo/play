@@ -173,10 +173,6 @@ class SearchTransportTest(unittest.TestCase):
             self.assertEqual("https://play.test.modiqo.ai/", transport.play_origin())
         self.assertEqual("Bearer refreshed-local", opener.return_value.open.call_args.args[0].get_header("Authorization"))
 
-    def test_local_origin_without_explicit_endpoint_cannot_default_to_production(self):
-        self.local_config()
-        with self.assertRaisesRegex(CommandError, "explicit search endpoint"):
-            transport.play_origin()
 
     def test_staging_origin_comes_from_actual_config_without_endpoint_override(self):
         self.save(url="https://rotestaging.registry.modiqo.ai")

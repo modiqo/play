@@ -59,28 +59,29 @@ def _secure_endpoint(value: str) -> str:
     return value
 
 
-def search_binding(config: dict) -> tuple[str, str, str]:
+def registry_environment(config: dict) -> str:
     url = config.get("url")
     if not isinstance(url, str):
         raise CommandError("Invalid Rote registry URL.")
-    environment = REGISTRIES.get(url)
+    if environment := REGISTRIES.get(url):
+        return environment
+    _secure_endpoint(url)
+    if urlsplit(url).hostname not in ("127.0.0.1", "::1"):
+        raise CommandError("Owned test registries require a literal loopback registry URL.")
+    return "test"
+
+
+def search_binding(config: dict) -> tuple[str, str, str]:
+    environment = registry_environment(config)
     custom = os.environ.get("PLAY_SEARCH_ENDPOINT")
-    if custom:
-        endpoint = _secure_endpoint(custom)
-    else:
-        endpoint = None
-    if environment is None:
-        _secure_endpoint(url)
-        parsed = urlsplit(url)
-        if not endpoint or parsed.hostname not in ("127.0.0.1", "::1"):
-            raise CommandError("Owned test registries require a literal loopback registry URL and an explicit search endpoint.")
-        environment = "test"
-    return environment, url, endpoint or ENDPOINTS[environment]
+    endpoint = _secure_endpoint(custom) if custom else None
+    if environment == "test" and not endpoint:
+        raise CommandError("Owned test registries require an explicit search endpoint.")
+    return environment, config["url"], endpoint or ENDPOINTS[environment]
 
 
 def play_origin() -> str:
-    environment, _, _ = search_binding(registry_config())
-    return PLAY_ORIGINS[environment]
+    return PLAY_ORIGINS[registry_environment(registry_config())]
 
 
 def require_hosted_cards() -> None:
