@@ -10,6 +10,7 @@ from subprocess import run as run_rote
 import subprocess
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.parse import urlsplit
 
 from .commands import CommandError
 
@@ -28,6 +29,63 @@ ENDPOINTS = {
     for name in ("production", "staging")
 }
 
+PLAY_ORIGINS = {
+    "production": "https://play.modiqo.ai/",
+    "staging": "https://play.stg.modiqo.ai/",
+    "test": "https://play.test.modiqo.ai/",
+}
+
+
+def _secure_endpoint(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        raise CommandError("Invalid custom search endpoint.") from None
+    if (
+        not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or "?" in value
+        or "#" in value
+        or parsed.query
+        or parsed.fragment
+        or any(character.isspace() for character in value)
+        or parsed.scheme not in ("https", "http")
+        or parsed.scheme == "http" and parsed.hostname not in ("127.0.0.1", "::1")
+        or port == 0
+    ):
+        raise CommandError("Search endpoints require HTTPS or explicit literal HTTP loopback, without credentials, query, or fragment.")
+    return value
+
+
+def search_binding(config: dict) -> tuple[str, str, str]:
+    url = config.get("url")
+    if not isinstance(url, str):
+        raise CommandError("Invalid Rote registry URL.")
+    environment = REGISTRIES.get(url)
+    custom = os.environ.get("PLAY_SEARCH_ENDPOINT")
+    if custom:
+        endpoint = _secure_endpoint(custom)
+    else:
+        endpoint = None
+    if environment is None:
+        _secure_endpoint(url)
+        parsed = urlsplit(url)
+        if not endpoint or parsed.hostname not in ("127.0.0.1", "::1"):
+            raise CommandError("Owned test registries require a literal loopback registry URL and an explicit search endpoint.")
+        environment = "test"
+    return environment, url, endpoint or ENDPOINTS[environment]
+
+
+def play_origin() -> str:
+    environment, _, _ = search_binding(registry_config())
+    return PLAY_ORIGINS[environment]
+
+
+def require_hosted_cards() -> None:
+    if play_origin() == PLAY_ORIGINS["test"]:
+        raise CommandError("Public website cards are unsupported for the configured local registry; use native Play inspection through Rote.")
 
 class NoRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -67,9 +125,7 @@ def request_search(query: str, *, public: bool, org: str | None, limit: int, tim
     if public and org:
         raise CommandError("Organization search requires accessible scope.")
     config = registry_config()
-    environment = REGISTRIES.get(str(config.get("url", "")))
-    if environment is None:
-        raise CommandError("Shared search requires a production or staging registry.")
+    environment, registry_url, endpoint = search_binding(config)
     headers = {"Content-Type": "application/json", "X-Modiqo-Registry-Environment": environment, "User-Agent": f"modiqo-play/{play_version()}"}
     if not public:
         try:
@@ -81,13 +137,13 @@ def request_search(query: str, *, public: bool, org: str | None, limit: int, tim
         # whoami refreshes and persists credentials under Rote's own locking rules.
         config = registry_config()
         token = config.get("access_token")
-        if REGISTRIES.get(str(config.get("url", ""))) != environment or not isinstance(token, str) or not token:
+        if search_binding(config) != (environment, registry_url, endpoint) or not isinstance(token, str) or not token:
             raise CommandError("No usable login for this search environment. Sign in through Play.")
         headers["Authorization"] = "Bearer " + token
     body = {"query": query, "limit": limit, "scopes": ["organizations"] if org else ["community"] if public else ["community", "personal", "organizations"]}
     if org:
         body["org"] = org
-    request = Request(ENDPOINTS[environment], data=json.dumps(body).encode(), headers=headers, method="POST")
+    request = Request(endpoint, data=json.dumps(body).encode(), headers=headers, method="POST")
     try:
         with build_opener(NoRedirects()).open(request, timeout=timeout_seconds) as response:
             raw = response.read(1_048_577)
@@ -101,4 +157,6 @@ def request_search(query: str, *, public: bool, org: str | None, limit: int, tim
         raise CommandError("Shared search is unavailable or returned invalid JSON; no local fallback was used.") from None
     if not isinstance(result, dict) or result.get("registry") != environment:
         raise CommandError("Shared search returned the wrong registry environment.")
+    if os.environ.get("PLAY_SEARCH_ENDPOINT") and result.get("registry_url") != registry_url:
+        raise CommandError("Shared search returned the wrong registry URL binding.")
     return result

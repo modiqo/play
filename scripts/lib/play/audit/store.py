@@ -20,6 +20,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
+from ..search_transport import play_origin
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -34,7 +35,7 @@ def _safe(segment: str) -> str:
 
 
 def _play_dir(reference: str) -> Path:
-    owner, _, name = reference.replace("https://play.modiqo.ai/", "").partition("/")
+    owner, _, name = reference.removeprefix(play_origin()).partition("/")
     name = name.split("@", 1)[0] if name else owner
     owner = owner if name != owner else "local"
     return play_home() / "audit" / "plays" / _safe(owner) / _safe(name)

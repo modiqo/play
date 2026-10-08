@@ -84,6 +84,25 @@ class SearchTest(unittest.TestCase):
         self.assertEqual("inspect_required", hit["execution_resolution"])
         self.assertEqual(hit["reference"], result["play_choices"][0]["reference"])
 
+    def test_test_registry_records_require_exact_test_origin_and_scope(self):
+        body = response()
+        body["registry"] = "test"
+        hit = body["groups"][0]["matches"][0]
+        hit["url"] = "https://play.test.modiqo.ai/" + hit["reference"]
+        result, _ = self.run_search(body, public=True)
+        self.assertEqual(hit["url"], result["results"][0]["uri"])
+        for url in (
+            "https://play.modiqo.ai/" + hit["reference"],
+            "http://play.test.modiqo.ai/" + hit["reference"],
+            "https://play.test.modiqo.ai/" + hit["reference"] + "?x=1",
+        ):
+            hit["url"] = url
+            with self.subTest(url=url), self.assertRaises(search.SearchError):
+                self.run_search(body, public=True)
+        body["groups"] = [group("personal", "alice", [candidate(visibility="private")])]
+        with self.assertRaises(search.SearchError):
+            self.run_search(body, public=True)
+
     def test_native_rote_envelope(self):
         result, _ = self.run_search({"schema": 1, "data": {"result": response()}})
         self.assertEqual(1, len(result["results"]))

@@ -8,7 +8,7 @@ import shlex
 import sys
 
 from .commands import CommandError
-from .search_transport import request_search
+from .search_transport import PLAY_ORIGINS, request_search
 from .elicitation import clip_choice_description
 from .normalize import (
     NormalizationError,
@@ -298,7 +298,7 @@ _MATCH_LABELS = ("direct", "partial")
 def _validate_worker(body: dict, public: bool, org: str | None) -> None:
     registry = body.get("registry")
     if (
-        registry not in ("production", "staging")
+        registry not in PLAY_ORIGINS
         or body.get("mode") not in ("judged", "degraded")
         or type(body.get("complete")) is not bool
     ):
@@ -313,11 +313,7 @@ def _validate_worker(body: dict, public: bool, org: str | None) -> None:
     kinds = set()
     ids = set()
     seen = set()
-    origin = (
-        "https://play.modiqo.ai/"
-        if registry == "production"
-        else "https://play.stg.modiqo.ai/"
-    )
+    origin = PLAY_ORIGINS[registry]
     for group in groups:
         if not isinstance(group, dict) or group.get("kind") not in (
             "community",
