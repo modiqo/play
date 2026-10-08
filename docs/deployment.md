@@ -10,7 +10,7 @@ The [Deploy Play workflow](../.github/workflows/deploy.yml) publishes the instal
 Published changes must carry a new plugin version; a push that keeps the same version is not a
 reliable cache invalidation mechanism. `VERSION` is the only version to edit: on a branch, set it
 and run `just package`, which writes it into the plugin manifests, `plugins/play/package.json`,
-`pyproject.toml`, and `uv.lock` and rebuilds the plugin payload. `just check` fails while any of
+`pyproject.toml`, and `uv.lock` and regenerates the marketplace pointer skill. `just check` fails while any of
 them disagrees with `VERSION`. Merge the bump through a PR.
 
 The [Tag Play release workflow](../.github/workflows/tag-release.yml) runs on every push to `main`

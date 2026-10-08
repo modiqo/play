@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and inspect Play's asynchronous exploration Journey projection."""
+"""Idempotent local setup of Play-owned owner state."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 
 from play.python_environment import ensure_runtime
 
-ensure_runtime("play-journey", ROOT, Path(__file__).resolve(), sys.argv[1:])
+ensure_runtime("play-setup", ROOT, Path(__file__).resolve(), sys.argv[1:])
 
-from play.journey import main
+from play.play_setup import main
 
 
 if __name__ == "__main__":

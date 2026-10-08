@@ -6,8 +6,7 @@ through ``uv run`` against the installed skill root. ``uv.lock`` pins every pack
 to pypi.org, so a network that enforces a private package index needs that index
 handed to uv before any download starts. This module resolves that index once,
 explains a failed bootstrap in terms of the index that was used, and keeps the
-module probe, the sync command, and the failure text identical across the
-launchers, the installer, and the preflight.
+module probe and the failure text identical across the launchers and the preflight.
 
 It must stay importable without any third-party package.
 """
@@ -35,7 +34,6 @@ RUNTIME_REQUIREMENTS: tuple[str, ...] = (
 DEFAULT_INDEX_URL = "https://pypi.org/simple"
 INDEX_OVERRIDE_VARIABLE = "PLAY_PYTHON_INDEX_URL"
 BOOTSTRAP_GUARD_VARIABLE = "PLAY_UV_BOOTSTRAPPED"
-INSTALL_MARKER = ".play-install.json"
 
 _UV_INDEX_VARIABLES = ("UV_DEFAULT_INDEX", "UV_INDEX_URL")
 _LOCK_REGISTRY = re.compile(r'registry\s*=\s*"([^"]+)"')
@@ -170,35 +168,11 @@ def pip_config_index(environ: Mapping[str, str] | None = None) -> PackageIndex |
     return None
 
 
-def recorded_package_index(root: Path) -> PackageIndex | None:
-    """Return the index the installer recorded in the portable install marker."""
-
-    marker = root / INSTALL_MARKER
-    if not marker.is_file():
-        return None
-    import json
-
-    try:
-        payload = json.loads(marker.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    recorded = payload.get("python_index") if isinstance(payload, dict) else None
-    if not isinstance(recorded, dict):
-        return None
-    url = recorded.get("url")
-    if not isinstance(url, str) or not url.strip():
-        return None
-    return PackageIndex(url.strip(), f"{INSTALL_MARKER} ({recorded.get('source') or 'recorded'})")
-
-
-def resolve_package_index(
-    root: Path, environ: Mapping[str, str] | None = None
-) -> PackageIndex:
+def resolve_package_index(environ: Mapping[str, str] | None = None) -> PackageIndex:
     """Pick the simple index uv must download from, most explicit source first.
 
     Order: ``PLAY_PYTHON_INDEX_URL``, uv's own ``UV_DEFAULT_INDEX`` or ``UV_INDEX_URL``,
-    the index recorded by the installer, ``PIP_INDEX_URL``, pip's configuration
-    files, then pypi.org.
+    ``PIP_INDEX_URL``, pip's configuration files, then pypi.org.
     """
 
     env = os.environ if environ is None else environ
@@ -212,9 +186,6 @@ def resolve_package_index(
         value = env.get(variable)
         if value is not None and value.strip():
             return PackageIndex(value.strip(), variable)
-    recorded = recorded_package_index(root)
-    if recorded is not None:
-        return recorded
     pip_variable = env.get("PIP_INDEX_URL")
     if pip_variable is not None and pip_variable.strip():
         return PackageIndex(pip_variable.strip(), "PIP_INDEX_URL")
@@ -260,16 +231,6 @@ def uv_environment(
     return env
 
 
-def uv_sync_command(uv: str, root: Path, index: PackageIndex) -> list[str]:
-    """Build the installer's sync command; ``--locked`` only when the lock and index agree."""
-
-    command = [uv, "sync"]
-    if lock_matches_index(root, index):
-        command.append("--locked")
-    command.extend(["--no-dev", "--inexact", "--project", str(root)])
-    return command
-
-
 def uv_run_command(uv: str, root: Path, script: Path, argv: Sequence[str]) -> list[str]:
     """Build the launcher re-entry command for one bundled Play entrypoint."""
 
@@ -311,12 +272,12 @@ def explain_bootstrap_failure(root: Path, index: PackageIndex, *, tool: str) -> 
         lines.append(
             "  If this network enforces a private package index, set "
             f"{INDEX_OVERRIDE_VARIABLE}=<your simple-index URL> (PIP_INDEX_URL and pip.conf "
-            "are honored too) and rerun the Play installer."
+            "are honored too) and rerun `rote install play`."
         )
     else:
         lines.append(
             f"  Confirm that index serves the pinned packages, or point {INDEX_OVERRIDE_VARIABLE} "
-            "at one that does, then rerun the Play installer."
+            "at one that does, then rerun `rote install play`."
         )
     lines.append(
         "  Or install the pinned packages into the interpreter that runs Play yourself:"
@@ -334,44 +295,6 @@ def missing_uv_message(tool: str, missing: Sequence[str], index: PackageIndex) -
         "  Install uv from https://docs.astral.sh/uv/ and rerun, or install the packages yourself:\n"
         f"    {pip_install_command(index)}"
     )
-
-
-def record_package_index(root: Path, index: PackageIndex) -> bool:
-    """Persist a non-default index in the portable install marker for launcher reuse.
-
-    Harness hook processes often run with a stripped environment; the marker lets
-    them reuse the index the installer resolved. Returns whether the marker changed.
-    """
-
-    marker = root / INSTALL_MARKER
-    if not marker.is_file():
-        return False
-    import json
-
-    try:
-        payload = json.loads(marker.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    if not isinstance(payload, dict):
-        return False
-    desired = (
-        {"url": index.url, "source": index.source} if index.overrides_default else None
-    )
-    if payload.get("python_index") == desired or (
-        desired is None and "python_index" not in payload
-    ):
-        return False
-    if desired is None:
-        payload.pop("python_index", None)
-    else:
-        payload["python_index"] = desired
-    temporary = marker.with_name(f".{marker.name}.{os.getpid()}.tmp")
-    temporary.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    temporary.chmod(0o600)
-    os.replace(temporary, marker)
-    return True
 
 
 def ensure_runtime(
@@ -407,7 +330,7 @@ def ensure_runtime(
     missing = missing_runtime_modules(find_spec)
     if not missing:
         return
-    index = resolve_package_index(root, env_in)
+    index = resolve_package_index(env_in)
     if env_in.get(BOOTSTRAP_GUARD_VARIABLE) == "1":
         raise SystemExit(
             f"{tool}: the Play Python environment still lacks {', '.join(missing)} after uv "

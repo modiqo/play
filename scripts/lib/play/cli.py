@@ -15,6 +15,9 @@ from .identity import recover_rote_session
 ROOT = Path(__file__).resolve().parents[3]
 BIN = ROOT / "scripts" / "bin"
 FIELD_GUIDE = "https://www.modiqo.ai/blog/play-cheat-sheet.md"
+INSTALL_COMMAND = ("rote", "install", "play")
+INSTALL_TEXT = " ".join(INSTALL_COMMAND)
+ROTE_INSTALLER = "curl -fsSL https://getrote.dev/install | bash"
 
 
 def version() -> str:
@@ -81,10 +84,9 @@ INSPECT & IMPROVE
   play audit handoff <ref> ...  Hand chosen findings to the fixing skill; --close records the delta
   play audit send <ref>         Write the report for a Play's author
 
-RECOVERY & DIAGNOSTICS
-  play update ...               Download the latest Play and review its plan
-  play backup ...               Manage Play backups
-  play restore ...              Restore a Play backup
+UPDATE & DIAGNOSTICS
+  play update ...               Install the latest Play through rote
+                                Runs: rote install play ...
   play preflight ...            Check installation and runtime health
 
 Run 'play <command> --help' for command-specific options.
@@ -112,20 +114,38 @@ def _execute(
 
 
 def _render_update_help() -> str:
-    return """Update Play through the same verified installer used for first setup.
+    return f"""Update Play through rote, which installs and owns it.
 
 Usage:
-  play update [installer arguments]
+  play update [rote install play options]
 
 Examples:
   play update
-  play update --harness codex --harness cursor
+  play update --pinned
   play update --yes
 
-The updater downloads the latest official Play source over HTTPS, snapshots
-Play-owned state, shows the convergence plan, and verifies or restores it.
-Rote and Tulving keep their independent update checks and approvals.
+`play update` runs `{INSTALL_TEXT}` with the given options. rote installs the
+newer of its pinned Play version and the latest release, then rewires every
+harness. The same command repairs a damaged installation.
 """
+
+
+def _update_through_rote(
+    arguments: Sequence[str],
+    executor: Callable[[str, list[str]], object],
+) -> int:
+    rote = shutil.which(INSTALL_COMMAND[0])
+    if rote is None:
+        print(
+            "play: rote installs and updates Play, but `rote` is not on PATH. "
+            f"Install rote (and Play with it): {ROTE_INSTALLER}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"Running: {' '.join([INSTALL_TEXT, *arguments])}", file=sys.stderr)
+    sys.stderr.flush()
+    executor(rote, [rote, *INSTALL_COMMAND[1:], *arguments])
+    return 0
 
 
 def _recover_search_identity() -> bool:
@@ -216,12 +236,7 @@ def main(
         if tail[:1] in (["-h"], ["--help"]):
             print(_render_update_help(), end="")
             return 0
-        installer = ROOT / "install.sh"
-        if not installer.is_file():
-            print(f"play: bundled installer is missing: {installer}", file=sys.stderr)
-            return 1
-        executor("/bin/sh", ["/bin/sh", str(installer), *tail])
-        return 0
+        return _update_through_rote(tail, executor)
 
     if command in {"recurring", "schedule"}:
         recurring_arguments = tail if command == "recurring" else ["schedule", *tail]
@@ -232,15 +247,10 @@ def main(
     delegated = {
         "audit": "play-audit",
         "routing": "play-routing",
-        "backup": "play-bootstrap",
-        "restore": "play-bootstrap",
         "preflight": "play-preflight",
     }
     if command in delegated:
-        delegated_arguments = [command, *tail] if command in {"backup", "restore"} else tail
-        if not delegated_arguments:
-            delegated_arguments = ["--help"]
-        return _execute(delegated[command], delegated_arguments, executor)
+        return _execute(delegated[command], tail or ["--help"], executor)
 
     return _usage_error(f"unknown command {command!r}")
 

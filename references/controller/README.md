@@ -17,9 +17,8 @@ This directory is the executable documentation for Play's deterministic controll
 | [`../explore/journey-scene.schema.json`](../explore/journey-scene.schema.json) | Complete deterministic `play.journey-scene/v1` isometric geometry. |
 | [`../explore/journey-story.schema.json`](../explore/journey-story.schema.json) | Human-readable, evidence-linked `play.journey-story/v1` projection consumed by the live viewer. |
 
-`scripts/bin/validate-machine` validates the bundle before packaging. `play-machine describe
---json` reports the compiled bundle SHA and state counts. `scripts/bin/package-plugin --check`
-ensures every controller contract shipped in the plugin is byte-for-byte current.
+`scripts/bin/validate-machine` validates the bundle before release. `play-machine describe
+--json` reports the compiled bundle SHA and state counts.
 
 The command log and Journey projector are observers, not additional state machines. They consume successful transitions
 after context validation and cannot select a target, mutate controller context, authorize an

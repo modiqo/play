@@ -3,6 +3,7 @@
 import io
 import json
 import pathlib
+import subprocess
 import sys
 import unittest
 from unittest import mock
@@ -116,6 +117,30 @@ class InterceptTest(unittest.TestCase):
             self.assertEqual(0, intercept.main(["settle-nudge"]))
             self.assertEqual("", output.getvalue())
             call.assert_not_called()
+
+    def test_cursor_prompt_hook_allows_submission_without_discovery(self):
+        with (
+            mock.patch(
+                "sys.stdin", io.StringIO(json.dumps({"prompt": "Check DNS records"}))
+            ),
+            mock.patch("sys.stdout", new_callable=io.StringIO) as output,
+            mock.patch.object(search, "search_published", return_value=result()) as call,
+        ):
+            self.assertEqual(0, intercept.main(["prompt", "--harness", "cursor"]))
+        self.assertEqual({"continue": True}, json.loads(output.getvalue()))
+        call.assert_not_called()
+
+    def test_cursor_hook_entrypoint_emits_before_submit_prompt_response(self):
+        completed = subprocess.run(
+            [str(ROOT / "scripts" / "bin" / "play-intercept"), "prompt", "--harness", "cursor"],
+            input=json.dumps({"prompt": "Check DNS records", "attachments": []}),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertEqual({"continue": True}, json.loads(completed.stdout))
 
 
 if __name__ == "__main__":
