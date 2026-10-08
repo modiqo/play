@@ -217,7 +217,7 @@ actions:
       - Route `play run <unqualified name>`, `$play run <unqualified name>`, `/play run <unqualified name>`, and `/skill:play run <unqualified name>` directly to qualified catalog search.
       - Present every match by its canonical owner/name and require the user to select one before inspection.
       - Bind exact what's-new, popular, and trending Play aliases directly to the seven-day awareness digest without model qualification or preflight.
-      - Treat a bare or prefixed canonical HTTPS play.modiqo.ai owner/name URI, optionally followed by unique key=value parameters, as a Play URI invocation.
+      - Treat a bare or prefixed canonical HTTPS owner/name URI for the configured Play origin, optionally followed by unique key=value parameters, as a Play URI invocation; hosted defaults remain play.modiqo.ai and an explicit owned test binding uses play.test.modiqo.ai.
       - Route unambiguous retrieve, fetch, get, find, collect, download, export, list, summarize, check, monitor, calculate, and compare outcomes directly to search.
       - Treat `$play settle <capture-handle> [summary]` as re-entry only when the owner-private capture exists and its Rote workspace already contains trajectory evidence; never reconstruct capture after the work.
       - Read the owner-private scoped preference ledger and stamp its policies for downstream qualification; never fail the classification because the ledger is absent.
@@ -410,6 +410,7 @@ actions:
     command_policy:
       - Run only when the live Rote probe reports missing.
       - Curl only canonical HTTPS play.modiqo.ai owner/name Play URIs, without redirects, credentials, cookies, or arbitrary headers.
+      - With an explicit owned test search binding, report website-card fetching as unsupported and use native Rote inspection; never fetch a production card for a local reference.
       - Require a matching rote.play.v1 JSON card with a read-only inspect action and bounded size.
       - Read and present the card's own inspect, install, bootstrap, parameters, requirements, credentials, and effects; never execute an install or run action.
     events:

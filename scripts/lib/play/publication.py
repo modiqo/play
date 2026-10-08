@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .digest_state import stable_sha
+from .search_transport import play_origin
 
 
 SCHEMA = "play.publication-presentation/v1"
@@ -121,6 +122,17 @@ def build_publication_presentation(payload: dict[str, Any]) -> dict[str, Any]:
     play_uri = _https_url(payload, "play_uri", required=True)
     install_uri = _https_url(payload, "install_uri", required=visibility == "public")
     exact_reference = _exact_reference(canonical_reference, version)
+    if play_uri != play_origin() + exact_reference:
+        raise PublicationPresentationError("play_uri must equal the configured registry's exact canonical Play URI")
+    if install_uri is not None:
+        parsed_install = urlparse(install_uri)
+        if (
+            parsed_install.scheme + "://" + parsed_install.netloc + "/" != play_origin()
+            or parsed_install.username is not None
+            or parsed_install.password is not None
+            or parsed_install.fragment
+        ):
+            raise PublicationPresentationError("install_uri must remain on the configured canonical Play origin")
     credential_status = _string(payload, "credential_status")
     smoke_status = _string(payload, "smoke_status")
     smoke_exact_reference = _optional_string(payload, "smoke_exact_reference")
