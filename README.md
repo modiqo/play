@@ -1067,6 +1067,26 @@ including exclusions. Unpublished local Plays never enter discovery. Add `--json
 results, `--public` for community only, or `--org <slug>` for one accessible organization.
 This uses the released Rote login interface and requires no custom Rote search command.
 
+For an owned search API, set `PLAY_SEARCH_ENDPOINT` to its complete search URL.
+The same native client routes both public and accessible searches there; it never
+falls back to a hosted Worker. Custom endpoints require HTTPS, except explicit
+literal HTTP loopback (`127.0.0.1` or `::1`), and may not contain credentials,
+query parameters, or fragments. The API must return the existing
+`modiqo.play-search.v1` contract and a `registry_url` exactly equal to the URL in
+Rote's actual registry configuration. Accessible search checks that binding again
+after `rote whoami --check` refreshes the saved token; redirects are rejected.
+
+An owned local registry requires an actual literal-loopback URL in
+`$ROTE_HOME/registry/config.json` and an explicit search endpoint. Play derives
+the `test` response environment from that binding, without adding fields to
+Rote's configuration; unknown remote registry URLs remain unsupported. Do not set
+`ROTE_REGISTRY_ENV=local`: Rote's environment selector does not load those saved
+credentials. Its search records must use exact published-version URLs under
+`https://play.test.modiqo.ai/`; native inspection, execution, and publication keep
+that identity. Website-only onboarding cards and public statistics are explicitly
+unsupported for this binding rather than silently reading production. Default
+hosted endpoints and public onboarding URLs remain unchanged.
+
 Results retain the exact published version judged by the Worker. Direct, partial, and uncertain
 matches remain distinct. An incomplete search never proves that no suitable Play exists.
 For a vague `run` request, Play searches and offers recognizable names. For an exact reference, it

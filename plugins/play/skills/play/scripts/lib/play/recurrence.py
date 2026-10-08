@@ -13,6 +13,7 @@ import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
+from .search_transport import play_origin
 
 
 CAPABILITY_SCHEMA = "play.tulving-capability/v1"
@@ -30,7 +31,7 @@ TULVING_INSTALL_GUIDANCE = (
     f"Learn more: {TULVING_REPOSITORY}"
 )
 _EXACT_REFERENCE = re.compile(
-    r"^(?:https://play\.modiqo\.ai/)?"
+    r"^"
     r"[A-Za-z0-9][A-Za-z0-9_-]*/"
     r"[A-Za-z0-9][A-Za-z0-9_-]*@"
     r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
@@ -402,9 +403,9 @@ def schedule_play(
             "Tulving is installed but its clock is not ready; run 'tulving init' first"
         )
     requested_reference = reference.strip()
-    if not _EXACT_REFERENCE.fullmatch(requested_reference):
+    normalized_reference = requested_reference.removeprefix(play_origin())
+    if not _EXACT_REFERENCE.fullmatch(normalized_reference):
         raise RecurrenceError("scheduling requires an exact versioned Play reference or URI")
-    normalized_reference = requested_reference.removeprefix("https://play.modiqo.ai/")
     if not cadence.strip():
         raise RecurrenceError("cadence must not be empty")
     if not why.strip():

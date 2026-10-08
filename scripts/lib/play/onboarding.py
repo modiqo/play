@@ -18,16 +18,17 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from .commands import CommandError
 from .identity import last_login_provider, login_command, remember_login_provider, rote_session_status
 from .private_store import PrivateStoreError, atomic_write_json, load_json, locked_store
 from .render import json_text
 from .sidekick import CAPTURE_REF, capture_for_settle, load_ledger
 from .state_home import state_path
+from .search_transport import play_origin, require_hosted_cards
 
 
 SCHEMA = "play.onboarding/v1"
 CARD_SCHEMA = "rote.play.v1"
-PLAY_HOST = "play.modiqo.ai"
 MAX_CARD_BYTES = 200_000
 ONBOARDING_STATE_SCHEMA = "play.onboarding-state/v1"
 ONBOARDING_ORIENTATION_VERSION = 4
@@ -141,7 +142,7 @@ def canonical_play_uri(value: str) -> str | None:
         return None
     if (
         parsed.scheme != "https"
-        or parsed.hostname != PLAY_HOST
+        or parsed.hostname != urlparse(play_origin()).hostname
         or port is not None
         or parsed.username is not None
         or parsed.password is not None
@@ -190,7 +191,7 @@ def _canonical_play_action_uri(value: object, label: str) -> str:
         raise OnboardingError(f"{label} is malformed") from error
     if (
         parsed.scheme != "https"
-        or parsed.hostname != PLAY_HOST
+        or parsed.hostname != urlparse(play_origin()).hostname
         or port is not None
         or parsed.username is not None
         or parsed.password is not None
@@ -221,7 +222,7 @@ def classify_invocation(original: str) -> dict[str, Any]:
         play_uri = None
     elif _STARTER_RUN.fullmatch(stripped):
         kind = "play_uri"
-        play_uri = STARTER_PLAY_URI
+        play_uri = play_origin() + STARTER_PLAY_REFERENCE
     elif named_selector is not None and "/" not in named_selector:
         kind = "search"
         play_uri = None
@@ -730,7 +731,7 @@ def prepare_first_use_orientation(payload: Mapping[str, Any]) -> dict[str, Any]:
         "orientation_version": ONBOARDING_ORIENTATION_VERSION,
         "orientation_markdown": markdown,
         "orientation_ref": presentation_ref,
-        "starter_reference": STARTER_PLAY_URI,
+        "starter_reference": play_origin() + STARTER_PLAY_REFERENCE,
         "orientation_ns": time.perf_counter_ns() - started,
         "presentation_markdown": markdown,
         "presentation_ref": presentation_ref,
@@ -1063,6 +1064,10 @@ def fetch_public_card(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Curl one canonical Play host without redirects and normalize its JSON card."""
 
     started = time.perf_counter_ns()
+    try:
+        require_hosted_cards()
+    except CommandError as error:
+        raise OnboardingError(str(error)) from error
     onboarding = _object(payload.get("onboarding"), "onboarding")
     supplied = _string(onboarding.get("play_uri"), "onboarding.play_uri")
     uri = canonical_play_uri(supplied)
