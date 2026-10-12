@@ -40,8 +40,8 @@ rote install play
 
 rote places Play under `${ROTE_HOME:-~/.rote}/play/`, runs `uv sync`, writes the `play`,
 `play-machine`, `play-routing`, and `play-journey` launchers in `~/.local/bin`, links the skill into
-every detected agent app, wires the prompt hooks, registers the Tulving MCP server, and takes over
-installs made by Play's old installer.
+every detected agent app, wires the prompt hooks, installs Tulving and uv into `~/.rote/bin`, and
+takes over installs made by Play's old installer.
 
 After the first install, update with:
 
@@ -515,15 +515,15 @@ curl -fsSL https://getrote.dev/install | bash
 With rote already installed:
 
 ```bash
-rote install play            # newer of rote's pinned version and the latest release
-rote install play --pinned   # exactly rote's pinned version
+rote install play                                   # the latest stable Play release
+rote install play --harness codex --harness cursor  # wire only the named harnesses
 ```
 
-Both accept `--yes` and `--json`. `rote install play` downloads the release, runs `uv sync`, writes
-the `play`, `play-machine`, `play-routing`, and `play-journey` launchers in `~/.local/bin`, links the
-skill into every detected harness, wires the prompt hooks, runs `scripts/bin/play-setup --json`,
-registers the Tulving MCP server, writes the Grok Bot pointer, and takes over installs made by Play's
-old installer.
+It also takes `--yes` and `--json`, and it never replaces an installed Play with an older release.
+`rote install play` downloads the release, runs `uv sync`, writes the `play`, `play-machine`,
+`play-routing`, and `play-journey` launchers in `~/.local/bin`, links the skill into the selected
+harnesses, wires the prompt hooks, runs `scripts/bin/play-setup --json`, installs Tulving and uv into
+`~/.rote/bin`, writes the Grok Bot pointer, and takes over installs made by Play's old installer.
 
 To update, run `play update`; it runs `rote install play` and passes its arguments through.
 `rote update` also refreshes Play. To repair a damaged install, rerun `rote install play`: it is
@@ -633,7 +633,7 @@ This runs `rote install play --from .`. rote skips the download, points `current
 checkout path so edits are live without reinstalling, and runs `uv sync` in the checkout's `.venv`.
 The install is recorded with update policy `local`, so `rote update` and its background check never
 touch it. A later `rote install play` without `--from` leaves local mode and installs the normal
-release, even if it is older than the checkout's `VERSION`. `--from` and `--pinned` conflict.
+release, even if it is older than the checkout's `VERSION`.
 Restart a running harness to reload an edited skill.
 
 ## Install from a marketplace

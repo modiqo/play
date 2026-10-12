@@ -221,7 +221,7 @@ class PlayCliTest(unittest.TestCase):
             base = Path(temporary)
             bin_dir = self._fake_rote(base)
             result = subprocess.run(
-                [str(SCRIPT), "update", "--pinned"],
+                [str(SCRIPT), "update", "--harness", "codex", "--yes"],
                 cwd=ROOT,
                 env={
                     **os.environ,
@@ -234,8 +234,8 @@ class PlayCliTest(unittest.TestCase):
             )
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("Running: rote install play --pinned", result.stderr)
-        self.assertEqual("rote install play --pinned\n", result.stdout)
+        self.assertIn("Running: rote install play --harness codex --yes", result.stderr)
+        self.assertEqual("rote install play --harness codex --yes\n", result.stdout)
 
     def test_update_without_rote_on_path_names_the_rote_installer(self) -> None:
         calls: list[tuple[str, list[str]]] = []

@@ -121,12 +121,12 @@ Usage:
 
 Examples:
   play update
-  play update --pinned
+  play update --harness codex
   play update --yes
 
 `play update` runs `{INSTALL_TEXT}` with the given options. rote installs the
-newer of its pinned Play version and the latest release, then rewires every
-harness. The same command repairs a damaged installation.
+latest stable Play release, but never one older than the installed release,
+then rewires the harnesses. The same command repairs a damaged installation.
 """
 
 
