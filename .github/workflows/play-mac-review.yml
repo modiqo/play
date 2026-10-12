@@ -1,0 +1,49 @@
+name: Play for Mac review
+
+on:
+  pull_request:
+    paths:
+      - 'apps/macos/**'
+      - 'scripts/**'
+      - 'plugins/**'
+      - 'uv.lock'
+      - 'pyproject.toml'
+      - 'VERSION'
+      - '.github/workflows/play-mac-review.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: play-mac-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.11.16'
+      - name: Test bridge and distribution gates
+        run: uv run --frozen python -m unittest discover -s apps/macos -p 'test_*.py' -v
+      - name: Check generated skills
+        run: uv run --frozen python scripts/bin/package-plugin --check
+      - name: Build local review DMG for both architectures
+        run: python3 apps/macos/build.py --dmg
+      - name: Upload review artifact (not notarized)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: play-mac-local-review-${{ github.sha }}
+          path: |
+            apps/macos/dist/*.dmg
+            apps/macos/dist/*.dmg.sha256
+            apps/macos/dist/*.dmg.json
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
