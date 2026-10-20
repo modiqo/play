@@ -27,8 +27,14 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      # Pushes only the vX.Y.Z tag for a new VERSION; a merge that keeps VERSION is a no-op.
+      - name: Check whether VERSION needs a tag
+        id: release_check
+        run: |
+          python3 .github/release/tag_play.py --commit "$GITHUB_SHA" \
+            --dry-run --github-output "$GITHUB_OUTPUT" > release-tag.json
+
       - name: Tag a new VERSION
+        if: steps.release_check.outputs.status == 'ready'
         env:
           GIT_AUTHOR_NAME: github-actions[bot]
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
@@ -36,6 +42,9 @@ jobs:
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           python3 .github/release/tag_play.py --commit "$GITHUB_SHA" > release-tag.json
+
+      - name: Report release tag decision
+        run: |
           cat release-tag.json
           {
             echo '```json'

@@ -23,9 +23,14 @@ and tags releases itself. It reads `VERSION` from the pushed commit and derives 
 | On an earlier `main` commit | `VERSION` did not change, so this push is not a release (`version_unchanged`) |
 | On any other commit | Fails; the workflow never moves an existing tag |
 
-Each run records its JSON receipt in the workflow summary. The workflow never bumps versions or
-pushes `main`. Tag publication does not trigger production deployment; an admin still runs
-**Deploy Play** manually from the new tag.
+The workflow checks the tag first without creating or pushing it. The **Tag a new VERSION** step
+runs only when the check reports `ready`; an existing tag produces a visibly skipped creation
+step. The creation step checks again before pushing, so a tag created after the initial check is
+also preserved.
+
+Each run records its JSON receipt in the workflow summary, including skipped creation decisions.
+The workflow never bumps versions or pushes `main`. Tag publication does not trigger production
+deployment; an admin still runs **Deploy Play** manually from the new tag.
 
 Production runs only from a release tag. A dispatch from a branch, including `main`, is skipped.
 The deploy checks out the tag's commit and fails unless the tag name matches that commit's

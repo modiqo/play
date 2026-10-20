@@ -93,9 +93,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--commit", default="origin/main", help="merged commit or ref (default: origin/main)")
     parser.add_argument("--dry-run", action="store_true", help="validate and report without creating or pushing a tag")
+    parser.add_argument("--github-output", type=Path, help="append status to a GitHub Actions step output file")
     args = parser.parse_args(argv)
     try:
         receipt = tag_release(ROOT, revision=args.commit, dry_run=args.dry_run)
+        if args.github_output is not None:
+            with args.github_output.open("a", encoding="utf-8") as output:
+                output.write(f"status={receipt['status']}\n")
     except (OSError, ReleaseError) as error:
         parser.exit(1, f"play-release-tag: {error}\n")
     print(json.dumps(receipt, indent=2, sort_keys=True))
