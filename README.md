@@ -532,6 +532,12 @@ idempotent and restores launchers, skill links, and hooks.
 The repository's `install.sh` is a thin shim. It installs rote when missing, runs `rote update` when
 the installed rote cannot install Play yet, and then runs `rote install play` with its arguments.
 
+Installs made by Play 0.4.105 and earlier update through their bundled installer, which downloads
+Play `main` and runs `scripts/bin/play-bootstrap`. That entry point runs `rote install play` when the
+installed rote has it, so rote takes over the old install. Otherwise it runs the Play 0.4.105
+installer with the same arguments and `ROTE_NO_PLAY=1`, so the update keeps its old behavior and a
+new rote installer does not add a second Play.
+
 `play-setup` also creates owner-private journal settings with sparse exploration pulses and daily
 recall logging enabled. The defaults are five new workspace steps, at most one pulse every two
 minutes, and 30 days of recall history. Existing explicit journal choices survive reinstall.

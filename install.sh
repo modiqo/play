@@ -22,8 +22,10 @@ run_with_terminal() {
   fi
 }
 
+# A rote without `install play` rejects it with a nonzero exit. Do not grep the
+# help for a flag: rote hides its developer-only flags there.
 rote_installs_play() {
-  rote install play --help 2>/dev/null | grep -q -- '--from'
+  rote install play --help >/dev/null 2>&1
 }
 
 if ! command -v rote >/dev/null 2>&1; then

@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+"""`play update` target for installs made by Play 0.4.105 and earlier.
+
+Their install.sh downloads Play `main` and runs this file with a bare python3,
+so it must not switch to Play's managed runtime.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+from play.legacy_update import main
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
