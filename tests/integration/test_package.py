@@ -8,51 +8,12 @@ from scripts.lib.play.package import ROOT, TARGET, differences, materialize
 
 
 class PluginPackageTest(unittest.TestCase):
-    def test_payload_contains_runtime_and_just_configuration(self) -> None:
-        self.assertTrue((TARGET / "SKILL.md").is_file())
-        self.assertTrue((TARGET / "VERSION").is_file())
-        self.assertTrue((TARGET / "install.sh").is_file())
-        self.assertTrue((TARGET / "justfile").is_file())
-        self.assertTrue((TARGET / "scripts/harness/install-all").is_file())
-        self.assertTrue((TARGET / "scripts/harness/play-profile").is_file())
-        self.assertTrue((TARGET / "scripts/harness/start-harness").is_file())
-        self.assertTrue((TARGET / "scripts/lib/play/harnesses.py").is_file())
-        self.assertTrue((TARGET / "scripts/lib/play/identity.py").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-activate").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-activate").stat().st_mode & 0o111)
-        self.assertTrue((TARGET / "scripts/bin/play").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play").stat().st_mode & 0o111)
-        self.assertTrue((TARGET / "scripts/bin/play-cheat-sheet").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-cheat-sheet").stat().st_mode & 0o111)
-        self.assertTrue((TARGET / "scripts/bin/play-guide").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-guide").stat().st_mode & 0o111)
-        self.assertTrue((TARGET / "scripts/bin/play-journal").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-journal").stat().st_mode & 0o111)
-        self.assertTrue((TARGET / "scripts/bin/play-journey").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-journey").stat().st_mode & 0o111)
-        self.assertTrue((TARGET / "references/explore/journey-graph.schema.json").is_file())
-        self.assertTrue((TARGET / "references/explore/journey-viewport.schema.json").is_file())
-        self.assertTrue((TARGET / "references/explore/journey-scene.schema.json").is_file())
-        self.assertTrue((TARGET / "references/explore/journey-story.schema.json").is_file())
-        self.assertTrue((TARGET / "scripts/lib/play/journey_viewer/index.html").is_file())
-        self.assertTrue((TARGET / "scripts/lib/play/journey_viewer/viewer.css").is_file())
-        self.assertTrue((TARGET / "scripts/lib/play/journey_viewer/viewer.js").is_file())
-        self.assertTrue((TARGET / "references/controller/command-log.md").is_file())
-        self.assertTrue(
-            (TARGET / "references/controller/command-log.schema.json").is_file()
+    def test_payload_is_exactly_the_pointer(self) -> None:
+        files = sorted(
+            str(path.relative_to(TARGET)) for path in TARGET.rglob("*") if path.is_file()
         )
-        self.assertTrue((TARGET / "scripts/bin/play-preflight").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-onboarding").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-presentation").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-publication").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-publication-gate").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-public-owner").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-routing").is_file())
-        self.assertTrue((TARGET / "scripts/bin/play-routing").stat().st_mode & 0o111)
-        self.assertTrue((TARGET / "scripts/bin/play-certificate").is_file())
-        self.assertTrue((TARGET / "ui/thinking-orbs/package-lock.json").is_file())
-        self.assertTrue((TARGET / "ui/thinking-orbs/src/PlayActivity.tsx").is_file())
-        self.assertTrue((TARGET / "ui/thinking-orbs/src/PlayThinkingOrb.tsx").is_file())
+
+        self.assertEqual(["SKILL.md", "agents/openai.yaml"], files)
 
     def test_payload_matches_source(self) -> None:
         import tempfile
@@ -62,17 +23,23 @@ class PluginPackageTest(unittest.TestCase):
             materialize(expected)
             self.assertEqual([], differences(expected, TARGET))
 
+    def test_pointer_keeps_play_discovery_and_names_rote_install(self) -> None:
+        source = (ROOT / "SKILL.md").read_text()
+        pointer = (TARGET / "SKILL.md").read_text()
+        frontmatter = source[: source.index("\n---\n", 4) + len("\n---\n")]
+
+        self.assertTrue(pointer.startswith(frontmatter))
+        self.assertIn("name: play\n", frontmatter)
+        self.assertIn("${ROTE_HOME:-$HOME/.rote}/play/current/SKILL.md", pointer)
+        self.assertIn("curl -fsSL https://getrote.dev/install | bash", pointer)
+        self.assertIn("rote install play", pointer)
+
     def test_codex_skill_requires_explicit_invocation(self) -> None:
         source_metadata = (ROOT / "agents" / "openai.yaml").read_text()
         packaged_metadata = (TARGET / "agents" / "openai.yaml").read_text()
 
         self.assertIn("allow_implicit_invocation: false", source_metadata)
         self.assertEqual(source_metadata, packaged_metadata)
-
-    def test_packager_is_not_recursively_installed(self) -> None:
-        self.assertFalse((TARGET / "scripts/bin/package-plugin").exists())
-        self.assertFalse((TARGET / "scripts/lib/play/package.py").exists())
-        self.assertTrue((ROOT / "scripts/bin/package-plugin").is_file())
 
     def test_plugin_versions_match_the_packaged_version(self) -> None:
         expected = (ROOT / "VERSION").read_text().strip()
@@ -83,11 +50,10 @@ class PluginPackageTest(unittest.TestCase):
             ROOT / "plugins/play/.kimi-plugin/plugin.json",
             ROOT / "plugins/play/.cursor-plugin/plugin.json",
         )
-        self.assertEqual(expected, (TARGET / "VERSION").read_text().strip())
         for manifest in manifests:
             self.assertEqual(expected, json.loads(manifest.read_text())["version"])
 
-    def test_claude_plugin_uses_bootstrap_for_rote_convergence(self) -> None:
+    def test_claude_plugin_declares_no_dependencies(self) -> None:
         manifest = json.loads(
             (ROOT / "plugins/play/.claude-plugin/plugin.json").read_text()
         )
@@ -98,6 +64,19 @@ class PluginPackageTest(unittest.TestCase):
         hooks = json.loads((ROOT / "plugins/play/hooks/hooks.json").read_text())
 
         self.assertEqual({}, hooks["hooks"])
+
+    def test_marketplaces_keep_the_play_plugin_identity(self) -> None:
+        for marketplace_path in (
+            ".claude-plugin/marketplace.json",
+            ".agents/plugins/marketplace.json",
+        ):
+            marketplace = json.loads((ROOT / marketplace_path).read_text())
+            self.assertEqual("play-skills", marketplace["name"])
+            self.assertEqual("play", marketplace["plugins"][0]["name"])
+        for manifest in (".claude-plugin", ".codex-plugin"):
+            plugin = json.loads((ROOT / "plugins/play" / manifest / "plugin.json").read_text())
+            self.assertEqual("play", plugin["name"])
+            self.assertEqual("./skills/", plugin["skills"])
 
     def test_cursor_marketplace_points_at_the_cursor_plugin_payload(self) -> None:
         marketplace = json.loads(
@@ -110,7 +89,7 @@ class PluginPackageTest(unittest.TestCase):
 
     def test_active_sources_have_no_legacy_flow_commands(self) -> None:
         files = [ROOT / "README.md", ROOT / "SKILL.md"]
-        for directory in (ROOT / "references", ROOT / "scripts", TARGET):
+        for directory in (ROOT / "references", ROOT / "scripts"):
             files.extend(path for path in directory.rglob("*") if path.is_file())
         legacy_patterns = (
             "rote flow",

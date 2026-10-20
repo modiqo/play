@@ -15,4 +15,4 @@ The browser bundle has one composition root and six behavior boundaries:
 
 Keep data projection independent of rendering. New semantic categories belong in `semantics.js`; new spatial rules belong in a pure model such as `temporal-corridor.mjs`; renderer-specific geometry belongs in the relevant elements module. Network and playback changes belong in the runtime hook. `app.jsx` should remain declarative.
 
-Build the checked-in browser artifact with `npm run build:journey-viewer`, then synchronize the plugin payload with `./scripts/bin/package-plugin`.
+Build the checked-in browser artifact with `npm run build:journey-viewer`.

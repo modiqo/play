@@ -16,7 +16,6 @@ sys.path.insert(0, str(ROOT / "scripts" / "lib"))
 from play.controller import ControllerEvent, ControllerRuntime, EventId, StateId
 from play.identity import last_login_provider, login_command, remember_login_provider
 from play.onboarding import OnboardingError, company_setup, login_rote_identity, remember_first_use_orientation
-from play.bootstrap import _identity_gate, _login_method_options
 
 
 class CompanyOnboardingTest(unittest.TestCase):
@@ -151,19 +150,6 @@ class CompanyOnboardingTest(unittest.TestCase):
             self.assertEqual(login_command("/tmp/rote", "email"), run.call_args.args[0])
             remember.assert_called_once_with("email")
             self.assertNotIn("code", str(result))
-
-    def test_installer_offers_email_and_verifies_login_before_proceeding(self):
-        self.assertIn("email", [method for method, _ in _login_method_options("headed")])
-        calls = []
-        results = iter([subprocess.CompletedProcess([], 77, "", "login required"), subprocess.CompletedProcess([], 0, "", ""), subprocess.CompletedProcess([], 0, "ok: alice@example.com", "")])
-        def runner(command):
-            calls.append(command)
-            return next(results)
-        with patch("play.bootstrap.remember_login_provider"):
-            _, authenticated = _identity_gate("/tmp/rote", login_provider="email", runner=runner)
-        self.assertTrue(authenticated)
-        self.assertEqual(login_command("/tmp/rote", "email"), calls[1])
-        self.assertEqual(["/tmp/rote", "whoami", "--check"], calls[2])
 
 
 if __name__ == "__main__":

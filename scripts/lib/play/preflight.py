@@ -16,11 +16,9 @@ from typing import Any, Sequence
 from .harnesses import (
     HARNESS_BY_ID,
     HARNESS_SPECS,
-    commands as harness_commands,
     detect_harness,
     labels as harness_labels,
     skill_roots as configured_skill_roots,
-    supported_harnesses,
 )
 from .identity import rote_session_status
 from .python_environment import (
@@ -35,17 +33,14 @@ from .python_environment import (
 
 SCHEMA = "play.preflight/v1"
 ROOT = Path(__file__).resolve().parents[3]
-SUPPORTED_HARNESSES = supported_harnesses()
-HARNESS_COMMANDS = harness_commands()
+INSTALL_TEXT = "rote install play"
 HARNESS_LABELS = harness_labels()
 REQUIRED_PLAY_EXECUTABLES = (
     "play",
     "play-audit",
     "play-audit-corpus",
     "play-machine",
-    "play-bootstrap",
     "play-birth",
-    "play-activate",
     "play-certificate",
     "play-cheat-sheet",
     "play-guide",
@@ -72,6 +67,7 @@ REQUIRED_PLAY_EXECUTABLES = (
     "play-run-output",
     "play-scheduler-probe",
     "play-search",
+    "play-setup",
     "play-standby",
 )
 SETUP_COMMANDS = {
@@ -111,27 +107,10 @@ SETUP_COMMANDS = {
     ],
 }
 
-PLAY_RESTORE_COMMANDS = {
-    "codex": [
-        "Run this Play skill's bundled scripts/bin/play-activate to restore the launcher and activation state.",
-        "In Codex, use /skills to ensure Play is enabled.",
-        "Restart Codex.",
-    ],
-    "claude": [
-        "Run this Play skill's bundled scripts/bin/play-activate to restore the launcher and activation state.",
-        "Restart Claude Code.",
-    ],
-    "kimi": ["Install Play in ~/.agents/skills or ~/.kimi/skills, then restart Kimi."],
-    "cursor": ["Install Play in ~/.cursor/skills, then restart Cursor."],
-    "hermes": ["Install Play in ~/.hermes/skills, then restart Hermes."],
-    "opencode": [
-        "Install Play in ~/.config/opencode/skills and its managed /play command, then restart OpenCode."
-    ],
-    "deepseek": [
-        "Install Play in ~/.agents/skills or ~/.dsh/skills, then restart DeepSeek Harness."
-    ],
-    "generic": ["Reinstall the current Play skill and restart the harness."],
-}
+PLAY_RESTORE_COMMANDS = [
+    f"Run `{INSTALL_TEXT}` to restore the Play launchers, skill links, and harness wiring.",
+    "Restart the harness.",
+]
 
 
 @dataclass(frozen=True)
@@ -252,7 +231,7 @@ def _python_environment_check() -> tuple[Check, dict[str, Any]]:
     missing = missing_runtime_modules()
     environment_ready = not missing
     uv = shutil.which("uv")
-    index = resolve_package_index(ROOT)
+    index = resolve_package_index()
     pinned = list(lock_indexes(ROOT))
     lock_agrees = lock_matches_index(ROOT, index)
     python_index: dict[str, Any] = {
@@ -386,9 +365,11 @@ def inspect(harness: str) -> dict[str, Any]:
     )
     setup_commands: list[str] = []
     if not checks[0].ok or not checks[1].ok:
-        setup_commands.extend(PLAY_RESTORE_COMMANDS[harness])
+        setup_commands.extend(PLAY_RESTORE_COMMANDS)
     if not checks[2].ok:
-        setup_commands.append("Install uv, then rerun the Play installer to verify the pinned environment.")
+        setup_commands.append(
+            f"Install uv, then run `{INSTALL_TEXT}` to rebuild the pinned Play environment."
+        )
     if executable is None or (active_status is not None and not active_status["rote_skills_installed"]):
         setup_commands.extend(SETUP_COMMANDS[harness])
     elif any(
@@ -412,20 +393,6 @@ def inspect(harness: str) -> dict[str, Any]:
         },
         "harnesses": harnesses,
         "cross_harness_ready": cross_harness_ready,
-        "install_target_prompt": {
-            "selection": "multiple",
-            "question": "Install the current Play skill in which harnesses?",
-            "options": [
-                {
-                    "id": item["id"],
-                    "label": item["label"],
-                    "selected": item["selected"],
-                    "ready": item["rote_skills_installed"],
-                }
-                for item in harnesses
-            ],
-            "command_template": "scripts/harness/install-all install --harness <id> [--harness <id> ...]",
-        },
         "setup_required": not ready,
         "setup_commands": list(dict.fromkeys(setup_commands)) if not ready else [],
     }
@@ -444,9 +411,7 @@ def render(payload: dict[str, Any]) -> str:
                     and harness.get("play_skill_installed")
                 ):
                     lines.append(f"- {harness['label']}")
-            lines.append(
-                "Run scripts/harness/install-all targets to choose the complete target set."
-            )
+            lines.append(f"Run `{INSTALL_TEXT}` to install Play in every detected harness.")
         return "\n".join(lines)
     lines = ["Play needs Rote setup before it can continue:"]
     for check in payload["checks"]:

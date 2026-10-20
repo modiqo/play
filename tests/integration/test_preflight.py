@@ -136,11 +136,10 @@ class PreflightTest(unittest.TestCase):
         )
         self.assertFalse(launcher["ok"])
         self.assertEqual("python-entrypoint", payload["runtime"]["implementation"])
-        self.assertEqual("multiple", payload["install_target_prompt"]["selection"])
-        self.assertTrue(
-            any("play-activate" in command for command in payload["setup_commands"])
+        self.assertIn(
+            "Run `rote install play` to restore the Play launchers, skill links, and harness wiring.",
+            payload["setup_commands"],
         )
-        self.assertTrue(any("/skills" in command for command in payload["setup_commands"]))
 
     @patch("scripts.lib.play.preflight.importlib.util.find_spec", return_value=None)
     @patch("scripts.lib.play.preflight.inspect_harnesses")

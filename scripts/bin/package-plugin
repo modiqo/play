@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Thin entrypoint for building the installable Play plugin payload."""
+"""Thin entrypoint for building the marketplace Play plugin pointer."""
 
 from __future__ import annotations
 
