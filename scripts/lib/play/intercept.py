@@ -1,7 +1,8 @@
-"""Suggest only published Plays with a direct shared-Worker judgment.
+"""Point actionable prompts at rote guidance and suggest direct published Plays.
 
-The prompt hook stays silent on timeout, failed identity, or uncertain relevance.
-It never uses local catalogs or unpublished Plays to decide relevance.
+The rote pointer does not depend on discovery. The Play suggestion stays silent on
+timeout, failed identity, or uncertain relevance, and never uses local catalogs or
+unpublished Plays to decide relevance.
 """
 
 from __future__ import annotations
@@ -12,6 +13,11 @@ import re
 import sys
 
 MIN_PROMPT_CHARS = 8
+ROTE_POINTER = (
+    "rote: for API, MCP, browser, registry, or automation work, run "
+    "`rote guidance root` and follow it."
+)
+_BYPASS_PREFIXES = ("direct:", "without play:")
 _BARE_HELLO_REQUEST = re.compile(
     r"^(?:please\s+)?run\s+(?:the\s+)?hello(?:\s+play)?[.!]?$",
     re.IGNORECASE,
@@ -73,13 +79,39 @@ def _is_match_backed_request(prompt: str) -> bool:
     )
 
 
+def _play_suggestion(prompt: str) -> str | None:
+    """Return a Worker-confirmed direct Play suggestion, or None."""
+
+    # Any discovery failure (imports, identity, network, judgment) only drops the
+    # suggestion; the rote pointer is composed independently.
+    try:
+        from .search import search_published
+
+        result = search_published(prompt, limit=3, timeout_seconds=3.0)
+    except Exception:
+        return None
+    matches = [
+        item for item in result["results"] if item.get("relevance_status") == "direct"
+    ]
+    if result["source_health"].get("mode") != "judged" or not matches:
+        return None
+    reference = matches[0]["exact_reference"]
+    return (
+        f"Play suggestion: Worker-confirmed direct match `{reference}`. "
+        "Show one quiet, non-blocking line: "
+        f'"Play found: `{reference}` — explicitly invoke Play with '
+        f'`{reference}` to inspect it." Do not enter the Play state '
+        "machine, load Play or Rote state, pause, or change the original request."
+    )
+
+
 def intercept_prompt(
     prompt: str,
     *,
     session_id: str | None = None,
     project_path: str | None = None,
 ) -> str | None:
-    """Return the one context line to inject, or None for silence."""
+    """Return the context to inject, or None for silence."""
 
     stripped = prompt.strip()
     if is_bare_hello_request(stripped):
@@ -88,30 +120,13 @@ def intercept_prompt(
         ("$play", "/play", "!", "/")
     ):
         return None
+    if stripped.lower().startswith(_BYPASS_PREFIXES):
+        return None
     action_request = is_action_request(stripped)
     if not action_request and not _is_match_backed_request(stripped):
         return None
-    # Discussion and explicit commands do not need the search dependencies.
-    from .search import SearchError, search_published
-
-    try:
-        result = search_published(stripped, limit=3, timeout_seconds=3.0)
-    except (SearchError, OSError, ValueError):
-        return None
-    matches = [
-        item for item in result["results"] if item.get("relevance_status") == "direct"
-    ]
-    if result["source_health"].get("mode") != "judged" or not matches:
-        return None
-    match = matches[0]
-    reference = match["exact_reference"]
-    return (
-        f"Play suggestion: Worker-confirmed direct match `{reference}`. "
-        "Show one quiet, non-blocking line: "
-        f'"Play found: `{reference}` — explicitly invoke Play with '
-        f'`{reference}` to inspect it." Do not enter the Play state '
-        "machine, load Play or Rote state, pause, or change the original request."
-    )
+    suggestion = _play_suggestion(stripped)
+    return ROTE_POINTER if suggestion is None else f"{ROTE_POINTER}\n{suggestion}"
 
 
 def milestone_nudge(session_id: str | None) -> str | None:

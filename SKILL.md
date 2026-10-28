@@ -15,18 +15,24 @@ returned projection is the entire instruction contract for the current moment.
 ## Activation gate
 
 Enter Play only when the user explicitly invokes Play. An ordinary outcome continues normally; do
-not independently enroll it in Play merely because it could become reusable. The discovery hook may
-surface a saved Play, but it never activates Play or Rote and never loads their state.
+not independently enroll it in Play merely because it could become reusable. The prompt hook may
+surface a saved Play and adds a `rote:` pointer to actionable prompts; neither activates Play or
+loads Play state.
 
 The harness-native prefix activates Play. Use `$play` in Codex and `/skill:play` in Kimi Code. Use
 `/play` in Claude Code, Cursor, Hermes, OpenCode, or DeepSeek Harness.
 
 Without that explicit prefix, Play stays silent and out of the agent's way.
 
+A hook line beginning `rote:` is not Play activation either. For API, MCP, browser, registry, or
+automation work, run `rote guidance root` and follow it without entering Play. Outside a Play step,
+`rote guidance root` is the reference for rote work; `rote guidance index` lists every document.
+
 A hook line beginning `Play suggestion:` is not Play activation. The hook has already obtained a direct judgment for a published Play from the shared search Worker. Present only the exact quiet or passive
 one-line suggestion quoted by the hook. Do not pause, enter the state machine, search again, pull,
-inspect, run, or invoke Rote. Continue the original request through the normal harness route. The
-user may explicitly invoke the named Play or ask to search later.
+inspect, or run the Play. Continue the original request through the normal harness route, which may
+include rote work through the `rote:` pointer. The user may explicitly invoke the named Play or ask
+to search later.
 
 ### Scheduling begins only after the result
 
@@ -198,6 +204,9 @@ play-machine run-until-yield --stdin --json <<'PLAY_INPUT'
 PLAY_INPUT
 ```
 
+Run one rote command per shell call and read its whole output, including `@@next` and
+`@@mandatory` lines. Inside a Play step, Play's `command_policy` and step boundary still win.
+
 rote normally places `play-machine` on `PATH`. If it is unavailable but this loaded skill contains
 executable `scripts/bin/play-machine`, first run `rote install play` to restore the launchers and
 harness wiring. Then enter the runtime through the bundled `scripts/bin/play-machine` for this turn.
@@ -298,6 +307,8 @@ run.
   Play; never follow a Rote gate past `command_policy`, and never answer the user from inside the
   step. Interactive guidance (setup, authentication) asks its own user questions — ask those
   directly and continue; return to the runtime only with a declared event.
+  After compaction, re-read the guidance the current step names before acting; do not restart the
+  step.
 - `terminal`: present the terminal outcome and stop. A `blocked` outcome arrives as a
   presentation that names the step that stopped, the cause, and the next step. Relay that
   Markdown verbatim. Never replace it with a generic phrase such as “couldn't continue due to
@@ -410,8 +421,9 @@ preference.
 
 Automatic hook discovery searches published Plays through the shared Worker. A direct Jev judgment
 produces one quiet suggestion and continues the normal harness route. Partial, uncertain, failed,
-and timed-out searches produce no Play output. Unpublished local Plays are never candidates. Discovery never reads Play preferences, journals, exploration
-state, or Rote workspaces.
+and timed-out searches produce no Play output; the `rote:` pointer still appears for actionable
+prompts. Unpublished local Plays are never candidates. Discovery never reads Play preferences,
+journals, exploration state, or Rote workspaces.
 
 When an explicitly activated outcome search finds no adequate Play, the runtime exits quietly and
 the harness continues the unchanged request normally. An explicit Play search may show an empty
@@ -481,3 +493,7 @@ unverifiable outcome. Never infer success from specialist prose. At a terminal s
 the projected receipt, completed, exited, or blocked outcome as the primary result. The post-receipt
 recurring choice above is the sole permitted follow-up to an ordinary verified receipt; a saved Play
 is complete only when its birth certificate has been presented.
+
+If `rote` is not on PATH, try `$ROTE_BIN/rote`, then `$HOME/.local/bin/rote`; if neither exists,
+tell the user and point at https://getrote.dev. Never run destructive commands unless the user
+asked.

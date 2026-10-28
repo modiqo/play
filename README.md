@@ -151,7 +151,7 @@ checks, or tool approvals. A later explicit `$play` invocation works normally.
 
 | You do this | Play does this | You stay in control of |
 |---|---|---|
-| A hook detects a relevant Play | Searches published Plays through the shared Worker, then suggests a direct match in one non-blocking line | Whether to invoke the suggested Play later |
+| A hook detects an actionable request | Points at `rote guidance root` for rote work, and suggests a Worker-confirmed direct Play match in one non-blocking line | Whether to use rote or invoke the suggested Play later |
 | Prefix a request with `direct:` | Bypasses Play and Rote for the whole turn: no machine, search, adapter, workspace, capture, or preference write | The direct task and its normal harness permissions |
 | Inspect a matching Play | Shows inputs, setup, credentials by name, and declared effects | Whether the exact version may run |
 | No matching Play exists | Says nothing and lets the harness continue normally | The original task, with no Play interruption |
@@ -1004,22 +1004,29 @@ play-inbox line                        # instant; prints one line or nothing
 play-inbox details                     # cached full inbox, no network
 ```
 
-The prompt hook suggests published Plays only:
+The prompt hook points actionable prompts at rote guidance and suggests published Plays only:
 
 ```bash
-play-intercept prompt            # UserPromptSubmit: Worker-confirmed direct matches only
+play-intercept prompt            # UserPromptSubmit: rote pointer plus Worker-confirmed direct matches
 play-intercept prompt --harness cursor   # Cursor beforeSubmitPrompt: always {"continue": true}
 play-journal show --day today    # Explicit local recall; no state machine or preflight
 ```
 
-The hook requires an action-shaped request and calls the same Worker through Rote with a
-three-second deadline. Only a direct judgment produces one quiet suggestion with an exact published
-reference. Partial, uncertain, unavailable, and timed-out results stay silent. Discussion questions
-never trigger the search. The hook does not execute the suggested Play or enter the controller.
+The hook requires an action-shaped request. Every such request, other than an explicit Play entry
+(`$play`, `/play`, `/skill:play`), a slash command, a `!` shell line, or a `direct:`/`without play:`
+bypass, receives one pointer line: “rote: for API, MCP, browser, registry, or automation work, run
+`rote guidance root` and follow it.” The pointer does not depend on discovery, so it still appears
+when identity, network, or search fails.
+
+The hook also calls the same Worker through Rote with a three-second deadline. Only a direct
+judgment adds one quiet suggestion with an exact published reference. Partial, uncertain,
+unavailable, and timed-out results add no suggestion. Discussion questions never trigger the
+pointer or the search. The hook does not execute the suggested Play or enter the controller.
 
 Cursor's `beforeSubmitPrompt` response can only allow or block a prompt; it has no field for
 injected context. With `--harness cursor` the hook therefore skips discovery and always prints
-`{"continue": true}`, so Cursor never receives Play suggestions through this hook.
+`{"continue": true}`, so Cursor receives neither the rote pointer nor Play suggestions through this
+hook.
 
 The request keeps exclusions such as “without changing records.” Concrete URLs, paths, email
 addresses, and credential assignments are redacted before search. Quoted task constraints remain.
