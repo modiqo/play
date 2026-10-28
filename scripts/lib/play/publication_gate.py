@@ -17,7 +17,7 @@ from typing import Any
 
 from .commands import CommandError, run_rote_json
 from .render import json_text
-from .search_transport import play_origin
+from .search_transport import custom_search_endpoint, play_origin
 
 
 SCHEMA = "play.publication-gate/v1"
@@ -135,7 +135,7 @@ def _expected_identity(payload: Mapping[str, Any]) -> tuple[dict[str, Any], dict
     if publication.get("visibility") != "public":
         raise PublicationGateError("publication gate applies only to public Plays")
     version = _string(play.get("version"), "play.version")
-    if os.environ.get("PLAY_SEARCH_ENDPOINT"):
+    if custom_search_endpoint():
         canonical = _string(publication.get("canonical_reference"), "publication.canonical_reference")
         exact = canonical if canonical.endswith(f"@{version}") else f"{canonical}@{version}"
         if publication.get("uri") != play_origin() + exact:

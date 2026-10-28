@@ -71,10 +71,15 @@ def registry_environment(config: dict) -> str:
     return "test"
 
 
+def custom_search_endpoint() -> str | None:
+    """Return the validated `PLAY_SEARCH_ENDPOINT`, or None when unset."""
+    custom = os.environ.get("PLAY_SEARCH_ENDPOINT")
+    return _secure_endpoint(custom) if custom else None
+
+
 def search_binding(config: dict) -> tuple[str, str, str]:
     environment = registry_environment(config)
-    custom = os.environ.get("PLAY_SEARCH_ENDPOINT")
-    endpoint = _secure_endpoint(custom) if custom else None
+    endpoint = custom_search_endpoint()
     if environment == "test" and not endpoint:
         raise CommandError("Owned test registries require an explicit search endpoint.")
     return environment, config["url"], endpoint or ENDPOINTS[environment]
@@ -158,6 +163,6 @@ def request_search(query: str, *, public: bool, org: str | None, limit: int, tim
         raise CommandError("Shared search is unavailable or returned invalid JSON; no local fallback was used.") from None
     if not isinstance(result, dict) or result.get("registry") != environment:
         raise CommandError("Shared search returned the wrong registry environment.")
-    if os.environ.get("PLAY_SEARCH_ENDPOINT") and result.get("registry_url") != registry_url:
+    if custom_search_endpoint() and result.get("registry_url") != registry_url:
         raise CommandError("Shared search returned the wrong registry URL binding.")
     return result
