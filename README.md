@@ -654,9 +654,10 @@ discovery: its skill is a pointer that reads the rote-installed Play skill at
 `rote install play` links the real skill into each agent and removes `play@play-skills` from Claude
 Code and Codex. `scripts/bin/package-plugin --check` verifies the pointer and manifest versions.
 
-Play requires Rote 0.89.0 or newer. The Rote skill provider (`rote@rote-skills`) is a prerequisite;
-Rote serves every instruction through `rote guidance <id>`, and missing local setup goes to
-`rote guidance setup/essential`:
+Play needs a Rote that serves `rote guidance <id>`; preflight probes `rote guidance root` and asks
+for `rote update` when the installed Rote is older. The Rote skill provider (`rote@rote-skills`) is
+a prerequisite; Rote serves every instruction through `rote guidance <id>`, and missing local setup
+goes to `rote guidance setup/essential`:
 
 ```bash
 # Codex

@@ -107,7 +107,7 @@ SETUP_COMMANDS = {
     ],
     "deepseek": [
         ROTE_INSTALL,
-        "rote install skill --target agents-md --personal --force",
+        "rote install skill --target universal --personal --force",
         "Restart DeepSeek Harness. " + ROTE_SETUP,
     ],
     "generic": [
@@ -120,6 +120,7 @@ PLAY_RESTORE_COMMANDS = [
     f"Run `{INSTALL_TEXT}` to restore the Play launchers, skill links, and harness wiring.",
     "Restart the harness.",
 ]
+ROTE_UPDATE = "Run `rote update`: Play needs a Rote that serves `rote guidance <id>`."
 
 
 @dataclass(frozen=True)
@@ -310,14 +311,22 @@ def inspect(harness: str) -> dict[str, Any]:
             [
                 Check("authenticated", False, "Rote cannot check identity until installed."),
                 Check("play_capability", False, "Rote cannot check Play support until installed."),
+                Check(
+                    "guidance_capability",
+                    False,
+                    "Rote cannot serve guidance until installed.",
+                ),
             ]
         )
     else:
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             identity_future = executor.submit(
                 run, [executable, "whoami", "--check"]
             )
             capability_future = executor.submit(run, [executable, "play", "--help"])
+            # Rote releases before guidance ids reject `root`, so this probe
+            # tells an outdated Rote apart from a missing one.
+            guidance_future = executor.submit(run, [executable, "guidance", "root", "--json"])
         try:
             identity = identity_future.result()
             identity_text = (identity.stdout or identity.stderr).strip()
@@ -357,6 +366,20 @@ def inspect(harness: str) -> dict[str, Any]:
             )
         )
 
+        try:
+            serves_guidance = guidance_future.result().returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            serves_guidance = False
+        checks.append(
+            Check(
+                "guidance_capability",
+                serves_guidance,
+                "The installed Rote serves `rote guidance <id>`."
+                if serves_guidance
+                else "The installed Rote does not serve `rote guidance <id>`; it is too old.",
+            )
+        )
+
     ready = all(check.ok for check in checks)
     cross_harness_ready = all(
         not item["selected"]
@@ -370,6 +393,11 @@ def inspect(harness: str) -> dict[str, Any]:
         setup_commands.append(
             f"Install uv, then run `{INSTALL_TEXT}` to rebuild the pinned Play environment."
         )
+    guidance_missing = executable is not None and any(
+        not check.ok and check.id == "guidance_capability" for check in checks
+    )
+    if guidance_missing:
+        setup_commands.append(ROTE_UPDATE)
     if executable is None or (active_status is not None and not active_status["rote_skills_installed"]):
         setup_commands.extend(SETUP_COMMANDS[harness])
     elif any(
