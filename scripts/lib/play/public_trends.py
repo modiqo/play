@@ -14,6 +14,7 @@ from urllib.parse import quote
 from .commands import CommandError, run_json
 from .registry import Organization, load_authorized_flows, load_organizations
 from .render import json_text
+from .search_transport import play_origin, require_hosted_cards
 
 
 SCHEMA = "play.public-trends/v1"
@@ -48,7 +49,8 @@ def _reference_parts(reference: str) -> tuple[str, str]:
 
 def _card_url(reference: str) -> str:
     _reference_parts(reference)
-    return f"https://play.modiqo.ai/{quote(reference, safe='/@._-')}.json"
+    require_hosted_cards()
+    return f"{play_origin()}{quote(reference, safe='/@._-')}.json"
 
 
 def fetch_public_stats(reference: str) -> dict[str, Any]:

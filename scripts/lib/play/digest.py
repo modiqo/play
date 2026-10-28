@@ -35,6 +35,7 @@ from .registry import (
     registry_failure_kind,
 )
 from .render import json_text
+from .search_transport import play_origin
 from .timewindow import (
     TimeWindowError,
     next_checkpoint,
@@ -631,7 +632,7 @@ def render_markdown(digest: dict[str, Any]) -> str:
         selected = [row for row in rows if row["section"] == section]
         for row in selected:
             title = re.sub(r"([\\`*_[\]<>])", r"\\\1", row["name"])
-            lines.append(f"- [{title}](https://play.modiqo.ai/{row['reference']})")
+            lines.append(f"- [{title}]({play_origin()}{row['reference']})")
         if not selected:
             if section == "modiqo":
                 lines.append("No additional Modiqo titles in this snapshot.")

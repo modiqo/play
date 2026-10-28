@@ -10,6 +10,7 @@ from typing import Any
 
 from .registry import PlayNotFoundError, RegistryReadError, load_play_inspection
 from .render import json_text
+from .search_transport import play_origin
 
 
 def attach_report_card(disclosure: dict[str, Any], reference: str) -> None:
@@ -252,7 +253,7 @@ def render_markdown(disclosure: dict[str, Any]) -> str:
     base_reference = str(disclosure["exact_reference"]).rsplit("@", 1)[0]
     if "/" in base_reference:
         lines.append(
-            f"Play card: https://play.modiqo.ai/{base_reference}"
+            f"Play card: {play_origin()}{base_reference}"
         )
     lines += [
         "",

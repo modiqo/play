@@ -22,6 +22,7 @@ from .commands import CommandError, run_json
 from .private_store import ensure_private_directory
 from .rote_workspace_layout import rote_workspace_root
 from .state_home import state_path
+from .search_transport import play_origin
 
 
 class PlayRunError(ValueError):
@@ -1022,7 +1023,7 @@ def _canonical_play_uri(value: str) -> bool:
     segments = [segment for segment in parsed.path.split("/") if segment]
     return (
         parsed.scheme == "https"
-        and parsed.hostname == "play.modiqo.ai"
+        and parsed.hostname == urlparse(play_origin()).hostname
         and parsed.port is None
         and parsed.username is None
         and parsed.password is None
@@ -1039,7 +1040,7 @@ def _latest_execution_target(value: str) -> str | None:
         parsed = urlparse(value)
         owner, name = [segment for segment in parsed.path.split("/") if segment]
         name = name.partition("@")[0]
-        return f"https://play.modiqo.ai/{owner}/{name}"
+        return f"{play_origin()}{owner}/{name}"
     owner_name = value.partition("@")[0]
     if owner_name.count("/") != 1:
         return None

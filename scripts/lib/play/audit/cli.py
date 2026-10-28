@@ -30,8 +30,9 @@ from . import package as package_mod
 from . import rehearse as rehearse_mod
 from .host import PROFILES
 from .runner import safe_audit, unavailable
+from ..search_transport import play_origin
 
-_REFERENCE = re.compile(r"^(?:https://play\.modiqo\.ai/)?([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)(?:@([A-Za-z0-9_.-]+))?/?$")
+_REFERENCE = re.compile(r"^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)(?:@([A-Za-z0-9_.-]+))?/?$")
 
 
 def _flows_root() -> Path:
@@ -46,7 +47,7 @@ def resolve_target(target: str) -> tuple[Path | None, str]:
         return path.parent, f"{path.parent.parent.name}/{path.parent.name}"
     if path.is_dir():
         return path, f"{path.parent.name}/{path.name}"
-    match = _REFERENCE.match(target)
+    match = _REFERENCE.match(target.removeprefix(play_origin()))
     if match:
         owner, name = match.group(1), match.group(2)
         candidate = _flows_root() / owner / name
@@ -55,7 +56,7 @@ def resolve_target(target: str) -> tuple[Path | None, str]:
 
 
 def requested_version(target: str) -> str | None:
-    match = _REFERENCE.match(target)
+    match = _REFERENCE.match(target.removeprefix(play_origin()))
     return match.group(3) if match else None
 
 
@@ -72,7 +73,7 @@ def audit_target(
     root, reference = resolve_target(target)
     if root is not None:
         return safe_audit(root, reference=reference, profile=profile, read_adapters=read_adapters, persist=persist)
-    match = _REFERENCE.match(target)
+    match = _REFERENCE.match(target.removeprefix(play_origin()))
     if match is None:
         return unavailable(reference, f"{target} is neither an installed Play, a path, nor an owner/name reference")
     if not pull:

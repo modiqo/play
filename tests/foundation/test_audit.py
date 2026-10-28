@@ -521,6 +521,22 @@ class PullTest(NoProbe):
         self.assertIsNone(pulled)
         self.assertIn("Flow not found", str(error))
 
+    def test_installed_local_registry_audit_does_not_need_search_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            registry = Path(home) / "registry"
+            registry.mkdir()
+            (registry / "config.json").write_text(json.dumps({"url": "http://127.0.0.1:54321"}))
+            root = Path(home) / "flows/owner/scan"
+            root.mkdir(parents=True)
+            for item in (FIXTURES / "partial-scan").iterdir():
+                (root / item.name).write_text(item.read_text())
+            with patch.dict(os.environ, {"ROTE_HOME": home, "PLAY_SEARCH_ENDPOINT": ""}):
+                envelope = audit_target("owner/scan", pull=False, read_adapters=False, persist=True)
+            self.assertEqual("ok", envelope["status"])
+            self.assertEqual("owner/scan", envelope["subject"]["reference"])
+            self.assertIn("FANOUT_OVER_PREVIEW", {fact["id"] for fact in envelope["facts"]})
+            self.assertTrue(root.is_dir())
+
     def test_audit_target_pulls_when_not_installed(self) -> None:
         def fake_pull(owner: str, name: str, *, runner=None):
             home = Path(tempfile.mkdtemp())
