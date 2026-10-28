@@ -7,7 +7,7 @@ live-verified an installed, authenticated Rote identity. Keep canonical URI onbo
 
 Every Play request is identity-gated, including `whats new`. If live preflight is structurally
 healthy and only the `authenticated` check is false, this is normal onboarding—not an error path.
-Keep the original request and continuation intact, hand off to `rote-setup`, and offer Google,
+Keep the original request and continuation intact, hand off to `setup/essential`, and offer Google,
 GitHub, or email sign-in/account creation. After the browser flow, require a live `rote whoami`, rerun the
 complete preflight, and continue the original request. A paused login explains how to resume; it
 must not be relabeled as an installation failure.
@@ -20,7 +20,7 @@ source that still exists, and never ask login to compensate for a broken launche
 
 After verifying identity, offer **Create company organization** or **Not now** once per account
 on this device, including when sign-in began from a Play URI. Ask for the company name and
-organization handle. Create it through `rote-org`, or verify the user already administers it.
+organization handle. Create it through `registry/org`, or verify the user already administers it.
 Then offer an optional colleague invitation as a developer (create and publish Plays) or an
 admin (also manage organization settings and members). Show the role before requesting the email.
 

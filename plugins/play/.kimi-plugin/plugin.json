@@ -8,6 +8,6 @@
   },
   "homepage": "https://getrote.dev",
   "skills": "./skills/",
-  "sessionStart": "Use Play as the user-facing controller for reusable outcomes. Keep rote specialist skills explicit-only.",
+  "sessionStart": "Use Play as the user-facing controller for reusable outcomes. Rote serves its instructions through `rote guidance`.",
   "skillInstructions": "skills/play/SKILL.md"
 }

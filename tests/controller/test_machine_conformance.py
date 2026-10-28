@@ -289,7 +289,7 @@ class MachineConformanceTest(unittest.TestCase):
             ][0]["target"],
         )
         setup_policy = " ".join(ACTIONS["handoff_rote_setup"]["command_policy"])
-        self.assertIn("Invoke the rote-setup skill", setup_policy)
+        self.assertIn("rote guidance setup/essential", setup_policy)
         self.assertIn("Do not run an installer", setup_policy)
         prompt = PROMPTS["welcome_play_request"]
         self.assertEqual(["onboarding.email_handle"], prompt["template_fields"])
@@ -444,8 +444,8 @@ class MachineConformanceTest(unittest.TestCase):
                 "onboarding_team_selected"
             ][0]["target"],
         )
-        self.assertEqual("rote-org", ACTIONS["create_team_space"]["specialist"])
-        self.assertEqual("rote-org", ACTIONS["invite_team_member"]["specialist"])
+        self.assertEqual("registry/org", ACTIONS["create_team_space"]["guidance"])
+        self.assertEqual("registry/org", ACTIONS["invite_team_member"]["guidance"])
         self.assertEqual("external-write", ACTIONS["create_team_space"]["effect"])
         self.assertEqual("external-write", ACTIONS["invite_team_member"]["effect"])
         self.assertEqual(
@@ -592,7 +592,7 @@ class MachineConformanceTest(unittest.TestCase):
 
     def test_release_and_publication_are_distinct_closed_handoffs(self) -> None:
         release = ACTIONS["author_release"]
-        self.assertEqual("rote-flow-authoring", release["specialist"])
+        self.assertEqual("play/authoring", release["guidance"])
         self.assertIn("candidate.publication_status", release["events"]["flow_released"])
         self.assertIn("publication_boundary_violated", release["events"])
         release_policy = " ".join(release["command_policy"])
@@ -601,7 +601,7 @@ class MachineConformanceTest(unittest.TestCase):
 
         for name in ("publish_private", "publish_public"):
             publication = ACTIONS[name]
-            self.assertEqual("rote-registry", publication["specialist"])
+            self.assertEqual("registry/essential", publication["guidance"])
             self.assertIn("birth.sha256", publication["input_required"])
             self.assertIn("birth.capture_ref", publication["input_required"])
             self.assertIn("birth.sha256", publication["events"]["play_published"])
@@ -808,7 +808,7 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["qualify"]["on"]["play_publication_request"][0]["target"],
         )
         local_release = ACTIONS["inspect_local_release_for_publication"]
-        self.assertEqual("rote-flow-authoring", local_release["specialist"])
+        self.assertEqual("play/authoring", local_release["guidance"])
         self.assertEqual("read", local_release["effect"])
         policy = " ".join(local_release["command_policy"])
         self.assertIn("Do not search for another Play", policy)
@@ -880,13 +880,13 @@ class MachineConformanceTest(unittest.TestCase):
             MACHINE["states"]["standby_exit"]["on"]["standby_recorded"][1]["target"],
         )
         exploration = ACTIONS["execute_captured_exploration"]
-        self.assertEqual("rote", exploration["specialist"])
+        self.assertEqual("gate/route", exploration["guidance"])
         policy = " ".join(exploration["command_policy"])
         for owner in (
-            "rote-task-routing",
-            "rote-adapter-create",
-            "rote-shell",
-            "rote-workspace",
+            "rote guidance gate/route",
+            "rote guidance adapters/create",
+            "rote guidance shell/essential",
+            "rote guidance workspace/essential",
         ):
             self.assertIn(owner, policy)
         self.assertIn("rote adapter catalog search", policy)
@@ -1043,14 +1043,14 @@ class MachineConformanceTest(unittest.TestCase):
 
     def test_specialist_registries_stay_closed(self) -> None:
         specialists = [
-            "rote-using-adapters",
-            "rote-shell",
-            "rote-browse",
-            "rote-workspace",
+            "adapters/delegated",
+            "shell/essential",
+            "browser/essential",
+            "workspace/essential",
         ]
         self.assertEqual(specialists, ACTIONS_DOC["specialist_owners"])
         self.assertEqual(
-            ["rote-adapter-create", "rote-adapter-config"],
+            ["adapters/create", "adapters/config"],
             ACTIONS_DOC["adapter_specialist_owners"],
         )
         self.assertEqual(
@@ -1059,7 +1059,7 @@ class MachineConformanceTest(unittest.TestCase):
         )
         self.assertEqual(
             ["installed", "catalog", "provided_spec", "provider_docs"],
-            capability_policy("rote-using-adapters", ["call"])["discovery_order"],
+            capability_policy("adapters/delegated", ["call"])["discovery_order"],
         )
         handoff = json.loads((CONTROLLER / "handoff.schema.json").read_text())
         self.assertEqual(
@@ -1140,8 +1140,9 @@ class MachineConformanceTest(unittest.TestCase):
         self.assertIn("rote token set <env_var> --stdin", authentication_policy)
         self.assertIn("already present and healthy", authentication_policy)
         self.assertIn("rote adapter reauth <adapter_id>", authentication_policy)
-        self.assertIn("Rote 0.69.2 or newer", authentication_policy)
+        self.assertIn("rote guidance adapters/config", authentication_policy)
         self.assertIn("Never use `rote adapter pack`", authentication_policy)
+        self.assertIn("guidance_digest", authentication_policy)
         self.assertNotIn("receipt", authentication_policy.casefold())
         self.assertNotIn("repair", authentication_policy.casefold())
         authentication_choice = next(

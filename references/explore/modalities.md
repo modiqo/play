@@ -21,18 +21,18 @@ In `manual` mode, use only the modalities the user named. Preserve explicit excl
 
 ## Route to an owner
 
-- CALL routes to the applicable adapter skill and its workspace/runtime guidance.
-- SHELL routes to `rote-shell`.
-- DRIVE routes to `rote-browse` and attaches to the active session when required.
-- Combined work routes through the specialist that can preserve a single evidence chain.
+- CALL routes to `adapters/delegated` and its workspace/runtime guidance.
+- SHELL routes to `shell/essential`.
+- DRIVE routes to `browser/essential` and attaches to the active session when required.
+- Combined work routes to `workspace/essential`, which preserves a single evidence chain.
 
 These mappings are closed. In particular, CALL never means “call an exposed MCP tool directly.”
-Before execution, confirm that the exact mapped rote-* skill is exposed as callable in the current
-harness. Installed files and lower-level tools are not substitutes. If the owner is unavailable,
+Before execution, confirm that `rote guidance <id>` resolves for the exact mapped guidance id.
+Installed files and lower-level tools are not substitutes. If the owner is unavailable,
 block without executing the route.
 
 Record selected modalities, justification, owner, constraints, and expected evidence in the
-handoff packet. Invoke only that specialist, then validate its typed receipt against the packet. A
+handoff packet. Follow only that guidance, then validate its typed receipt against the packet. A
 modality succeeds only when the receipt matches the run, state, action, owner, event, and evidence
 payload.
 
@@ -43,18 +43,18 @@ let the user choose. Only a successful zero-result catalog search or explicit re
 match permits a supplied specification or authoritative provider-document search.
 
 Bind the discovery query, ordered searched sources, choices, selection, and evidence into the CALL
-packet. Reuse the selected installed adapter when possible. Otherwise `rote-adapter-create`
+packet. Reuse the selected installed adapter when possible. Otherwise `adapters/create`
 determines the substrate as `openapi`, `graphql`, or `mcp` from the selected catalog entry or later
 specification evidence and creates it through Rote.
-Authentication required during creation is completed by `rote-adapter-create` with the normal
+Authentication required during creation is completed by `adapters/create` with the normal
 human gate. Recoverable authentication failure on an existing adapter follows the separate flow
 below.
 Provider specifications, endpoint metadata, and MCP server cards are discovery-only; the final
-capability call still runs through `rote-using-adapters` and reports adapter/type/auth provenance.
+capability call still runs through `adapters/delegated` and reports adapter/type/auth provenance.
 
-When `rote-using-adapters` classifies a CALL authentication failure as recoverable, it returns the
+When `adapters/delegated` classifies a CALL authentication failure as recoverable, it returns the
 typed adapter id, environment variable, opaque authentication rung, distinguishing error, and evidence.
-Play asks whether to authenticate, then delegates a separate packet only to `rote-adapter-config`. Play
+Play asks whether to authenticate, then delegates a separate packet only to `adapters/config`. Play
 does not interpret the rung or handle credentials. Validated authentication produces a fresh
 execution packet that preserves the original inputs and idempotency key; it does not itself satisfy
 the requested outcome.

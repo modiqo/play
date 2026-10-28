@@ -193,33 +193,33 @@ def validate_bundle(
     mutations = set(actions_doc.get("mutations", []))
     failure_event = actions_doc.get("failure_event", {}).get("id")
     expected_specialists = [
-        "rote-using-adapters",
-        "rote-shell",
-        "rote-browse",
-        "rote-workspace",
+        "adapters/delegated",
+        "shell/essential",
+        "browser/essential",
+        "workspace/essential",
     ]
     check(
-        handoff_schema.get("$defs", {}).get("specialistOwner", {}).get("enum")
+        handoff_schema.get("$defs", {}).get("guidanceOwner", {}).get("enum")
         == expected_specialists,
-        "handoff schema must use the closed Rote specialist set",
+        "handoff schema must use the closed Rote guidance owner set",
     )
     check(
         specialist_owners == expected_specialists,
-        "delegated Explore owners must be the closed Rote specialist set",
+        "delegated Explore owners must be the closed Rote guidance owner set",
     )
     check(
-        adapter_specialist_owners == ["rote-adapter-create", "rote-adapter-config"],
-        "CALL adapter convergence must use the closed Rote create/config specialist set",
+        adapter_specialist_owners == ["adapters/create", "adapters/config"],
+        "CALL adapter convergence must use the closed Rote create/config guidance set",
     )
     check(
         route_owners
         == {
-            "call": "rote-using-adapters",
-            "shell": "rote-shell",
-            "drive": "rote-browse",
-            "combined": "rote-workspace",
+            "call": "adapters/delegated",
+            "shell": "shell/essential",
+            "drive": "browser/essential",
+            "combined": "workspace/essential",
         },
-        "every exploration route must map to its exact Rote specialist",
+        "every exploration route must map to its exact Rote guidance id",
     )
     check(isinstance(initial_value, str), "initial state must be a string")
     check(initial in states, f"initial state {initial_value!r} is missing")
@@ -310,28 +310,28 @@ def validate_bundle(
         check(sum(key in action for key in ("events", "events_by_state")) == 1,
               f"action {name}: declare events or events_by_state")
         if action.get("kind") == "delegated":
-            specialist = action.get("specialist")
-            specialist_from = action.get("specialist_from")
+            guidance = action.get("guidance")
+            guidance_from = action.get("guidance_from")
             check(
-                (isinstance(specialist, str) and not specialist_from)
-                or (specialist is None and specialist_from == "execution.owner"),
-                f"action {name}: delegated actions require one exact specialist source",
+                (isinstance(guidance, str) and not guidance_from)
+                or (guidance is None and guidance_from == "execution.owner"),
+                f"action {name}: delegated actions require one exact guidance source",
             )
-            allowed_specialists = {
+            allowed_guidance = {
                 *expected_specialists,
                 *adapter_specialist_owners,
-                "rote-setup",
-                "rote-registry",
-                "rote-flow-crystallization",
-                "rote-flow-authoring",
-                "rote-flow-run",
-                "rote-org",
-                "rote",
+                "setup/essential",
+                "registry/essential",
+                "registry/org",
+                "play/crystallization",
+                "play/authoring",
+                "play/run",
+                "gate/route",
             }
-            if isinstance(specialist, str):
+            if isinstance(guidance, str):
                 check(
-                    specialist in allowed_specialists,
-                    f"action {name}: unknown specialist {specialist}",
+                    guidance in allowed_guidance,
+                    f"action {name}: unknown guidance id {guidance}",
                 )
 
     for name, prompt in prompts.items():
@@ -422,11 +422,11 @@ def validate_bundle(
             executor is not None,
             f"action {name}: has no closed executor; deterministic commands must use scripts/bin, commandless actions need a runtime handler, and external work must be delegated",
         )
-        if executor == "specialist":
+        if executor == "guidance":
             check(
-                isinstance(action.get("specialist"), str)
-                or action.get("specialist_from") == "execution.owner",
-                f"action {name}: specialist executor is not exactly bound",
+                isinstance(action.get("guidance"), str)
+                or action.get("guidance_from") == "execution.owner",
+                f"action {name}: guidance executor is not exactly bound",
             )
 
     reachable = {initial}
@@ -642,10 +642,10 @@ def validate_bundle(
     )
     setup_policy = " ".join(actions.get("handoff_rote_setup", {}).get("command_policy", []))
     check(
-        "Invoke the rote-setup skill" in setup_policy
+        "rote guidance setup/essential" in setup_policy
         and "Do not run an installer" in setup_policy
         and "improvised curl installer" in setup_policy,
-        "Play onboarding must preserve rote-setup ownership and installer approval",
+        "Play onboarding must preserve setup guidance ownership and installer approval",
     )
     card_policy = " ".join(
         actions.get("fetch_onboarding_play_card", {}).get("command_policy", [])
@@ -729,7 +729,7 @@ def validate_bundle(
     check(
         states.get("exploration_execute", {}).get("entry", {}).get("action")
         == "execute_captured_exploration"
-        and actions.get("execute_captured_exploration", {}).get("specialist") == "rote"
+        and actions.get("execute_captured_exploration", {}).get("guidance") == "gate/route"
         and _target(states, "exploration_execute", "exploration_outcome_ready")
         == "exploration_verify"
         and _target(states, "exploration_execute", "exploration_prerequisite_ready")
@@ -831,8 +831,8 @@ def validate_bundle(
         "birth capture may follow only a new unpublished release or verified recovery of an existing local release",
     )
     check(
-        actions.get("inspect_local_release_for_publication", {}).get("specialist")
-        == "rote-flow-authoring"
+        actions.get("inspect_local_release_for_publication", {}).get("guidance")
+        == "play/authoring"
         and actions.get("inspect_local_release_for_publication", {}).get("effect")
         == "read",
         "existing local publication recovery must be a read-only flow-authoring handoff",
@@ -971,7 +971,7 @@ def validate_bundle(
     )
     check(
         handoff_owner_enum == expected_owner_enum,
-        "handoff.owner must use the same closed Rote specialist set",
+        "handoff.owner must use the same closed Rote guidance owner set",
     )
     candidate_schema = context_schema.get("$defs", {}).get("candidate", {})
     check(
@@ -1044,10 +1044,10 @@ def validate_bundle(
     private_publish_action = actions.get("publish_private", {})
     public_publish_action = actions.get("publish_public", {})
     check(
-        release_action.get("specialist") == "rote-flow-authoring"
-        and private_publish_action.get("specialist") == "rote-registry"
-        and public_publish_action.get("specialist") == "rote-registry",
-        "release and publication must use separate closed specialists",
+        release_action.get("guidance") == "play/authoring"
+        and private_publish_action.get("guidance") == "registry/essential"
+        and public_publish_action.get("guidance") == "registry/essential",
+        "release and publication must use separate closed guidance ids",
     )
     release_policy = " ".join(release_action.get("command_policy", []))
     check(
@@ -1182,8 +1182,8 @@ def validate_bundle(
         .get("properties", {})
         .get("owner", {})
         .get("const")
-        == "rote-adapter-config",
-        "authentication packets must be closed to rote-adapter-config",
+        == "adapters/config",
+        "authentication packets must be closed to adapters/config",
     )
 
     if errors:

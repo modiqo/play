@@ -124,15 +124,15 @@ class ControllerRuntimeTest(unittest.TestCase):
             request_original="Fetch recent emails",
         )
         for state, expected in (
-            ("use_authentication_execute", "rote-adapter-config"),
-            ("onboarding_team_create", "rote-org"),
-            ("crystallize", "rote-flow-crystallization"),
-            ("author_release", "rote-flow-authoring"),
+            ("use_authentication_execute", "adapters/config"),
+            ("onboarding_team_create", "registry/org"),
+            ("crystallize", "play/crystallization"),
+            ("author_release", "play/authoring"),
         ):
             projection = self.runtime.project(
                 replace(session.cursor, state=StateId(state)), session.context
             ).as_dict()
-            self.assertEqual(expected, projection["instruction"]["specialist"])
+            self.assertEqual(expected, projection["instruction"]["guidance"])
 
     def test_prompt_event_template_prebinds_controller_evidence(self) -> None:
         session = self.runtime.initial_session(
@@ -448,7 +448,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 payload={
                     "authentication": {
                         "source": "rote_authentication_required",
-                        "owner": "rote-adapter-config",
+                        "owner": "adapters/config",
                         "recoverable": True,
                         "adapter_id": "crucible",
                         "env_var": "ADAPTER_CRUCIBLE_TOKEN",
@@ -611,7 +611,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             **context["authentication"],
             "source": "rote_authentication_required",
             "status": "required",
-            "owner": "rote-adapter-config",
+            "owner": "adapters/config",
             "recoverable": True,
             "adapter_id": "github",
             "env_var": "GITHUB_TOKEN",
@@ -693,7 +693,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             **context["authentication"],
             "source": "rote_authentication_required",
             "status": "required",
-            "owner": "rote-adapter-config",
+            "owner": "adapters/config",
             "recoverable": True,
             "adapter_id": "crucible",
             "env_var": "ADAPTER_CRUCIBLE_TOKEN",
@@ -734,9 +734,9 @@ class ControllerRuntimeTest(unittest.TestCase):
         yielded = advance_until_yield(self.runtime, approved.session, root=ROOT)
 
         self.assertEqual("use_authentication_execute", yielded.projection["state"]["id"])
-        self.assertEqual("specialist", yielded.projection["state"]["boundary"])
+        self.assertEqual("guidance", yielded.projection["state"]["boundary"])
         self.assertEqual(
-            "rote-adapter-config", yielded.projection["instruction"]["specialist"]
+            "adapters/config", yielded.projection["instruction"]["guidance"]
         )
         authentication_policy = " ".join(yielded.projection["instruction"]["command_policy"])
         self.assertIn("out-of-band setup path", authentication_policy)
@@ -763,7 +763,10 @@ class ControllerRuntimeTest(unittest.TestCase):
             yielded.session,
             ControllerEvent(
                 id=EventId("authentication_ready"),
-                payload={"authentication": specialist_result},
+                payload={
+                    "authentication": specialist_result,
+                    "guidance_digest": "sha256:" + "a" * 64,
+                },
                 guards={},
             ),
         )
@@ -2564,8 +2567,8 @@ class ControllerRuntimeTest(unittest.TestCase):
         projection = begun.projection
 
         self.assertEqual("exploration_execute", projection["state"]["id"])
-        self.assertEqual("specialist", projection["state"]["boundary"])
-        self.assertEqual("rote", projection["instruction"]["specialist"])
+        self.assertEqual("guidance", projection["state"]["boundary"])
+        self.assertEqual("gate/route", projection["instruction"]["guidance"])
         self.assertEqual("play-capture-posthog-dau", projection["instruction"]["input"]["execution"]["workspace"])
         self.assertEqual(
             "/tmp/play-capture-posthog-dau",
@@ -2577,10 +2580,10 @@ class ControllerRuntimeTest(unittest.TestCase):
         self.assertIn("same access when resuming `play-machine`", policy)
         self.assertIn("Do not repeat successful work", policy)
         self.assertIn("emit exploration_route_exhausted", policy)
-        self.assertIn("rote-task-routing", policy)
-        self.assertIn("rote-adapter-create", policy)
-        self.assertIn("rote-shell", policy)
-        self.assertIn("rote-workspace", policy)
+        self.assertIn("rote guidance gate/route", policy)
+        self.assertIn("rote guidance adapters/create", policy)
+        self.assertIn("rote guidance shell/essential", policy)
+        self.assertIn("rote guidance workspace/essential", policy)
         self.assertIn("rote deps check", policy)
         self.assertIn("rote proc", policy)
         self.assertIn("Exploration started", begun.presentations[0])
@@ -3034,7 +3037,7 @@ class ControllerRuntimeTest(unittest.TestCase):
         instruction = self.runtime.project(described.cursor).instruction
         self.assertIsNotNone(instruction)
         assert instruction is not None
-        self.assertEqual("rote-org", instruction["specialist"])
+        self.assertEqual("registry/org", instruction["guidance"])
 
         created = self.runtime.advance_session(
             described,
@@ -3472,7 +3475,7 @@ class ControllerRuntimeTest(unittest.TestCase):
             **context["authentication"],
             "source": "rote_authentication_required",
             "status": "approved",
-            "owner": "rote-adapter-config",
+            "owner": "adapters/config",
             "recoverable": True,
             "adapter_id": "crucible",
             "env_var": "ADAPTER_CRUCIBLE_TOKEN",
@@ -3495,6 +3498,7 @@ class ControllerRuntimeTest(unittest.TestCase):
                 payload={
                     "reason": "provider authorization was declined",
                     "evidence_refs": ["sha256:auth-failed"],
+                    "guidance_digest": "sha256:" + "a" * 64,
                 },
                 guards={},
             ),
@@ -4127,8 +4131,8 @@ class ControllerRuntimeTest(unittest.TestCase):
                     "members": [{"email": "other@example.com", "role": "admin"}],
                     "evidence_refs": ["sha256:org"],
                     "organization_receipt": {
-                        "schema": "play.rote-org-receipt/v1",
-                        "specialist": "rote-org",
+                        "schema": "play.org-receipt/v1",
+                        "guidance": "registry/org",
                         "operation": "ensure_private_org",
                         "ok": True,
                         "private_org": "ada-labs",
@@ -4152,8 +4156,8 @@ class ControllerRuntimeTest(unittest.TestCase):
                     "members": [{"email": "ada@example.com", "role": "owner"}],
                     "evidence_refs": ["sha256:org"],
                     "organization_receipt": {
-                        "schema": "play.rote-org-receipt/v1",
-                        "specialist": "rote-org",
+                        "schema": "play.org-receipt/v1",
+                        "guidance": "registry/org",
                         "operation": "ensure_private_org",
                         "ok": True,
                         "private_org": "ada-labs",

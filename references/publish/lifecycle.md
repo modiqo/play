@@ -41,16 +41,16 @@ unavailable, keep Private and Skip selectable but block Public.
 
 ## Capture birth, publish, bind, and index
 
-The state boundary is mandatory, not descriptive. Invoke `rote-flow-authoring` for authoring,
+The state boundary is mandatory, not descriptive. Follow `rote guidance play/authoring` for authoring,
 testing, linting, and local release only, then require it to return an explicitly `unpublished`
 released candidate. Return control to Play and run `birth_capture` before a registry write is
-authorized. Only afterward may a new, publication-only `rote-registry` handoff push the exact
+authorized. Only afterward may a new, publication-only `registry/essential` handoff push the exact
 released Flow. That handoff carries the captured birth SHA and must echo it unchanged in its
 publication receipt. Never delegate author/release/publish as one task.
 
 An explicit request to publish a named Play that is already released locally uses the alternative
 `local_release_inspect` entry. It is not creator intent and must not search saved Plays or offer a
-new exploration. The read-only `rote-flow-authoring` handoff proves the exact local release is
+new exploration. The read-only `play/authoring` handoff proves the exact local release is
 unpublished, verifies the requested namespace, and recovers the original capture workspace and
 trajectory. It may not edit, test, re-release, or publish. A valid receipt joins the lifecycle at
 `birth_capture`; missing provenance blocks. Never recommend `direct:` for recovery because direct
