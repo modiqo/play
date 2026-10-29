@@ -608,9 +608,12 @@ skill availability, so `~/.agents/skills` alone does not make an absent app appe
 
 | App | Detection and skill roots | Play surface | Delivery |
 |---|---|---|---|
+| Codex | `codex`, `~/.codex/skills`, `~/.agents/skills`, plugin skill caches | `$play` | Codex plugin or managed skill link |
 | Cursor | `cursor`, Cursor.app, `~/.cursor/skills`, `~/.agents/skills` | `/play` | Cursor plugin or managed skill link |
 | Hermes Agent | `hermes`, `~/.hermes/skills` | `/play` | Managed skill link |
 | OpenCode | `opencode`, `~/.config/opencode/skills`, `~/.agents/skills` | `/play` | Managed skill link plus global command bridge |
+
+Codex uses `CODEX_HOME` for its native skill root. `AGENTS_HOME` overrides the shared root independently.
 
 Play's harness spec (`scripts/lib/play/harnesses.py`) defines each app's command, app-owned home,
 skill roots, Play prefix, and prompt surface for runtime handoffs and preflight; rote owns the

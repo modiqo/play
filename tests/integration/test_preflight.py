@@ -6,7 +6,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from scripts.lib.play.preflight import SCHEMA, _has_skill, harness_skill_roots, inspect
+from scripts.lib.play.preflight import (
+    SCHEMA,
+    _has_skill,
+    harness_skill_roots,
+    inspect,
+    inspect_harnesses,
+)
 
 
 class PreflightTest(unittest.TestCase):
@@ -31,6 +37,31 @@ class PreflightTest(unittest.TestCase):
 
             self.assertIn(play.parent, roots)
             self.assertIn(rote.parent, roots)
+
+    def test_codex_discovers_native_and_shared_skill_providers(self) -> None:
+        for source in ("native", "shared", "shared-override"):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as temporary:
+                home = Path(temporary)
+                environment = {"HOME": temporary, "CODEX_HOME": str(home / "custom-codex")}
+                roots = {
+                    "native": home / "custom-codex/skills",
+                    "shared": home / ".agents/skills",
+                    "shared-override": home / "custom-agents/skills",
+                }
+                if source == "shared-override":
+                    environment["AGENTS_HOME"] = str(home / "custom-agents")
+                for name in ("rote", "play"):
+                    skill = roots[source] / name / "SKILL.md"
+                    skill.parent.mkdir(parents=True)
+                    skill.write_text(f"---\nname: {name}\n---\n", encoding="utf-8")
+
+                with patch.dict(os.environ, environment, clear=True):
+                    codex = next(
+                        item for item in inspect_harnesses("codex") if item["id"] == "codex"
+                    )
+
+                self.assertTrue(codex["rote_skills_installed"])
+                self.assertTrue(codex["play_skill_installed"])
 
     @patch("scripts.lib.play.preflight.shutil.which", return_value=None)
     def test_missing_rote_returns_harness_setup_commands(self, _which: MagicMock) -> None:
