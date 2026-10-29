@@ -713,6 +713,40 @@ class CredentialHandoffTest(unittest.TestCase):
             run_json_mock.call_args_list[1].args[0],
         )
 
+    def test_snapshot_reads_the_unhealthy_report_rote_prints_with_exit_1(self) -> None:
+        # Rote's real output for a static adapter whose token is not set: the
+        # health report on stdout, and exit 1 because the adapter is unhealthy.
+        report = (
+            '{"total_adapters": 1, "total_tools": 0, "adapters": [{"id": "github",'
+            ' "release": "acme/github@1.0.0", "health": {"adapter_id": "github",'
+            ' "token_env": "GITHUB_TOKEN", "state": "static_missing",'
+            ' "detail": {"missing": ["GITHUB_TOKEN"]},'
+            ' "remediation": "rote token set GITHUB_TOKEN <value>", "healthy": false}}]}'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "rote"
+            executable.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/bin/sh
+                    if [ "$1" = adapter ]; then
+                      printf '%s\\n' '{report}'
+                      exit 1
+                    fi
+                    printf '[]\\n'
+                    """
+                )
+            )
+            executable.chmod(0o755)
+
+            snapshot = _credential_snapshot(str(executable), "github", "GITHUB_TOKEN", {})
+
+        self.assertFalse(snapshot.usable)
+        self.assertFalse(snapshot.healthy)
+        self.assertFalse(snapshot.token_present)
+        self.assertEqual("static_missing", snapshot.health_state)
+        self.assertEqual("GITHUB_TOKEN", snapshot.declared_env)
+
     def test_dcr_browser_completion_resumes_on_verified_manifest_token_key(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

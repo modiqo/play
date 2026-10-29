@@ -6,7 +6,7 @@ import json
 import os
 import re
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -68,18 +68,8 @@ def rote_failure_detail(
 
     out = (stdout or "").strip()
     err = (stderr or "").strip()
-    envelope: Any = None
-    if out.startswith("{"):
-        try:
-            envelope = json.loads(out)
-        except json.JSONDecodeError:
-            envelope = None
-    if (
-        isinstance(envelope, dict)
-        and envelope.get("schema") == 1
-        and envelope.get("ok") is False
-        and isinstance(envelope.get("error"), dict)
-    ):
+    envelope = _error_envelope(out)
+    if envelope is not None:
         message = envelope["error"].get("message")
         kind = envelope["error"].get("kind")
         if isinstance(message, str) and message.strip():
@@ -89,6 +79,25 @@ def rote_failure_detail(
     return err or out or default
 
 
+def _error_envelope(output: str) -> dict[str, Any] | None:
+    """Rote's ``--json`` failure envelope, or ``None`` for any other output."""
+
+    if not output.startswith("{"):
+        return None
+    try:
+        envelope = json.loads(output)
+    except json.JSONDecodeError:
+        return None
+    if (
+        isinstance(envelope, dict)
+        and envelope.get("schema") == 1
+        and envelope.get("ok") is False
+        and isinstance(envelope.get("error"), dict)
+    ):
+        return envelope
+    return None
+
+
 def run_text(
     command: Sequence[str],
     *,
@@ -96,7 +105,15 @@ def run_text(
     environment: dict[str, str] | None = None,
     timeout_seconds: float | None = None,
     working_directory: str | Path | None = None,
+    accepted_exit_codes: Collection[int] = (0,),
 ) -> str:
+    """Run ``command`` and return its stdout.
+
+    A non-zero exit in ``accepted_exit_codes`` is a result, not a failure, for
+    commands whose exit code reports a finding (``rote adapter list --health``
+    exits 1 when an adapter is unhealthy). It still fails when Rote printed an
+    error envelope instead of the result.
+    """
     effective_environment = os.environ.copy()
     effective_environment.setdefault("ROTE_NO_HINTS", "1")
     if environment:
@@ -122,7 +139,10 @@ def run_text(
         )
     except subprocess.TimeoutExpired as error:
         raise error_type(f"{label} timed out after {timeout_seconds:g}s") from error
-    if result.returncode:
+    failed = result.returncode not in accepted_exit_codes or (
+        result.returncode != 0 and _error_envelope(result.stdout.strip()) is not None
+    )
+    if failed:
         raise error_type(f"{label} failed: {rote_failure_detail(result.stdout, result.stderr)}")
     return result.stdout
 
@@ -134,6 +154,7 @@ def run_json(
     environment: dict[str, str] | None = None,
     timeout_seconds: float | None = None,
     working_directory: str | Path | None = None,
+    accepted_exit_codes: Collection[int] = (0,),
 ) -> Any:
     output = run_text(
         command,
@@ -141,6 +162,7 @@ def run_json(
         environment=environment,
         timeout_seconds=timeout_seconds,
         working_directory=working_directory,
+        accepted_exit_codes=accepted_exit_codes,
     )
     label = " ".join(command[:4])
     try:

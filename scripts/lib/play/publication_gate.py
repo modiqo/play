@@ -199,11 +199,6 @@ def validate_credential_contracts(
         demanded_names = _strings(demand.get("names"))
         demand_protocols = _strings(demand.get("protocols"))
 
-        local = _unwrap_local_adapter(local_loader(adapter_id))
-        local_identity = _object(local.get("identity"), f"{adapter_id} local identity")
-        local_source = _object(local.get("source"), f"{adapter_id} local source")
-        local_kind, local_names = _local_auth(local)
-
         published = _unwrap_registry_adapter(registry_loader(selected_source))
         registry_adapter = _object(published.get("adapter"), f"{selected_source} registry identity")
         registry_version = _object(published.get("version"), f"{selected_source} registry version")
@@ -214,15 +209,26 @@ def validate_credential_contracts(
         published_auth = _object(published_auth, f"{selected_source} auth contract")
         published_names = _published_env_names(published_auth)
         published_kind = published_auth.get("type") or published_auth.get("kind")
+        selected_version = _string(
+            registry_version.get("version"), f"{selected_source} selected version"
+        )
+
+        # `rote adapter info` refuses a bare adapter name. Rote names the
+        # installed release in `release`; a Rote that predates the field
+        # installed the receipt-verified selected release.
+        release = adapter.get("release")
+        if not isinstance(release, str) or not release:
+            release = f"{selected_source}@{selected_version}"
+        local = _unwrap_local_adapter(local_loader(release))
+        local_identity = _object(local.get("identity"), f"{adapter_id} local identity")
+        local_source = _object(local.get("source"), f"{adapter_id} local source")
+        local_kind, local_names = _local_auth(local)
 
         local_fingerprint = _string(local_source.get("fingerprint"), f"{adapter_id} fingerprint")
         registry_fingerprint = _string(
             registry_adapter.get("fingerprint"), f"{selected_source} fingerprint"
         )
         local_version = _string(local_identity.get("version"), f"{adapter_id} local version")
-        selected_version = _string(
-            registry_version.get("version"), f"{selected_source} selected version"
-        )
         if local_fingerprint != registry_fingerprint:
             raise PublicationGateError(
                 f"adapter {adapter_id} fingerprint differs from {selected_source}"

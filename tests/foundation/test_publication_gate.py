@@ -138,6 +138,23 @@ class PublicationCredentialGateTest(unittest.TestCase):
                 lambda _: registry_adapter(),
             )
 
+    def test_local_adapter_is_read_by_release_not_bare_name(self) -> None:
+        # Rote's `adapter info` resolves only a release reference.
+        def adapter_info(reference: str) -> dict:
+            if reference != "chetan/github@1.1.0":
+                raise AssertionError(f"rote refuses {reference!r}: name one release")
+            return local_adapter()
+
+        with_release = play_inspection()
+        check = with_release["data"]["play_inspect"]["convergence"]["adapters"][0]
+        check["release"] = "chetan/github@1.1.0"
+        for name, inspected in (("release field", with_release), ("older rote", play_inspection())):
+            with self.subTest(name):
+                result = validate_credential_contracts(
+                    context(), inspected, adapter_info, lambda _: registry_adapter()
+                )
+                self.assertTrue(result["ok"])
+
 
 class PublicationSmokeGateTest(unittest.TestCase):
     def test_exact_uri_runs_with_parameters_from_an_isolated_tmp_directory(self) -> None:

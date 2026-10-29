@@ -57,6 +57,13 @@ class CommandsTest(unittest.TestCase):
         self.assertEqual(12, run.call_args.kwargs["timeout"])
 
     @patch("play.commands.subprocess.run")
+    def test_accepted_exit_code_still_fails_on_an_error_envelope(self, run) -> None:
+        envelope = '{"schema":1,"ok":false,"error":{"kind":"adapter_invalid_id","message":"bad name"}}'
+        run.return_value = subprocess.CompletedProcess(["rote"], 1, envelope, "")
+        with self.assertRaisesRegex(CommandError, "adapter_invalid_id: bad name"):
+            run_json(["rote", "adapter", "list"], accepted_exit_codes=(0, 1))
+
+    @patch("play.commands.subprocess.run")
     def test_passes_working_directory_to_subprocess(self, run) -> None:
         run.return_value = subprocess.CompletedProcess(["rote"], 0, "{}", "")
         run_json(["rote", "registry"], working_directory=Path("/tmp/workspace"))
