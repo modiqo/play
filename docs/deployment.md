@@ -5,7 +5,7 @@ The [Deploy Play workflow](../.github/workflows/deploy.yml) publishes the instal
 | Environment | Trigger | Installer | Selected Play revision |
 | --- | --- | --- | --- |
 | Staging | Every push to `main`, including every merged PR | `https://stg.getrote.dev/playoffs/install.sh` | The triggering commit SHA; no version tag required |
-| Production | A repository admin selects **Actions → Deploy Play → Run workflow → Tags → vX.Y.Z** | `https://getrote.dev/playoffs/install.sh` | The dispatched `vX.Y.Z` tag, which must match its `VERSION` |
+| Production | A repository admin or named deployer selects **Actions → Deploy Play → Run workflow → Tags → vX.Y.Z** | `https://getrote.dev/playoffs/install.sh` | The dispatched `vX.Y.Z` tag, which must match its `VERSION` |
 
 Published changes must carry a new plugin version; a push that keeps the same version is not a
 reliable cache invalidation mechanism. `VERSION` is the only version to edit: on a branch, set it
@@ -30,7 +30,14 @@ also preserved.
 
 Each run records its JSON receipt in the workflow summary, including skipped creation decisions.
 The workflow never bumps versions or pushes `main`. Tag publication does not trigger production
-deployment; an admin still runs **Deploy Play** manually from the new tag.
+deployment; an admin or named deployer still runs **Deploy Play** manually from the new tag.
+
+To add named deployers, list their GitHub logins in the `production` environment variable
+`PRODUCTION_DEPLOYERS`:
+
+```sh
+gh variable set PRODUCTION_DEPLOYERS --env production --repo modiqo/play --body "alice bob"
+```
 
 Production runs only from a release tag. A dispatch from a branch, including `main`, is skipped.
 The deploy checks out the tag's commit and fails unless the tag name matches that commit's
