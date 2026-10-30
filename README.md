@@ -60,6 +60,7 @@ It exits 0 when no step errors and never touches launchers, links, plugins, hook
 Email sign-in uses a verification code, matching the website. Play opens a local browser form;
 enter the email and code there. The form uses the existing `rote login --otp` interface
 in released Rote 0.85.0 or newer. Rote verifies the code and saves the login.
+The first code request has no wait. After a successful send, wait 60 seconds before requesting another code.
 
 Codes travel through stdin and never enter chat or process arguments. This works with released Rote.
 
