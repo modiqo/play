@@ -213,12 +213,19 @@ def validate_credential_contracts(
             registry_version.get("version"), f"{selected_source} selected version"
         )
 
-        # `rote adapter info` refuses a bare adapter name. Rote names the
-        # installed release in `release`; a Rote that predates the field
-        # installed the receipt-verified selected release.
+        # `rote adapter info` refuses a bare adapter name, so the gate reads
+        # the release that `play inspect` checked. The registry reports only
+        # its current release, so the inspected release must be that one.
         release = adapter.get("release")
         if not isinstance(release, str) or not release:
-            release = f"{selected_source}@{selected_version}"
+            raise PublicationGateError(
+                f"adapter {adapter_id} inspection does not name its release; update Rote"
+            )
+        if release != f"{selected_source}@{selected_version}":
+            raise PublicationGateError(
+                f"adapter {adapter_id} inspected release {release} is not "
+                f"{selected_source}@{selected_version}"
+            )
         local = _unwrap_local_adapter(local_loader(release))
         local_identity = _object(local.get("identity"), f"{adapter_id} local identity")
         local_source = _object(local.get("source"), f"{adapter_id} local source")
