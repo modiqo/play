@@ -45,6 +45,7 @@ def play_inspection(*, token_env: str = "GITHUB_API_TOKEN") -> dict:
                     "adapters": [
                         {
                             "adapter_id": "github",
+                            "release": "chetan/github@1.1.0",
                             "local_state": "receipt_verified",
                             "registry_candidates": ["chetan/github"],
                             "selected_candidate": "chetan/github",
@@ -78,14 +79,14 @@ def local_adapter(*, token_env: str = "GITHUB_API_TOKEN", version: str = "1.1.0"
     }
 
 
-def registry_adapter(*, token_env: str = "GITHUB_API_TOKEN") -> dict:
+def registry_adapter(*, token_env: str = "GITHUB_API_TOKEN", version: str = "1.1.0") -> dict:
     return {
         "adapter": {"name": "github", "fingerprint": "mcp_github"},
         "version": {
-            "version": "1.1.0",
+            "version": version,
             "manifest": {
                 "id": "github",
-                "version": "1.1.0",
+                "version": version,
                 "fingerprint": "mcp_github",
                 "auth": {"type": "bearer", "token_env": token_env},
             },
@@ -136,6 +137,42 @@ class PublicationCredentialGateTest(unittest.TestCase):
                 play_inspection(),
                 lambda _: local_adapter(version="1.0.0"),
                 lambda _: registry_adapter(),
+            )
+
+    def test_local_adapter_is_read_by_inspected_release(self) -> None:
+        # Rote's `adapter info` refuses a bare adapter name.
+        def adapter_info(reference: str) -> dict:
+            if reference != "chetan/github@1.1.0":
+                raise AssertionError(f"rote refuses {reference!r}: name one release")
+            return local_adapter()
+
+        result = validate_credential_contracts(
+            context(), play_inspection(), adapter_info, lambda _: registry_adapter()
+        )
+        self.assertTrue(result["ok"])
+
+    def test_inspection_without_release_fails_closed(self) -> None:
+        inspected = play_inspection()
+        del inspected["data"]["play_inspect"]["convergence"]["adapters"][0]["release"]
+        with self.assertRaisesRegex(PublicationGateError, "does not name its release"):
+            validate_credential_contracts(
+                context(), inspected, lambda _: local_adapter(), lambda _: registry_adapter()
+            )
+
+    def test_inspected_release_behind_registry_fails_before_reading_another_release(self) -> None:
+        # Both releases are installed; the registry's current one must not stand in.
+        installed = {
+            "chetan/github@1.1.0": local_adapter(version="1.1.0"),
+            "chetan/github@1.2.0": local_adapter(version="1.2.0"),
+        }
+        with self.assertRaisesRegex(
+            PublicationGateError, "inspected release chetan/github@1.1.0 is not chetan/github@1.2.0"
+        ):
+            validate_credential_contracts(
+                context(),
+                play_inspection(),
+                installed.__getitem__,
+                lambda _: registry_adapter(version="1.2.0"),
             )
 
 

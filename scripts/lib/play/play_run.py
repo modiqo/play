@@ -439,11 +439,14 @@ def _credential_snapshot(
     that the same named credential exists and is readable.
     """
 
+    # `--health` exits 1 when the adapter is unhealthy, and a missing
+    # credential is the state this snapshot exists to see.
     adapters_value = run_json(
         [executable, "adapter", "list", adapter_id, "--json", "--health"],
         error_type=CommandError,
         environment=dict(environment),
         timeout_seconds=10,
+        accepted_exit_codes=(0, 1),
     )
     tokens_value = run_json(
         [executable, "token", "list", "--json"],
