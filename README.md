@@ -60,6 +60,7 @@ It exits 0 when no step errors and never touches launchers, links, plugins, hook
 Email sign-in uses a verification code, matching the website. Play opens a local browser form;
 enter the email and code there. The form uses the existing `rote login --otp` interface
 in released Rote 0.85.0 or newer. Rote verifies the code and saves the login.
+The first code request has no wait. After a successful send, wait 60 seconds before requesting another code.
 
 Codes travel through stdin and never enter chat or process arguments. This works with released Rote.
 
@@ -151,7 +152,7 @@ checks, or tool approvals. A later explicit `$play` invocation works normally.
 
 | You do this | Play does this | You stay in control of |
 |---|---|---|
-| A hook detects a relevant Play | Searches published Plays through the shared Worker, then suggests a direct match in one non-blocking line | Whether to invoke the suggested Play later |
+| A hook detects an actionable request | Points at `rote guidance root` for rote work, and suggests a Worker-confirmed direct Play match in one non-blocking line | Whether to use rote or invoke the suggested Play later |
 | Prefix a request with `direct:` | Bypasses Play and Rote for the whole turn: no machine, search, adapter, workspace, capture, or preference write | The direct task and its normal harness permissions |
 | Inspect a matching Play | Shows inputs, setup, credentials by name, and declared effects | Whether the exact version may run |
 | No matching Play exists | Says nothing and lets the harness continue normally | The original task, with no Play interruption |
@@ -210,7 +211,7 @@ Play stays predictable by making each layer own one job:
 | **`SKILL.md`** | Teaches an agent how to enter the runtime and handle its next boundary. |
 | **`play-machine`** | Owns search, inspection, approval, execution control, verification, saving, and fail-closed behavior. |
 | **Structural hooks and journals** | Suggest Worker-confirmed matches, enforce direct routes, read bounded semantic Journey snapshots, and record typed recall events. |
-| **Rote skills** | Own setup, tools, browsers, adapters, workspaces, authoring, and publication. |
+| **Rote guidance** | `rote guidance <id>` owns setup, tools, browsers, adapters, workspaces, authoring, and publication. |
 | **Rote CLI and registry** | Run exact Plays locally and distribute authorized Plays. |
 
 The following sections are primarily for maintainers and integrators.
@@ -220,7 +221,7 @@ The following sections are primarily for maintainers and integrators.
 Play is driven by one declarative machine,
 [`references/controller/machine.yaml`](references/controller/machine.yaml) (`play.machine/v1`).
 The typed runtime loads and validates the bundle once per invocation, executes eligible
-deterministic actions until a model, human, specialist, or terminal boundary, and accepts only
+deterministic actions until a model, human, guidance, or terminal boundary, and accepts only
 events declared by [`actions.yaml`](references/controller/actions.yaml) and
 [`prompts.yaml`](references/controller/prompts.yaml). It never jumps states from conversational
 intuition. Initial state: `invoke`. Terminals: `receipt`, `completed`, `exited`, `blocked`.
@@ -293,7 +294,7 @@ stateDiagram-v2
     exploration_one_off_present --> exited : visible completion
 
     %% ── Save lifecycle (delegated to rote specialists) ──
-    crystallize --> save_prepare : rote-flow-crystallization candidate
+    crystallize --> save_prepare : play/crystallization candidate
     crystallize --> completed : not reusable
     save_prepare --> save_offer : namespaces resolved
     save_offer --> author_release : Team / Community
@@ -443,10 +444,10 @@ There is deliberately **no Play-owned Explore execution lane**. Earlier versions
 modality routing, adapter discovery, and effect approvals inside Play, re-implementing what the
 Rote skills already own. Today, normal work exits quietly after an inadequate search. An explicit
 `$play explore <outcome>` or `/play explore <outcome>` searches first. When no Play fits, it starts
-a dedicated captured Rote workspace and yields a typed specialist instruction to the `rote`
-orchestrator. Rote invokes `rote-task-routing`, then
-`rote-adapter-create` for API adaptation, `rote-shell` for validated CLI/`rote proc` work, and
-`rote-workspace` for adapter execution and cached evidence. Play resumes only with a verified
+a dedicated captured Rote workspace and yields a typed guidance instruction to the `rote`
+orchestrator. Rote runs `rote guidance gate/route`, then follows
+`adapters/create` for API adaptation, `shell/essential` for validated CLI/`rote proc` work, and
+`workspace/essential` for adapter execution and cached evidence. Play resumes only with a verified
 result and capture-bound trajectory, then owns the save-worthiness and crystallization path.
 
 The runtime enforces this boundary rather than relying on caller prose: continuation state is
@@ -478,7 +479,7 @@ The runtime provides typed cursors and events, context-schema validation, bundle
 derived guards, mutation semantics, checkpointed `play.context/v1`, terminal enforcement, and
 per-step timing. [`runtime_actions.py`](scripts/lib/play/runtime_actions.py) executes safe
 deterministic commands without shell interpolation and loops until the next evaluator, prompt,
-specialist, or terminal boundary.
+guidance, or terminal boundary.
 
 The automatic runner owns every deterministic action state. The harness sees only model judgments,
 human prompts, exact Rote specialist handoffs, and terminal results. The complete context is
@@ -654,17 +655,19 @@ discovery: its skill is a pointer that reads the rote-installed Play skill at
 `rote install play` links the real skill into each agent and removes `play@play-skills` from Claude
 Code and Codex. `scripts/bin/package-plugin --check` verifies the pointer and manifest versions.
 
-The Rote skill provider is a prerequisite so Play can hand missing local installation to the
-guided `rote-setup` specialist:
+Play needs a Rote that serves `rote guidance <id>`; preflight probes `rote guidance root` and asks
+for `rote update` when the installed Rote is older. The Rote skill provider (`rote@rote-skills`) is
+a prerequisite; Rote serves every instruction through `rote guidance <id>`, and missing local setup
+goes to `rote guidance setup/essential`:
 
 ```bash
 # Codex
 codex plugin marketplace add modiqo/rote-skills
-codex plugin add rote-onboard@rote-skills
+codex plugin add rote@rote-skills
 
 # Claude Code
 claude plugin marketplace add modiqo/rote-skills
-claude plugin install rote-onboard@rote-skills
+claude plugin install rote@rote-skills
 ```
 
 After Play is installed, the `play-machine` launcher is on `PATH`; harnesses invoke it directly
@@ -677,8 +680,10 @@ already active pinned environment, including the package index uv will download 
 authentication, and `rote play` capability; it also reports cross-harness coverage. Its repair
 hints always say `rote install play`. An empty `$play` or `/play` probes
 the local binary and identity. If either
-is missing, Play handles the exact gap. A missing binary invokes `rote-setup`, which asks before
-downloaded installer code or optional onboarding. An installed but signed-out Rote shows only the
+is missing, Play handles the exact gap. Without a `rote` binary the setup guidance cannot run, so
+Play reports `setup_specialist_unavailable` and points the user at https://getrote.dev to install
+Rote; it never improvises an installer. With Rote installed, `rote guidance setup/essential` owns
+probes, the install choice, remote-code approval, and login. An installed but signed-out Rote shows only the
 Google, GitHub, email, and **Not now** choices. Play runs the selected browser sign-in and verifies
 `rote whoami`; it does not enter Rote's adapter setup menu.
 
@@ -844,7 +849,7 @@ Explicit Explore always searches before creating. If an adequate Play exists it 
 **Inspect existing**. If none exists locally or in the authorized registry, the explicit command
 starts a capture, binds a Rote workspace, and hands the unchanged outcome to Rote. For an API,
 Rote searches installed adapters and the adapter catalog, then lets the user adapt a candidate;
-for a user-supplied CLI, `rote-shell` verifies the executable with `rote deps check` and records
+for a user-supplied CLI, `shell/essential` verifies the executable with `rote deps check` and records
 discovery/use with `rote proc`. A later explicit
 `$play settle <capture-handle> <summary>` can
 re-enter the save path, and the save-worthiness judge examines the **bound trace, not the
@@ -853,15 +858,15 @@ and a stable output shape.
 A worth-saving verdict leads to one offer:
 
 - **Team** — release and publish to an authorized private organization, then offer colleague
-  invites through `rote-org`;
+  invites through `registry/org`;
 - **Community** — release and publish under a selected public owner, verify associated adapter
   credential contracts, then run the exact public URI once from an isolated directory;
 - **Skip** — keep the result without publishing or indexing a Play.
 
-Execution ownership stays with the rote skill suite end to end: crystallization with
-`rote-flow-crystallization`, release with `rote-flow-authoring`, publication with `rote-registry`.
-Play never re-implements those flows; it validates each specialist's typed receipt and blocks on
-mismatch — a specialist cannot claim success in prose.
+Execution ownership stays with Rote's guidance end to end: crystallization with
+`play/crystallization`, release with `play/authoring`, publication with `registry/essential`.
+Play never re-implements those flows; it validates each typed receipt and blocks on
+mismatch — a guidance step cannot claim success in prose.
 
 One save-time caveat Play discloses honestly: browser-derived (DRIVE) work has a crystallization
 limit. Typed browser steps carry navigation, waits, clicks, typing, and canonical extract slices
@@ -879,16 +884,16 @@ and a redacted trace-learning summary showing explicit successes, errors, and un
 closes with a personalized thank-you to the human domain expert. Organization membership,
 invitations, and sharing use the organization/list surface rather than hidden local state.
 
-Release and publication are deliberately separate specialist handoffs. `rote-flow-authoring` must
+Release and publication are deliberately separate specialist handoffs. `play/authoring` must
 stop after an explicitly unpublished local release. Play then captures the immutable birth object,
-and only a fresh `rote-registry` handoff may publish that exact artifact while echoing the captured
+and only a fresh `registry/essential` handoff may publish that exact artifact while echoing the captured
 birth SHA. If a broad registry publication request publishes early, the machine emits
 `publication_boundary_violated` and blocks instead of treating a registry summary as completion or
 offering a retrospective certificate.
 
 The same lifecycle accepts an explicit request to publish an already released local Play.
 Qualification emits `play_publication_request` with the local reference, visibility, and optional
-owner, bypassing saved-Play search and creator discovery. A read-only `rote-flow-authoring`
+owner, bypassing saved-Play search and creator discovery. A read-only `play/authoring`
 inspection must prove the exact release is unpublished and recover the original verified Rote
 workspace; only then can Play capture birth and honor the explicit publication authorization. If
 that provenance cannot be recovered, Play blocks instead of inventing a workspace or suggesting
@@ -926,7 +931,7 @@ it does not prove every consumer already has the required credentials.
 A mismatch, missing credential, provenance failure, or unsuccessful run blocks Play-page links,
 social copy, and congratulations. The gate does not silently pull or republish an adapter, change
 `token_env`, authenticate, delete transaction backups, or retry. Remediation stays with the
-appropriate Rote skill, after which the canonical gates run again. See the
+appropriate Rote guidance, after which the canonical gates run again. See the
 [GitHub token-env incident RCA](docs/rca/2026-08-06-github-token-env-var-confusion.md).
 
 Open or verify how one of your Plays was born:
@@ -1000,22 +1005,29 @@ play-inbox line                        # instant; prints one line or nothing
 play-inbox details                     # cached full inbox, no network
 ```
 
-The prompt hook suggests published Plays only:
+The prompt hook points actionable prompts at rote guidance and suggests published Plays only:
 
 ```bash
-play-intercept prompt            # UserPromptSubmit: Worker-confirmed direct matches only
+play-intercept prompt            # UserPromptSubmit: rote pointer plus Worker-confirmed direct matches
 play-intercept prompt --harness cursor   # Cursor beforeSubmitPrompt: always {"continue": true}
 play-journal show --day today    # Explicit local recall; no state machine or preflight
 ```
 
-The hook requires an action-shaped request and calls the same Worker through Rote with a
-three-second deadline. Only a direct judgment produces one quiet suggestion with an exact published
-reference. Partial, uncertain, unavailable, and timed-out results stay silent. Discussion questions
-never trigger the search. The hook does not execute the suggested Play or enter the controller.
+The hook requires an action-shaped request. Every such request, other than an explicit Play entry
+(`$play`, `/play`, `/skill:play`), a slash command, a `!` shell line, or a `direct:`/`without play:`
+bypass, receives one pointer line: “rote: for API, MCP, browser, registry, or automation work, run
+`rote guidance root` and follow it.” The pointer does not depend on discovery, so it still appears
+when identity, network, or search fails.
+
+The hook also calls the same Worker through Rote with a three-second deadline. Only a direct
+judgment adds one quiet suggestion with an exact published reference. Partial, uncertain,
+unavailable, and timed-out results add no suggestion. Discussion questions never trigger the
+pointer or the search. The hook does not execute the suggested Play or enter the controller.
 
 Cursor's `beforeSubmitPrompt` response can only allow or block a prompt; it has no field for
 injected context. With `--harness cursor` the hook therefore skips discovery and always prints
-`{"continue": true}`, so Cursor never receives Play suggestions through this hook.
+`{"continue": true}`, so Cursor receives neither the rote pointer nor Play suggestions through this
+hook.
 
 The request keeps exclusions such as “without changing records.” Concrete URLs, paths, email
 addresses, and credential assignments are redacted before search. Quoted task constraints remain.

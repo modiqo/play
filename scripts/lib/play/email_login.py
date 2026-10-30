@@ -21,7 +21,7 @@ class EmailLogin:
         self.path = "/" + secrets.token_urlsafe(32)
         self.origin = ""
         self.email = ""
-        self.sent_at = 0.0
+        self.sent_at: float | None = None
         self.failures = 0
         self.complete = False
         self.deadline = time.monotonic() + 600
@@ -36,7 +36,7 @@ class EmailLogin:
         command = [self.rote, "login", "--otp", "--otp-email", email, "--json"]
         code = ""
         if action == "send":
-            if time.monotonic() - self.sent_at < 60:
+            if self.sent_at is not None and time.monotonic() - self.sent_at < 60:
                 return 429, "Wait one minute before requesting another code."
         elif action == "verify":
             code = body.get("code", "")

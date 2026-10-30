@@ -634,7 +634,7 @@ def _apply_mutation_semantics(
 
     if mutation == "start_scoped_exploration":
         # Explore only what no existing Play covers. Covered sub-outcomes become
-        # baselines the specialist runs through rote-flow-run instead of rebuilding.
+        # baselines the exploration runs as `rote guidance play/run` directs instead of rebuilding.
         context["creator"].setdefault("baselines", [])
         coverage = context["match"].get("coverage")
         entries = [entry for entry in coverage if isinstance(entry, Mapping)] if isinstance(coverage, list) else []
@@ -823,7 +823,11 @@ def _apply_mutation_semantics(
             "state": packet.get("state"),
             "action": packet.get("action"),
             "owner": packet.get("owner"),
-            "executor": {"kind": "skill", "name": "rote-adapter-config"},
+            "executor": {
+                "kind": "guidance",
+                "id": packet.get("owner"),
+                "digest": payload.get("guidance_digest"),
+            },
             "event": event,
             "payload": result_payload,
             "evidence_refs": copy.deepcopy(evidence_refs),

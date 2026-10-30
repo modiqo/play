@@ -340,7 +340,7 @@ class UniversalPlayRunTest(unittest.TestCase):
 
                 self.assertEqual("play_authentication_required", result["event"])
                 self.assertEqual(protocol, result["authentication"]["classified_rung"])
-                self.assertEqual("rote-adapter-config", result["authentication"]["owner"])
+                self.assertEqual("adapters/config", result["authentication"]["owner"])
                 run.reset_mock()
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")
@@ -357,7 +357,7 @@ class UniversalPlayRunTest(unittest.TestCase):
         self.assertEqual("play_authentication_required", result["event"])
         self.assertEqual("static", result["authentication"]["classified_rung"])
         self.assertEqual("ADAPTER_CRUCIBLE_TOKEN", result["authentication"]["env_var"])
-        self.assertEqual("rote-adapter-config", result["authentication"]["owner"])
+        self.assertEqual("adapters/config", result["authentication"]["owner"])
         self.assertEqual(1, run.call_count)
 
     @patch("scripts.lib.play.play_run.shutil.which", return_value="/usr/bin/rote")

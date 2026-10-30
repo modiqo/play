@@ -1,4 +1,9 @@
-"""Typed, fail-closed handoff packets for delegated Play exploration."""
+"""Typed, fail-closed handoff packets for delegated Play exploration.
+
+Every delegated owner is a `rote guidance <id>` document served by the installed
+rote binary. A receipt proves which document the agent followed with
+`executor: {kind: "guidance", id, digest}`.
+"""
 
 from __future__ import annotations
 
@@ -16,13 +21,17 @@ RECEIPT_SCHEMA = "play.handoff-receipt/v1"
 AUTHENTICATION_PACKET_SCHEMA = "play.authentication-handoff/v1"
 AUTHENTICATION_RECEIPT_SCHEMA = "play.authentication-receipt/v1"
 PLAY_RUN_PACKET_SCHEMA = "play.run-handoff/v1"
-AUTHENTICATION_OWNER = "rote-adapter-config"
+AUTHENTICATION_OWNER = "adapters/config"
+ADAPTER_CREATE_OWNER = "adapters/create"
+ADAPTER_EXECUTE_OWNER = "adapters/delegated"
 SPECIALIST_OWNERS = (
-    "rote-using-adapters",
-    "rote-shell",
-    "rote-browse",
-    "rote-workspace",
+    "adapters/delegated",
+    "shell/essential",
+    "browser/essential",
+    "workspace/essential",
 )
+GUIDANCE_EXECUTOR_KIND = "guidance"
+GUIDANCE_DIGEST_PREFIX = "sha256:"
 EXPECTED_EVENTS = {
     "outcome_ready": (
         "result_ref",
@@ -52,10 +61,10 @@ def capability_policy(owner: str, modalities: Sequence[str]) -> dict[str, Any]:
             "discovery_order": ["installed", "catalog", "provided_spec", "provider_docs"],
             "type_selection": "auto",
             "substrate_detection": ["openapi", "graphql", "mcp"],
-            "create_owner": "rote-adapter-create",
-            "configure_owner": "rote-adapter-config",
+            "create_owner": ADAPTER_CREATE_OWNER,
+            "configure_owner": AUTHENTICATION_OWNER,
             "orchestration_owner": owner,
-            "adapter_execute_owner": "rote-using-adapters",
+            "adapter_execute_owner": ADAPTER_EXECUTE_OWNER,
             "auth_cycle": {
                 "required": True,
                 "human_gate": True,
@@ -151,9 +160,6 @@ def _normalize_handoff_input(payload: Mapping[str, Any]) -> dict[str, Any]:
     normalized["idempotency_key"] = pick(
         "idempotency_key", "execution.idempotency_key"
     ) or pick("idempotency_key", "run_id", "")
-    normalized["available_owners"] = pick(
-        "available_owners", "available_owners", [normalized.get("owner")]
-    )
     normalized["constraints"] = pick("constraints", "constraints", {})
     normalized["inputs"] = pick("inputs", "inputs", {})
     normalized["evidence_contract"] = pick(
@@ -171,11 +177,11 @@ def owner_for_modalities(modalities: Sequence[str]) -> str:
     if unknown:
         raise HandoffError(f"unknown modalities: {', '.join(sorted(unknown))}")
     if len(selected) > 1:
-        return "rote-workspace"
+        return "workspace/essential"
     return {
-        "call": "rote-using-adapters",
-        "shell": "rote-shell",
-        "drive": "rote-browse",
+        "call": "adapters/delegated",
+        "shell": "shell/essential",
+        "drive": "browser/essential",
     }[selected[0]]
 
 
@@ -319,14 +325,13 @@ def _adapter_choice(value: Any) -> dict[str, Any]:
 
 
 def prepare_handoff(payload: dict[str, Any]) -> dict[str, Any]:
-    """Build a packet only when its exact Rote specialist is currently callable."""
+    """Build a packet only for the exact Rote guidance owner of the selected route."""
 
     payload = _normalize_handoff_input(payload)
     run_id = _string(payload, "run_id")
     requested_outcome = _string(payload, "requested_outcome")
     selected_owner = _string(payload, "owner")
     modalities = _string_list(payload, "modalities", allow_empty=False)
-    available_owners = _string_list(payload, "available_owners")
     expected_owner = owner_for_modalities(modalities)
     if selected_owner != expected_owner:
         reason = (
@@ -341,19 +346,6 @@ def prepare_handoff(payload: dict[str, Any]) -> dict[str, Any]:
             "reason": reason,
             "blocked_reason": reason,
             "required_owner": expected_owner,
-            "available_owners": sorted(set(available_owners)),
-        }
-    if selected_owner not in available_owners:
-        reason = f"required Rote specialist {selected_owner} is not callable in this harness"
-        return {
-            "schema": "play.handoff-preparation/v1",
-            "ok": False,
-            "event": "specialist_unavailable",
-            "available": False,
-            "reason": reason,
-            "blocked_reason": reason,
-            "required_owner": selected_owner,
-            "available_owners": sorted(set(available_owners)),
         }
 
     constraints = _object(payload, "constraints")
@@ -514,22 +506,6 @@ def prepare_authentication_handoff(payload: dict[str, Any]) -> dict[str, Any]:
     """Build a dedicated authentication packet without widening execution ownership."""
 
     run_id = _string(payload, "run_id")
-    available_value = payload.get("available_owners", [AUTHENTICATION_OWNER])
-    available_owners = _string_list(
-        {"available_owners": available_value}, "available_owners"
-    )
-    if AUTHENTICATION_OWNER not in available_owners:
-        reason = f"required Rote specialist {AUTHENTICATION_OWNER} is not callable in this harness"
-        return {
-            "schema": "play.authentication-handoff-preparation/v1",
-            "ok": False,
-            "event": "authentication_specialist_unavailable",
-            "available": False,
-            "reason": reason,
-            "blocked_reason": reason,
-            "required_owner": AUTHENTICATION_OWNER,
-            "available_owners": sorted(set(available_owners)),
-        }
 
     authentication_record = _object(payload, "authentication")
     authentication_fields = {
@@ -650,6 +626,27 @@ def _invalid_authentication_receipt(*reasons: str) -> dict[str, Any]:
     }
 
 
+def _guidance_executor_reasons(executor: Any, owner: Any, label: str) -> list[str]:
+    """A receipt must name the exact guidance document followed and its digest."""
+
+    if not isinstance(executor, dict):
+        return [f"{label} executor is missing"]
+    reasons: list[str] = []
+    if executor.get("kind") != GUIDANCE_EXECUTOR_KIND:
+        reasons.append(f"{label} executor kind must be {GUIDANCE_EXECUTOR_KIND}")
+    if executor.get("id") != owner:
+        reasons.append(f"{label} executor id must be {owner}")
+    digest = executor.get("digest")
+    if (
+        not isinstance(digest, str)
+        or not digest.startswith(GUIDANCE_DIGEST_PREFIX)
+        or len(digest) == len(GUIDANCE_DIGEST_PREFIX)
+    ):
+        reasons.append(f"{label} executor digest must be a {GUIDANCE_DIGEST_PREFIX} digest")
+    return reasons
+
+
+
 def _validate_route_provenance(
     provenance: Any, *, owner: Any, modalities: Sequence[str]
 ) -> list[str]:
@@ -677,8 +674,8 @@ def _validate_route_provenance(
         reasons.append("CALL route provenance kind must be rote_adapter")
     if provenance.get("orchestration_owner") != owner:
         reasons.append("adapter provenance orchestration_owner does not match packet owner")
-    if provenance.get("adapter_execute_owner") != "rote-using-adapters":
-        reasons.append("CALL must execute through rote-using-adapters")
+    if provenance.get("adapter_execute_owner") != ADAPTER_EXECUTE_OWNER:
+        reasons.append(f"CALL must execute through {ADAPTER_EXECUTE_OWNER}")
     adapter_id = provenance.get("adapter_id")
     if not isinstance(adapter_id, str) or not adapter_id:
         reasons.append("adapter provenance requires adapter_id")
@@ -690,8 +687,8 @@ def _validate_route_provenance(
     adapter_status = provenance.get("adapter_status")
     creation_owner = provenance.get("creation_owner")
     if adapter_status == "created":
-        if creation_owner != "rote-adapter-create":
-            reasons.append("created adapters require rote-adapter-create provenance")
+        if creation_owner != ADAPTER_CREATE_OWNER:
+            reasons.append(f"created adapters require {ADAPTER_CREATE_OWNER} provenance")
     elif adapter_status == "reused":
         if creation_owner is not None:
             reasons.append("reused adapters must not claim a creation owner")
@@ -700,13 +697,13 @@ def _validate_route_provenance(
     auth_status = provenance.get("auth_status")
     auth_owner = provenance.get("auth_owner")
     if auth_status == "completed":
-        if auth_owner not in {"rote-adapter-create", "rote-adapter-config"}:
+        if auth_owner not in {ADAPTER_CREATE_OWNER, AUTHENTICATION_OWNER}:
             reasons.append("completed auth requires a Rote create/config owner")
     elif auth_status == "verified":
         if auth_owner not in {
-            "rote-using-adapters",
-            "rote-adapter-create",
-            "rote-adapter-config",
+            ADAPTER_EXECUTE_OWNER,
+            ADAPTER_CREATE_OWNER,
+            AUTHENTICATION_OWNER,
         }:
             reasons.append("verified auth requires a recognized Rote adapter owner")
     else:
@@ -760,7 +757,7 @@ def verify_receipt(payload: dict[str, Any]) -> dict[str, Any]:
         reasons.append("packet action must be execute_route")
     owner = packet.get("owner")
     if owner not in SPECIALIST_OWNERS:
-        reasons.append("packet owner is not a recognized Rote specialist")
+        reasons.append("packet owner is not a recognized Rote guidance id")
     modalities = packet.get("modalities")
     if not isinstance(modalities, list) or any(not isinstance(item, str) for item in modalities):
         reasons.append("packet modalities must be a string list")
@@ -795,14 +792,9 @@ def verify_receipt(payload: dict[str, Any]) -> dict[str, Any]:
     for field in ("run_id", "state", "action", "owner"):
         if receipt.get(field) != packet.get(field):
             reasons.append(f"receipt {field} does not match packet")
-    executor = receipt.get("executor")
-    if not isinstance(executor, dict):
-        reasons.append("receipt executor is missing")
-    else:
-        if executor.get("kind") != "skill":
-            reasons.append("receipt executor kind must be skill")
-        if executor.get("name") != packet.get("owner"):
-            reasons.append("receipt executor name does not match owner")
+    reasons.extend(
+        _guidance_executor_reasons(receipt.get("executor"), packet.get("owner"), "receipt")
+    )
 
     event = receipt.get("event")
     expected_events = packet.get("expected_events")
@@ -998,14 +990,11 @@ def verify_authentication_receipt(payload: dict[str, Any]) -> dict[str, Any]:
     for field in ("run_id", "state", "action", "owner"):
         if receipt.get(field) != packet.get(field):
             reasons.append(f"authentication receipt {field} does not match packet")
-    executor = receipt.get("executor")
-    if not isinstance(executor, dict):
-        reasons.append("authentication receipt executor is missing")
-    else:
-        if executor.get("kind") != "skill":
-            reasons.append("authentication receipt executor kind must be skill")
-        if executor.get("name") != AUTHENTICATION_OWNER:
-            reasons.append("authentication receipt executor must be rote-adapter-config")
+    reasons.extend(
+        _guidance_executor_reasons(
+            receipt.get("executor"), AUTHENTICATION_OWNER, "authentication receipt"
+        )
+    )
 
     event = receipt.get("event")
     required_fields = AUTHENTICATION_EXPECTED_EVENTS.get(event)

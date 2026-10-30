@@ -7,12 +7,24 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from scripts.lib.play.preflight import (
+    ROTE_UPDATE,
     SCHEMA,
     _has_skill,
     harness_skill_roots,
     inspect,
     inspect_harnesses,
 )
+
+
+def rote_responses(whoami: MagicMock, guidance_returncode: int = 0):
+    """Answer each Rote probe by its subcommand; preflight runs them concurrently."""
+    responses = {
+        "whoami": whoami,
+        "play": MagicMock(returncode=0, stdout="rote play\nUSAGE\n", stderr=""),
+        "guidance": MagicMock(returncode=guidance_returncode, stdout="{}", stderr=""),
+    }
+    return lambda command: responses[command[1]]
+
 
 
 class PreflightTest(unittest.TestCase):
@@ -76,10 +88,9 @@ class PreflightTest(unittest.TestCase):
     def test_ready_requires_identity_and_play_capability(
         self, _which: MagicMock, run_command: MagicMock
     ) -> None:
-        run_command.side_effect = [
-            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
-            MagicMock(returncode=0, stdout="rote play\nUSAGE\n", stderr=""),
-        ]
+        run_command.side_effect = rote_responses(
+            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr="")
+        )
 
         # Install the rote skill in a temporary home rather than relying on the machine's own.
         with tempfile.TemporaryDirectory() as temporary:
@@ -99,14 +110,13 @@ class PreflightTest(unittest.TestCase):
         self, _which: MagicMock, run_command: MagicMock
     ) -> None:
         # Older Rote versions could exit 0 while reporting that login is required.
-        run_command.side_effect = [
+        run_command.side_effect = rote_responses(
             MagicMock(
                 returncode=0,
                 stdout="@@status\nerror: Not logged in\n@@next\n- rote login\n",
                 stderr="",
-            ),
-            MagicMock(returncode=0, stdout="rote play\nUSAGE\n", stderr=""),
-        ]
+            )
+        )
 
         payload = inspect("claude")
 
@@ -122,10 +132,9 @@ class PreflightTest(unittest.TestCase):
     def test_silent_identity_check_is_authenticated(
         self, _which: MagicMock, run_command: MagicMock
     ) -> None:
-        run_command.side_effect = [
-            MagicMock(returncode=0, stdout="", stderr=""),
-            MagicMock(returncode=0, stdout="rote play\nUSAGE\n", stderr=""),
-        ]
+        run_command.side_effect = rote_responses(
+            MagicMock(returncode=0, stdout="", stderr="")
+        )
 
         payload = inspect("claude")
 
@@ -145,10 +154,9 @@ class PreflightTest(unittest.TestCase):
         inspect_harnesses: MagicMock,
     ) -> None:
         which.side_effect = lambda name: "/bin/rote" if name == "rote" else None
-        run_command.side_effect = [
-            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
-            MagicMock(returncode=0, stdout="rote play\nUSAGE\n", stderr=""),
-        ]
+        run_command.side_effect = rote_responses(
+            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr="")
+        )
         inspect_harnesses.return_value = [
             {
                 "id": "codex",
@@ -184,10 +192,9 @@ class PreflightTest(unittest.TestCase):
         _find_spec: MagicMock,
     ) -> None:
         which.side_effect = lambda name: f"/bin/{name}" if name in {"rote", "play-machine"} else None
-        run_command.side_effect = [
-            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
-            MagicMock(returncode=0, stdout="rote play\nUSAGE\n", stderr=""),
-        ]
+        run_command.side_effect = rote_responses(
+            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr="")
+        )
         inspect_harnesses.return_value = [
             {
                 "id": "codex",
@@ -222,10 +229,9 @@ class PreflightTest(unittest.TestCase):
         inspect_harnesses: MagicMock,
         _missing: MagicMock,
     ) -> None:
-        run_command.side_effect = [
-            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr=""),
-            MagicMock(returncode=0, stdout="rote play\nUSAGE\n", stderr=""),
-        ]
+        run_command.side_effect = rote_responses(
+            MagicMock(returncode=0, stdout="ok: person@example.com\n", stderr="")
+        )
         inspect_harnesses.return_value = []
         mirror = "https://factory.example.com/api/pypi/simple"
 
@@ -245,6 +251,39 @@ class PreflightTest(unittest.TestCase):
         self.assertFalse(index["lock_matches"])
         self.assertEqual(["https://pypi.org/simple"], index["lock_indexes"])
         self.assertEqual("uv", payload["runtime"]["bootstrap"])
+
+    @patch("scripts.lib.play.preflight.inspect_harnesses")
+    @patch("scripts.lib.play.preflight.run")
+    @patch("scripts.lib.play.preflight.shutil.which", return_value="/bin/rote")
+    def test_rote_without_guidance_ids_asks_for_an_update(
+        self,
+        _which: MagicMock,
+        run_command: MagicMock,
+        inspect_harnesses: MagicMock,
+    ) -> None:
+        run_command.side_effect = rote_responses(
+            MagicMock(returncode=0, stdout="", stderr=""), guidance_returncode=1
+        )
+        inspect_harnesses.return_value = [
+            {
+                "id": "codex",
+                "label": "Codex",
+                "rote_skills_installed": True,
+                "play_skill_installed": True,
+                "selected": True,
+            }
+        ]
+
+        payload = inspect("codex")
+
+        guidance = next(
+            check for check in payload["checks"] if check["id"] == "guidance_capability"
+        )
+        self.assertFalse(guidance["ok"])
+        self.assertIn(ROTE_UPDATE, payload["setup_commands"])
+        self.assertFalse(
+            any("setup/essential" in command for command in payload["setup_commands"])
+        )
 
 
 if __name__ == "__main__":

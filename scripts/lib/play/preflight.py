@@ -70,40 +70,49 @@ REQUIRED_PLAY_EXECUTABLES = (
     "play-setup",
     "play-standby",
 )
+ROTE_INSTALL = "If `rote` is not installed, install it from https://getrote.dev."
+ROTE_SETUP = "Then run `rote guidance setup/essential` in the harness shell and follow it."
 SETUP_COMMANDS = {
     "codex": [
+        ROTE_INSTALL,
         "codex plugin marketplace add modiqo/rote-skills",
-        "codex plugin add rote-onboard@rote-skills",
-        "Restart Codex, then invoke $rote-setup.",
+        "codex plugin add rote@rote-skills",
+        "Restart Codex. " + ROTE_SETUP,
     ],
     "claude": [
+        ROTE_INSTALL,
         "claude plugin marketplace add modiqo/rote-skills",
-        "claude plugin install rote-onboard@rote-skills",
-        "Restart Claude Code, then invoke /rote-setup.",
+        "claude plugin install rote@rote-skills",
+        "Restart Claude Code. " + ROTE_SETUP,
     ],
     "kimi": [
-        "Install the rote-onboard skill in ~/.agents/skills or ~/.kimi/skills.",
-        "Restart Kimi, then invoke /skill:rote-setup.",
+        ROTE_INSTALL,
+        "rote install skill --target kimi-code-cli --personal --force",
+        "Restart Kimi. " + ROTE_SETUP,
     ],
     "cursor": [
-        "Install the rote-onboard skill in ~/.cursor/skills.",
-        "Restart Cursor, then invoke /rote-setup.",
+        ROTE_INSTALL,
+        "rote install skill --target cursor --personal --force",
+        "Restart Cursor. " + ROTE_SETUP,
     ],
     "hermes": [
-        "Install the rote-onboard skill in ~/.hermes/skills.",
-        "Restart Hermes, then invoke /rote-setup.",
+        ROTE_INSTALL,
+        "rote install skill --target hermes-agent --personal --force",
+        "Restart Hermes. " + ROTE_SETUP,
     ],
     "opencode": [
-        "Install the rote-onboard skill in ~/.config/opencode/skills.",
-        "Restart OpenCode and ask it to use the rote-setup skill.",
+        ROTE_INSTALL,
+        "rote install skill --target opencode --personal --force",
+        "Restart OpenCode. " + ROTE_SETUP,
     ],
     "deepseek": [
-        "Install the rote-onboard skill in ~/.agents/skills or ~/.dsh/skills.",
-        "Restart DeepSeek Harness, then invoke /rote-setup.",
+        ROTE_INSTALL,
+        "rote install skill --target universal --personal --force",
+        "Restart DeepSeek Harness. " + ROTE_SETUP,
     ],
     "generic": [
-        "Install Rote from https://github.com/modiqo/rote-skills.",
-        "Run the rote-setup skill in this harness.",
+        ROTE_INSTALL,
+        ROTE_SETUP,
     ],
 }
 
@@ -111,6 +120,7 @@ PLAY_RESTORE_COMMANDS = [
     f"Run `{INSTALL_TEXT}` to restore the Play launchers, skill links, and harness wiring.",
     "Restart the harness.",
 ]
+ROTE_UPDATE = "Run `rote update`: Play needs a Rote that serves `rote guidance <id>`."
 
 
 @dataclass(frozen=True)
@@ -164,16 +174,7 @@ def harness_skill_roots() -> dict[str, tuple[Path, ...]]:
 
 
 def _has_skill(root: Path, name: str) -> bool:
-    if name == "play":
-        return (root / "play" / "SKILL.md").is_file()
-    try:
-        return any(
-            (child.name == "rote" or child.name.startswith("rote-"))
-            and (child / "SKILL.md").is_file()
-            for child in root.iterdir()
-        )
-    except OSError:
-        return False
+    return (root / name / "SKILL.md").is_file()
 
 
 def inspect_harnesses(active: str) -> list[dict[str, object]]:
@@ -290,9 +291,9 @@ def inspect(harness: str) -> dict[str, Any]:
                 "rote_skill_provider",
                 has_rote_skill,
                 (
-                    f"Rote skills are installed for {harness}."
+                    f"The rote skill is installed for {harness}."
                     if has_rote_skill
-                    else f"No rote or rote-* skill is installed for {harness}."
+                    else f"No rote skill is installed for {harness}."
                 ),
             )
         )
@@ -310,14 +311,22 @@ def inspect(harness: str) -> dict[str, Any]:
             [
                 Check("authenticated", False, "Rote cannot check identity until installed."),
                 Check("play_capability", False, "Rote cannot check Play support until installed."),
+                Check(
+                    "guidance_capability",
+                    False,
+                    "Rote cannot serve guidance until installed.",
+                ),
             ]
         )
     else:
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             identity_future = executor.submit(
                 run, [executable, "whoami", "--check"]
             )
             capability_future = executor.submit(run, [executable, "play", "--help"])
+            # Rote releases before guidance ids reject `root`, so this probe
+            # tells an outdated Rote apart from a missing one.
+            guidance_future = executor.submit(run, [executable, "guidance", "root", "--json"])
         try:
             identity = identity_future.result()
             identity_text = (identity.stdout or identity.stderr).strip()
@@ -357,6 +366,20 @@ def inspect(harness: str) -> dict[str, Any]:
             )
         )
 
+        try:
+            serves_guidance = guidance_future.result().returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            serves_guidance = False
+        checks.append(
+            Check(
+                "guidance_capability",
+                serves_guidance,
+                "The installed Rote serves `rote guidance <id>`."
+                if serves_guidance
+                else "The installed Rote does not serve `rote guidance <id>`; it is too old.",
+            )
+        )
+
     ready = all(check.ok for check in checks)
     cross_harness_ready = all(
         not item["selected"]
@@ -370,6 +393,11 @@ def inspect(harness: str) -> dict[str, Any]:
         setup_commands.append(
             f"Install uv, then run `{INSTALL_TEXT}` to rebuild the pinned Play environment."
         )
+    guidance_missing = executable is not None and any(
+        not check.ok and check.id == "guidance_capability" for check in checks
+    )
+    if guidance_missing:
+        setup_commands.append(ROTE_UPDATE)
     if executable is None or (active_status is not None and not active_status["rote_skills_installed"]):
         setup_commands.extend(SETUP_COMMANDS[harness])
     elif any(
@@ -377,7 +405,7 @@ def inspect(harness: str) -> dict[str, Any]:
         for check in checks
     ):
         setup_commands.append(
-            "Invoke $rote-setup (or /rote-setup in Claude Code) to restore sign-in or Rote Play support."
+            "Run `rote guidance setup/essential` and follow it to restore sign-in or Rote Play support."
         )
     return {
         "schema": SCHEMA,

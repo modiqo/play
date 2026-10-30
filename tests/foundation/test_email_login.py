@@ -35,6 +35,17 @@ class EmailLoginTest(unittest.TestCase):
         self.assertNotIn("private receipt", message)
         self.assertEqual(410, self.login.submit({"action": "send", "email": self.email})[0])
 
+    @patch("scripts.lib.play.email_login.time.monotonic", return_value=0.0)
+    @patch("scripts.lib.play.email_login.run_rote")
+    def test_first_send_has_no_cooldown_and_resend_waits_sixty_seconds(self, run, clock) -> None:
+        run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        login = EmailLogin("/bin/rote")
+        self.assertEqual(200, login.submit({"action": "send", "email": self.email})[0])
+        clock.return_value = 59.0
+        self.assertEqual(429, login.submit({"action": "send", "email": self.email})[0])
+        clock.return_value = 60.0
+        self.assertEqual(200, login.submit({"action": "send", "email": self.email})[0])
+
     @patch("scripts.lib.play.email_login.run_rote")
     def test_retry_limits_and_address_binding(self, run) -> None:
         run.return_value = subprocess.CompletedProcess([], 0, "", "")

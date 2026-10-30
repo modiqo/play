@@ -415,17 +415,17 @@ class ControllerRuntime:
                     f"action {state.action} has no closed executor contract"
                 )
             boundary = executor
-            specialist = action.get("specialist")
-            specialist_from = action.get("specialist_from")
-            if specialist_from is not None:
-                if context is None or not isinstance(specialist_from, str):
+            guidance = action.get("guidance")
+            guidance_from = action.get("guidance_from")
+            if guidance_from is not None:
+                if context is None or not isinstance(guidance_from, str):
                     raise ControllerRuntimeError(
-                        f"action {state.action} cannot resolve its specialist"
+                        f"action {state.action} cannot resolve its guidance id"
                     )
-                specialist = _path_value(context, specialist_from)
-            if kind == "delegated" and not isinstance(specialist, str):
+                guidance = _path_value(context, guidance_from)
+            if kind == "delegated" and not isinstance(guidance, str):
                 raise ControllerRuntimeError(
-                    f"delegated action {state.action} lacks an exact specialist"
+                    f"delegated action {state.action} lacks an exact guidance id"
                 )
             instruction = {
                 "type": "action",
@@ -434,7 +434,7 @@ class ControllerRuntime:
                 "executor": executor,
                 "owner": action["owner"],
                 "effect": action["effect"],
-                **({"specialist": specialist} if isinstance(specialist, str) else {}),
+                **({"guidance": guidance} if isinstance(guidance, str) else {}),
                 "input_required": list(action.get("input_required", ())),
                 **({"command": action["command"]} if action.get("command") else {}),
                 **(
@@ -650,7 +650,8 @@ def _canonicalize_specialist_event(
             "authentication": {
                 "authentication_action": raw.get("authentication_action"),
                 "evidence_refs": raw.get("evidence_refs"),
-            }
+            },
+            "guidance_digest": event.payload.get("guidance_digest"),
         },
         guards=event.guards,
     )
@@ -965,6 +966,7 @@ _EVENT_ALIAS_SCHEMAS: dict[str, Mapping[str, Any]] = {
     "failed_postconditions": _STRING_ARRAY,
     "failure_class": _STRING,
     "index_ref": _NULLABLE_STRING,
+    "guidance_digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
     "members": {"type": "array"},
     "organization_receipt": {"type": "object"},
     "owner": _NULLABLE_STRING,
@@ -1184,8 +1186,8 @@ def _resolve_guard_values(event: ControllerEvent) -> dict[GuardId, bool]:
         and isinstance(private_evidence, list)
         and any(isinstance(ref, str) and bool(ref) for ref in private_evidence)
         and isinstance(private_receipt, Mapping)
-        and private_receipt.get("schema") == "play.rote-org-receipt/v1"
-        and private_receipt.get("specialist") == "rote-org"
+        and private_receipt.get("schema") == "play.org-receipt/v1"
+        and private_receipt.get("guidance") == "registry/org"
         and private_receipt.get("operation") == "ensure_private_org"
         and private_receipt.get("ok") is True
         and private_receipt.get("private_org") == private_org

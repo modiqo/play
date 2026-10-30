@@ -36,11 +36,11 @@ Consequences:
   No-match no longer forces an explore-consent dialog; it exits quietly with a
   post-task save hook armed.
 - The save chain shrinks to: verified-candidate detection → one save offer →
-  delegate to `rote-flow-crystallization` / `rote-registry` → present the
+  delegate to `play/crystallization` / `registry/essential` → present the
   returned reference. Release/publish/smoke/birth mechanics belong to the
   specialists and the registry, not to Play states.
 - Auth repair collapses from 8 states (two duplicated 4-state chains) to a
-  single "report + delegate to `rote-adapter-config` + retry once" transition.
+  single "report + delegate to `adapters/config` + retry once" transition.
 
 ## Target machine: ~20 states
 
@@ -75,7 +75,7 @@ adequacy, outcome verification, and the new save-worthiness judgment.
 | Explore orchestration, adapter discovery, modality/effect offers (15) | **Cut.** Rote skills own execution; Play first classifies capture vs normal and then exits. |
 | Explore-side auth repair (4) | **Cut** (duplicate). |
 | Use-side auth repair (4) | **Collapse to 1** delegate-and-retry state. |
-| Release → publish → birth → index → smoke (13 of the save chain) | **Delegate** to `rote-registry` / rote CLI. Play presents the receipt the specialist returns. Birth certificate becomes an explicit request (`birth_show` stays as a dispatch target). |
+| Release → publish → birth → index → smoke (13 of the save chain) | **Delegate** to `registry/essential` / rote CLI. Play presents the receipt the specialist returns. Birth certificate becomes an explicit request (`birth_show` stays as a dispatch target). |
 | Onboarding + team invites (19) | **Separate machine** (`machine.onboarding.yaml`), entered only via empty `/play`, Play URI, or first-use detection. Never on the interception path. |
 | Awareness/digest (4), creator (4), management (3) | Creator collapses into search/classify (create intent = no-match path with save hook pre-armed). Awareness and management become explicit-request trajectory dispatches. |
 
@@ -189,17 +189,17 @@ promise of the runtime, and it is what removes the read-before-act tax.
    re-implementing orchestration the rote skills already own; delete them and
    defer:
    - Onboarding + team (19 states) → one probe-and-present action; setup
-     stays with `rote-setup`, team spaces and invites go to `rote-org`.
+     stays with `setup/essential`, team spaces and invites go to `registry/org`.
      Orientation survives as a presentation, not a trajectory.
    - Publication chain (15 states) → `save_offer` → one `save_delegate`
-     specialist handoff (`rote-flow-crystallization` / `rote-flow-authoring` /
-     `rote-registry` run their own flow) → `saved_present` receipt
+     specialist handoff (`play/crystallization` / `play/authoring` /
+     `registry/essential` run their own flow) → `saved_present` receipt
      validation. Birth capture stays as a deterministic wrapper around the
      handoff (capture before, verify canonical readback after); `birth_show`
      stays as an explicit request. Play validates typed receipts instead of
      supervising steps.
    - Creator lane (4 states) → the no-match path with the hook pre-armed.
-   - Management (3 states) → `rote-registry`; play keeps only `play prefs`.
+   - Management (3 states) → `registry/essential`; play keeps only `play prefs`.
    - Awareness 4 → 2 (genuinely play's: cards, digest cache, trending).
    Target: ~30 states, each either on the interception path or a typed
    receipt boundary. The trade, accepted deliberately: play trusts rote

@@ -22,11 +22,11 @@ _EXPECTATIONS: dict[str, str] = {
 }
 
 _OWNER_HINT = {
-    "rote-flow-authoring": "structure, parameters, deps.toml, resources",
-    "rote-troubleshooting": "failure contract and partial results",
-    "rote-shell": "shell and command portability",
-    "rote-typescript-transformations": "presentation body",
-    "rote-registry": "publication and adapters",
+    "play/authoring": "structure, parameters, deps.toml, resources",
+    "troubleshooting/essential": "failure contract and partial results",
+    "shell/essential": "shell and command portability",
+    "typescript/transformations": "presentation body",
+    "registry/essential": "publication and adapters",
 }
 
 
