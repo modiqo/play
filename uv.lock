@@ -81,7 +81,7 @@ wheels = [
 
 [[package]]
 name = "modiqo-play-controller"
-version = "0.4.108"
+version = "0.4.109"
 source = { virtual = "." }
 dependencies = [
     { name = "ast-grep-py" },
