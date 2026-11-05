@@ -93,7 +93,8 @@
             "disclosure": "sha256:82c51298ea5787d6fcc22d085fdc1a6ccf61643f968b7500b07863e4723c7cff",
             "parameters": {}
           }
-        }
+        },
+        "ResolveMemberships"
       ],
       "result": {
         "Yield": {

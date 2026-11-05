@@ -44,6 +44,8 @@ Sim(
             workspace: "/tmp/rote/workspaces/play-near-match",
             outcome: Succeeded,
         )))],
+        // A modiqo member: the first result carries no company line.
+        resolve_memberships: [Ok(Done(["modiqo"]))],
     ),
     events: [
         Judged(Intent(intent: Run)),

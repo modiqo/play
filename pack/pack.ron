@@ -21,10 +21,20 @@ Pack(
             ]),
         },
     },
+    journeys: {
+        // The prompt hook's journey. Only a prompt that asks for work starts
+        // the entry journey; greetings, questions, slash commands, and harness
+        // notices hand back, so the hook stays silent for them.
+        "prompt": If(
+            Action(IsTaskRequest),
+            Action(Enter("entry")),
+            Action(HandBack(NotPlayWork)),
+        ),
+    },
     hooks: {
-        // Each prompt starts the entry journey. Its first step is the intent
-        // judgment, which needs no search, so it stays inside rote's 3 s cap.
-        UserPromptSubmit: Hook(journey: "entry", budget_ms: 3000),
+        // The entry journey's first step is the intent judgment, which needs
+        // no search, so a tick stays inside rote's 3 s cap.
+        UserPromptSubmit: Hook(journey: "prompt", budget_ms: 3000),
     },
     search: Search(
         // Play's judged-search Worker. Remove this line once rote's own
