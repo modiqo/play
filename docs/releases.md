@@ -2,8 +2,8 @@
 
 `VERSION` is the only version to edit. On a branch, set it and run `just package`. That writes it
 into the plugin manifests, `plugins/play/package.json`, `pyproject.toml`, and `uv.lock`, and
-regenerates the plugin skill. `just check` fails while any of them disagrees with `VERSION`. Merge the
-bump through a PR.
+copies `SKILL.md` into the plugin. `just check` fails while any of them disagrees with `VERSION`.
+Merge the bump through a PR.
 
 The [Tag Play release workflow](../.github/workflows/tag-release.yml) runs on every push to `main`
 and tags releases itself. It reads `VERSION` from the pushed commit and derives `vX.Y.Z`:

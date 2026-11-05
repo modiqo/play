@@ -10,13 +10,12 @@
   "interface": {
     "displayName": "Play",
     "shortDescription": "Discover, run, create, and share reusable Plays",
-    "longDescription": "Search local and authorized Play indexes, inspect setup and effects before approval, run exact versions, explore unmet needs, and keep up through digests.",
+    "longDescription": "Hands each request to rote's journey engine, which finds a matching Play, shows its effects before approval, runs an exact version, or explores and saves a new one.",
     "developerName": "Modiqo",
     "category": "Productivity",
     "capabilities": ["Interactive", "Read", "Write"],
     "defaultPrompt": [
       "Find a Play for my task",
-      "Show my Play digest",
       "Create a reusable Play"
     ],
     "websiteURL": "https://getrote.dev"

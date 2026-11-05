@@ -9,7 +9,7 @@ check: package-check
 test: check
     uv run python3 -m unittest discover -s tests -p 'test_*.py'
 
-# Build the plugin skill and sync manifest versions from VERSION.
+# Copy SKILL.md into the plugin and sync manifest versions from VERSION.
 package:
     scripts/bin/package-plugin
 

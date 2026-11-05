@@ -1,30 +1,46 @@
 ---
 name: play
 description: >
-  Sidekick for reusable procedures. Use only when the user explicitly invokes Play. Play runs and
-  creates reusable procedures and manages its cheat sheet, onboarding, canonical Play URIs, digest,
-  routing policy, management, sharing, and birth certificates.
+  Run or create a reusable Play for an outcome. Use only when the user explicitly invokes Play
+  (`/play` or `$play`). Play runs on rote: the request goes to `rote journey next`.
 ---
 
 # Play
 
-This marketplace plugin is a pointer. Play is installed and updated through rote, which links the
-real Play skill into this agent.
+Play is a journey pack for rote. rote decides every step; this skill only hands the request over.
 
-## Load the installed Play skill
+## Hand the request to rote
 
-If `${ROTE_HOME:-$HOME/.rote}/play/current/SKILL.md` exists, read it completely and follow it for
-this request. It is the Play skill; resolve the bundled paths it names, such as `scripts/bin/...`,
-against `${ROTE_HOME:-$HOME/.rote}/play/current`.
+1. Run `rote guidance root` once per session and follow it. It is the protocol: what each yield
+   means, how to ask, and how to resume.
+2. Start the journey with the user's words unchanged, prefix included:
 
-## When Play is not installed
+   ```sh
+   rote journey next --json --harness <claude-code|codex|cursor|generic> "<request>"
+   ```
 
-If that file is missing, tell the user Play runs through rote and give them the install command:
+3. Do what the one yield says, then run the resume command it gives. Repeat until a yield ends the
+   session.
 
-- When `rote` is not on `PATH`: `curl -fsSL https://getrote.dev/install | bash`, which installs rote
-  and then Play.
-- Otherwise: `rote install play`.
+Do not search, inspect, run, save, or publish Plays yourself. The journey does each of these, and
+asks the user where it needs an answer.
 
-Tell them to restart the agent afterwards so it loads the installed skill. Never run either command
-without the user's approval. Never copy Play's runtime files, rote's installation, credentials, or
-tokens into this plugin or the agent's skill directories.
+## Schedule a Play
+
+Offer a schedule only after the journey presented a successful run, or when the user asks for
+one. Schedule the exact versioned reference that run used:
+
+```sh
+play recurring schedule --reference <owner/name@x.y.z> --cadence "<cadence>" --why "<reason>"
+```
+
+`play recurring --help` lists the other scheduling commands.
+
+## When rote is missing
+
+If `rote` is not on `PATH`, check `$ROTE_BIN/rote`, then `$HOME/.local/bin/rote`. If neither
+exists, tell the user to install rote with the Play pack, and do not run it without their approval:
+
+```sh
+curl -fsSL https://getrote.dev/install | bash -s -- --pack play
+```
