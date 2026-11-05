@@ -6,9 +6,9 @@
 Pack(
     id: "play",
     schema: "rote.pack/v1",
-    // The first rote release with entry, hooks, search.worker_url, and the
-    // explore and publish journeys.
-    requires_rote: ">=0.96",
+    // Development builds of the cutover still report 0.95, so this admits
+    // them. The cutover release PR raises it to that release's version.
+    requires_rote: ">=0.95",
     entry: Some("entry"),
     slots: {
         "run": {
