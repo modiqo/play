@@ -2,7 +2,7 @@
 check: package-check
     npm run test:journey-layout
     uv run pyright
-    uv run pyright scripts/bin/play scripts/bin/play-recurring scripts/bin/play-journey scripts/bin/play-audit scripts/bin/play-audit-corpus scripts/bin/package-plugin .github/release/tag_play.py
+    uv run pyright scripts/bin/play scripts/bin/play-recurring scripts/bin/play-journey scripts/bin/play-audit scripts/bin/play-audit-corpus scripts/bin/package-plugin .github/release/tag_play.py .github/release/pack_tarball.py
     typos --exclude '**/journey_viewer/viewer.js' --exclude '**/model_prices_and_context_window.json' README.md SKILL.md agents pack references scripts tests justfile
 
 # Run the checks, then the unit tests.

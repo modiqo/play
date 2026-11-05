@@ -23,5 +23,10 @@ also preserved.
 Each run records its JSON receipt in the workflow summary, including skipped creation decisions.
 The workflow never bumps versions or pushes `main`.
 
-Play has no installer of its own. rote's `install.sh --pack play` installs the journey pack that
-rote pins in its `play` known pack.
+When the workflow creates a tag, it also publishes a GitHub release for it with one asset,
+`play-pack.tar.gz`: the files of `pack/` with `pack.ron` at the root, built by
+`.github/release/pack_tarball.py`. The same files always give the same bytes. rote's `play` known
+pack pins that asset's URL, its SHA-256, and the digest it unpacks to, so moving the pin is a rote
+PR that names the new tag.
+
+Play has no installer of its own. rote's `install.sh --pack play` installs the pinned pack.

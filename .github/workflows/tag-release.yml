@@ -43,6 +43,17 @@ jobs:
         run: |
           python3 .github/release/tag_play.py --commit "$GITHUB_SHA" > release-tag.json
 
+      # rote's `play` known pack pins this asset's SHA-256 and unpacked digest.
+      - name: Publish the journey pack tarball
+        if: steps.release_check.outputs.status == 'ready'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(jq -er .tag release-tag.json)"
+          python3 .github/release/pack_tarball.py --output play-pack.tar.gz > pack-tarball.json
+          gh release create "$tag" play-pack.tar.gz --verify-tag --title "Play $tag" \
+            --notes "Journey pack tarball, SHA-256 $(jq -er .sha256 pack-tarball.json)"
+
       - name: Report release tag decision
         run: |
           cat release-tag.json

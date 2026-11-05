@@ -17,7 +17,7 @@ package = false
 
 [tool.pyright]
 include = ["scripts/lib/play", "tests"]
-extraPaths = ["scripts/lib"]
+extraPaths = ["scripts/lib", ".github/release"]
 venvPath = "."
 venv = ".venv"
 
