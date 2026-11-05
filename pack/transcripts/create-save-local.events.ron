@@ -1,0 +1,51 @@
+// The user asks for something new. Nothing matches, so the session explores
+// at once. The outcome is reusable, the user keeps the Play on this machine,
+// and it is crystallized, authored, and released. Nothing is published.
+Sim(
+    journey: "entry",
+    request: "make a play that lists the open issues in our api repo",
+    harness: ClaudeCode,
+    effects: Effects(
+        search_local: [Ok((candidates: []))],
+        search_registry: [Ok(Judged((
+            candidates: [],
+            scope: Accessible,
+            timing: (worker_ms: 1020, wall_ms: 1100),
+        )))],
+        capture: [Ok((workspace: "explore-list-the-open-0a1b2c", path: "/tmp/explore-list-the-open-0a1b2c"))],
+        audit_explored: [
+            Ok((missing: [], steps: 3)),
+            Ok((missing: [], steps: 3)),
+        ],
+        trace: [Ok(Done((
+            digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            steps: [
+                (sequence: 1, command: SetVariable, role: Setup),
+                (sequence: 2, command: HttpRequest, role: Outcome),
+                (sequence: 3, command: QueryExtract, role: Outcome),
+            ],
+            responses: [ResponseId(2), ResponseId(3)],
+        )))],
+        crystallize: [Ok((reference: "list-open-issues@development", play_path: "/tmp/plays/list-open-issues", stub_path: "/tmp/pending/list-open-issues.json"))],
+        release: [Ok(Done((
+            reference: Local(
+                reference: "list-open-issues",
+                package: "installed-package-sha256-v1:3333333333333333333333333333333333333333333333333333333333333333",
+            ),
+            tested_parameters: {"repo": "acme/api"},
+        )))],
+    ),
+    events: [
+        Judged(Intent(intent: Create)),
+        Explored((outcome: Produced, summary: "listed 12 open issues", response_refs: [ResponseId(2), ResponseId(3)])),
+        Judged(Reuse((
+            outcome_steps: [2, 3],
+            varying_inputs: ["repo"],
+            stable_output: true,
+            suggested_name: "list-open-issues",
+            assessment: "any repo's open issues, newest first",
+        ))),
+        Chose(prompt: SaveOffer, choice: "local"),
+        Explored((outcome: Produced, summary: "wrote main.ts and its test", response_refs: [])),
+    ],
+)

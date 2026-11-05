@@ -1,0 +1,150 @@
+{
+  "schema": "rote.journey-sim-trace/v1",
+  "journey": "entry",
+  "steps": [
+    {
+      "event": null,
+      "result": {
+        "Yield": {
+          "Judge": "Intent"
+        }
+      }
+    },
+    {
+      "event": {
+        "Judged": {
+          "Intent": {
+            "intent": "Create"
+          }
+        }
+      },
+      "entered": "explore",
+      "calls": [
+        "SearchLocal",
+        "SearchRegistry",
+        "Capture"
+      ],
+      "result": {
+        "Yield": {
+          "Explore": {
+            "kind": "Outcome",
+            "workspace": {
+              "workspace": "explore-list-the-open-0a1b2c",
+              "path": "/tmp/explore-list-the-open-0a1b2c"
+            },
+            "outcome": "make a play that lists the open issues in our api repo",
+            "seed": null,
+            "budget": {
+              "steps": 40
+            }
+          }
+        }
+      }
+    },
+    {
+      "event": {
+        "Explored": {
+          "outcome": "Produced",
+          "summary": "listed 12 open issues",
+          "response_refs": [
+            2,
+            3
+          ]
+        }
+      },
+      "calls": [
+        {
+          "AuditExplored": [
+            2,
+            3
+          ]
+        },
+        "Trace"
+      ],
+      "result": {
+        "Yield": {
+          "Judge": "Reuse"
+        }
+      }
+    },
+    {
+      "event": {
+        "Judged": {
+          "Reuse": {
+            "outcome_steps": [
+              2,
+              3
+            ],
+            "varying_inputs": [
+              "repo"
+            ],
+            "stable_output": true,
+            "suggested_name": "list-open-issues",
+            "assessment": "any repo's open issues, newest first"
+          }
+        }
+      },
+      "result": {
+        "Yield": {
+          "Ask": "SaveOffer"
+        }
+      }
+    },
+    {
+      "event": {
+        "Chose": {
+          "prompt": "SaveOffer",
+          "choice": "local"
+        }
+      },
+      "calls": [
+        {
+          "Crystallize": "list-open-issues"
+        }
+      ],
+      "result": {
+        "Yield": {
+          "Explore": {
+            "kind": "Author",
+            "workspace": {
+              "workspace": "explore-list-the-open-0a1b2c",
+              "path": "/tmp/explore-list-the-open-0a1b2c"
+            },
+            "outcome": "make a play that lists the open issues in our api repo",
+            "seed": null,
+            "play": {
+              "reference": "list-open-issues@development",
+              "play_path": "/tmp/plays/list-open-issues",
+              "stub_path": "/tmp/pending/list-open-issues.json"
+            },
+            "budget": {
+              "steps": 40
+            }
+          }
+        }
+      }
+    },
+    {
+      "event": {
+        "Explored": {
+          "outcome": "Produced",
+          "summary": "wrote main.ts and its test",
+          "response_refs": []
+        }
+      },
+      "calls": [
+        {
+          "AuditExplored": []
+        },
+        {
+          "Release": "KeepLocal"
+        }
+      ],
+      "result": {
+        "Yield": {
+          "Present": "Saved"
+        }
+      }
+    }
+  ]
+}

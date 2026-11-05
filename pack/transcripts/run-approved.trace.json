@@ -1,0 +1,78 @@
+{
+  "schema": "rote.journey-sim-trace/v1",
+  "journey": "entry",
+  "steps": [
+    {
+      "event": null,
+      "result": {
+        "Yield": {
+          "Judge": "Intent"
+        }
+      }
+    },
+    {
+      "event": {
+        "Judged": {
+          "Intent": {
+            "intent": "Run"
+          }
+        }
+      },
+      "entered": "run",
+      "calls": [
+        "SearchLocal",
+        {
+          "Inspect": {
+            "Local": "approved-pr-merge-readiness"
+          }
+        }
+      ],
+      "result": {
+        "Yield": {
+          "Judge": "Relevance"
+        }
+      }
+    },
+    {
+      "event": {
+        "Judged": {
+          "Relevance": {
+            "verdict": "Relevant"
+          }
+        }
+      },
+      "result": {
+        "Yield": {
+          "Ask": "ApproveRun"
+        }
+      }
+    },
+    {
+      "event": {
+        "Chose": {
+          "prompt": "ApproveRun",
+          "choice": "run"
+        }
+      },
+      "calls": [
+        {
+          "Run": {
+            "reference": {
+              "Local": {
+                "reference": "approved-pr-merge-readiness",
+                "package": "installed-package-sha256-v1:2222222222222222222222222222222222222222222222222222222222222222"
+              }
+            },
+            "disclosure": "sha256:f1869cae7d420bc35bef7c9d62755a6ef3243a9c4d2855bf31818cad9556483a",
+            "parameters": {}
+          }
+        }
+      ],
+      "result": {
+        "Yield": {
+          "Present": "RunResult"
+        }
+      }
+    }
+  ]
+}

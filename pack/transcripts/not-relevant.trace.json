@@ -1,0 +1,66 @@
+{
+  "schema": "rote.journey-sim-trace/v1",
+  "journey": "entry",
+  "steps": [
+    {
+      "event": null,
+      "result": {
+        "Yield": {
+          "Judge": "Intent"
+        }
+      }
+    },
+    {
+      "event": {
+        "Judged": {
+          "Intent": {
+            "intent": "Run"
+          }
+        }
+      },
+      "entered": "run",
+      "calls": [
+        "SearchLocal",
+        {
+          "Inspect": {
+            "Local": "release-notes-draft"
+          }
+        }
+      ],
+      "result": {
+        "Yield": {
+          "Judge": "Relevance"
+        }
+      }
+    },
+    {
+      "event": {
+        "Judged": {
+          "Relevance": {
+            "verdict": "NotRelevant"
+          }
+        }
+      },
+      "entered": "explore",
+      "calls": [
+        "Capture"
+      ],
+      "result": {
+        "Yield": {
+          "Explore": {
+            "kind": "Outcome",
+            "workspace": {
+              "workspace": "explore-post-the-release-7a8b9c",
+              "path": "/tmp/explore-post-the-release-7a8b9c"
+            },
+            "outcome": "post the release notes to the team channel",
+            "seed": null,
+            "budget": {
+              "steps": 40
+            }
+          }
+        }
+      }
+    }
+  ]
+}
