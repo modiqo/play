@@ -13,6 +13,7 @@ import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
+from .commands import run_rote_json
 from .search_transport import play_origin
 
 
@@ -537,9 +538,14 @@ def forward_tulving(
 
 
 def _default_inspector(reference: str) -> Mapping[str, Any]:
-    from .inspection import inspect_for_run
+    """The `rote play inspect` payload, whose `parameters` lists the declared inputs."""
 
-    return inspect_for_run(reference)
+    payload = run_rote_json("play", "inspect", reference, "--json")
+    data = payload.get("data") if isinstance(payload, dict) and payload.get("ok") is True else None
+    inspected = data.get("play_inspect") if isinstance(data, dict) else None
+    if not isinstance(inspected, dict):
+        raise RecurrenceError(f"rote play inspect {reference} returned an unsupported shape")
+    return inspected
 
 
 def _validate_declared_parameters(

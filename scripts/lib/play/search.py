@@ -9,7 +9,6 @@ import sys
 
 from .commands import CommandError
 from .search_transport import PLAY_ORIGINS, request_search
-from .elicitation import clip_choice_description
 from .normalize import (
     NormalizationError,
     normalize_query,
@@ -18,6 +17,8 @@ from .render import json_text
 
 
 SCHEMA = "play.search/v1"
+CHOICE_DESCRIPTION_LIMIT = 240
+_CLIP_MARK = "\u2026"
 _DISCOVERY_STOP_WORDS = {
     "a",
     "about",
@@ -80,6 +81,19 @@ _ARGUMENT_VALUE = re.compile(
     """,
     re.IGNORECASE | re.VERBOSE,
 )
+
+
+def clip_choice_description(text: str, limit: int = CHOICE_DESCRIPTION_LIMIT) -> str:
+    """Return ``text`` collapsed to one line and cut on a word boundary to fit ``limit``."""
+
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    cut = collapsed[: limit - len(_CLIP_MARK)]
+    head = cut.rpartition(" ")[0]
+    if len(head) < limit // 2:
+        head = cut
+    return head.rstrip(" ,;:\u00b7-\u2014") + _CLIP_MARK
 
 
 def strip_argument_values(text: str) -> str:

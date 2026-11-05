@@ -1,12 +1,11 @@
 [project]
 name = "modiqo-play-controller"
 version = "0.4.109"
-description = "Typed runtime for the declarative Play controller"
+description = "Play: a rote journey pack, recurring Plays, and journey tooling"
 requires-python = ">=3.10"
 dependencies = [
     "ast-grep-py>=0.39,<1",
     "jsonschema>=4.23,<5",
-    "python-statemachine[yaml]>=3.2,<3.3",
     "PyYAML>=6,<7",
 ]
 
@@ -17,7 +16,7 @@ dev = ["pyright>=1.1.403,<2"]
 package = false
 
 [tool.pyright]
-include = ["scripts/lib/play", "scripts/bin/play-machine", "tests"]
+include = ["scripts/lib/play", "tests"]
 extraPaths = ["scripts/lib"]
 venvPath = "."
 venv = ".venv"

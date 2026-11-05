@@ -7,13 +7,10 @@ import os
 import re
 import threading
 import time
-import urllib.parse
 from collections.abc import Mapping
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .journal import recalled_play_origins
 from .journey import (
     _capture,
     _journey_key,
@@ -111,70 +108,15 @@ def _workspace_intent(workspace_path: Path) -> str:
     return re.sub(r"[-_]+", " ", label).strip().capitalize() or "Rote workspace"
 
 
-def _reference_slug(reference: str) -> str | None:
-    value = urllib.parse.urlparse(reference)
-    path = value.path if value.scheme == "https" else reference
-    segments = [segment for segment in path.split("/") if segment]
-    if len(segments) < 2:
-        return None
-    return segments[-1].split("@", 1)[0] or None
-
-
-def _workspace_recall_origin(workspace_path: Path) -> dict[str, Any] | None:
-    """Join recall provenance by exact workspace, then legacy namespace+time."""
-
-    origins = recalled_play_origins()
-    exact = [item for item in origins if item.get("workspace") == workspace_path.name]
-    candidates = exact
-    association_basis = "typed_workspace"
-    if not candidates:
-        prefix = workspace_path.name.rsplit("-", 1)[0]
-        candidates = [
-            item
-            for item in origins
-            if (slug := _reference_slug(str(item.get("exact_reference") or "")))
-            and prefix == f"dag-{slug}"
-        ]
-        association_basis = "rote_namespace_time"
-        try:
-            workspace_epoch = (workspace_path / ".rote" / "workspace.db").stat().st_mtime
-        except OSError:
-            return None
-        recent: list[dict[str, Any]] = []
-        for item in candidates:
-            occurred_at = item.get("last_at")
-            if not isinstance(occurred_at, str):
-                continue
-            try:
-                event_epoch = datetime.fromisoformat(occurred_at).timestamp()
-            except ValueError:
-                continue
-            if abs(event_epoch - workspace_epoch) <= 300:
-                recent.append(item)
-        candidates = recent
-    if not candidates:
-        return None
-    origin = max(candidates, key=lambda item: str(item.get("last_at") or ""))
-    return {
-        "kind": "recalled_play",
-        "run_id": origin.get("run_id"),
-        "exact_reference": origin.get("exact_reference"),
-        "association_basis": association_basis,
-        "exploration_skipped": True,
-    }
-
-
 def _workspace_capture(
     workspace_path: Path, *, status: str = "recorded"
 ) -> dict[str, Any]:
-    origin = _workspace_recall_origin(workspace_path)
     return {
         "reference": _workspace_reference(workspace_path),
         "intent": _workspace_intent(workspace_path),
         "status": status,
         "workspace": workspace_path.name,
         "workspace_path": str(workspace_path),
-        **({"origin": origin} if origin is not None else {}),
     }
 
 

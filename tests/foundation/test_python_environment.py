@@ -131,10 +131,10 @@ class LockAndCommandTest(unittest.TestCase):
         self.assertTrue(lock_matches_index(self.root, PackageIndex(MIRROR, "PIP_INDEX_URL")))
 
     def test_run_command_skips_the_dev_group(self) -> None:
-        command = uv_run_command("uv", self.root, self.root / "scripts" / "bin" / "play-machine", ["describe"])
+        command = uv_run_command("uv", self.root, self.root / "scripts" / "bin" / "play-journey", ["doctor"])
 
         self.assertEqual(
-            ["uv", "run", "--no-dev", "--project", str(self.root), str(self.root / "scripts" / "bin" / "play-machine"), "describe"],
+            ["uv", "run", "--no-dev", "--project", str(self.root), str(self.root / "scripts" / "bin" / "play-journey"), "doctor"],
             command,
         )
 
@@ -142,14 +142,14 @@ class LockAndCommandTest(unittest.TestCase):
         command = pip_install_command(PackageIndex(MIRROR, "PIP_INDEX_URL"))
 
         self.assertIn(f"--index-url {MIRROR}", command)
-        for requirement in ("ast-grep-py", "jsonschema", "python-statemachine[yaml]", "PyYAML"):
+        for requirement in ("ast-grep-py", "jsonschema", "PyYAML"):
             self.assertIn(requirement, command)
         self.assertNotIn("--index-url", pip_install_command(PackageIndex(DEFAULT_INDEX_URL, "default")))
 
     def test_failure_explanation_names_the_index_and_the_overridden_pin(self) -> None:
         _lock(self.root, DEFAULT_INDEX_URL)
-        mirror = explain_bootstrap_failure(self.root, PackageIndex(MIRROR, "PIP_INDEX_URL"), tool="play-machine")
-        default = explain_bootstrap_failure(self.root, PackageIndex(DEFAULT_INDEX_URL, "default"), tool="play-machine")
+        mirror = explain_bootstrap_failure(self.root, PackageIndex(MIRROR, "PIP_INDEX_URL"), tool="play-journey")
+        default = explain_bootstrap_failure(self.root, PackageIndex(DEFAULT_INDEX_URL, "default"), tool="play-journey")
 
         self.assertIn(f"{MIRROR} (from PIP_INDEX_URL)", mirror)
         self.assertIn("uv re-resolved against the index above", mirror)
@@ -164,7 +164,7 @@ class EnsureRuntimeTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         _lock(self.root, DEFAULT_INDEX_URL)
-        self.script = self.root / "scripts" / "bin" / "play-machine"
+        self.script = self.root / "scripts" / "bin" / "play-journey"
         self.absent = lambda name: None
         self.present = lambda name: object()
 
@@ -172,7 +172,7 @@ class EnsureRuntimeTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_every_pinned_module_is_probed(self) -> None:
-        self.assertEqual(("ast_grep_py", "jsonschema", "statemachine", "yaml"), RUNTIME_MODULES)
+        self.assertEqual(("ast_grep_py", "jsonschema", "yaml"), RUNTIME_MODULES)
         self.assertEqual(list(RUNTIME_MODULES), missing_runtime_modules(self.absent))
         self.assertEqual(["yaml"], missing_runtime_modules(lambda name: None if name == "yaml" else object()))
         self.assertEqual([], missing_runtime_modules(self.present))
@@ -180,17 +180,17 @@ class EnsureRuntimeTest(unittest.TestCase):
     def test_ready_environment_returns_without_touching_uv(self) -> None:
         which = MagicMock(return_value="/bin/uv")
 
-        ensure_runtime("play-machine", self.root, self.script, ["describe"], environ={}, find_spec=self.present, which=which)
+        ensure_runtime("play-journey", self.root, self.script, ["doctor"], environ={}, find_spec=self.present, which=which)
 
         which.assert_not_called()
 
     def test_missing_uv_explains_the_manual_install(self) -> None:
         with self.assertRaises(SystemExit) as caught:
-            ensure_runtime("play-machine", self.root, self.script, [], environ={"PIP_INDEX_URL": MIRROR}, find_spec=self.absent, which=lambda name: None)
+            ensure_runtime("play-journey", self.root, self.script, [], environ={"PIP_INDEX_URL": MIRROR}, find_spec=self.absent, which=lambda name: None)
 
         message = str(caught.exception)
-        self.assertIn("play-machine requires uv", message)
-        self.assertIn("ast_grep_py, jsonschema, statemachine, yaml", message)
+        self.assertIn("play-journey requires uv", message)
+        self.assertIn("ast_grep_py, jsonschema, yaml", message)
         self.assertIn(f"--index-url {MIRROR}", message)
 
     def test_advisory_launcher_continues_without_uv(self) -> None:
@@ -201,7 +201,7 @@ class EnsureRuntimeTest(unittest.TestCase):
         execve = MagicMock()
 
         ensure_runtime(
-            "play-machine",
+            "play-journey",
             self.root,
             self.script,
             ["run-until-yield", "--stdin"],
@@ -230,7 +230,7 @@ class EnsureRuntimeTest(unittest.TestCase):
         )
 
         with self.assertRaises(SystemExit) as caught:
-            ensure_runtime("play-machine", self.root, self.script, [], environ={}, find_spec=self.absent, which=lambda name: "/bin/uv", run=run, stderr=stderr)
+            ensure_runtime("play-journey", self.root, self.script, [], environ={}, find_spec=self.absent, which=lambda name: "/bin/uv", run=run, stderr=stderr)
 
         self.assertEqual(2, caught.exception.code)
         written = "".join(call.args[0] for call in stderr.write.call_args_list)
@@ -246,7 +246,7 @@ class EnsureRuntimeTest(unittest.TestCase):
         stderr = MagicMock()
 
         with self.assertRaises(SystemExit) as caught:
-            ensure_runtime("play-machine", self.root, self.script, [], environ={}, find_spec=self.absent, which=lambda name: "/bin/uv", run=run, stderr=stderr)
+            ensure_runtime("play-journey", self.root, self.script, [], environ={}, find_spec=self.absent, which=lambda name: "/bin/uv", run=run, stderr=stderr)
 
         self.assertEqual(0, caught.exception.code)
 
@@ -254,22 +254,16 @@ class EnsureRuntimeTest(unittest.TestCase):
         which = MagicMock(return_value="/bin/uv")
 
         with self.assertRaises(SystemExit) as caught:
-            ensure_runtime("play-machine", self.root, self.script, [], environ={BOOTSTRAP_GUARD_VARIABLE: "1"}, find_spec=self.absent, which=which)
+            ensure_runtime("play-journey", self.root, self.script, [], environ={BOOTSTRAP_GUARD_VARIABLE: "1"}, find_spec=self.absent, which=which)
 
         which.assert_not_called()
         self.assertIn("still lacks", str(caught.exception))
 
     def test_launchers_share_the_bootstrap_contract(self) -> None:
         launchers = (
-            "play-machine",
             "play-journey",
-            "play-routing",
             "play-audit",
             "play-audit-corpus",
-            "play-search",
-            "play-question",
-            "play-tag-hints",
-            "validate-machine",
         )
         for name in launchers:
             with self.subTest(launcher=name):
@@ -280,13 +274,13 @@ class EnsureRuntimeTest(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("uv"), "uv is needed to re-enter the managed environment")
     def test_launcher_runs_from_a_python_without_pinned_packages(self) -> None:
-        # SKILL.md runs launchers directly, so their shebang may find a bare python3.
+        # Launchers run directly, so their shebang may find a bare python3.
         clean = self.root / "clean-python"
         venv.EnvBuilder(with_pip=False).create(clean)
         uv = shutil.which("uv")
         assert uv is not None
         result = subprocess.run(
-            [str(clean / "bin" / "python3"), str(ROOT / "scripts" / "bin" / "play-search"), "--help"],
+            [str(clean / "bin" / "python3"), str(ROOT / "scripts" / "bin" / "play-journey"), "--help"],
             text=True,
             capture_output=True,
             check=False,

@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import os
 import subprocess
-import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
-from scripts.lib.play.cli import FIELD_GUIDE, main
+from scripts.lib.play.cli import main
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,7 +12,7 @@ SCRIPT = ROOT / "scripts" / "bin" / "play"
 
 
 class PlayCliTest(unittest.TestCase):
-    def test_help_is_a_themed_index_of_agent_and_shell_operations(self) -> None:
+    def test_help_indexes_recurring_plays_and_developer_tooling(self) -> None:
         result = subprocess.run(
             [str(SCRIPT), "--help"],
             cwd=ROOT,
@@ -25,45 +22,17 @@ class PlayCliTest(unittest.TestCase):
         )
 
         self.assertEqual(0, result.returncode, result.stderr)
-        for heading in (
-            "AGENT · DISCOVER AND RUN",
-            "EXPLORE & VISUALIZE",
-            "RECALL & REFERENCE",
-            "RECURRING PLAYS · OPTIONAL TULVING",
-            "ROUTING",
-            "DIAGNOSTICS",
+        self.assertIn("RECURRING PLAYS · TULVING", result.stdout)
+        self.assertIn("DEVELOPER TOOLING", result.stdout)
+        self.assertIn("rote journey next", result.stdout)
+        for line in (
+            "play recurring probe",
+            "play recurring schedule",
+            "play schedule",
+            "play journey live",
+            "play audit <play URI|path>",
         ):
-            self.assertIn(heading, result.stdout)
-        self.assertIn("$play explore <outcome>", result.stdout)
-        self.assertIn("play search <outcome>", result.stdout)
-        self.assertIn("play journey live", result.stdout)
-        self.assertIn("play-journey view --active", result.stdout)
-        self.assertIn("play cheat-sheet", result.stdout)
-        self.assertIn("play guide [topic]", result.stdout)
-        self.assertIn("INSPECT & IMPROVE", result.stdout)
-        self.assertIn("play audit <play URI|path>", result.stdout)
-        self.assertIn("play audit history <ref>", result.stdout)
-        self.assertIn(FIELD_GUIDE, result.stdout)
-        self.assertIn("play recurring probe", result.stdout)
-        self.assertIn("play recurring list", result.stdout)
-        self.assertIn("play recurring recall", result.stdout)
-        self.assertIn("play recurring last", result.stdout)
-        self.assertIn("play recurring status", result.stdout)
-        self.assertIn("play recurring clock on|off", result.stdout)
-        self.assertIn("play recurring update", result.stdout)
-        self.assertIn("play schedule", result.stdout)
-        for journey_operation in (
-            "snapshot",
-            "graph",
-            "story",
-            "scene",
-            "view",
-            "doctor",
-            "refresh",
-            "rebuild",
-            "worker",
-        ):
-            self.assertIn(journey_operation, result.stdout)
+            self.assertIn(line, result.stdout)
 
     def test_version_comes_from_the_release_version_file(self) -> None:
         result = subprocess.run(
@@ -108,39 +77,6 @@ class PlayCliTest(unittest.TestCase):
             arguments,
         )
 
-    def test_journal_defaults_to_today(self) -> None:
-        calls: list[tuple[str, list[str]]] = []
-
-        result = main(
-            ["journal"],
-            executor=lambda executable, arguments: calls.append(
-                (executable, arguments)
-            ),
-        )
-
-        self.assertEqual(0, result)
-        executable, arguments = calls.pop()
-        self.assertEqual(str(ROOT / "scripts/bin/play-journal"), executable)
-        self.assertEqual([executable, "show", "--day", "today"], arguments)
-
-    def test_two_token_whats_new_alias_runs_the_remembered_digest(self) -> None:
-        for command in (["what's", "new"], ["whats", "new"]):
-            calls: list[tuple[str, list[str]]] = []
-
-            result = main(
-                command,
-                executor=lambda executable, arguments: calls.append(
-                    (executable, arguments)
-                ),
-            )
-
-            self.assertEqual(0, result)
-            executable, arguments = calls.pop()
-            self.assertEqual(str(ROOT / "scripts/bin/play-digest"), executable)
-            self.assertEqual(
-                [executable, "--remember", "--days", "7"], arguments
-            )
-
     def test_schedule_is_an_alias_for_recurring_schedule(self) -> None:
         calls: list[tuple[str, list[str]]] = []
 
@@ -158,54 +94,6 @@ class PlayCliTest(unittest.TestCase):
             [executable, "schedule", "--reference", "modiqo/check@1.2.3"],
             arguments,
         )
-
-    def test_guide_delegates_without_preflight_or_identity_recovery(self) -> None:
-        calls: list[tuple[str, list[str]]] = []
-        identity_calls = []
-
-        result = main(
-            ["guide", "run"],
-            executor=lambda executable, arguments: calls.append(
-                (executable, arguments)
-            ),
-            identity_recoverer=lambda: identity_calls.append(True) or False,
-        )
-
-        self.assertEqual(0, result)
-        executable, arguments = calls.pop()
-        self.assertEqual(str(ROOT / "scripts/bin/play-guide"), executable)
-        self.assertEqual([executable, "run"], arguments)
-        self.assertEqual([], identity_calls)
-
-    def test_search_delegates_to_the_unified_local_and_registry_search(self) -> None:
-        calls: list[tuple[str, list[str]]] = []
-
-        result = main(
-            ["search", "incident", "triage", "--json"],
-            executor=lambda executable, arguments: calls.append(
-                (executable, arguments)
-            ),
-            identity_recoverer=lambda: True,
-        )
-
-        self.assertEqual(0, result)
-        executable, arguments = calls.pop()
-        self.assertEqual(str(ROOT / "scripts/bin/play-search"), executable)
-        self.assertEqual([executable, "incident", "triage", "--json"], arguments)
-
-    def test_search_stops_before_discovery_when_identity_recovery_fails(self) -> None:
-        calls: list[tuple[str, list[str]]] = []
-
-        result = main(
-            ["search", "incident", "triage"],
-            executor=lambda executable, arguments: calls.append(
-                (executable, arguments)
-            ),
-            identity_recoverer=lambda: False,
-        )
-
-        self.assertEqual(1, result)
-        self.assertEqual([], calls)
 
     def test_unknown_command_is_actionable(self) -> None:
         result = subprocess.run(
