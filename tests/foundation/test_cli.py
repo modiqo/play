@@ -31,7 +31,7 @@ class PlayCliTest(unittest.TestCase):
             "RECALL & REFERENCE",
             "RECURRING PLAYS · OPTIONAL TULVING",
             "ROUTING",
-            "UPDATE & DIAGNOSTICS",
+            "DIAGNOSTICS",
         ):
             self.assertIn(heading, result.stdout)
         self.assertIn("$play explore <outcome>", result.stdout)
@@ -52,7 +52,6 @@ class PlayCliTest(unittest.TestCase):
         self.assertIn("play recurring clock on|off", result.stdout)
         self.assertIn("play recurring update", result.stdout)
         self.assertIn("play schedule", result.stdout)
-        self.assertIn("play update", result.stdout)
         for journey_operation in (
             "snapshot",
             "graph",
@@ -207,65 +206,6 @@ class PlayCliTest(unittest.TestCase):
 
         self.assertEqual(1, result)
         self.assertEqual([], calls)
-
-    def _fake_rote(self, base: Path) -> Path:
-        bin_dir = base / "bin"
-        bin_dir.mkdir()
-        rote = bin_dir / "rote"
-        rote.write_text("#!/bin/sh\nprintf 'rote %s\\n' \"$*\"\n", encoding="utf-8")
-        rote.chmod(0o755)
-        return bin_dir
-
-    def test_update_runs_rote_install_play_with_its_options(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary)
-            bin_dir = self._fake_rote(base)
-            result = subprocess.run(
-                [str(SCRIPT), "update", "--harness", "codex", "--yes"],
-                cwd=ROOT,
-                env={
-                    **os.environ,
-                    "HOME": str(base),
-                    "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-                },
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("Running: rote install play --harness codex --yes", result.stderr)
-        self.assertEqual("rote install play --harness codex --yes\n", result.stdout)
-
-    def test_update_without_rote_on_path_names_the_rote_installer(self) -> None:
-        calls: list[tuple[str, list[str]]] = []
-        with tempfile.TemporaryDirectory() as temporary, patch.dict(
-            os.environ, {"HOME": temporary, "PATH": temporary}
-        ), patch("sys.stderr") as stderr:
-            result = main(
-                ["update"],
-                executor=lambda executable, arguments: calls.append(
-                    (executable, arguments)
-                ),
-            )
-            message = "".join(call.args[0] for call in stderr.write.call_args_list)
-
-        self.assertEqual(1, result)
-        self.assertEqual([], calls)
-        self.assertIn("curl -fsSL https://getrote.dev/install | bash", message)
-
-    def test_update_help_does_not_download_or_install(self) -> None:
-        result = subprocess.run(
-            [str(SCRIPT), "update", "--help"],
-            cwd=ROOT,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("play update [rote install play options]", result.stdout)
-        self.assertIn("runs `rote install play`", result.stdout)
 
     def test_unknown_command_is_actionable(self) -> None:
         result = subprocess.run(

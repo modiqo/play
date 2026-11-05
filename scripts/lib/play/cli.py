@@ -15,9 +15,6 @@ from .identity import recover_rote_session
 ROOT = Path(__file__).resolve().parents[3]
 BIN = ROOT / "scripts" / "bin"
 FIELD_GUIDE = "https://www.modiqo.ai/blog/play-cheat-sheet.md"
-INSTALL_COMMAND = ("rote", "install", "play")
-INSTALL_TEXT = " ".join(INSTALL_COMMAND)
-ROTE_INSTALLER = "curl -fsSL https://getrote.dev/install | bash"
 
 
 def version() -> str:
@@ -84,9 +81,7 @@ INSPECT & IMPROVE
   play audit handoff <ref> ...  Hand chosen findings to the fixing skill; --close records the delta
   play audit send <ref>         Write the report for a Play's author
 
-UPDATE & DIAGNOSTICS
-  play update ...               Install the latest Play through rote
-                                Runs: rote install play ...
+DIAGNOSTICS
   play preflight ...            Check installation and runtime health
 
 Run 'play <command> --help' for command-specific options.
@@ -110,41 +105,6 @@ def _execute(
         print(f"play: bundled command is missing: {executable}", file=sys.stderr)
         return 1
     executor(str(executable), [str(executable), *arguments])
-    return 0
-
-
-def _render_update_help() -> str:
-    return f"""Update Play through rote, which installs and owns it.
-
-Usage:
-  play update [rote install play options]
-
-Examples:
-  play update
-  play update --harness codex
-  play update --yes
-
-`play update` runs `{INSTALL_TEXT}` with the given options. rote installs the
-latest stable Play release, but never one older than the installed release,
-then rewires the harnesses. The same command repairs a damaged installation.
-"""
-
-
-def _update_through_rote(
-    arguments: Sequence[str],
-    executor: Callable[[str, list[str]], object],
-) -> int:
-    rote = shutil.which(INSTALL_COMMAND[0])
-    if rote is None:
-        print(
-            "play: rote installs and updates Play, but `rote` is not on PATH. "
-            f"Install rote (and Play with it): {ROTE_INSTALLER}",
-            file=sys.stderr,
-        )
-        return 1
-    print(f"Running: {' '.join([INSTALL_TEXT, *arguments])}", file=sys.stderr)
-    sys.stderr.flush()
-    executor(rote, [rote, *INSTALL_COMMAND[1:], *arguments])
     return 0
 
 
@@ -231,12 +191,6 @@ def main(
         if not identity_recoverer():
             return 1
         return _execute("play-search", tail or ["--help"], executor)
-
-    if command == "update":
-        if tail[:1] in (["-h"], ["--help"]):
-            print(_render_update_help(), end="")
-            return 0
-        return _update_through_rote(tail, executor)
 
     if command in {"recurring", "schedule"}:
         recurring_arguments = tail if command == "recurring" else ["schedule", *tail]

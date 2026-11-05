@@ -4,14 +4,36 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import subprocess
 from pathlib import Path
 from typing import Sequence
-
-from publish_play import ReleaseError, git, release_tag
 
 
 ROOT = Path(__file__).resolve().parents[2]
 MAIN_REF = "refs/remotes/origin/main"
+VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+
+
+class ReleaseError(RuntimeError):
+    """Raised when a release precondition or verification fails."""
+
+
+def git(repository: Path, *arguments: str) -> str:
+    result = subprocess.run(
+        ("git", *arguments), cwd=repository, text=True, capture_output=True, check=False
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "command failed"
+        raise ReleaseError(f"git {' '.join(arguments)}: {detail}")
+    return result.stdout.strip()
+
+
+def release_tag(version_text: str) -> str:
+    version = version_text.strip()
+    if not VERSION_PATTERN.fullmatch(version):
+        raise ReleaseError(f"VERSION must be semantic x.y.z; found {version!r}")
+    return f"v{version}"
 
 
 def remote_tag_commit(repository: Path, remote: str, tag_ref: str) -> str | None:
