@@ -1,0 +1,44 @@
+// Play's journey pack for rote. rote's baseline journeys (entry, run,
+// explore, publish) do the work. This pack fills one slot, sets Play's
+// prompt hook and search Worker, and rewords some prompts in copy/.
+// `just pack-check` lints it and replays transcripts/ the way rote's
+// `just play-compat` job does; `just pack-traces` rewrites the traces.
+Pack(
+    id: "play",
+    schema: "rote.pack/v1",
+    // Development builds of the cutover still report 0.95, so this admits
+    // them. The cutover release PR raises it to that release's version.
+    requires_rote: ">=0.95",
+    entry: Some("entry"),
+    slots: {
+        "run": {
+            // The agent reads the inspected Play and judges whether it does
+            // what the user asked before the user is asked to approve a run.
+            // A Play that does not fit is new work, so the session explores.
+            BeforeApprove: Select([
+                Action(Judge(Relevance)),
+                Action(Enter("explore")),
+            ]),
+        },
+    },
+    journeys: {
+        // The prompt hook's journey. Only a prompt that asks for work starts
+        // the entry journey; greetings, questions, slash commands, and harness
+        // notices hand back, so the hook stays silent for them.
+        "prompt": If(
+            Action(IsTaskRequest),
+            Action(Enter("entry")),
+            Action(HandBack(NotPlayWork)),
+        ),
+    },
+    hooks: {
+        // The entry journey's first step is the intent judgment, which needs
+        // no search, so a tick stays inside rote's 3 s cap.
+        UserPromptSubmit: Hook(journey: "prompt", budget_ms: 3000),
+    },
+    search: Search(
+        // Play's judged-search Worker. Remove this line once rote's own
+        // Worker at search.getrote.dev is live; rote's default then applies.
+        worker_url: Some("https://modiqo-play-search-production.chetan-9b1.workers.dev"),
+    ),
+)

@@ -1,0 +1,45 @@
+{
+  "schema": "rote.journey-sim-trace/v1",
+  "journey": "entry",
+  "steps": [
+    {
+      "event": null,
+      "result": {
+        "Yield": {
+          "Judge": "Intent"
+        }
+      }
+    },
+    {
+      "event": {
+        "Judged": {
+          "Intent": {
+            "intent": "Run"
+          }
+        }
+      },
+      "entered": "explore",
+      "calls": [
+        "SearchLocal",
+        "SearchRegistry",
+        "Capture"
+      ],
+      "result": {
+        "Yield": {
+          "Explore": {
+            "kind": "Outcome",
+            "workspace": {
+              "workspace": "explore-book-a-flight-0c1d2e",
+              "path": "/tmp/explore-book-a-flight-0c1d2e"
+            },
+            "outcome": "book a flight to Riga",
+            "seed": null,
+            "budget": {
+              "steps": 80
+            }
+          }
+        }
+      }
+    }
+  ]
+}

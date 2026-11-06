@@ -43,7 +43,6 @@ from .journey_view_catalog import (
     _canonical_path,
     _catalog_capture,
     _pid_running,
-    _reference_slug,
     _refresh_workspace_catalog,
     _rote_workspace_root,
     _rote_workspaces,
@@ -54,7 +53,6 @@ from .journey_view_catalog import (
     _workspace_catalog,
     _workspace_index,
     _workspace_intent,
-    _workspace_recall_origin,
     _workspace_reference,
 )
 from .journey_view_evidence import (

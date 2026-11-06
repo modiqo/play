@@ -1,0 +1,49 @@
+// A Play saved on this machine matches the request. The agent judges the
+// inspected Play relevant, the user approves the run once, and it succeeds.
+Sim(
+    journey: "entry",
+    request: "check merge readiness of my approved PRs in modiqo",
+    harness: ClaudeCode,
+    effects: Effects(
+        search_local: [Ok((candidates: [
+            (reference: "approved-pr-merge-readiness", score_pct: 94, fit: Ranked, runnable: true),
+            (reference: "github-news-digest", score_pct: 61, fit: Ranked, runnable: true),
+        ]))],
+        inspect: [Ok((
+            reference: Local(
+                reference: "approved-pr-merge-readiness",
+                package: "installed-package-sha256-v1:2222222222222222222222222222222222222222222222222222222222222222",
+            ),
+            facts: (
+                content: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                steps: [
+                    (name: "list_prs", target: "adapter/github", operation: "pulls_list", effect: Reads),
+                ],
+                parameters: [],
+                privileged_access: None,
+            ),
+            readiness: (
+                signed_in: true,
+                installed: true,
+                credentials: [(adapter: "github", ready: true)],
+                missing_tools: [],
+            ),
+        ))],
+        run: [Ok(Done((
+            run: "run-play-approved",
+            reference: Local(
+                reference: "approved-pr-merge-readiness",
+                package: "installed-package-sha256-v1:2222222222222222222222222222222222222222222222222222222222222222",
+            ),
+            workspace: "/tmp/rote/workspaces/play-approved",
+            outcome: Succeeded,
+        )))],
+        // A modiqo member: the first result carries no company line.
+        resolve_memberships: [Ok(Done(["modiqo"]))],
+    ),
+    events: [
+        Judged(Intent(intent: Run)),
+        Judged(Relevance(verdict: Relevant)),
+        Chose(prompt: ApproveRun, choice: "run"),
+    ],
+)

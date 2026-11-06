@@ -1,0 +1,38 @@
+// A local Play scores high, but the agent reads the inspection and judges it
+// not relevant to the request. No approval is asked: the request is new work,
+// so the session enters explore and captures a workspace.
+Sim(
+    journey: "entry",
+    request: "post the release notes to the team channel",
+    harness: ClaudeCode,
+    effects: Effects(
+        search_local: [Ok((candidates: [
+            (reference: "release-notes-draft", score_pct: 92, fit: Ranked, runnable: true),
+        ]))],
+        inspect: [Ok((
+            reference: Local(
+                reference: "release-notes-draft",
+                package: "installed-package-sha256-v1:5555555555555555555555555555555555555555555555555555555555555555",
+            ),
+            facts: (
+                content: "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                steps: [
+                    (name: "list_commits", target: "adapter/github", operation: "repos_list_commits", effect: Reads),
+                ],
+                parameters: [],
+                privileged_access: None,
+            ),
+            readiness: (
+                signed_in: true,
+                installed: true,
+                credentials: [(adapter: "github", ready: true)],
+                missing_tools: [],
+            ),
+        ))],
+        capture: [Ok((workspace: "explore-post-the-release-7a8b9c", path: "/tmp/explore-post-the-release-7a8b9c"))],
+    ),
+    events: [
+        Judged(Intent(intent: Run)),
+        Judged(Relevance(verdict: NotRelevant)),
+    ],
+)

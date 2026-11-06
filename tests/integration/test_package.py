@@ -8,7 +8,7 @@ from scripts.lib.play.package import ROOT, TARGET, differences, materialize
 
 
 class PluginPackageTest(unittest.TestCase):
-    def test_payload_is_exactly_the_pointer(self) -> None:
+    def test_payload_is_the_skill_and_its_codex_metadata(self) -> None:
         files = sorted(
             str(path.relative_to(TARGET)) for path in TARGET.rglob("*") if path.is_file()
         )
@@ -23,16 +23,12 @@ class PluginPackageTest(unittest.TestCase):
             materialize(expected)
             self.assertEqual([], differences(expected, TARGET))
 
-    def test_pointer_keeps_play_discovery_and_names_rote_install(self) -> None:
-        source = (ROOT / "SKILL.md").read_text()
-        pointer = (TARGET / "SKILL.md").read_text()
-        frontmatter = source[: source.index("\n---\n", 4) + len("\n---\n")]
+    def test_plugin_skill_hands_requests_to_rote(self) -> None:
+        skill = (TARGET / "SKILL.md").read_text()
 
-        self.assertTrue(pointer.startswith(frontmatter))
-        self.assertIn("name: play\n", frontmatter)
-        self.assertIn("${ROTE_HOME:-$HOME/.rote}/play/current/SKILL.md", pointer)
-        self.assertIn("curl -fsSL https://getrote.dev/install | bash", pointer)
-        self.assertIn("rote install play", pointer)
+        self.assertIn("name: play\n", skill)
+        self.assertIn("rote journey next", skill)
+        self.assertIn("--pack play", skill)
 
     def test_codex_skill_requires_explicit_invocation(self) -> None:
         source_metadata = (ROOT / "agents" / "openai.yaml").read_text()

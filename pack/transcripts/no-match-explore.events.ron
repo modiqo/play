@@ -1,0 +1,20 @@
+// The user asks to run a Play, but nothing local or in the registry fits.
+// The session enters explore and hands the agent the outcome with a fresh
+// workspace, with no question first.
+Sim(
+    journey: "entry",
+    request: "book a flight to Riga",
+    harness: ClaudeCode,
+    effects: Effects(
+        search_local: [Ok((candidates: []))],
+        search_registry: [Ok(Judged((
+            candidates: [],
+            scope: Accessible,
+            timing: (worker_ms: 980, wall_ms: 1040),
+        )))],
+        capture: [Ok((workspace: "explore-book-a-flight-0c1d2e", path: "/tmp/explore-book-a-flight-0c1d2e"))],
+    ),
+    events: [
+        Judged(Intent(intent: Run)),
+    ],
+)

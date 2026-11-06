@@ -1,0 +1,106 @@
+{
+  "schema": "rote.journey-sim-trace/v1",
+  "journey": "entry",
+  "steps": [
+    {
+      "event": null,
+      "result": {
+        "Yield": {
+          "Judge": "Intent"
+        }
+      }
+    },
+    {
+      "event": {
+        "Judged": {
+          "Intent": {
+            "intent": "Run"
+          }
+        }
+      },
+      "entered": "run",
+      "calls": [
+        "SearchLocal",
+        "SearchRegistry"
+      ],
+      "result": {
+        "Yield": {
+          "Ask": "NearMatchOffer"
+        }
+      },
+      "offered": [
+        {
+          "choice": "play-1",
+          "candidate": {
+            "Registry": "https://play.modiqo.ai/robpumpaf/approved-pr-merge-readiness@0.0.3"
+          }
+        },
+        {
+          "choice": "play-2",
+          "candidate": {
+            "Registry": "https://play.modiqo.ai/robpumpaf/github-news-digest@0.0.3"
+          }
+        }
+      ]
+    },
+    {
+      "event": {
+        "Chose": {
+          "prompt": "NearMatchOffer",
+          "choice": "play-1"
+        }
+      },
+      "calls": [
+        {
+          "Inspect": {
+            "Registry": "https://play.modiqo.ai/robpumpaf/approved-pr-merge-readiness@0.0.3"
+          }
+        }
+      ],
+      "result": {
+        "Yield": {
+          "Judge": "Relevance"
+        }
+      }
+    },
+    {
+      "event": {
+        "Judged": {
+          "Relevance": {
+            "verdict": "Relevant"
+          }
+        }
+      },
+      "result": {
+        "Yield": {
+          "Ask": "ApproveRun"
+        }
+      }
+    },
+    {
+      "event": {
+        "Chose": {
+          "prompt": "ApproveRun",
+          "choice": "run"
+        }
+      },
+      "calls": [
+        {
+          "Run": {
+            "reference": {
+              "Registry": "https://play.modiqo.ai/robpumpaf/approved-pr-merge-readiness@0.0.3"
+            },
+            "disclosure": "sha256:82c51298ea5787d6fcc22d085fdc1a6ccf61643f968b7500b07863e4723c7cff",
+            "parameters": {}
+          }
+        },
+        "ResolveMemberships"
+      ],
+      "result": {
+        "Yield": {
+          "Present": "RunResult"
+        }
+      }
+    }
+  ]
+}

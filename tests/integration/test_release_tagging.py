@@ -42,8 +42,7 @@ class ReleaseTaggingTest(unittest.TestCase):
         self.git("push", "origin", "main")
         release = self.checkout / ".github/release"
         release.mkdir(parents=True)
-        for name in ("tag_play.py", "publish_play.py"):
-            shutil.copyfile(ROOT / ".github/release" / name, release / name)
+        shutil.copyfile(ROOT / ".github/release/tag_play.py", release / "tag_play.py")
 
     def git(self, *arguments: str, remote: bool = False) -> str:
         return subprocess.run(

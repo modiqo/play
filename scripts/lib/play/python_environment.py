@@ -24,11 +24,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-RUNTIME_MODULES: tuple[str, ...] = ("ast_grep_py", "jsonschema", "statemachine", "yaml")
+RUNTIME_MODULES: tuple[str, ...] = ("ast_grep_py", "jsonschema", "yaml")
 RUNTIME_REQUIREMENTS: tuple[str, ...] = (
     "ast-grep-py>=0.39,<1",
     "jsonschema>=4.23,<5",
-    "python-statemachine[yaml]>=3.2,<3.3",
     "PyYAML>=6,<7",
 )
 DEFAULT_INDEX_URL = "https://pypi.org/simple"

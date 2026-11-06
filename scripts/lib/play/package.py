@@ -1,4 +1,4 @@
-"""Build and verify the marketplace Play plugin: manifests plus a pointer to rote's Play skill."""
+"""Build and verify the marketplace Play plugin: manifests plus a copy of SKILL.md."""
 
 from __future__ import annotations
 
@@ -14,35 +14,8 @@ from typing import Sequence
 
 ROOT = Path(__file__).resolve().parents[3]
 TARGET = ROOT / "plugins" / "play" / "skills" / "play"
-INSTALLED_SKILL = "${ROTE_HOME:-$HOME/.rote}/play/current/SKILL.md"
-ROTE_INSTALLER = "curl -fsSL https://getrote.dev/install | bash"
-PLAY_INSTALL = "rote install play"
-POINTER_BODY = f"""
-# Play
-
-This marketplace plugin is a pointer. Play is installed and updated through rote, which links the
-real Play skill into this agent.
-
-## Load the installed Play skill
-
-If `{INSTALLED_SKILL}` exists, read it completely and follow it for
-this request. It is the Play skill; resolve the bundled paths it names, such as `scripts/bin/...`,
-against `${{ROTE_HOME:-$HOME/.rote}}/play/current`.
-
-## When Play is not installed
-
-If that file is missing, tell the user Play runs through rote and give them the install command:
-
-- When `rote` is not on `PATH`: `{ROTE_INSTALLER}`, which installs rote
-  and then Play.
-- Otherwise: `{PLAY_INSTALL}`.
-
-Tell them to restart the agent afterwards so it loads the installed skill. Never run either command
-without the user's approval. Never copy Play's runtime files, rote's installation, credentials, or
-tokens into this plugin or the agent's skill directories.
-"""
-# The source path of each packaged file except SKILL.md, which is the pointer.
-COPIED_FILES = (Path("agents/openai.yaml"),)
+# The source path of each file the plugin skill carries, copied byte for byte.
+COPIED_FILES = (Path("SKILL.md"), Path("agents/openai.yaml"))
 VERSION_FILE = ROOT / "VERSION"
 _JSON_VERSION = re.compile(r'(?m)^(  "version": ")([^"]*)(",?)$')
 # Each file carries VERSION in exactly one place; packaging rewrites it from VERSION.
@@ -96,18 +69,8 @@ def sync_versions(version: str) -> None:
             (ROOT / relative).write_text(text, encoding="utf-8")
 
 
-def pointer_skill() -> str:
-    """Root SKILL.md frontmatter, so discovery matches Play requests, over the pointer body."""
-    text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-    end = text.find("\n---\n", 4)
-    if not text.startswith("---\n") or end < 0:
-        raise PackageError("SKILL.md must open with YAML frontmatter")
-    return text[: end + len("\n---\n")] + POINTER_BODY
-
-
 def materialize(destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
-    (destination / "SKILL.md").write_text(pointer_skill(), encoding="utf-8")
     for relative in COPIED_FILES:
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -145,14 +108,14 @@ def build(check: bool = False) -> None:
         if check:
             found = version_differences(version) + differences(expected, TARGET)
             if found:
-                raise PackageError("plugin pointer differs:\n  " + "\n  ".join(found))
-            print(f"Play plugin pointer is current ({1 + len(COPIED_FILES)} files)")
+                raise PackageError("plugin skill differs:\n  " + "\n  ".join(found))
+            print(f"Play plugin skill is current ({len(COPIED_FILES)} files)")
             return
         if TARGET.exists():
             shutil.rmtree(TARGET)
         TARGET.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(expected, TARGET, copy_function=shutil.copy2)
-        print(f"Built Play plugin pointer at {TARGET} ({1 + len(COPIED_FILES)} files)")
+        print(f"Built Play plugin skill at {TARGET} ({len(COPIED_FILES)} files)")
 
 
 def main(argv: Sequence[str] | None = None) -> int:

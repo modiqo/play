@@ -36,7 +36,6 @@ from scripts.lib.play.journey import (
 )
 from scripts.lib.play.journey_capabilities import adapter_manifest_summary
 from scripts.lib.play.private_store import atomic_write_json
-from scripts.lib.play.sidekick import start_capture
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -1677,33 +1676,6 @@ class JourneyProjectionTest(unittest.TestCase):
         health = doctor(self.capture["reference"], root=self.journeys)["worker"]
         self.assertEqual("degraded", health["state"])
         self.assertIn("schema drift", health["detail"])
-
-    def test_capture_launches_journey_only_after_the_private_record_exists(self) -> None:
-        standby = self.base / "standby-launch.json"
-        observed: list[tuple[str, bool]] = []
-
-        def initialize(_name: str) -> Path:
-            return self.workspace
-
-        def launch(capture: dict, *, standby_path: Path) -> bool:
-            persisted = json.loads(standby_path.read_text())
-            observed.append((capture["reference"], bool(persisted["captures"])))
-            return True
-
-        with patch.dict(os.environ, {"PLAY_JOURNEY_ROOT": str(self.journeys)}):
-            capture = start_capture(
-                intent="Explore Gmail",
-                task_class="exploration",
-                reason="no_match",
-                path=standby,
-                workspace_initializer=initialize,
-                journey_launcher=launch,
-            )
-
-        self.assertEqual([(capture["reference"], True)], observed)
-        self.assertTrue(
-            (journey_directory(capture["reference"], root=self.journeys) / "events.jsonl").is_file()
-        )
 
     def test_semantic_render_uses_human_nodes_not_raw_command_rows(self) -> None:
         snapshot = build_snapshot(

@@ -1,23 +1,20 @@
-"""Discoverable terminal facade for Play's operator commands."""
+"""Terminal facade for what Play keeps beside its rote journey pack.
+
+`play recurring` schedules Plays through Tulving. `play journey` and `play audit`
+are developer tooling. Agent requests go through rote: `/play <outcome>` runs
+`rote journey next`.
+"""
 
 from __future__ import annotations
 
 import os
-import shutil
-import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from .identity import recover_rote_session
-
 
 ROOT = Path(__file__).resolve().parents[3]
 BIN = ROOT / "scripts" / "bin"
-FIELD_GUIDE = "https://www.modiqo.ai/blog/play-cheat-sheet.md"
-INSTALL_COMMAND = ("rote", "install", "play")
-INSTALL_TEXT = " ".join(INSTALL_COMMAND)
-ROTE_INSTALLER = "curl -fsSL https://getrote.dev/install | bash"
 
 
 def version() -> str:
@@ -28,35 +25,17 @@ def version() -> str:
 
 
 def render_help() -> str:
-    return f"""Play {version()} — reusable procedures and journey exploration
+    return f"""Play {version()} — recurring Plays and journey tooling
 
 Usage:
   play --help
   play --version
   play <command> [arguments]
 
-AGENT · DISCOVER AND RUN
-  $play                         Search for the best reusable procedure
-  $play what's new              Show recent shared procedures
-  $play <play URI>              Run a known procedure
-  play search <outcome>         Search local and authorized registry Plays
+Agent requests run on rote: /play <outcome> hands the request to
+`rote journey next`. Install with rote's install.sh --pack play.
 
-EXPLORE & VISUALIZE
-  $play explore <outcome>       Start a Playmaker exploration
-  play journey live             Open the active journey viewer
-                                Alias: play-journey view --active
-  play journey <operation> ...  snapshot, graph, story, scene, view, doctor,
-                                refresh, rebuild, or worker
-
-RECALL & REFERENCE
-  play guide [topic]           Show the plain-language, harness-aware guide
-  play journal [day]            Show today, yesterday, or YYYY-MM-DD
-  play whats new                Show the last seven days and remember the digest
-  play digest                   Alias: play whats new
-  play cheat-sheet              Print the complete bundled field guide
-  {FIELD_GUIDE}
-
-RECURRING PLAYS · OPTIONAL TULVING
+RECURRING PLAYS · TULVING
   play recurring probe          Check whether Tulving's clock is ready
   play recurring schedule ...   Validate, then schedule one exact Play
   play recurring list           List active schedules
@@ -67,36 +46,23 @@ RECURRING PLAYS · OPTIONAL TULVING
   play recurring update         Check for a Tulving update
   play schedule ...             Alias: play recurring schedule ...
 
-ROUTING
-  play routing ...              Inspect or configure direct-routing policy
-  direct: <request>             Bypass Play for one agent request
-  continue exploration          Return to a paused exploration
-
-INSPECT & IMPROVE
+DEVELOPER TOOLING
+  play journey live             Open the active journey viewer
+                                Alias: play-journey view --active
+  play journey <operation> ...  snapshot, graph, story, scene, view, doctor,
+                                refresh, rebuild, or worker
   play audit <play URI|path>    Advisory report card for a pulled Play
   play audit <ref> --author     Author work order with owners and fixes
-  play audit <ref> --profile stock-macos|ubuntu-lts
-                                See the card as a stock consumer would
   play audit history <ref>      Timeline of audits, rehearsals, and handoffs
-  play audit show <ref>         Render a stored audit
-  play audit fixtures <path>    Pack fixtures from the last run and negative cases
   play audit rehearse <path>    See the Play as consumers will; prove negative cases
-  play audit handoff <ref> ...  Hand chosen findings to the fixing skill; --close records the delta
-  play audit send <ref>         Write the report for a Play's author
-
-UPDATE & DIAGNOSTICS
-  play update ...               Install the latest Play through rote
-                                Runs: rote install play ...
-  play preflight ...            Check installation and runtime health
 
 Run 'play <command> --help' for command-specific options.
-Commands typed with '$play' are agent prompts; commands beginning with 'play' run in your shell.
 """
 
 
 def _usage_error(message: str) -> int:
     print(f"play: {message}", file=sys.stderr)
-    print("Run 'play --help' for the themed command index.", file=sys.stderr)
+    print("Run 'play --help' for the command index.", file=sys.stderr)
     return 2
 
 
@@ -113,80 +79,10 @@ def _execute(
     return 0
 
 
-def _render_update_help() -> str:
-    return f"""Update Play through rote, which installs and owns it.
-
-Usage:
-  play update [rote install play options]
-
-Examples:
-  play update
-  play update --harness codex
-  play update --yes
-
-`play update` runs `{INSTALL_TEXT}` with the given options. rote installs the
-latest stable Play release, but never one older than the installed release,
-then rewires the harnesses. The same command repairs a damaged installation.
-"""
-
-
-def _update_through_rote(
-    arguments: Sequence[str],
-    executor: Callable[[str, list[str]], object],
-) -> int:
-    rote = shutil.which(INSTALL_COMMAND[0])
-    if rote is None:
-        print(
-            "play: rote installs and updates Play, but `rote` is not on PATH. "
-            f"Install rote (and Play with it): {ROTE_INSTALLER}",
-            file=sys.stderr,
-        )
-        return 1
-    print(f"Running: {' '.join([INSTALL_TEXT, *arguments])}", file=sys.stderr)
-    sys.stderr.flush()
-    executor(rote, [rote, *INSTALL_COMMAND[1:], *arguments])
-    return 0
-
-
-def _recover_search_identity() -> bool:
-    rote = shutil.which("rote")
-    if rote is None:
-        return True
-    try:
-        status, provider = recover_rote_session(rote)
-    except (OSError, subprocess.TimeoutExpired):
-        print(
-            "play: Rote identity check could not complete; credentials were not changed.",
-            file=sys.stderr,
-        )
-        return False
-    if status in {"authenticated", "recovered"}:
-        return True
-    if status == "required":
-        if provider is None:
-            print(
-                "play: Rote login is required and no previous provider is recorded. "
-                "Run `rote login --provider google` or `rote login --provider github`.",
-                file=sys.stderr,
-            )
-        else:
-            print(
-                f"play: {provider.title()} sign-in did not complete; search has not run.",
-                file=sys.stderr,
-            )
-        return False
-    print(
-        "play: Rote identity check failed without requesting login; search has not run.",
-        file=sys.stderr,
-    )
-    return False
-
-
 def main(
     argv: Sequence[str] | None = None,
     *,
     executor: Callable[[str, list[str]], object] = os.execv,
-    identity_recoverer: Callable[[], bool] = _recover_search_identity,
 ) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments or arguments[0] in {"help", "-h", "--help"}:
@@ -197,6 +93,10 @@ def main(
         return 0
 
     command, tail = arguments[0], arguments[1:]
+    if command in {"recurring", "schedule"}:
+        recurring_arguments = tail if command == "recurring" else ["schedule", *tail]
+        return _execute("play-recurring", recurring_arguments or ["--help"], executor)
+
     if command == "journey":
         if not tail:
             tail = ["--help"]
@@ -204,53 +104,8 @@ def main(
             tail = ["view", "--active", *tail[1:]]
         return _execute("play-journey", tail, executor)
 
-    if command == "journal":
-        if tail and tail[0] in {"-h", "--help"}:
-            return _execute("play-journal", tail, executor)
-        day = tail[0] if tail and not tail[0].startswith("-") else "today"
-        rest = tail[1:] if tail and not tail[0].startswith("-") else tail
-        return _execute("play-journal", ["show", "--day", day, *rest], executor)
-
-    if command in {"what's", "whats"} and tail[:1] == ["new"]:
-        tail = tail[1:]
-        command = "whats-new"
-
-    if command in {"digest", "whats-new", "what's-new"}:
-        digest_arguments = tail or ["--remember", "--days", "7"]
-        return _execute("play-digest", digest_arguments, executor)
-
-    if command == "cheat-sheet":
-        if tail:
-            return _usage_error("'cheat-sheet' takes no arguments")
-        return _execute("play-cheat-sheet", [], executor)
-
-    if command == "guide":
-        return _execute("play-guide", tail, executor)
-
-    if command == "search":
-        if not identity_recoverer():
-            return 1
-        return _execute("play-search", tail or ["--help"], executor)
-
-    if command == "update":
-        if tail[:1] in (["-h"], ["--help"]):
-            print(_render_update_help(), end="")
-            return 0
-        return _update_through_rote(tail, executor)
-
-    if command in {"recurring", "schedule"}:
-        recurring_arguments = tail if command == "recurring" else ["schedule", *tail]
-        if not recurring_arguments:
-            recurring_arguments = ["--help"]
-        return _execute("play-recurring", recurring_arguments, executor)
-
-    delegated = {
-        "audit": "play-audit",
-        "routing": "play-routing",
-        "preflight": "play-preflight",
-    }
-    if command in delegated:
-        return _execute(delegated[command], tail or ["--help"], executor)
+    if command == "audit":
+        return _execute("play-audit", tail or ["--help"], executor)
 
     return _usage_error(f"unknown command {command!r}")
 

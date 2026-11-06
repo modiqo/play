@@ -11,7 +11,7 @@
     {
       "name": "play",
       "source": "./plugins/play",
-      "description": "Play-first discovery, safe execution, exploration, sharing, and awareness.",
+      "description": "Run and create reusable Plays through rote.",
       "homepage": "https://getrote.dev"
     }
   ]
