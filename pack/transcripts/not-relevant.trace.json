@@ -56,7 +56,7 @@
             "outcome": "post the release notes to the team channel",
             "seed": null,
             "budget": {
-              "steps": 40
+              "steps": 80
             }
           }
         }

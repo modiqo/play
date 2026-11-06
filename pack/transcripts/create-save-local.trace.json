@@ -35,7 +35,7 @@
             "outcome": "make a play that lists the open issues in our api repo",
             "seed": null,
             "budget": {
-              "steps": 40
+              "steps": 80
             }
           }
         }
@@ -118,7 +118,7 @@
               "stub_path": "/tmp/pending/list-open-issues.json"
             },
             "budget": {
-              "steps": 40
+              "steps": 80
             }
           }
         }
