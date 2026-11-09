@@ -22,7 +22,8 @@
       "calls": [
         "SearchLocal",
         "SearchRegistry",
-        "Capture"
+        "Capture",
+        "SearchAdapters"
       ],
       "result": {
         "Yield": {
@@ -36,6 +37,13 @@
             "seed": null,
             "budget": {
               "steps": 80
+            },
+            "adapters": {
+              "installed": [],
+              "registry": {
+                "Found": []
+              },
+              "catalog": []
             }
           }
         }

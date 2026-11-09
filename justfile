@@ -1,21 +1,8 @@
-# Lint Python, the journey viewer, the plugin package, and spelling.
-check: package-check
-    npm run test:journey-layout
-    uv run pyright
-    uv run pyright scripts/bin/play scripts/bin/play-recurring scripts/bin/play-journey scripts/bin/play-audit scripts/bin/play-audit-corpus scripts/bin/package-plugin .github/release/tag_play.py .github/release/pack_tarball.py
-    typos --exclude '**/journey_viewer/viewer.js' --exclude '**/model_prices_and_context_window.json' README.md SKILL.md agents pack references scripts tests justfile
-
-# Run the checks, then the unit tests.
-test: check
-    uv run python3 -m unittest discover -s tests -p 'test_*.py'
-
-# Copy SKILL.md into the plugin and sync manifest versions from VERSION.
-package:
-    scripts/bin/package-plugin
-
-# Fail when the plugin skill or manifest versions drift from their sources.
-package-check:
-    scripts/bin/package-plugin --check
+# Check spelling and the release scripts, and build the pack tarball.
+check:
+    typos README.md docs pack justfile .github
+    python3 -m py_compile .github/release/tag_play.py .github/release/pack_tarball.py
+    python3 .github/release/pack_tarball.py --output "$(mktemp -d)/play-pack.tar.gz" >/dev/null
 
 # The rote binary the pack recipes run. Set ROTE to try a development build.
 rote := env("ROTE", "rote")

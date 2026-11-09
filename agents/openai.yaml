@@ -1,7 +1,0 @@
-interface:
-  display_name: "Play"
-  short_description: "Run or create reusable Plays through rote"
-  default_prompt: "Use $play to run a reusable Play for an outcome, or to create one when none fits."
-
-policy:
-  allow_implicit_invocation: false
