@@ -1,6 +1,0 @@
-{
-  "name": "@modiqo/play-plugin",
-  "version": "0.4.109",
-  "private": true,
-  "description": "Cross-harness plugin metadata for the Play skill."
-}

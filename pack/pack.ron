@@ -1,0 +1,17 @@
+// Play's journey pack for rote, and the example of a pack. rote's baseline
+// journeys (prompt, entry, run, explore, publish) do every step; a pack only
+// changes what it names. This one rewords some prompts in copy/ and points
+// registry search at Play's judged-search Worker. `just pack-check` lints it
+// and replays transcripts/ the way rote's `just play-compat` job does.
+Pack(
+    id: "play",
+    schema: "rote.pack/v1",
+    // Development builds of the cutover still report 0.95, so this admits
+    // them. The cutover release PR raises it to that release's version.
+    requires_rote: ">=0.95",
+    search: Search(
+        // Play's judged-search Worker. Remove this line once rote's own
+        // Worker at search.getrote.dev is live; rote's default then applies.
+        worker_url: Some("https://modiqo-play-search-production.chetan-9b1.workers.dev"),
+    ),
+)

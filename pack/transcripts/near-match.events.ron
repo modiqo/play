@@ -1,0 +1,56 @@
+// Nothing local fits, and the registry judges two Plays close but not exact.
+// The user picks one from the near-match offer; it is inspected, judged
+// relevant, approved, and run.
+Sim(
+    journey: "entry",
+    request: "whats the state of my PRs for modiqo/rote",
+    harness: Codex,
+    effects: Effects(
+        search_local: [Ok((candidates: []))],
+        search_registry: [Ok(Judged((
+            candidates: [
+                (
+                    reference: "robpumpaf/github-news-digest@0.0.3",
+                    relevance: Judged(choice: Uncertain, probability: 78),
+                ),
+                (
+                    reference: "robpumpaf/approved-pr-merge-readiness@0.0.3",
+                    relevance: Judged(choice: Partial, probability: 81),
+                ),
+            ],
+            scope: Accessible,
+            timing: (worker_ms: 1210, wall_ms: 1290),
+        )))],
+        inspect: [Ok((
+            reference: Registry("robpumpaf/approved-pr-merge-readiness@0.0.3"),
+            facts: (
+                content: "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+                steps: [
+                    (name: "list_prs", target: "adapter/github", operation: "pulls_list", effect: Reads),
+                ],
+                parameters: [],
+                privileged_access: None,
+            ),
+            readiness: (
+                signed_in: true,
+                installed: false,
+                credentials: [(adapter: "github", ready: true)],
+                missing_tools: [],
+            ),
+        ))],
+        run: [Ok(Done((
+            run: "run-play-near-match",
+            reference: Registry("robpumpaf/approved-pr-merge-readiness@0.0.3"),
+            workspace: "/tmp/rote/workspaces/play-near-match",
+            outcome: Succeeded,
+        )))],
+        // A modiqo member: the first result carries no company line.
+        resolve_memberships: [Ok(Done(["modiqo"]))],
+    ),
+    events: [
+        Judged(Intent(intent: Run)),
+        Chose(prompt: NearMatchOffer, choice: "play-1"),
+        Judged(Relevance(verdict: Relevant)),
+        Chose(prompt: ApproveRun, choice: "run"),
+    ],
+)
